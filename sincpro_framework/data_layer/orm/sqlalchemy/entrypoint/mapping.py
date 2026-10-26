@@ -11,7 +11,9 @@ from sqlalchemy.orm import registry
 
 from sincpro_framework.data_layer import exceptions
 from sincpro_framework.data_layer.orm.sqlalchemy.domain.consolidation import Consolidated
-from sincpro_framework.data_layer.orm.sqlalchemy.domain.registry import record_mapping
+from sincpro_framework.data_layer.orm.sqlalchemy.infrastructure.mapping_registry import (
+    mapping_registry,
+)
 from sincpro_framework.data_layer.orm.sqlalchemy.services import (
     extension_mapping,
     sql_translator,
@@ -30,7 +32,9 @@ from sincpro_framework.data_layer.orm.sqlalchemy.services.event_mapping import (
     packed,
     unpacked,
 )
-from sincpro_framework.data_layer.orm.sqlalchemy.services.model_introspection import describe
+from sincpro_framework.data_layer.orm.sqlalchemy.services.model_introspection import (
+    ModelIntrospection,
+)
 from sincpro_framework.data_layer.orm.sqlalchemy.services.sql_translator import (
     GrainTranslator,
     PartTranslator,
@@ -104,7 +108,7 @@ def map_aggregates(
 
         map_aggregates(registry, {Author: author_table, Work: work_table})   ->  None
         sqlalchemy.inspect(Work).local_table   ->  work_table
-        RELATIONS[Work]["author"]
+        mapping_registry.relations_of(Work)["author"]
             ->  Relation.foreign_key(Author, identified_by="author_id"), from work.author_id
 
     1. The classes the registry already maps are noted; `delegated` is recorded as the classes
@@ -164,7 +168,7 @@ def map_aggregates(
             }
             mapper = mapper_registry.map_imperatively(entity, local, **options)
             extension_mapping.finished(mapper, entity, parent)
-            record_mapping(table, entity)
+            mapping_registry.record_mapping(table, entity)
         event.listen(
             mapper, "load", with_transient_defaults(entity, set(mapper.columns.keys()))
         )
@@ -181,7 +185,7 @@ def map_aggregates(
     for entity, per_field in (overlay or {}).items():
         for field, changes in per_field.items():
             extensions.overlay(entity, field, dict(changes))
-    describe.cache_clear()  # what an entity is told about has changed with what extends it
+    ModelIntrospection.describe.cache_clear()  # what an entity is told about has changed with what extends it
     for entity, names in (uses or {}).items():
         extension_mapping.refuse_a_field_the_core_lacks(entity, names)
     for entity, wanted in (requires or {}).items():
@@ -197,7 +201,7 @@ def map_aggregates(
 def map_events(mapper_registry: registry, base: type[DomainEvent], table: Table) -> None:
     """Maps `base` — the bounded context's event class — and every subclass of it to `table`.
 
-    A base per context, so two contexts in one process keep two tables; mapping it again is a
+    A base per context, so two contexts in one process have two tables; mapping it again is a
     no-op.
 
         map_events(registry, BillingDomainEvent, event_table("billing_events", metadata))

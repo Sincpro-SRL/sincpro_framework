@@ -22,7 +22,7 @@ from sincpro_framework import (
 from sincpro_framework.auth import AccessControl, Permission
 from sincpro_framework.auth.domain import exceptions as auth_exceptions
 from sincpro_framework.pipelines import Pipeline
-from sincpro_framework.pipelines.recorder import PipelineRecorder
+from sincpro_framework.pipelines.services.recorder import PipelineRecorder
 from sincpro_framework.runtime.testing import granting
 
 

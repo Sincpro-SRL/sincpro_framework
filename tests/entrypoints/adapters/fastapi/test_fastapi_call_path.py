@@ -24,21 +24,21 @@ from sincpro_framework.auth import (
     Identity,
     Permission,
     StaticProvider,
-    current_identity,
+    security,
 )
 from sincpro_framework.data_layer.caching import Idempotency
 from sincpro_framework.data_layer.caching.domain import exceptions as caching_exceptions
+from sincpro_framework.data_layer.store import InMemoryKeyValue
 from sincpro_framework.ddd import exceptions as ddd_exceptions
 from sincpro_framework.ddd.query import Query
+from sincpro_framework.entrypoints import FastApiGateway
 from sincpro_framework.entrypoints.adapters.fastapi import (
     PROBLEM_JSON,
     BusCall,
-    FastApiGateway,
     bus_call,
     install_problem_handlers,
 )
 from sincpro_framework.entrypoints.entrypoint.decorators import rest
-from sincpro_framework.store import InMemoryKeyValue
 
 
 class Perm(Permission):
@@ -126,7 +126,7 @@ def _guarded() -> tuple[UseFramework, AccessControl[Perm]]:
     @rest.post("/invoices", status=201)
     class IssueInvoice(Feature):
         def execute(self, dto: CommandIssueInvoice) -> Issued:
-            return Issued(number=f"F-{dto.total}", by=current_identity().subject)
+            return Issued(number=f"F-{dto.total}", by=security.identity.subject)
 
     @bus.feature(CommandCancelInvoice)
     @auth.requires(Perm.ISSUE)

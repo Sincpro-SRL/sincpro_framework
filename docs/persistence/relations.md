@@ -30,7 +30,7 @@ A relation is a field of the aggregate's definition, `FieldMeta`, with `kind = "
 | `identified_by` | the column that ties the two: this aggregate's own for a `many2one`, the related aggregate's for a `one2many` | `dataset_id`, on `Run` |
 | `definition` | the other side's definition, cut by the mask, once expanded | `Meta` of `Run` |
 
-Two axes are kept apart on purpose. **What the relation is**, its shape, lives in `Meta` and is
+Two axes are separated on purpose. **What the relation is**, its shape, lives in `Meta` and is
 what a client reads. **How it is brought**, its mechanics, lives in the data mapper as a
 `Relation` and is what the resolver follows. `Work.reviews` from another context is a `one2many`
 identified by `book_id` exactly like a same-database one; only the mechanics differ.
@@ -42,13 +42,13 @@ between the two is lifecycle, not "simple versus compound".
 
 ## 3. What a name is: the precedence
 
-`describe()` and `map_aggregates` decide together, in this order, and nothing overrides anything
+`ModelIntrospection.describe()` and `map_aggregates` decide together, in this order, and nothing overrides anything
 by surprise:
 
 1. **A column with that name is a field.** Scalar, or embedded when its annotation is a value
    object. Never a relation, whatever the annotation says.
 2. **A declaration wins over inference.** `map_aggregates(..., relations={Work: {"editor":
-   Relation.foreign_key(Person, identified_by="editor_id")}})` is final for `editor`.
+   TableRelation.foreign_key(Person, identified_by="editor_id")}})` is final for `editor`.
 3. **A foreign key is inferred when it is unambiguous.** The annotation points at a mapped class
    and exactly one `ForeignKey` ties the two tables; with several, the column named
    `<attribute>_id` (to-one) or `<table>_id` (to-many) decides. Inference runs over the whole
@@ -72,10 +72,10 @@ Cardinality always comes from the annotation: `list[Run]` is many, `Run | None` 
 ```python
 map_aggregates(registry, {Author: author_table, Tag: tag_table, Work: work_table},
     relations={Work: {
-        "tags":      Relation.many_to_many(Tag, through=work_tag, this_key="work_id", related_key="tag_id"),
-        "sources":   Relation.id_list(Work, identified_by="source_ids"),            # ids in a JSON column
-        "reviews":   Relation.bus(Review, reviews_bus, CommandSearchReviews, identified_by="book_id"),
-        "publisher": Relation.resolved_by(Publisher, identified_by="publisher_id", resolver=fetch_publishers),
+        "tags":      TableRelation.many_to_many(Tag, through=work_tag, this_key="work_id", related_key="tag_id"),
+        "sources":   TableRelation.id_list(Work, identified_by="source_ids"),            # ids in a JSON column
+        "reviews":   TableRelation.bus(Review, reviews_bus, CommandSearchReviews, identified_by="book_id"),
+        "publisher": TableRelation.resolved_by(Publisher, identified_by="publisher_id", resolver=fetch_publishers),
     }})
 ```
 
@@ -150,7 +150,7 @@ statement per row fails `test_nesting_goes_as_deep_as_asked_with_one_statement_p
 Where the chain does **not** compose, and is not meant to:
 
 - **Filtering or ordering the parent by the child.** "Datasets whose latest run failed" is not a
-  relation to resolve; it is a value that must live in the dataset's own table, kept current by
+  relation to resolve; it is a value that must live in the dataset's own table, maintained by
   an event (`Line.entry_state` in the ledger is the pattern). A resolver answers a detail view; it
   never answers a listing filtered by the other side.
 - **Exact counts and global order across a bus.** Only per parent, and only as exact as the
@@ -182,7 +182,7 @@ records would be two hundred queries hidden in an attribute access. A page a cli
 specification that is still on a record gives way to the whole when touched inside a context; a
 Feature never decides on a cut page.
 
-A record built in memory keeps what its constructor was given: `Author(name="x").books == []`.
+A record built in memory holds what its constructor was given: `Author(name="x").books == []`.
 A record the mapper loaded starts unresolved.
 
 ## 8. An aggregate is saved whole
@@ -217,7 +217,7 @@ settled is exactly what that reading saw:
 a grandchild, an orphan — the stored root is updated too, its version checked and raised, even
 if none of its own fields moved. Two requests editing different lines of one invoice do not both
 commit: the second is a `StaleAggregate`, and an invariant over the lines holds. A root whose
-parts did not move keeps its version ([decision 28](decisions.md#28-the-version-is-the-aggregates)).
+parts did not move retains its version ([decision 28](decisions.md#28-the-version-is-the-aggregates)).
 
 ```python
 with repository.context() as unit:
@@ -243,7 +243,7 @@ aggregate boundary at once" (Evans) — once the relation says so: `remove(root)
 of the relations the root owns, by the foreign key whatever the relation's `scope` shows, and
 deletes or detaches them as `orphans` declares; a relation that declares nothing refuses while it
 has children. A reference to another aggregate is declared `owned=False` and left to its foreign
-key, which refuses the delete while children point at the root — Vernon's rule keeps that case
+key, which refuses the delete while children point at the root — Vernon's rule makes that case
 rare: an aggregate holds another by id, not as a collection.
 
 ```python
@@ -254,15 +254,15 @@ remove(customer)    # Customer.invoices declares nothing  →  ProgrammingError:
 
 ```python
 map_aggregates(registry, tables, relations={
-    Customer: {"invoices": Relation.foreign_key(Invoice, identified_by="customer_id", owned=False)},
-    Ledger: {"lines": Relation.foreign_key(Line, identified_by="ledger_id", orphans=Orphans.DELETE)},
-    Workspace: {"notes": Relation.foreign_key(Note, identified_by="workspace_id", orphans=Orphans.DETACH)},
+    Customer: {"invoices": TableRelation.foreign_key(Invoice, identified_by="customer_id", owned=False)},
+    Ledger: {"lines": TableRelation.foreign_key(Line, identified_by="ledger_id", orphans=Orphans.DELETE)},
+    Workspace: {"notes": TableRelation.foreign_key(Note, identified_by="workspace_id", orphans=Orphans.DETACH)},
 })
 ```
 
 | Declaration | `save` writes children | a dropped child, a removed root |
 |---|---|---|
-| inferred, or `Relation.foreign_key(...)` | yes | **refused** while there are children |
+| inferred, or `TableRelation.foreign_key(...)` | yes | **refused** while there are children |
 | `orphans=Orphans.DELETE` | yes | the children are deleted (a cascade) |
 | `orphans=Orphans.DETACH` | yes | their key is set to `NULL` — the column must be nullable |
 | `owned=False` — a reference to another aggregate | no | left to the foreign key |
@@ -276,7 +276,7 @@ orphan and the second is refused, saying so.
 
 The cascade lives in `orm/sqlalchemy/services/cascade.py`: the relations are the framework's own
 descriptors, not SQLAlchemy relationships, so it is planned before the flush and handed to the
-same write path. `MemoryRepository` keeps the root as the object it is, children inside, so the
+same write path. `MemoryRepository` stores the root as the object it is, children inside, so the
 aggregate it hands back is the one it was given.
 
 ## 9. Extending it
@@ -290,7 +290,7 @@ def fetch_prices(keys: Sequence[str], criteria: Criteria) -> list[Price]:
     response = http.post(PRICING_URL, json=criteria.model_dump(mode="json"))
     return [Price.model_validate(one) for one in response.json()["items"]]
 
-relations={Product: {"prices": Relation.resolved_by(Price, identified_by="product_id", resolver=fetch_prices)}}
+relations={Product: {"prices": TableRelation.resolved_by(Price, identified_by="product_id", resolver=fetch_prices)}}
 ```
 
 Return an `EntityCollection`, a `ResponsePaginatedQuery` or a plain sequence; return the other
@@ -301,7 +301,7 @@ writes nothing special: a Feature that takes a `Query` and answers with `Respons
 
 **A new database kind** (say, a polymorphic key, or a relation through two tables) is a new
 `kind` on the adapter's `Relation` and a new branch in `relation_resolver._resolve`, reusing
-`_partitioned` and `_grouped`. Keep the invariant: one statement for the whole page.
+`_partitioned` and `_grouped`. Preserve the invariant: one statement for the whole page.
 
 **A new transport for the same idea** in another backend reuses everything in
 `ddd/entity/relations.py`: `Relation`, `Resolver`, `resolve_elsewhere`, `cut`, `limit_of`. Only the

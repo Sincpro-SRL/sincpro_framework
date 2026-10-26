@@ -2,7 +2,7 @@
 
 Two things every backend asks for and used to resolve on its own: **who is
 emitting** (``ObservabilityIdentity``) and **whether a backend came up**
-(``ComponentStatus``). Resolving them once, here, is what keeps the GlitchTip
+(``ComponentStatus``). Resolving them once, here, is what stops the GlitchTip
 release and the Tempo ``service.name`` from drifting apart.
 
     identity = ObservabilityIdentity(artifact="registry.example.com/team/sincpro-odoo:18.5.0")
@@ -21,12 +21,15 @@ from importlib.metadata import distribution, packages_distributions
 from importlib.util import find_spec
 from pathlib import Path
 from typing import Iterator, Literal, Mapping
+from urllib.parse import unquote
 
 from pydantic import BaseModel, ConfigDict
 
 from sincpro_framework.sincpro_conf import settings
 
 UNKNOWN = "unknown"
+TENANT = "tenant"
+"""The key the tenant goes by — on a resource, a metric, a log line."""
 FRAMEWORK_ARTIFACT = "sincpro-framework"
 DEFAULT_BUS = "sincpro_framework"
 
@@ -37,7 +40,7 @@ OK = "ok"
 FAULT = "sincpro.fault"
 """Whether the run's failure is a problem of the service — `"true"` — or an answer its caller
 was meant to get, `"false"` (`common.failures.is_fault`): what an alert reads, while `OUTCOME`
-keeps saying what happened."""
+still says what happened."""
 
 State = Literal["off", "on", "failed"]
 
@@ -56,7 +59,7 @@ class ObservabilityIdentity(BaseModel):
     def _split(self) -> tuple[str, str]:
         """Name and version out of a release, read as an image reference or ``name@version``.
 
-        1. A version given apart (a library's) is kept as it is.
+        1. A version given apart (a library's) is used as it is.
         2. ``@``: a digest (``@sha256:…``) is dropped; anything else is the version.
         3. ``:`` after the last ``/`` is the tag; one before it is a registry's port.
         """
@@ -76,7 +79,7 @@ class ObservabilityIdentity(BaseModel):
     def service(self) -> str:
         """The artifact without its version or its registry — stable across releases.
         `APP_RELEASE` arrives whole, often as an image reference
-        (`registry.example.com/team/sincpro-odoo:18.5.0-rc2`, kept verbatim for the GlitchTip
+        (`registry.example.com/team/sincpro-odoo:18.5.0-rc2`, used verbatim for the GlitchTip
         release): the name is `sincpro-odoo`. A library comes as name and version apart."""
         return self._split()[0].rsplit("/", 1)[-1]
 
@@ -116,13 +119,34 @@ class ObservabilityIdentity(BaseModel):
         return self._split()[1]
 
 
-def tenant() -> str:
-    """Which tenant the deployment serves — `TENANT`, else `tenant` in `OTEL_RESOURCE_ATTRIBUTES`;
-    empty when neither says one. The resource's `tenant`, the GlitchTip environment and
-    `sincpro.tenant`; an execution's own is `correlation.tenant()` (PRD_03 §4.10)."""
-    from sincpro_framework.observability.correlation import deployment_tenant
+def resource_attributes() -> dict[str, str]:
+    """`OTEL_RESOURCE_ATTRIBUTES` as OpenTelemetry defines it: `key=value` pairs joined by
+    commas, each part percent-decoded and stripped.
 
-    return deployment_tenant()
+        OTEL_RESOURCE_ATTRIBUTES="tenant=acme, region=eu%2Dwest,broken,=x"
+        resource_attributes()   ->  {"tenant": "acme", "region": "eu-west"}
+
+    A part without `=` or with an empty key is skipped; a value may itself hold `=`.
+    """
+    declared: dict[str, str] = {}
+    for pair in os.environ.get("OTEL_RESOURCE_ATTRIBUTES", "").split(","):
+        if "=" not in pair:
+            continue
+        key, value = pair.split("=", 1)
+        key, value = unquote(key).strip(), unquote(value).strip()
+        if key:
+            declared[key] = value
+    return declared
+
+
+def deployment_tenant() -> str:
+    """The tenant the deployment serves: `TENANT`, else `tenant` in `OTEL_RESOURCE_ATTRIBUTES`
+    (what a host such as Odoo sets); empty when neither says one."""
+    try:
+        declared = (getattr(settings, "tenant", None) or "").strip()
+    except Exception:
+        declared = ""
+    return declared or resource_attributes().get(TENANT, "")
 
 
 def declared_exporters(value: str | None) -> set[str]:
@@ -163,44 +187,10 @@ def describing_attributes(identity: ObservabilityIdentity) -> dict[str, str]:
         attributes["service.version"] = identity.service_version
     if identity.artifact != UNKNOWN and identity.release and "release" not in declared:
         attributes["release"] = identity.release
-    deployed = tenant()
+    deployed = deployment_tenant()
     if deployed and "tenant" not in declared:
         attributes["tenant"] = deployed
     return attributes
-
-
-def log_fields(identity: ObservabilityIdentity) -> dict[str, str]:
-    """Who a log line comes from and for whom, on the line itself: the same release, service,
-    version and tenant the spans, the metrics and GlitchTip carry — readable without the
-    collector's labels. The tenant and the user are the execution's (PRD_03 §4.10).
-
-        log_fields(ObservabilityIdentity(artifact="sincpro-odoo:18.5.0"))
-            ->  {"service_name": "sincpro-odoo", "service_version": "18.5.0",
-                 "release": "sincpro-odoo:18.5.0", "tenant": "acme", "user_id": "u7"}
-        log_fields(ObservabilityIdentity(bus="billing"))   ->  {"service_name": "billing"}
-
-    1. `service_name` always — the bus stands in when no artifact resolved.
-    2. `service_version` when a version is known.
-    3. `release` when an artifact resolved.
-    4. `tenant`: the execution's (`correlation.tenant`), when there is one.
-    5. `user_id`: who the execution acts for, when known.
-    Final: the fields, never a blank one.
-    """
-    from sincpro_framework.observability import correlation
-    from sincpro_framework.observability.correlation import user_id
-
-    fields = {"service_name": identity.service_name}
-    if identity.service_version:
-        fields["service_version"] = identity.service_version
-    if identity.artifact != UNKNOWN and identity.release:
-        fields["release"] = identity.release
-    who = correlation.tenant()
-    if who:
-        fields["tenant"] = who
-    user = user_id()
-    if user:
-        fields["user_id"] = user
-    return fields
 
 
 class ComponentStatus(BaseModel):
@@ -264,7 +254,7 @@ def framework_version() -> str:
 def framework_identity(bus: str = DEFAULT_BUS) -> ObservabilityIdentity:
     """Identity of errors raised by the framework itself, not by a bounded context.
 
-    The bus is kept so the event still says which one hit it; only the artifact and
+    The bus is preserved so the event still says which one hit it; only the artifact and
     version change, because the bug belongs to the framework's release.
     """
     return ObservabilityIdentity(
@@ -388,18 +378,13 @@ def _from_distribution_scan(module_name: str) -> tuple[str, str]:
     return "", ""
 
 
-def _from_caller_library(module_name: str) -> tuple[str, str]:
-    """The installed library that created the bus. The library case."""
-    return _installed_distribution_of(module_name)
-
-
 def _identity_sources(module_name: str) -> Iterator[tuple[str, str]]:
     """Sources in order, evaluated one at a time.
 
     A generator on purpose: building this as a tuple would run every source —
     including the ~200ms scan — before the first one had a chance to answer.
     """
-    yield _from_caller_library(module_name)
+    yield _installed_distribution_of(module_name)  # the library that created the bus
     yield _from_deployment()
     yield _from_distribution_scan(module_name)
 

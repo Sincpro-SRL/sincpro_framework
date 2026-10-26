@@ -1,11 +1,8 @@
 """Basic tests for sincpro_framework.ddd.value_object."""
 
-from typing import NewType
-
 import pytest
 
 from sincpro_framework.ddd import ValueObject
-from sincpro_framework.ddd.value_object import new_value_object
 from tests.ddd.conftest import AmountVO, EmailVO, TagVO, UserIdVO
 
 # ---------------------------------------------------------------------------
@@ -158,21 +155,3 @@ class TestBothAPIs:
         assert uid == 5
         assert isinstance(uid, int)
         assert UserId.__name__ == "UserId"
-
-    def test_old_api_new_value_object_with_newtype(self):
-        """API vieja: new_value_object(NewType('X', int), fn) — retro-compatible."""
-        UserId = NewType("UserId", int)
-        UserIdVO = new_value_object(UserId, lambda v: abs(v))
-        uid = UserIdVO(-5)
-        assert uid == 5
-        assert isinstance(uid, int)
-        assert UserIdVO.__name__ == "UserId"
-
-    def test_both_apis_produce_equivalent_behaviour(self):
-        """Both APIs produce value objects that behave the same."""
-        NewApiVO = ValueObject(str, lambda v: v.strip().lower(), name="Email")
-        OldApiVO = new_value_object(NewType("Email", str), lambda v: v.strip().lower())
-
-        assert NewApiVO("  Hello@World.COM  ") == "hello@world.com"
-        assert OldApiVO("  Hello@World.COM  ") == "hello@world.com"
-        assert NewApiVO.__name__ == OldApiVO.__name__ == "Email"

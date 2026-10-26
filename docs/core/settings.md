@@ -5,7 +5,7 @@ any `SincproConfig` class. `build_config_obj(Shape, file, path)` resolves a shap
 document by one rule, whatever the shape is: the whole project, one bounded context, a subset.
 
 ```python
-from sincpro_framework.sincpro_conf import SincproConfig, Secret, build_config_obj
+from sincpro_framework.settings import SincproConfig, Secret, build_config_obj
 
 
 class SharedSettings(SincproConfig):              # what every context shares
@@ -64,7 +64,7 @@ values, its own object.
    A missing section is a `ValueError` naming the path.
 2. **Nested shapes.** A field whose type is a `SincproConfig` class (or one that may be `None`) is
    resolved the same way, at the section of its name. One with a default whose section is absent
-   keeps its default.
+   takes its default.
 3. **The cascade.** A field the section does not set takes the value of the nearest section above
    that sets it, never above the anchor — **only for shared fields**: a field the shape has from a
    shape it inherits (`QRSettings` has `environment` from `SharedSettings`). A field a shape declares
@@ -125,8 +125,8 @@ settings = build_config_obj(
 |---|---|
 | the source holds the name | takes its value — unless the field cannot accept it: the default, with a log line |
 | the source does not hold it (`None`) | its default, as an unset variable |
-| the source fails — no client, no permission, no network | **keeps the value as written**, with a warning |
-| the build was not handed that source | **keeps the value as written**, with a warning naming `sources=` |
+| the source fails — no client, no permission, no network | **uses the value as written**, with a warning |
+| the build was not handed that source | **uses the value as written**, with a warning naming `sources=` |
 
 Settings never stop a process from starting: what could not be read is said, and the process goes
 on. `$ENV:` needs no source. The AWS sources are the `[aws]` extra, make their client at the first
@@ -154,7 +154,7 @@ wants its shapes read-only freezes them: `model_config = ConfigDict(frozen=True)
 ## Where each value came from: `describe_settings`
 
 ```python
-from sincpro_framework.sincpro_conf import describe_settings
+from sincpro_framework.settings import describe_settings
 
 for one in describe_settings(settings):
     print(one.path, one.type, one.value, one.source)
@@ -253,14 +253,14 @@ does not inherit `FrameworkSettings` changes nothing of the framework's settings
 
 ```text
 sincpro_framework/settings/
-├── domain/        SincproConfig, Secret, FrameworkSettings; the resolution (sections, nested
-│                  shapes, the cascade)
-├── adapters/      the sources: the YAML file, the environment by path
-├── building.py    build_config_obj
-└── describe.py    describe_settings
+├── domain/        SincproConfig, Secret, FrameworkSettings, SettingDescription
+├── adapters/      the sources: the YAML file, the environment by path, AWS
+├── services/      resolution (sections, nested shapes, the cascade), building, description
+└── entrypoint/    build_config_obj, and the framework's own `settings` built at import
 ```
 
-`sincpro_framework.sincpro_conf` is the entry point every project imports: `SincproConfig`,
-`build_config_obj`, `settings`, `DefaultFrameworkConfig`, `load_yaml_file`, `usable_env_value`,
-and `FrameworkSettings`, `Secret`, `describe_settings`, `SettingDescription`. Why the design is
-this one: [PRD 10](../prd/PRD_10_composable-settings.md).
+`sincpro_framework.settings` is the door of every public name: `SincproConfig`, `Secret`,
+`SettingSource`, `FrameworkSettings`, `build_config_obj`, `describe_settings`,
+`SettingDescription`, `load_yaml_file`. `sincpro_framework.sincpro_conf` is the door projects have
+always imported from: the same names, and the framework's own `settings`. Why the design is this
+one: [PRD 10](../prd/PRD_10_composable-settings.md).

@@ -16,16 +16,18 @@ shares an engine with the invoice or lives in a database of its own.
 import pytest
 
 from sincpro_framework import exceptions
-from sincpro_framework.data_layer.orm.sqlalchemy.services.model_introspection import describe
+from sincpro_framework.data_layer.orm.sqlalchemy.services.model_introspection import (
+    ModelIntrospection,
+)
 from sincpro_framework.ddd import exceptions as ddd_exceptions
 from sincpro_framework.ddd.criteria import (
     Condition,
     Criteria,
     Grouping,
-    Level,
+    GroupingLevel,
     Operator,
+    Sort,
     Specification,
-    parse_order,
 )
 
 from .event_relation_models import World, same_database, two_databases
@@ -196,7 +198,7 @@ def test_the_definition_publishes_both_sides_of_the_key(world: World):
     """What a client or an agent reads to know how a relation hangs together, without opening
     the mapper. The scope is absent on purpose: it is not a filter over the relation, it is
     part of what the relation means, and there is nothing a reader could do with it."""
-    meta = describe(world.invoice)
+    meta = ModelIntrospection.describe(world.invoice)
 
     # Declared with the short form, published expanded: a client never has to know that
     # `identified_by` means the related side here and the parent side on a to-one.
@@ -219,7 +221,7 @@ def test_grouping_inside_a_relation_is_reported_rather_than_ignored(world: World
     layer promises not to do — an ask it cannot honour is always said out loud."""
     asked = Criteria(
         specification=Specification(
-            {"events": Criteria(grouping=Grouping(group_by=(Level(field="said"),)))}
+            {"events": Criteria(grouping=Grouping(group_by=(GroupingLevel(field="said"),)))}
         )
     )
 
@@ -294,7 +296,7 @@ def test_a_declared_order_is_the_relations_default_and_the_caller_may_override_i
     """The other half of declaring a whole `Criteria` and not a bare filter: «newest first» is
     a property of the relation rather than something every caller repeats. Unlike the filter,
     an order the caller names replaces it — conditions accumulate, the rest is overridden."""
-    world = same_database(events_scope=Criteria(order=parse_order("-said")))
+    world = same_database(events_scope=Criteria(order=Sort.parse("-said")))
 
     with world.invoices.context() as unit:
         invoice = unit.get(world.invoice, world.records["F-1"].id)
@@ -302,7 +304,7 @@ def test_a_declared_order_is_the_relations_default_and_the_caller_may_override_i
         assert [event.said for event in invoice.events] == ["raised", "paid", "drafted"]
 
     asked = Criteria(
-        specification=Specification({"events": Criteria(order=parse_order("said"))})
+        specification=Specification({"events": Criteria(order=Sort.parse("said"))})
     )
     said = invoice_of(world, "F-1", asked).events
     assert [event.said for event in said] == ["drafted", "paid", "raised"]

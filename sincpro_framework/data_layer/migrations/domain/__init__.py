@@ -1,1 +1,2 @@
-"""The vocabulary of migrations and the contract a store implements — no files, no engines."""
+"""The vocabulary of migrations, the contract a store implements, and the stores a context
+declares — no files, no engines of its own."""

@@ -215,7 +215,7 @@ def _replace_service(
 
     1. Every DTO is answered by `replaced` — checked for all before any is swapped, so a refused
        replacement leaves every handler as it was.
-    2. The replacement keeps the replaced handler's response contract (Liskov): when both
+    2. The replacement honours the replaced handler's response contract (Liskov): when both
        declare a response class, the replacement's is that class or a narrower one.
     3. Final: swap the factories and record what was replaced, for the build log and
        introspection.
@@ -258,7 +258,7 @@ def _replace_service(
     if isinstance(new, type) and isinstance(old, type) and not issubclass(new, old):
         raise TypeError(
             f"{replacement.__name__} answers {new.__name__}, but {replaced.__name__} answers "
-            f"{old.__name__} — a replacement keeps the contract of what it replaces"
+            f"{old.__name__} — a replacement honours the contract of what it replaces"
         )
 
     factory = (

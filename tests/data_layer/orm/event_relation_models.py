@@ -26,7 +26,7 @@ from sqlalchemy import Boolean, Column, ForeignKey, Integer, Text
 from sqlalchemy.orm import registry
 
 from sincpro_framework import Feature, UseFramework
-from sincpro_framework.data_layer.orm import Relation, map_aggregates
+from sincpro_framework.data_layer.orm import TableRelation, map_aggregates
 from sincpro_framework.data_layer.orm.sqlalchemy.entrypoint.repository import Repository
 from sincpro_framework.data_layer.orm.sqlalchemy.entrypoint.template_table import (
     entity_table,
@@ -175,7 +175,7 @@ def _owners_resolver(seen: list[tuple[list, Criteria]]):
 def _events_bus(
     repository: Repository, event: type, collection: type, calls: list[Criteria]
 ) -> tuple:
-    """The context that owns the event log, with the `Query`-shaped command `Relation.bus`
+    """The context that owns the event log, with the `Query`-shaped command `TableRelation.bus`
     needs: `BusResolver` builds it as `command(criteria=…)` and nothing else."""
 
     class CommandSearchInvoiceEvents(Query):
@@ -204,7 +204,7 @@ def _customers_bus(
     repository: Repository, customer: type, collection: type, calls: list[Criteria]
 ) -> tuple:
     """The other context again, this time answering a TO-ONE: the invoice holds the id and asks
-    who it belongs to. Same `Relation.bus`, same `Query` command — only the cardinality of the
+    who it belongs to. Same `TableRelation.bus`, same `Query` command — only the cardinality of the
     annotation differs, and that is what flips which side the key is read from."""
 
     class CommandSearchCustomers(Query):
@@ -363,11 +363,11 @@ def a_world(
             Invoice: {
                 # SQL, same database, real foreign key. Declared rather than left to be
                 # inferred from the column, because only a declaration can carry a scope.
-                "lines": Relation.foreign_key(
+                "lines": TableRelation.foreign_key(
                     InvoiceLine, identified_by="invoice_id", scope=lines_scope
                 ),
                 # A plain function: the criteria reaches it, honouring it is its business.
-                "owner": Relation.resolved_by(
+                "owner": TableRelation.resolved_by(
                     Owner,
                     identified_by="owner_id",
                     resolver=_owners_resolver(asked_of_owners),
@@ -376,7 +376,7 @@ def a_world(
                 # Another context, over its bus — the only mechanism left when the records
                 # live in a database this one cannot reach. TO-MANY: the key is a field of
                 # the event, and what travels is this invoice's own id.
-                "events": Relation.bus(
+                "events": TableRelation.bus(
                     InvoiceEvent,
                     events_bus,
                     events_command,
@@ -386,7 +386,7 @@ def a_world(
                 # The same bus kind, TO-ONE: now `identified_by` is a field of the INVOICE,
                 # and what travels is the customer id this invoice holds. Same declaration
                 # shape; the annotation's cardinality is what flips the side.
-                "customer": Relation.bus(
+                "customer": TableRelation.bus(
                     Customer,
                     customers_bus,
                     customers_command,
@@ -396,12 +396,12 @@ def a_world(
                 # NEITHER side is an identity: the lines that carry this invoice's tax code,
                 # whichever invoice they belong to. Impossible to declare with `identified_by`,
                 # which can only ever anchor one of the two sides to an id.
-                "taxed_lines": Relation.foreign_key(
+                "taxed_lines": TableRelation.foreign_key(
                     InvoiceLine, parent_field="tax_code", related_field="tax_code"
                 ),
                 # The same idea across a bus: what was said that matches the state this
                 # invoice is in, no matter whose event it was.
-                "state_events": Relation.bus(
+                "state_events": TableRelation.bus(
                     InvoiceEvent,
                     events_bus,
                     events_command,

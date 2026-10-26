@@ -27,7 +27,10 @@ from sincpro_framework.ddd import (
     EventSourcedMixin,
     exceptions,
 )
-from sincpro_framework.ddd.criteria import Operator, parse_order
+from sincpro_framework.ddd.criteria import (
+    Operator,
+    Sort,
+)
 from sincpro_framework.entrypoints.adapters.cron import Crons
 from sincpro_framework.event_driven import (
     EventRelay,
@@ -145,7 +148,7 @@ def a_paid_bill(repository: Repository, *amounts: int) -> Bill:
 def test_events_are_saved_and_found_through_the_repository_as_their_classes(repository):
     repository.save([DayClosed(closed_by="ana"), Paid(amount=10)])
 
-    every = repository.fetch_all(LedgerEvent, Criteria(order=parse_order("id"))).items
+    every = repository.fetch_all(LedgerEvent, Criteria(order=Sort.parse("id"))).items
     assert [type(one) for one in every] == [DayClosed, Paid]
     [closed] = repository.fetch_all(DayClosed).items
     assert closed.closed_by == "ana"  # what its class adds, typed, back from the payload
@@ -163,7 +166,7 @@ def test_an_entity_history_is_its_events_filtered_by_the_envelope(repository):
     a_paid_bill(repository, 5)
 
     about = Criteria(
-        where=Condition(field="entity_id", value=bill.id), order=parse_order("id")
+        where=Condition(field="entity_id", value=bill.id), order=Sort.parse("id")
     )
     assert [one.amount for one in repository.fetch_all(Paid, about).items] == [10, 20]
 

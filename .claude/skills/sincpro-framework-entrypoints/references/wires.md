@@ -15,13 +15,13 @@ The path never carries the layer. `openapi()` gives OpenAPI 3.1 (`operationId` i
 problem details, `Idempotency-Key`, one OpenAPI document for generated and hand-written routes:
 
 ```python
-from sincpro_framework.entrypoints.adapters.fastapi import FastApiGateway
+from sincpro_framework.entrypoints import FastApiGateway
 api = FastApiGateway([billing], title="Billing API")
 api.group(billing, version="v1")        # /v1/billing/...
 app = api.app()                         # install_problem_handlers for free
 ```
 
-`FastApiGateway` profiles: `resource` (declared `@rest...`) or `profile="rpc"` (catalog, RPC over
+`FastApiGateway` profiles (`Profile`): `Profile.RESOURCE` (declared `@rest...`) or `profile=Profile.RPC` (catalog, RPC over
 HTTP). It also serves `/metrics` when the process records to Prometheus.
 
 - The `@rest...` decorator goes on the existing handler in `services/`; `entrypoints/http/app.py`
@@ -72,7 +72,7 @@ Tools named by the DTO without `Command`/`Query`, snake_case. Docstrings are the
   name. Write it as an instruction — what the tool does, when to use it, what it does not do.
 - Hints (`read_only`, `destructive`, `idempotent`, `open_world`) are derived from the Command's kind
   and the bindings; **hints are never authorization**.
-- `build_mcp_server(bus)` / `Entrypoint(bus)` stay the catalog of one bus, named by DTO class.
+- `Entrypoint(bus)` is the catalog of one bus, named by DTO class.
 
 ## Binary DTOs: what each wire carries
 

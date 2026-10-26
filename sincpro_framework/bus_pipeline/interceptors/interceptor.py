@@ -7,7 +7,7 @@
         return call_next(dto)                        # the next interceptor, or the handler
 
 Context: an interceptor may look, veto, adjust the Command or the response, or answer by itself,
-but the Command it passes on and the response it hands back keep their class. The bus routes by
+but the Command it passes on and the response it hands back preserve their class. The bus routes by
 class, so a Command that changed class would be another use case wearing this one's name.
 """
 
@@ -25,7 +25,7 @@ type Interceptor = Callable[[Any, CallNext[Any]], Any]
 @dataclass(frozen=True)
 class InterceptorRegistration:
     """One `@bus.interceptor(...)` as it was asked: the function, the Commands it wraps and
-    where it goes in the order — kept as asked, so the order is worked out again at each build
+    where it goes in the order — stored as asked, so the order is worked out again at each build
     with every interceptor registered by then."""
 
     interceptor: Interceptor
@@ -89,7 +89,7 @@ def run_around(
 
         1. Past the last interceptor: the handler answers.
         2. The interceptor at `position` runs with a `call_next` that refuses a Command of
-           another class, and keeps what the inner chain answered.
+           another class, and records what the inner chain answered.
         Final: its result — refused when it called `call_next`, got an answer, and returned
         something of another class.
         """
@@ -103,7 +103,7 @@ def run_around(
             if type(next_dto) is not command:
                 raise exceptions.ProgrammingError(
                     f"{name_of(interceptor)} passed {type(next_dto).__name__} on, but it "
-                    f"intercepts {command.__name__}: adjust it with model_copy, keep its class"
+                    f"intercepts {command.__name__}: adjust it with model_copy, preserving its class"
                 )
             response = call_at(position + 1, next_dto)
             answered.append(response)

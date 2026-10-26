@@ -7,7 +7,8 @@ free to go the oldest id goes first.
 import pytest
 
 from sincpro_framework.data_layer.migrations import Step
-from sincpro_framework.data_layer.migrations.domain.timeline import new_step_id, timeline
+from sincpro_framework.data_layer.migrations.infrastructure.step_ids import StepIds
+from sincpro_framework.data_layer.migrations.services.timeline import timeline
 
 
 def _step(context: str, id: str, parent: str | None, requires: tuple[str, ...] = ()) -> Step:
@@ -67,7 +68,8 @@ def test_requiring_a_step_nobody_has_is_refused():
 
 
 def test_new_ids_always_sort_after_the_previous_one():
-    ids = [new_step_id() for _ in range(500)]
+    step_ids = StepIds()
+    ids = [step_ids.new() for _ in range(500)]
 
     assert ids == sorted(ids) and len(set(ids)) == 500
     assert all(len(one) == 32 for one in ids)

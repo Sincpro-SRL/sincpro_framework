@@ -263,8 +263,8 @@ def remember(
         remember(the same error, ApplyPayment(...), "billing", service, "app_service")
             ->  None                                # the inner handler already recorded it
 
-    Located within the handler's top-level package; kept for `failure_of` only inside an
-    open `execution()` — outside one it is returned, not kept."""
+    Located within the handler's top-level package; stored for `failure_of` only inside an
+    open `execution()` — outside one it is returned, not stored."""
     if failure_of(error) is not None:
         return None
     error_at, raised_at = locate(error, type(handler).__module__.partition(".")[0])

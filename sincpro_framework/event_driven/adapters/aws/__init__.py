@@ -6,17 +6,14 @@
 
 The listening side is an entrypoint — what outsiders make this process do: the queue wire on an
 `SqsBroker` (`sincpro_framework.entrypoints.adapters.queue`), or a Lambda fed by SQS
-(`sincpro_framework.entrypoints.adapters.aws_lambda`).
+(`sincpro_framework.entrypoints.sqs_handler`).
 """
 
-from sincpro_framework.event_driven.adapters.aws.attributes import (
-    HEADERS_ATTRIBUTE,
-    filtered_on,
-)
+from sincpro_framework.event_driven.adapters.aws.attributes import filtered_on
 from sincpro_framework.event_driven.adapters.aws.queues import (
     EventBridgeQueue,
     SnsQueue,
     SqsQueue,
 )
 
-__all__ = ["HEADERS_ATTRIBUTE", "EventBridgeQueue", "SnsQueue", "SqsQueue", "filtered_on"]
+__all__ = ["EventBridgeQueue", "SnsQueue", "SqsQueue", "filtered_on"]

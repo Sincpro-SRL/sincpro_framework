@@ -66,10 +66,10 @@ The goal: **define the model and get the analysis**, without writing a query. A 
 | Capability | Status | Notes | Held by |
 |---|---|---|---|
 | Group by a field, fold with `measures`, `where_measures` (having) | ✅ | `sum avg min max count count_distinct percentile` | `tests/data_layer/orm/test_grouping.py` |
-| Group by a **computed field** | ✅ | `Level(field="balance")`; folds over it too | `tests/data_layer/orm/test_model_driven_analytics.py` |
+| Group by a **computed field** | ✅ | `GroupingLevel(field="balance")`; folds over it too | `tests/data_layer/orm/test_model_driven_analytics.py` |
 | Date **grain** | ✅ | `day week month quarter year`; labels like `2026-Q3`; ranges, in UTC | `tests/data_layer/orm/test_grouping.py` |
 | Date **part** | ✅ | `year quarter month iso_week day_of_week day_of_month hour`, as numbers; Monday is 1 | `tests/data_layer/orm/test_model_driven_analytics.py` |
-| **Groups with no rows** | ✅ | `Level(fill=True)`: enum choices, booleans, part numbers, a bounded date grain | `tests/data_layer/orm/test_model_driven_analytics.py` |
+| **Groups with no rows** | ✅ | `GroupingLevel(fill=True)`: enum choices, booleans, part numbers, a bounded date grain | `tests/data_layer/orm/test_model_driven_analytics.py` |
 | More folds | 🟡 | `median`, `bool_and`, `bool_or` built; `array_agg`, `first`, `last` not | `tests/data_layer/orm/test_model_driven_analytics.py` |
 | Pivot with margins | ✅ | rows × columns, margins folded in the database | `tests/data_layer/orm/test_pivot_and_explain.py` |
 | `Meta.groupable` / `aggregates` / `resolvers` | ✅ | a client never guesses what a field takes | `tests/data_layer/orm/test_model_driven_analytics.py` |
@@ -85,7 +85,7 @@ The goal: **define the model and get the analysis**, without writing a query. A 
 
 - **A part is not a grain.** A grain cuts (a bucket is a range of time, `2026-03`) and a part
   extracts (a bucket is a number many dates share, `3`). They answer different questions, so
-  they are two fields of `Level` and a level takes one. Rejected: `grain="month_number"`, which
+  they are two fields of `GroupingLevel` and a level takes one. Rejected: `grain="month_number"`, which
   hides that one of them can be opened as a filter and the other cannot.
 - **A group of a part cannot be opened.** «Every March» is not a condition on the date, so its
   `criteria` is its parent's and `Bucket.openable` is `False`. The alternative, a filter that

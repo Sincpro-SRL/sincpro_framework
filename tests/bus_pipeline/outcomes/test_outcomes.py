@@ -18,8 +18,11 @@ from sincpro_framework.bus_pipeline.outcomes.events import (
     ExecutionCompleted,
     ExecutionFailed,
 )
-from sincpro_framework.bus_pipeline.outcomes.listeners import completions, failures
-from sincpro_framework.context.infrastructure.tree import current_execution
+from sincpro_framework.bus_pipeline.outcomes.listeners import (
+    completion_listeners,
+    failure_listeners,
+)
+from sincpro_framework.context.services.executions import current_execution
 from sincpro_framework.event_driven import Publisher, Subscriber, SyncQueue
 
 
@@ -38,8 +41,8 @@ class SiatUnavailable(Exception):
 @pytest.fixture(autouse=True)
 def nobody_listens_after():
     yield
-    failures.clear()
-    completions.clear()
+    failure_listeners.clear()
+    completion_listeners.clear()
 
 
 def _billing(name: str, executions: list[Any] | None = None) -> UseFramework:
@@ -157,7 +160,7 @@ def test_a_nested_failure_goes_out_once_naming_where_it_happened_and_where_it_le
     billing = _billing("failures-inner")
     sales = UseFramework("failures-outer", log_after_execution=False)
     sales.add_dependency("billing", billing)
-    failures.subscribe(heard.append)
+    failure_listeners.subscribe(heard.append)
     billing.on_failure(heard.append)  # the same listener twice: heard once
 
     @sales.app_service(CommandConfirmSale)
@@ -182,7 +185,7 @@ def test_a_bus_hears_only_its_own_and_the_process_hears_all():
     billing = _billing("failures-own")
     other = _billing("failures-other")
     billing.on_failure(of_billing.append)
-    failures.subscribe(of_process.append)
+    failure_listeners.subscribe(of_process.append)
 
     for bus in (billing, other):
         with pytest.raises(SiatUnavailable):
@@ -328,11 +331,11 @@ def test_the_process_hears_every_bus_and_a_broken_listener_changes_nothing():
     of_process: list[ExecutionCompleted] = []
     warehouse = _warehouse("completions-process")
 
-    @completions.subscribe
+    @completion_listeners.subscribe
     def broken(completed: ExecutionCompleted) -> None:
         raise RuntimeError("the audit is down")
 
-    completions.subscribe(of_process.append)
+    completion_listeners.subscribe(of_process.append)
 
     assert warehouse(CommandReserveStock(order_id="O-9")) == ResponseReserveStock(
         reservation_id="R-O-9"
@@ -350,7 +353,7 @@ def test_completions_handed_to_a_bus_never_announce_their_own_hearing():
             trail.append(dto.use_case)
 
     warehouse = _warehouse("completions-published")
-    completions.subscribe(to_publisher(Publisher(SyncQueue(Subscriber(audit)))))
+    completion_listeners.subscribe(to_publisher(Publisher(SyncQueue(Subscriber(audit)))))
 
     warehouse(CommandReserveStock())
 

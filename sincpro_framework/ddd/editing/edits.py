@@ -1,5 +1,6 @@
-"""The edit of one aggregate, written once: `Edit` keeps the caller's draft of a record, saves it
-or discards it, and answers what the record is now — the whole life of a form in one command.
+"""The edit of one aggregate, written once: `Edit` saves the caller's draft of a record,
+stores it or discards it, and answers what the record is now — the whole life of a form in one
+command.
 
     class ResponseEditInvoice(ResponseEdit):
         invoice: Invoice
@@ -11,15 +12,15 @@ or discards it, and answers what the record is now — the whole life of a form 
     class InvoiceForms(EntityEdits[Invoice]):
         pass
 
-    CommandEditInvoice(id="0192…", values={…})                               a draft, kept
-    CommandEditInvoice(id="0192…", values={…}, version=N)                    kept again
+    CommandEditInvoice(id="0192…", values={…})                               a draft, saved
+    CommandEditInvoice(id="0192…", values={…}, version=N)                    saved again
     CommandEditInvoice(id="0192…", version=N, action=EditAction.SAVE)        stored
     CommandEditInvoice(id="0192…", version=N, action=EditAction.DISCARD)     dropped
     QueryGetInvoice(id="0192…", draft=True)                                  where it was left
 
 A command of the project's own edits the same way: its DTO is an `Edit` with fields of its own,
 its Feature an `EntityEdits` that changes the record with the domain's methods (`change`) — and
-keeps, saves, discards and answers as the generic one does.
+saves drafts, stores, discards and answers as the generic one does.
 
     class CommandAddInvoiceLine(Edit[Invoice, ResponseEditInvoice]):
         product: str
@@ -31,10 +32,11 @@ keeps, saves, discards and answers as the generic one does.
             invoice.add_line(dto.product, dto.quantity)
 
 Context: a draft is the caller's — whose, the context says (`EntityReads.drafts`) — and nothing is
-stored until `SAVE`: a kept edit is computed over a copy inside `previewing()`, so a domain method
-that writes is refused there, as in a preview. Each edit names the draft version it read; another
-tab that kept first makes it lose with `DraftConflict`. A save with no draft is an edit too: the
-values go straight to the store, refused when the record moved past `origin_version`.
+stored until `SAVE`: an edit saved as a draft is computed over a copy inside `previewing()`,
+so a domain method that writes is refused there, as in a preview. Each edit names the draft
+version it read; another tab that saved its draft first makes it lose with `DraftConflict`. A
+save with no draft is an edit too: the values go straight to the store, refused when the
+record moved past `origin_version`.
 """
 
 import dataclasses
@@ -44,7 +46,7 @@ from typing import Any
 from pydantic import Field
 
 from sincpro_framework.common.ids import new_entity_id
-from sincpro_framework.context.domain.drafts import Draft
+from sincpro_framework.context import Draft
 from sincpro_framework.ddd import exceptions
 from sincpro_framework.ddd.criteria import Condition, Criteria
 from sincpro_framework.ddd.editing.editing import assign, form_values, recompute
@@ -67,10 +69,11 @@ from sincpro_framework.sincpro_abstractions import DataTransferObject
 
 
 class EditAction(StrEnum):
-    """What an `Edit` does with the record the form holds — keep it, store it, or drop it."""
+    """What an `Edit` does with the record the form holds — save it as a draft, store it, or
+    drop it."""
 
     SAVE_DRAFT = "save_draft"
-    """The record as the form holds it, kept as the caller's draft: nothing is stored."""
+    """The record as the form holds it, saved as the caller's draft: nothing is stored."""
     SAVE = "save"
     """The record stored, and the draft dropped."""
     DISCARD = "discard"
@@ -91,7 +94,7 @@ class ResponseEdit(ResponseRecord):
 
 
 class Edit[T, R: ResponseEdit](DataTransferObject):
-    """A form's edit of one record: keep it as the caller's draft, save it, or discard it."""
+    """A form's edit of one record: save it as the caller's draft, store it, or discard it."""
 
     id: str = Field(default_factory=new_entity_id)
     """The record's key (`DEFAULT_GET_ID`): a stored record's, or the one a new record is created
@@ -172,42 +175,47 @@ class EntityEdits[T](EntityReads[T]):
         return promoted
 
     def save_draft(self, dto: Any) -> Any:
-        """The edit kept as the caller's draft; nothing is stored.
+        """The edit saved as the caller's draft; nothing is stored.
 
             # invoice 0192… stored at version 3, no draft yet
             save_draft(CommandEditInvoice(id="0192…", values={"discount": "5"},
                                           changed=["discount"]))
                 ->  ResponseEditInvoice(invoice=Invoice(discount=5, total=95, …),
                         draft=DraftState(version=1, origin_version=3, stale=False), …)
-            # the same edit again with version=0, another tab having kept first
+            # the same edit again with version=0, another tab having saved its draft first
                 ->  raises DraftConflict
 
         1. The working copy, inside `previewing()`: a copy of the stored record — or a new one
            under `id` — with the caller's draft on it, changed by this edit, its derivations
            recomputed; events it recorded are dropped, as a preview drops them.
-        2. Its values kept as the draft, over the version the caller read (`DraftConflict` when
-           another tab kept first); the draft remembers the stored version it started from.
+        2. Its values saved as the draft, over the version the caller read (`DraftConflict`
+           when another tab saved first); the draft remembers the stored version it started
+           from.
         Final: the record, the new draft version, each field's state and the advice.
         """
         entity, response = declared_by(type(dto))
         drafts = self.drafts()
         subject = self.draft_subject(entity, dto.id)
-        kept = drafts.read(subject)
+        existing = drafts.read(subject)
         with previewing() as advice:
             stored = self.stored(entity, dto.id)
             record = self.shaped(
-                entity, dto.id, stored, kept.values if kept is not None else {}, dto.values
+                entity,
+                dto.id,
+                stored,
+                existing.values if existing is not None else {},
+                dto.values,
             )
-            if kept is not None:
-                assign(record, kept.values, True)
+            if existing is not None:
+                assign(record, existing.values, True)
             self.change(record, dto)
             recompute(record, dto.changed)
             pull = getattr(record, "pull_events", None)
             if callable(pull):
                 pull()
         current = getattr(stored, "version", 0) if stored is not None else 0
-        if kept is not None:
-            origin = kept.origin_version
+        if existing is not None:
+            origin = existing.origin_version
         elif dto.origin_version is not None:
             origin = dto.origin_version
         else:
@@ -231,7 +239,7 @@ class EntityEdits[T](EntityReads[T]):
         """The record stored and the caller's draft dropped.
 
         1. The version the caller read is the draft's — `0` when there is none — or the save loses
-           with `DraftConflict`: another tab kept, saved or discarded first.
+           with `DraftConflict`: another tab saved a draft, stored or discarded first.
         2. The stored record is read as the store holds it — or a new one is made under `id` — and
            refused (`StaleAggregate`) when it moved past the version the edit started from: the
            draft's, else `origin_version` when the caller gave one.
@@ -244,13 +252,13 @@ class EntityEdits[T](EntityReads[T]):
         entity, response = declared_by(type(dto))
         drafts = self.drafts()
         subject = self.draft_subject(entity, dto.id)
-        kept = drafts.read(subject)
-        if dto.version != (kept.version if kept is not None else 0):
+        existing = drafts.read(subject)
+        if dto.version != (existing.version if existing is not None else 0):
             raise exceptions.DraftConflict(
-                subject, dto.version, kept.version if kept is not None else 0
+                subject, dto.version, existing.version if existing is not None else 0
             )
         record = self.writable(entity, dto.id)
-        origin = kept.origin_version if kept is not None else dto.origin_version
+        origin = existing.origin_version if existing is not None else dto.origin_version
         current = getattr(record, "version", 0) if record is not None else 0
         if record is not None and origin is not None and current != origin:
             raise exceptions.StaleAggregate(
@@ -258,26 +266,30 @@ class EntityEdits[T](EntityReads[T]):
                 f"now {current}): read it again"
             )
         wanted = extensions.class_for(
-            entity, set().union(kept.values if kept is not None else {}, dto.values)
+            entity, set().union(existing.values if existing is not None else {}, dto.values)
         )
         if record is not None and not isinstance(record, wanted):
             repository = self.reads_from()
             if not isinstance(repository, Extends):
                 raise exceptions.ProgrammingError(
                     f"{type(repository).__name__} cannot give {entity.__name__} {dto.id} the "
-                    f"rows of {wanted.__name__}: it keeps no extensions apart from the entity"
+                    f"rows of {wanted.__name__}: it holds no extensions apart from the entity"
                 )
             repository.extend(record, wanted)
             record = self.writable(entity, dto.id)
         elif record is None:
             record = self.shaped(
-                entity, dto.id, None, kept.values if kept is not None else {}, dto.values
+                entity,
+                dto.id,
+                None,
+                existing.values if existing is not None else {},
+                dto.values,
             )
-        if kept is not None:
-            assign(record, kept.values, True)
+        if existing is not None:
+            assign(record, existing.values, True)
         self.change(record, dto)
         self.reads_from().save(record)
-        if kept is not None:
+        if existing is not None:
             drafts.discard(subject)
         return self.answered(entity, response, record, None, False, [])
 
@@ -290,7 +302,7 @@ class EntityEdits[T](EntityReads[T]):
             # no stored invoice under the id  ->  a blank Invoice keyed "0192…", draft=None
 
         Context: the version the caller read is not checked — dropping a draft another tab
-        kept since is still dropping it.
+        saved since is still dropping it.
         """
         entity, response = declared_by(type(dto))
         self.drafts().discard(self.draft_subject(entity, dto.id))
@@ -308,7 +320,7 @@ class EntityEdits[T](EntityReads[T]):
             nested_names(Invoice, ["delivery.route"])          ->  ["delivery.route"]
             # Invoice delegates no extension: its names come back as they are
 
-        A name whose prefix is no extension's key is kept as it came.
+        A name whose prefix is no extension's key is returned as it came.
         """
         if entity not in extensions.DELEGATED:
             return changed
@@ -368,7 +380,7 @@ class EntityEdits[T](EntityReads[T]):
         override and call `super()`.
 
             edit(CommandEditInvoice(id="0192…", values={"discount": "5"}))
-                ->  save_draft's answer — a draft kept, nothing stored
+                ->  save_draft's answer — a draft saved, nothing stored
             edit(CommandEditInvoice(id="0192…", version=1, action=EditAction.SAVE))
                 ->  save's answer — stored, draft=None
             edit(CommandEditMove(values={"delivery": {"route": "R7"}}, changed=["delivery"]))
@@ -377,7 +389,7 @@ class EntityEdits[T](EntityReads[T]):
         1. The values and the changed names flattened: whichever shape the form read the
            record in — extensions nested under their key or flat — they arrive as one record's
            fields.
-        Final: `SAVE` stores, `DISCARD` drops, anything else keeps the draft.
+        Final: `SAVE` stores, `DISCARD` drops, anything else saves the draft.
         """
         entity, _ = declared_by(type(dto))
         flat = self.flattened(entity, dto.values)

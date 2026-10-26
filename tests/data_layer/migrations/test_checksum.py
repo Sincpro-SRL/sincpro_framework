@@ -16,12 +16,7 @@ from sincpro_framework.data_layer.migrations import (
     InMemoryEngine,
     Migrations,
 )
-from sincpro_framework.data_layer.migrations.adapters.manifest import (
-    checksum,
-    matches,
-    read_manifest,
-    write_manifest,
-)
+from sincpro_framework.data_layer.migrations.adapters.manifest import Manifest
 from sincpro_framework.data_layer.migrations.domain import exceptions
 
 GENERATED = '''"""create partner
@@ -88,10 +83,10 @@ def _body(tmp_path: Path, source: str, name: str = "step.py") -> Path:
 
 
 def test_a_formatted_body_keeps_its_checksum(tmp_path):
-    generated = checksum(_body(tmp_path, GENERATED, "generated.py"))
+    generated = Manifest.checksum(_body(tmp_path, GENERATED, "generated.py"))
 
     assert generated.startswith("v2:")
-    assert checksum(_body(tmp_path, FORMATTED, "formatted.py")) == generated
+    assert Manifest.checksum(_body(tmp_path, FORMATTED, "formatted.py")) == generated
 
 
 @pytest.mark.parametrize(
@@ -110,7 +105,7 @@ def test_a_body_that_does_something_else_changes_its_checksum(tmp_path, edit):
     edited = GENERATED.replace(before, after)
     assert edited != GENERATED
 
-    assert checksum(_body(tmp_path, edited, "edited.py")) != checksum(
+    assert Manifest.checksum(_body(tmp_path, edited, "edited.py")) != Manifest.checksum(
         _body(tmp_path, GENERATED)
     )
 
@@ -119,15 +114,17 @@ def test_a_python_body_that_does_not_parse_is_refused_naming_it(tmp_path):
     body = _body(tmp_path, "def upgrade(:\n")
 
     with pytest.raises(exceptions.MigrationRefused, match="step.py"):
-        checksum(body)
+        Manifest.checksum(body)
 
 
 def test_a_body_that_is_not_python_is_hashed_as_text(tmp_path):
     body = _body(tmp_path, "up: create inbox\n", "step.txt")
     windows = _body(tmp_path, "up: create inbox\r\n", "windows.txt")
 
-    assert checksum(body) == checksum(windows)
-    assert checksum(body) != checksum(_body(tmp_path, "up: create outbox\n", "other.txt"))
+    assert Manifest.checksum(body) == Manifest.checksum(windows)
+    assert Manifest.checksum(body) != Manifest.checksum(
+        _body(tmp_path, "up: create outbox\n", "other.txt")
+    )
 
 
 def _v1(path: Path) -> str:
@@ -143,13 +140,13 @@ def _project(tmp_path: Path) -> Migrations:
 
 def _hashed_with_v1(migrations: Migrations) -> None:
     context = migrations.contexts["common"]
-    manifest = read_manifest(context.folder, "common")
+    manifest = Manifest.read(context.folder, "common")
     entry = manifest.stores["main"]
     entry.steps = [
         replace(step, checksum=_v1(context.folder / "main" / step.file))
         for step in entry.steps
     ]
-    write_manifest(context.folder, manifest)
+    manifest.write(context.folder)
 
 
 def test_a_manifest_hashed_with_v1_still_verifies(tmp_path):
@@ -158,7 +155,7 @@ def test_a_manifest_hashed_with_v1_still_verifies(tmp_path):
     _hashed_with_v1(migrations)
     body = migrations.chain("common", "main").folder / step.file
 
-    assert matches(body, _v1(body))
+    assert Manifest.matches(body, _v1(body))
     assert migrations.check() == []
     assert [one.id for one in migrations.upgrade()] == [step.id]
 
@@ -170,7 +167,7 @@ def test_hash_rewrites_v1_checksums_as_v2_even_for_an_applied_step(tmp_path):
     _hashed_with_v1(migrations)
 
     assert migrations.hash() == []  # nothing changed, only the algorithm
-    steps = read_manifest(tmp_path / "common", "common").stores["main"].steps
+    steps = Manifest.read(tmp_path / "common", "common").stores["main"].steps
     assert all(one.checksum.startswith("v2:") for one in steps)
     assert migrations.check() == []
 

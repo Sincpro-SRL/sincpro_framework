@@ -2,15 +2,15 @@
 to (PRD_21).
 
     Execution(execution_id, causation_id, correlation_id, use_case, bus, level) · started_at
-    chained(cause, correlation, own)      the one rule an event and an execution share
+    Chain.after(cause, correlation, own)      the one rule an event and an execution share
 
 **An execution and an event are two shapes of one chain.** Both carry `causation_id` — the id of
-what directly caused them — and `correlation_id` — the flow — and both get them by `chained`, the
-rule `DomainEvent.caused_by` always had. An execution's own id is `execution_id`, an event's is
+what directly caused them — and `correlation_id` — the flow — and both get them by `Chain.after`,
+the rule `DomainEvent.caused_by` always had. An execution's own id is `execution_id`, an event's is
 `id`: one id space, so an event's `causation_id` names the execution that produced it, and an
 execution's names the event that started it.
 
-The vocabulary only; which execution is in play is `sincpro_framework.context.infrastructure`.
+The vocabulary only; which execution is in play is `sincpro_framework.context.services.executions`.
 """
 
 from dataclasses import dataclass
@@ -21,24 +21,32 @@ from sincpro_framework.common.ids import moment_of
 from sincpro_framework.context.domain.keys import ContextKey
 
 if TYPE_CHECKING:
-    from sincpro_framework.context.domain.level import Level
+    from sincpro_framework.context.domain.level import ContextLevel
 
 CHAIN_KEYS = (ContextKey.EXECUTION_ID, ContextKey.CAUSATION_ID, ContextKey.CORRELATION_ID)
 """The context keys of an execution's identity — the same names a `DomainEvent` carries."""
 
-CONTEXT_NODE = "sincpro.context_node"
-"""The node in play, handed on beside the identity when a store shares the context: a receiving bus
-that set the same store reads the sender's chain from there."""
-CONTEXT_NODE_HEADER = "x-context-node"
-"""The header a message carries `CONTEXT_NODE` in — so a receiver needs no other header to read the
-sender's chain."""
 
-IDENTITY_HEADERS: dict[str, str] = {
-    "x-correlation-id": ContextKey.CORRELATION_ID,
-    "x-causation-id": ContextKey.CAUSATION_ID,
-    "x-execution-id": ContextKey.EXECUTION_ID,
-}
-"""The headers an entrypoint reads the identity from — HTTP and gRPC alike, lowercase."""
+@dataclass(frozen=True)
+class Chain:
+    """Where something caused sits: what directly caused it and the flow it belongs to."""
+
+    causation_id: str | None
+    correlation_id: str
+
+    @classmethod
+    def after(
+        cls, cause_id: str | None, cause_correlation: str | None, own_id: str
+    ) -> "Chain":
+        """The chain of something caused by the cause named.
+
+        Chain.after("E1", "C", "own")    ->  Chain("E1", "C")
+        Chain.after("E1", None, "own")   ->  Chain("E1", "E1")     a cause nobody correlated
+                                                                  heads its chain
+        Chain.after(None, "C", "own")    ->  Chain(None, "C")      a request that named its flow
+        Chain.after(None, None, "own")   ->  Chain(None, "own")    the head of a new chain
+        """
+        return cls(cause_id, cause_correlation or cause_id or own_id)
 
 
 @dataclass(frozen=True)
@@ -50,12 +58,13 @@ class Execution:
     correlation_id: str
     use_case: str
     bus: str
-    level: "Level"
-    """`Level.APPLICATION` or `Level.FEATURE`."""
+    level: "ContextLevel"
+    """`ContextLevel.APPLICATION` or `ContextLevel.FEATURE`."""
 
     @property
     def started_at(self) -> datetime | None:
-        """Read off its UUID v7, never kept twice; `None` for an id minted in another format."""
+        """Read off its UUID v7, never stored twice; `None` for an id minted in another
+        format."""
         return moment_of(self.execution_id)
 
     def chain(self) -> dict[str, str]:
@@ -74,16 +83,3 @@ class Execution:
             ContextKey.CAUSATION_ID: self.execution_id,
             ContextKey.CORRELATION_ID: self.correlation_id,
         }
-
-
-def chained(
-    cause_id: str | None, cause_correlation: str | None, own_id: str
-) -> tuple[str | None, str]:
-    """`(causation_id, correlation_id)` of something caused by the cause named.
-
-    cause E1 with correlation C       →  (E1, C)
-    cause E1 that carried none        →  (E1, E1)     a cause nobody correlated heads its chain
-    no cause, a correlation given     →  (None, C)    a request that named its flow
-    nothing                           →  (None, own)  the head of a new chain
-    """
-    return cause_id, cause_correlation or cause_id or own_id

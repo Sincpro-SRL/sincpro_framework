@@ -31,17 +31,17 @@ from sqlalchemy import Column, ForeignKey, MetaData, Numeric, Table, Text
 from sqlalchemy.orm import registry
 
 from sincpro_framework import UseFramework
-from sincpro_framework.store.adapters.stores import InMemoryContexts
+from sincpro_framework.context import InMemoryContexts
 from sincpro_framework.data_layer.orm import (
     Consolidated,
     Database,
-    Relation,
+    TableRelation,
     Repository,
     map_aggregates,
     template_table,
 )
 from sincpro_framework.data_layer.orm.sqlalchemy.entrypoint.template_table import entity_table
-from sincpro_framework.data_layer.orm.sqlalchemy.services.model_introspection import describe
+from sincpro_framework.data_layer.orm.sqlalchemy.services.model_introspection import ModelIntrospection
 from sincpro_framework.ddd import (
     Condition,
     Criteria,
@@ -171,7 +171,7 @@ map_aggregates(
     {MoveFiscal: fiscal_table},
     relations={
         Move: {
-            "fiscal": Relation.foreign_key(
+            "fiscal": TableRelation.foreign_key(
                 MoveFiscal, parent_field="id", related_field="id", many=False
             )
         }
@@ -277,10 +277,10 @@ assert ids("priority", 3) == ["A"]           # a key of the JSON slot
 ```
 
 A record without the extension holds NULL there. Ordering by such a field is refused (it may be
-absent), and `describe` says whose each field is:
+absent), and `ModelIntrospection.describe` says whose each field is:
 
 ```python
-owners = {name: one.owner for name, one in describe(Move).fields.items()}
+owners = {name: one.owner for name, one in ModelIntrospection.describe(Move).fields.items()}
 
 assert owners["number"] is None
 assert (owners["route"], owners["carrier"], owners["zone"]) == (
@@ -352,7 +352,7 @@ with bus.context({"user_id": "u1"}):
     bus(CommandEditMove(id="A", values={"route": "R5"}, action=EditAction.SAVE), ResponseEditMove)
     assert type(store.get(Move, "A")).__name__ == "MoveDelivery"
 
-    # a column the module keeps in the core's own table
+    # a column the module stores in the core's own table
     bus(CommandEditMove(id="D", values={"zone": "Z9"}, action=EditAction.SAVE), ResponseEditMove)
     assert store.get(MoveZone, "D").zone == "Z9"  # type: ignore[union-attr]
 ```
@@ -402,7 +402,7 @@ assert type(store.get(Move, "Z")).__name__ == "MoveDelivery"  # the base answers
 ## 13. The same answer, grouped by module
 
 The base can ask for each module under its own key instead of flat. It is the shape of the answer
-only; where a module keeps its columns does not change. An extension a record does not have is
+only; where a module stores its columns does not change. An extension a record does not have is
 `null`, so the shape does not move with the row.
 
 ```python
@@ -449,6 +449,6 @@ as itself and removed.
 | Chain, a table per level | a subclass and its table | as the class, flat | a subquery | creates its table |
 | The core's own table | a subclass given the core's table | as the class, flat | a column | adds columns to a table not its own |
 | JSON slot | `slot_field` of a key | in `properties` | a subquery over the slot | none |
-| Separate entity | a plain dataclass and a `Relation` | when the specification names it | no: filter its own class | creates its table |
+| Separate entity | a plain dataclass and a `TableRelation` | when the specification names it | no: filter its own class | creates its table |
 | Sibling | a subclass, like a chain | the first one installed answers | a subquery | creates its table |
 | Consolidated | `Consolidated(Core, A, B)` | one flat record over a join | a join | none |

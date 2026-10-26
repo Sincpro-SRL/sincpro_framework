@@ -10,8 +10,13 @@ import json
 import sys
 from collections.abc import Sequence
 
-READY = "sincpro-host-ready "
-"""The line a hosting process writes once it listens — the rest of its stdout is its logs."""
+from sincpro_framework.remote_execution.entrypoint.hosts import (
+    READY,
+    _bound,
+    _imported,
+    _internal_server,
+)
+
 DEFAULT_GRACE = 5.0
 
 
@@ -27,12 +32,6 @@ def main(argv: Sequence[str]) -> int:
     2. Wait for the parent: a grace on stdin, or stdin closing with it.
     Final: drain the calls in progress, then exit.
     """
-    from sincpro_framework.remote_execution.entrypoint.hosts import (
-        _bound,
-        _imported,
-        _internal_server,
-    )
-
     address, paths = argv[0], argv[1:]
     try:
         server = _internal_server([_imported(one) for one in paths])

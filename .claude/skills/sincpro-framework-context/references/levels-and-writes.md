@@ -23,10 +23,10 @@ context.get("lang", "es")
 SiatSettings in context and context[SiatSettings]
 dict(context) · json.dumps(context) · {**context}       # it is a dict
 
-context.level                                # Level.FEATURE
+context.level                                # ContextLevel.FEATURE
 context.entrypoint.kind                      # EntrypointKind.REST
-use_context(Level.ENTRYPOINT)["user_id"]     # who asked, whatever a lower level did
-context.origin("tenant_id")                  # Origin(level=Level.SCOPE, label="sales", execution_id=None)
+use_context(ContextLevel.ENTRYPOINT)["user_id"]     # who asked, whatever a lower level did
+context.origin("tenant_id")                  # Origin(level=ContextLevel.SCOPE, label="sales", execution_id=None)
 [node.level for node in context.lineage()]   # FEATURE, APPLICATION, ENTRYPOINT, BUS, ROOT
 context.own                                  # only this node's values
 context.execution.execution_id               # the identity
@@ -39,7 +39,7 @@ provider — the way a React hook is called where it is used.
 
 ```python
 context["note"] = "x"         # the scope of the call: every execution of this call sees it
-del context["lang"]           # hidden in that scope only; the level above keeps it
+del context["lang"]           # hidden in that scope only; the level above still holds it
 context.update(a=1)           # same as [] =
 context.set("pos_id", 3)      # this node: what it runs afterwards — not its caller, not a sibling
 context.unset("pos_id")
@@ -58,7 +58,7 @@ write (`TypeError`).
 ```python
 with use_context().parent.scoped():                  # without what this node changed
     self.feature_bus.execute(CommandAudit())
-with use_context(Level.ENTRYPOINT).scoped({"lang": "en"}):   # exactly what the entrance knew, + lang
+with use_context(ContextLevel.ENTRYPOINT).scoped({"lang": "en"}):   # exactly what the entrance knew, + lang
     self.feature_bus.execute(CommandNotify())
 ```
 
@@ -82,4 +82,4 @@ warned about and only an entrance's are taken.
 | `correlation_id` · `causation_id` · `execution_id` | the identity |
 
 Each key is a member of `ContextKey` (a `StrEnum`: `ContextKey.USER_ID` is `"user_id"`). Logs, spans
-and metrics keep their names: `tenant`, `user_id`.
+and metrics use their own names: `tenant`, `user_id`.

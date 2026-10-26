@@ -1,4 +1,4 @@
-"""Persistence: running a `Criteria` against a database and keeping what a use case built.
+"""Persistence: running a `Criteria` against a database and persisting what a use case built.
 
     from sincpro_framework.data_layer.orm import Database, Repository, map_aggregates, template_table
 
@@ -26,33 +26,40 @@ except (
 ) as error:  # pragma: no cover - exercised by tests/data_layer/orm/test_optional_extra.py
     raise ImportError(SQLALCHEMY_MISSING) from error
 
-from sincpro_framework.data_layer.orm.sqlalchemy import (
-    Consolidated,
-    Database,
-    DatabaseAggregateRepository,
-    DatabaseIdempotencyRecords,
-    DatabaseNumbering,
-    Isolation,
+from sincpro_framework.data_layer.orm.sqlalchemy.adapters.numbering import DatabaseNumbering
+from sincpro_framework.data_layer.orm.sqlalchemy.adapters.runtime_use_cases import SqlUseCases
+from sincpro_framework.data_layer.orm.sqlalchemy.domain.consolidation import Consolidated
+from sincpro_framework.data_layer.orm.sqlalchemy.domain.custom_fields import (
     JsonText,
-    Orphans,
-    Relation,
-    Repository,
-    SqlUseCases,
     TranslatedText,
     TypedJson,
-    Writes,
-    invalidate_on_commit,
+)
+from sincpro_framework.data_layer.orm.sqlalchemy.domain.relations import (
+    Orphans,
+    TableRelation,
+)
+from sincpro_framework.data_layer.orm.sqlalchemy.domain.transaction import Isolation, Writes
+from sincpro_framework.data_layer.orm.sqlalchemy.entrypoint import template_table
+from sincpro_framework.data_layer.orm.sqlalchemy.entrypoint.aggregate_repository import (
+    DatabaseAggregateRepository,
+)
+from sincpro_framework.data_layer.orm.sqlalchemy.entrypoint.idempotency_records import (
+    DatabaseIdempotencyRecords,
+)
+from sincpro_framework.data_layer.orm.sqlalchemy.entrypoint.mapping import (
     map_aggregates,
     map_events,
     register_grain_translator,
     register_part_translator,
-    template_table,
+)
+from sincpro_framework.data_layer.orm.sqlalchemy.entrypoint.repository import Repository
+from sincpro_framework.data_layer.orm.sqlalchemy.infrastructure.database import Database
+from sincpro_framework.data_layer.orm.sqlalchemy.services.cache_invalidation import (
+    invalidate_on_commit,
 )
 
 if TYPE_CHECKING:
-    from sincpro_framework.data_layer.orm.sqlalchemy.entrypoint.migrations import (
-        AlembicEngine,
-    )
+    from sincpro_framework.data_layer.orm.sqlalchemy.adapters.migrations import AlembicEngine
 
 __all__ = [
     "AlembicEngine",
@@ -64,7 +71,7 @@ __all__ = [
     "Isolation",
     "JsonText",
     "Orphans",
-    "Relation",
+    "TableRelation",
     "Repository",
     "SqlUseCases",
     "TranslatedText",
@@ -83,7 +90,7 @@ def __getattr__(name: str) -> Any:
     """`AlembicEngine` and `version_table` load Alembic only when asked: the `[sqlalchemy]` extra
     never requires the `[migrations]` one."""
     if name in ("AlembicEngine", "version_table"):
-        from sincpro_framework.data_layer.orm.sqlalchemy.entrypoint import migrations
+        from sincpro_framework.data_layer.orm.sqlalchemy.adapters import migrations
 
         return getattr(migrations, name)
     raise AttributeError(

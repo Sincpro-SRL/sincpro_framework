@@ -1,6 +1,6 @@
 # Persistence in sincpro_framework
 
-How a Sincpro service declares an aggregate, asks for it, brings what is related to it, keeps it,
+How a Sincpro service declares an aggregate, asks for it, brings what is related to it, persists it,
 and tells the world what happened, the same way in every service, from one SQLite file to
 several databases and several bounded contexts.
 
@@ -22,8 +22,8 @@ Read in this order:
 | [Specification](specification.md) | What to bring back of each record, at any depth: the rules, what the entity answers in its `DEFAULT_*` class methods, and the form hints of `presentation` |
 | [Entity reads](entity-reads.md) | `EntityReads`: one Feature for get, get many, the select by text and the list, from the entity's `DEFAULT_*` class methods; what the caller names wins |
 | [Preview](preview.md) | What a record becomes before it is saved: derived fields, `assign`, `Preview` on `EntityReads`, and the guard that makes a preview unable to write |
-| [Edits](edits.md) | The life of a form in one command: `Edit` keeps the caller's draft, saves it or discards it; `Get(draft=True)` / `Search(drafts=True)` find it after the client lost its state; creating and updating, two tabs, someone who saved meanwhile |
-| [Drafts](../core/drafts.md) | What a form keeps between requests — kept by the context, by user or session, where it keeps everything (memory or Redis); optimistic versions, a TTL, `refuse_stale` before activating |
+| [Edits](edits.md) | The life of a form in one command: `Edit` saves the caller's draft, saves the record or discards the draft; `Get(draft=True)` / `Search(drafts=True)` find it after the client lost its state; creating and updating, two tabs, someone who saved meanwhile |
+| [Drafts](../core/drafts.md) | What a form holds between requests — stored by the context, by user or session, where it stores everything (memory or Redis); optimistic versions, a TTL, `refuse_stale` before activating |
 | [Relations](relations.md) | The paper: the model, the precedence, the resolution algorithm per kind, cost, and how to add a new way to resolve |
 | [Transactions](transactions.md) | The unit of work and its options, locks, what the engine refuses and `retrying`, `after_commit`, `upsert` and writes by criteria — runnable |
 | [Lifecycle](lifecycle.md) | What runs when something is written, and who each layer reaches |

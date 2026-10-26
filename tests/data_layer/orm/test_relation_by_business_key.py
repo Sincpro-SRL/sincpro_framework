@@ -3,9 +3,11 @@ both sides — never by the identity, which would match nothing and look like «
 
 import pytest
 
-from sincpro_framework.data_layer.orm.sqlalchemy.domain.registry import relations_of
 from sincpro_framework.data_layer.orm.sqlalchemy.entrypoint.repository import Repository
 from sincpro_framework.data_layer.orm.sqlalchemy.infrastructure.database import Database
+from sincpro_framework.data_layer.orm.sqlalchemy.infrastructure.mapping_registry import (
+    mapping_registry,
+)
 from sincpro_framework.ddd.criteria import Criteria
 
 from .business_key_models import CodeRepository, Workspace, declare, forge
@@ -31,8 +33,8 @@ def forge_repository(tmp_path_factory) -> Repository:
 
 @pytest.mark.usefixtures("forge_repository")
 def test_the_inferred_relation_names_both_sides_by_the_referenced_column():
-    repositories = relations_of(Workspace)["repositories"]
-    workspace = relations_of(CodeRepository)["workspace"]
+    repositories = mapping_registry.relations_of(Workspace)["repositories"]
+    workspace = mapping_registry.relations_of(CodeRepository)["workspace"]
     assert (repositories.parent_field, repositories.related_field) == (
         "code",
         "workspace_code",

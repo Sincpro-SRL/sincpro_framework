@@ -18,7 +18,13 @@ from datetime import datetime
 from hypothesis import given
 from hypothesis import strategies as st
 
-from sincpro_framework.ddd.criteria import Condition, Criteria, CursorKeys, conditions_of
+from sincpro_framework.ddd.criteria import (
+    Condition,
+    Criteria,
+)
+from sincpro_framework.ddd.criteria.domain.pagination import (
+    CursorKeys,
+)
 from sincpro_framework.ddd.entity.entity_collection import Count, EntityCollection
 
 
@@ -119,7 +125,8 @@ def test_merging_criteria_keeps_every_condition(names):
     for name in names:
         merged = merged.merged_with(Criteria(where=Condition(field=name, value=1)))
 
-    assert [leaf.field for leaf in conditions_of(merged.expression)] == names
+    where = merged.expression
+    assert ([leaf.field for leaf in where.conditions()] if where else []) == names
 
 
 @given(st.datetimes())

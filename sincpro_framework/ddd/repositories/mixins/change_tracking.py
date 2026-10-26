@@ -20,7 +20,7 @@ does not pays nothing.
 
 from typing import Any
 
-from sincpro_framework.ddd.entity import ChangeTrackingMixin
+from sincpro_framework.ddd.events import ChangeTrackingMixin
 
 
 class ChangeTrackingRepositoryMixin:

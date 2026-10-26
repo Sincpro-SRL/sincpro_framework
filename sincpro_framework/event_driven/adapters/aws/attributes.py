@@ -1,7 +1,7 @@
 """What an event carries on an Amazon message beside its body: the envelope, and the few fields a
 subscription filters on.
 
-    sincpro-headers    the envelope and the context, as JSON — `cloud_event_headers`
+    sincpro-headers    the envelope and the context, as JSON — `Envelope.headers_for`
     sincpro-event      the event's wire name
     use_case · bus · level · kind · tenant_id     an execution event's, when it says them
 
@@ -15,9 +15,8 @@ from collections.abc import Callable
 from typing import Any
 
 from sincpro_framework.ddd.events import DomainEvent
-from sincpro_framework.event_driven.adapters.envelope import EVENT_HEADER
+from sincpro_framework.event_driven.domain.envelope import EVENT_HEADER, HEADERS_ATTRIBUTE
 
-HEADERS_ATTRIBUTE = "sincpro-headers"
 LIMIT = 10
 """How many message attributes SNS and SQS take."""
 

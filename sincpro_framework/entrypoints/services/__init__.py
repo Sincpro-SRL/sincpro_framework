@@ -1,2 +1,3 @@
-"""What the entrypoints run inside, never reached from outside: a bus as a catalog of use cases,
-running a scalar payload, and resolving what a project declared it exposes."""
+"""What every wire builds on: the `Gateway` each wire extends — and a project extends for a wire
+of its own — resolving what a project declared it exposes, a bus as a catalog of use cases, and
+running a scalar payload."""

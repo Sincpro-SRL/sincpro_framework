@@ -33,21 +33,22 @@ This skill stands alone. The framework repo goes deeper in `docs/persistence/cri
 | `Condition` | One question: `field`, `operator` (default `=`), `value` | DTO | `from sincpro_framework.ddd import Condition` |
 | `All` / `Any` / `Not` | Combine conditions; JSON keys `all`, `any`, `negate` | DTO | `from sincpro_framework.ddd import All, Any, Not` |
 | `Operator` | `=` `!=` `in` `not in` `like` `starts with` `>` `>=` `<` `<=` `is null` `contains` `not contains` `between` — `%` and `_` are text, never wildcards | enum | `from sincpro_framework.ddd import Operator` |
-| `Sort` / `parse_order` | One ordering key (`field`, `descending`) / `"-total,number"` → sorts | DTO / function | `from sincpro_framework.ddd import Sort`; `from sincpro_framework.ddd.criteria import parse_order` |
+| `Sort` / `Sort.parse` | One ordering key (`field`, `descending`) / `"-total,number"` → sorts | DTO / classmethod | `from sincpro_framework.ddd import Sort` |
 | `Pagination` | `limit` (default 50, no ceiling) + `strategy` | DTO | `from sincpro_framework.ddd import Pagination` |
 | `Cursor` / `Offset` | Keyset strategy (`token`, the default) / row-skipping strategy (`rows`) | DTO | `from sincpro_framework.ddd import Cursor, Offset` |
 | `Specification` | Field → nested `Criteria`: what to bring back of each record, relations included | DTO | `from sincpro_framework.ddd import Specification` |
-| `Grouping` / `Level` / `Measure` | `group_by` levels (with date `grain`), named `measures`, `where_measures` | DTO | `from sincpro_framework.ddd.criteria import Grouping, Level, Measure` |
+| `Grouping` / `GroupingLevel` / `Measure` | `group_by` levels (with date `grain`), named `measures`, `where_measures` | DTO | `from sincpro_framework.ddd.criteria import Grouping, GroupingLevel, Measure` |
 | `CountMode` | `none`, `capped` (default, stops at 10 000), `exact` | enum | `from sincpro_framework.ddd import CountMode` |
 | `EntityCollection[T]` | What `search` answers: `items`, `count`, `cursor`, `dropped`, `meta` | dataclass (frozen) | `from sincpro_framework.ddd import EntityCollection` |
 | `Count` / `Dropped` | `value` + `exact` / `field` + `reason` (`unknown_field`, `unsupported_operator`, `bad_value`, `not_expandable`) | DTO | `from sincpro_framework.ddd import Count, Dropped` |
 | `Meta` | What the model publishes: fields, types, operators, sortable, relations, labels | DTO | `from sincpro_framework.ddd import Meta` |
 | `Query` / `ResponsePaginatedQuery` | Command base carrying `criteria` / answer base with `cursor`, `count`, `entity_meta_data`, `dropped` + exactly one records field | DTO | `from sincpro_framework.ddd import Query, ResponsePaginatedQuery` |
 | `Bucket` / `Pivot` | A group with its count, measures and the `criteria` that opens it / a cross table with margins | DTO | `from sincpro_framework.ddd import Bucket, Pivot` |
-| `matches` | Evaluates a filter in memory, the same semantics as the SQL translator | function | `from sincpro_framework.ddd import matches` |
+| `Evaluation` | `Evaluation.matches(record, where)` / `Evaluation.holds(where, read, resolution)`: a filter evaluated in memory, the same semantics as the SQL translator (`holds` reads a value lazily, so `all`/`any` still stop early) | facade | `from sincpro_framework.ddd.criteria import Evaluation` |
 | `Today` / `Now` / `FromContext` / `Period` / `Param` / `FromField` | A condition's value that is read when the filter runs, not when it was written: `Condition(field="due", operator=Operator.LT, value=Today())`, `Today().before(days=30)`, `FromContext(key="user_id")`, `Period(name=Periods.THIS_MONTH)` or a window `Period(unit=Grain.DAY, last=30)` (with `between`), `FromField(name="credit_limit")` for a column against a column. On the wire `{"$": "today", "plus": {"days": -30}, "start_of": "month"}`. The server reads them (UTC; the context's `timezone` and `week_starts_on` decide the calendar); `context` is the server's own context, never the client's | node | `from sincpro_framework.ddd import Today, Now, FromContext, FromField, Period, Periods, Grain` |
-| `Level(part=…)` / `Level(fill=True)` / `Part` | Group a date by a NUMBER it holds (`Part.MONTH` is every March, whatever the year; `DAY_OF_WEEK` 1 = Monday) instead of a grain (a range of time); `fill` lists the groups with no rows (enum choices, booleans, part numbers, a date grain the filter bounds) with count 0. A part's group has no filter that opens it: `Bucket.openable` is False. Folds also take `median`, `bool_and`, `bool_or`; `Meta.fields[x].groupable` / `.aggregates` say what a field takes | node | `from sincpro_framework.ddd.criteria import Level, Part, Grouping, Measure` |
-| `resolve` / `holds` / `canonical` / `mapped` | What other modules call: read a filter's dynamic values, evaluate it in memory (`holds` reads a value lazily, so `all`/`any` still stop early), put it in one form for a key, rebuild it leaf by leaf | function | `from sincpro_framework.ddd.criteria import resolve, holds, canonical, mapped, ResolutionContext` |
+| `GroupingLevel(part=…)` / `GroupingLevel(fill=True)` / `Part` | Group a date by a NUMBER it holds (`Part.MONTH` is every March, whatever the year; `DAY_OF_WEEK` 1 = Monday) instead of a grain (a range of time); `fill` lists the groups with no rows (enum choices, booleans, part numbers, a date grain the filter bounds) with count 0. A part's group has no filter that opens it: `Bucket.openable` is False. Folds also take `median`, `bool_and`, `bool_or`; `Meta.fields[x].groupable` / `.aggregates` say what a field takes | node | `from sincpro_framework.ddd.criteria import GroupingLevel, Part, Grouping, Measure` |
+| `Resolution` | `Resolution.resolve(where, ResolutionContext(now=…))` reads a filter's dynamic values into literals; `Resolution.has_dynamic_values(where)` says whether it has any | facade | `from sincpro_framework.ddd.criteria import Resolution, ResolutionContext` |
+| `Node` | What every filter node is (`Condition`, `All`, `Any`, `Not`): `Node.combined(a, b)` ANDs filters flat (a `None` is no filter), `Node.read(json)` builds the tree, `where.conditions()` lists the leaves, `where.canonical()` is its one form for a key, `where.mapped(leaf)` rebuilds it leaf by leaf, `where.with_text(text)` fills a `TEXT` template | base class | `from sincpro_framework.ddd.criteria import Node` |
 | `DEFAULT_READING` / `DEFAULT_ORDER` / `DEFAULT_LITERAL_SEARCH` | What an entity answers once, as criteria: what a record brings (`Specification`), the list order (`Sort`s), the template a typed text fills (`Criteria` whose `where` holds `TEXT`) — with `DEFAULT_GET_ID` and `DEFAULT_DISPLAY`. `@classmethod`s on `Entity`; a caller's criteria wins for each part it names (`Criteria.replaced_by`) | `@classmethod` | `Entity`; `TEXT` from `sincpro_framework.ddd` |
 | `Presentation` | Form hints only, whose conditions are criteria expressions (`When(Condition.on(i.state, …), i.field)`) | class attribute | `from sincpro_framework.ddd import Presentation` |
 | `matching` / `detail_of` | `DEFAULT_LITERAL_SEARCH` filled with a literal / `DEFAULT_READING` as the criteria for `get(id, detail=...)` | function | `from sincpro_framework.ddd import matching, detail_of` |
@@ -60,7 +61,8 @@ Look-alikes: `Criteria.order` orders rows, `Grouping.order` orders groups. `wher
 ## Architecture
 
 **(a) Inside the framework.** The language is stdlib + pydantic in `sincpro_framework/ddd/criteria/`
-(`domain/` the language, `services/` its pieces, `entrypoint/` `resolve`, `holds` and the in-memory `matches`; the package exposes the domain and the entrypoints); `Meta` is
+(`domain/` the language and its own methods, `services/` the operations, `entrypoint/` the facades
+`Evaluation`, `Resolution` and `Aggregation`; the package exposes the language and the facades); `Meta` is
 `ddd/entity/entity_meta.py`; `Query`/`ResponsePaginatedQuery` are `ddd/query.py`. Two stores answer
 it: `MemoryRepository` (in memory, no extra) and the SQLAlchemy `Repository`, whose
 `orm/sqlalchemy/services/sql_translator.py` turns a Criteria into a `Select` (extra `[sqlalchemy]`).
@@ -129,7 +131,7 @@ Silent ones first — the runtime gives no error for these.
   on one `EntityReads[Entity]` instead of writing four Features: recipe in
   `sincpro-framework-persistence` → `references/entity-reads.md`.
 - **`Offset` for a listing people page through** repeats and skips rows under concurrent inserts.
-  Keep the default cursor; `Offset` is for a one-off read and for paging groups.
+  Use the default cursor; `Offset` is for a one-off read and for paging groups.
 - Loud, but common: ordering by a nullable or unknown field raises `InvalidCriteria`; folding a
   page (`page.sum_by(...)`) raises `ProgrammingError` — ask `repository.measures(...)`.
 

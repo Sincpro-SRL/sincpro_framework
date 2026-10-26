@@ -73,8 +73,8 @@ rules passes that rule's name in `ignore=`.
 
 ## Other doubles in `sincpro_framework.runtime.testing`
 
-`RecordingQueue` (events published, `sincpro-framework-domain-events`), `as_identity` /
-`as_system` / `granting` / `RecordingProvider` (auth, `sincpro-framework-auth`), `ManualClock`
+`RecordingQueue` (events published, `sincpro-framework-domain-events`), `security.as_identity` /
+`security.as_system` / `granting` / `RecordingProvider` (auth, `sincpro-framework-auth`), `ManualClock`
 (crons, `sincpro-framework-operations`), and the `*Contract` suites an adapter proves itself
 against (`KeyValueStoreContract`, `IdempotencyRecordsContract`, `AuthProviderContract`).
 

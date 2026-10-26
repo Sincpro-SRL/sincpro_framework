@@ -9,7 +9,13 @@ from typing import Any
 import pytest
 
 from sincpro_framework import ApplicationService, DataTransferObject, Feature, UseFramework
-from sincpro_framework.context import Context, EntrypointKind, Level, carrying, use_context
+from sincpro_framework.context import (
+    Context,
+    ContextLevel,
+    EntrypointKind,
+    carrying,
+    use_context,
+)
 from sincpro_framework.data_layer.repositories import MemoryRepository
 from sincpro_framework.ddd import Entity
 from sincpro_framework.ddd.repositories import Hook, Hooks
@@ -54,7 +60,7 @@ def _sales(seen: list[Context]) -> UseFramework:
 def test_outside_every_scope_the_context_is_the_process():
     context = use_context()
 
-    assert context.level is Level.ROOT
+    assert context.level is ContextLevel.ROOT
     assert context.parent is None and context.entrypoint is None
     assert dict(context) == {}
 
@@ -66,14 +72,14 @@ def test_every_layer_is_a_node_of_its_own():
         sales(CommandConfirm())
 
     application, feature = seen
-    assert application.level is Level.APPLICATION
-    assert feature.level is Level.FEATURE
+    assert application.level is ContextLevel.APPLICATION
+    assert feature.level is ContextLevel.FEATURE
     assert [one.level for one in feature.lineage()] == [
-        Level.FEATURE,
-        Level.APPLICATION,
-        Level.ENTRYPOINT,
-        Level.BUS,
-        Level.ROOT,
+        ContextLevel.FEATURE,
+        ContextLevel.APPLICATION,
+        ContextLevel.ENTRYPOINT,
+        ContextLevel.BUS,
+        ContextLevel.ROOT,
     ]
     assert feature.application is not None and feature.application.label == "CommandConfirm"
     assert feature.entrypoint is not None and feature.entrypoint.kind is EntrypointKind.DIRECT
@@ -87,8 +93,8 @@ def test_a_level_is_reached_by_name():
     @sales.feature(CommandRead)
     class ReadLevels(Feature):
         def execute(self, dto: CommandRead) -> None:
-            reached.append(use_context(Level.ENTRYPOINT))
-            reached.append(use_context(Level.APPLICATION))
+            reached.append(use_context(ContextLevel.ENTRYPOINT))
+            reached.append(use_context(ContextLevel.APPLICATION))
 
     with sales.context({"tenant_id": "acme"}):
         sales(CommandRead())
@@ -104,14 +110,14 @@ def test_the_nearest_node_wins_and_closing_a_scope_returns_to_its_parent():
     with sales.context({"tenant_id": "acme", "lang": "es"}):
         with use_context().scoped({"tenant_id": "beta"}) as inner:
             sales(CommandCheck())
-            assert inner.level is Level.SCOPE
+            assert inner.level is ContextLevel.SCOPE
         sales(CommandCheck())
 
     in_scope, after = seen
     assert (in_scope["tenant_id"], in_scope["lang"]) == ("beta", "es")
     assert after["tenant_id"] == "acme"
     origin = in_scope.origin("tenant_id")
-    assert origin is not None and origin.level is Level.SCOPE
+    assert origin is not None and origin.level is ContextLevel.SCOPE
     assert in_scope.parent is not None
 
 
@@ -121,7 +127,7 @@ def test_the_process_level_is_read_by_every_flow():
     _sales(seen)(CommandCheck())
 
     assert seen[0]["maintenance"] is True
-    assert seen[0].origin("maintenance").level is Level.ROOT  # type: ignore[union-attr]
+    assert seen[0].origin("maintenance").level is ContextLevel.ROOT  # type: ignore[union-attr]
 
 
 def test_a_value_under_its_type():
@@ -265,7 +271,7 @@ def test_a_hook_runs_in_a_node_of_its_own():
     billing(CommandWrite())
 
     hook, feature = seen
-    assert hook.level is Level.HOOK and hook.label == "Watches"
+    assert hook.level is ContextLevel.HOOK and hook.label == "Watches"
     assert hook.feature is not None and hook.feature.label == "CommandWrite"
     assert "checked_by" not in feature
 
@@ -275,7 +281,7 @@ def test_a_hook_runs_in_a_node_of_its_own():
 
 def _flow_of(mode: str) -> list[tuple[str, str]]:
     """What a Feature an ApplicationService runs says its flow is, after the service changed it."""
-    from sincpro_framework.context.infrastructure.tree import current_execution
+    from sincpro_framework.context.services.executions import current_execution
     from sincpro_framework.observability.correlation import execution_context
 
     bus = UseFramework(f"context-flow-{mode}", log_after_execution=False)
@@ -335,7 +341,7 @@ def test_a_block_can_run_with_only_what_a_parent_level_says():
             assert parent is not None
             with parent.scoped():
                 self.feature_bus.execute(CommandCheck())
-            entrypoint = use_context(Level.ENTRYPOINT)
+            entrypoint = use_context(ContextLevel.ENTRYPOINT)
             assert entrypoint is not None
             with entrypoint.scoped({"lang": "en"}):
                 self.feature_bus.execute(CommandCheck())

@@ -9,7 +9,7 @@ from sincpro_framework.sincpro_abstractions import DataTransferObject
 
 
 class RuntimeUseCase(DataTransferObject):
-    """A DTO: it is kept in a store and arrives from outside the process, as an HTTP body."""
+    """A DTO: it is saved in a store and arrives from outside the process, as an HTTP body."""
 
     model_config = ConfigDict(frozen=True)
 
@@ -38,8 +38,8 @@ class RuntimeUseCase(DataTransferObject):
 
 
 class UseCaseStore(ABC):
-    """Where use cases are kept — a table, a document store, memory. One record per name: saving
-    a use case again is its new version."""
+    """Where use cases are stored — a table, a document store, memory. One record per name:
+    saving a use case again is its new version."""
 
     @abstractmethod
     def active(self) -> list[RuntimeUseCase]:
@@ -47,4 +47,4 @@ class UseCaseStore(ABC):
 
     @abstractmethod
     def save(self, use_case: RuntimeUseCase) -> None:
-        """Keep `use_case` as the one under its name."""
+        """Store `use_case` as the one under its name."""

@@ -19,7 +19,7 @@ from sincpro_framework.use_bus import UseFramework
 
 
 @dataclass(frozen=True)
-class Operation:
+class OperationDescription:
     """One Command the bus executes: its name, its input model, what it answers, and the
     description its handler gives."""
 
@@ -36,10 +36,10 @@ class Operation:
         """The fields a later step may reference; `None` when the response is not declared, so
         they cannot be checked.
 
-            Operation(response=ResponseInvoice, …).response_fields  ->  {"id", "total", …}
-            Operation(response=NoneType, …).response_fields         ->  set()  # no answer
-            Operation(response=None, …).response_fields             ->  None   # undeclared
-            Operation(response=dict[str, int], …).response_fields   ->  None   # no model
+            OperationDescription(response=ResponseInvoice, …).response_fields  ->  {"id", "total", …}
+            OperationDescription(response=NoneType, …).response_fields         ->  set()  # no answer
+            OperationDescription(response=None, …).response_fields             ->  None   # undeclared
+            OperationDescription(response=dict[str, int], …).response_fields   ->  None   # no model
 
         Only a Pydantic model has fields to name; any other declared type is as unknown.
         """
@@ -67,12 +67,14 @@ class Operation:
         }
 
 
-def operations_of(bus: UseFramework) -> dict[str, Operation]:
+def operations_of(bus: UseFramework) -> dict[str, OperationDescription]:
     """Every operation of the bus — built now if it was not yet; a reference is described from
     its registrations."""
     bus.build_root_bus()
     described = {**features(bus), **app_services(bus)}
     return {
-        name: Operation(name, metadata.dto, metadata.response, metadata.description)
+        name: OperationDescription(
+            name, metadata.dto, metadata.response, metadata.description
+        )
         for name, metadata in sorted(described.items())
     }

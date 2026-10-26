@@ -10,8 +10,7 @@ same log line a sentinel always had. Paths are below the project's own section â
 from collections.abc import Mapping
 from typing import Any
 
-from sincpro_framework.settings.domain.config import logger
-from sincpro_framework.settings.domain.resolution import ENV_SENTINEL
+from sincpro_framework.settings.domain.config import ENV_SENTINEL, logger
 
 SEPARATOR = "__"
 

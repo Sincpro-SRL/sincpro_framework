@@ -6,7 +6,7 @@
     everything = cache.fetch_all(repository, InvoiceLine, posted)   # the rest, then complete
     cache.invalidate(InvoiceLine)                                   # after a write, when it matters
 
-Context: a read is kept under the repository's fingerprint of it — the filter, the order, the
+Context: a read is cached under the repository's fingerprint of it — the filter, the order, the
 mask and the scope, never the page — so the same question with another page continues what is
 held, and a narrower one is answered by `DataFrame.narrow` on a complete frame. Pages are read
 with the repository's cursor and without a count, and appended in order. What is held is not
@@ -55,7 +55,7 @@ class _Held:
 
 
 def _column_type(annotation: Any) -> str:
-    """Context: the model says `number` for a decimal too; a frame keeps a decimal exact."""
+    """Context: the model says `number` for a decimal too; a frame holds a decimal exact."""
     if without_optional(annotation) is Decimal:
         return "decimal"
     return FRAME_TYPES.get(logical_type(annotation), "string")
@@ -63,7 +63,7 @@ def _column_type(annotation: Any) -> str:
 
 def _no_rows(model: type, criteria: Criteria, where: dict | None) -> DataFrame:
     """A read before its first row, with the columns a row of it has — the identity and what the
-    specification keeps, or every field the model describes — typed by the model, so a read that
+    specification selects, or every field the model describes — typed by the model, so a read that
     answers nothing still joins, and goes to Arrow and Parquet, with its columns."""
     described = describe_class(model).fields
     annotations = annotations_of(model)
@@ -97,7 +97,7 @@ def _page(
 
 
 class QueryCache:
-    """Reads kept as frames, by the repository's fingerprint of each, continued page by page
+    """Reads cached as frames, by the repository's fingerprint of each, continued page by page
     and let go least recently used first past `max_rows`.
 
         cache = QueryCache(max_rows=1_000_000)
@@ -118,15 +118,15 @@ class QueryCache:
         """How many reads are held — not rows."""
         return len(self._held)
 
-    def _let_go_past_the_limit(self, kept: str) -> None:
+    def _let_go_past_the_limit(self, just_used: str) -> None:
         """The reads used longest ago let go while the rows held exceed `max_rows` — never
-        `kept`, the read just used: a single read larger than the limit stays held on its own.
+        `just_used`, the read just used: a single read larger than the limit stays held on its own.
         """
         if self.max_rows is None:
             return
         while sum(len(held.frame) for held in self._held.values()) > self.max_rows:
             oldest = next(iter(self._held))
-            if oldest == kept:
+            if oldest == just_used:
                 return
             del self._held[oldest]
 
@@ -158,7 +158,7 @@ class QueryCache:
         2. Each missing page, from where the held ones stopped — outside the lock, so a read
            never waits on another one.
         3. The pages read merged into what is held, once.
-        4. Final: kept as the read used last; older reads let go past `max_rows`.
+        4. Final: cached as the read used last; older reads let go past `max_rows`.
         """
         key = repository.fingerprint(target, criteria)
         model, _ = model_and_collection(target)
@@ -200,7 +200,7 @@ class QueryCache:
     def invalidate(self, target: type | None = None) -> None:
         """Let go of what is held of `target` — of everything when not given.
 
-            cache.invalidate(InvoiceLine)   ->  None; its reads let go, the rest kept
+            cache.invalidate(InvoiceLine)   ->  None; its reads let go, the rest still held
             cache.invalidate()              ->  None; nothing held
 
         A read is of `target` when it was made on the same model — whatever its filter.

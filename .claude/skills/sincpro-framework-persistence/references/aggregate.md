@@ -118,7 +118,7 @@ would silently turn the text into `'True'`.
 
 ## Extending an aggregate
 
-A subclass keeps inherited fields in the parent's table and its own in its table, which references
+A subclass stores inherited fields in the parent's table and its own in its table, which references
 the parent's key (joined-table inheritance). `map_aggregates` maps the parent first whatever the
 order and refuses a table that does not reference the parent's key.
 

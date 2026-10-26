@@ -13,11 +13,11 @@ from sincpro_framework.data_layer.caching.domain.idempotency_records import (
     IdempotencyRecords,
     RecordState,
 )
-from sincpro_framework.store import KeyValueStore
+from sincpro_framework.data_layer.store import KeyValueStore
 
 
 def _written(record: IdempotencyRecord) -> bytes:
-    """The bytes the store keeps for `record`: a JSON header line, then the answer untouched.
+    """The bytes the store holds for `record`: a JSON header line, then the answer untouched.
 
         _written(IdempotencyRecord(state=COMPLETED, fingerprint="9f", owner="r", answer=b"7"))
             ->  b'{"state": "completed", "fingerprint": "9f", "owner": "r"}\\n7'
@@ -64,7 +64,7 @@ class KeyValueRecords(IdempotencyRecords):
 
     def release(self, key: str, owner: str) -> None:
         """Context: read-then-delete is not atomic — `in_progress_for` outliving the run is what
-        keeps another caller's claim from being removed here."""
+        prevents another caller's claim from being removed here."""
         held = self.read(key)
         if held is not None and held.owner == owner and held.state == RecordState.IN_PROGRESS:
             self.store.delete(key)

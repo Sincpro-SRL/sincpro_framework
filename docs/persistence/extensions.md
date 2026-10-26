@@ -74,7 +74,7 @@ store = Repository(database)
 ```
 
 The extension's table is created by *its* migration, in its own chain; see the
-[migrations guide](../migrations/README.md). An extension that keeps its columns in the entity's own
+[migrations guide](../migrations/README.md). An extension that stores its columns in the entity's own
 table is mapped by giving the subclass that table (`{MoveZone: move_table}`); the migrations then
 compare each chain only with the columns it declares.
 
@@ -139,7 +139,7 @@ found = store.search(Move, Criteria(where=Condition(field="route", value="R7")))
 assert [one.number for one in found] == ["F-B"]
 ```
 
-`describe(Move).fields["route"].owner` says whose the field is. It is not a field to order by
+`ModelIntrospection.describe(Move).fields["route"].owner` says whose the field is. It is not a field to order by
 (a record may lack it), and filtering a report over millions of rows by it reads a subquery: for
 that, read a consolidated record.
 

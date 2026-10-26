@@ -31,20 +31,20 @@ from sqlalchemy.orm import Session
 from sqlalchemy.orm.attributes import flag_modified
 
 from sincpro_framework.data_layer import exceptions
-from sincpro_framework.data_layer.orm.sqlalchemy.domain.registry import relations_of
 from sincpro_framework.data_layer.orm.sqlalchemy.domain.relations import (
-    HELD,
-    READ,
-    RESOLVED,
     Held,
+    HeldRelations,
     Orphans,
-    held,
-    read_before,
+)
+from sincpro_framework.data_layer.orm.sqlalchemy.infrastructure.mapping_registry import (
+    mapping_registry,
 )
 from sincpro_framework.data_layer.orm.sqlalchemy.services.extension_typing import (
     HIDDEN,
 )
-from sincpro_framework.data_layer.orm.sqlalchemy.services.model_introspection import describe
+from sincpro_framework.data_layer.orm.sqlalchemy.services.model_introspection import (
+    ModelIntrospection,
+)
 from sincpro_framework.data_layer.orm.sqlalchemy.services.upsert import unique_on
 from sincpro_framework.ddd.entity.entity_collection import identity_name, identity_of
 from sincpro_framework.ddd.entity.relations import key_pair
@@ -117,20 +117,20 @@ class Plan:
         """Marks every assignment this plan carried out as written: the set it wrote is now
         what was read, and the next `save` does not settle it again.
 
-            workspace.repositories = [a, b]; held(...) == Held.ASSIGNED
-            plan.written()   ->  None; held(workspace, "repositories") == Held.WHOLE
-                                 read_before(workspace, "repositories") == {a.id, b.id}
+            workspace.repositories = [a, b]; HeldRelations(workspace).held(...) == ASSIGNED
+            plan.written()   ->  None; .held("repositories") == Held.WHOLE
+                                 .read_before("repositories") == {a.id, b.id}
 
         A blind assignment becomes `CUT` the same way; anything else is left as it is.
         """
         for record, name in self.carried_out:
-            how = held(record, name)
+            relations = HeldRelations(record)
+            how = relations.held(name)
             after = WRITTEN.get(how) if how is not None else None
             if after is not None:
-                record.__dict__[HELD][name] = after
-                children = record.__dict__[RESOLVED][name] or ()
-                record.__dict__.setdefault(READ, {})[name] = frozenset(
-                    identity_of(child) for child in children
+                value = relations.value(name)
+                relations.hold(
+                    name, value, after, frozenset(identity_of(child) for child in value or ())
                 )
 
 
@@ -185,15 +185,15 @@ def owned_by(model: type) -> list[Owned]:
         owned_by(Line)   ->  []      its `invoice` is a to-one: a child never owns its parent
 
     1. The aggregate's fields and its relations.
-    2. Each relation kept only when it is a to-many `foreign_key` that is not `owned=False`.
+    2. Each relation retained only when it is a to-many `foreign_key` that is not `owned=False`.
     3. Its two sides: the root's field and the child's field that holds it.
     4. Skipped when the root's side is not unique — a field many roots share reaches their
        children too.
-    Final: each kept one with what its orphans become — `REFUSE` when it does not say.
+    Final: each one retained with what its orphans become — `REFUSE` when it does not say.
     """
-    meta = describe(model)
+    meta = ModelIntrospection.describe(model)
     owned: list[Owned] = []
-    for name, relation in relations_of(model).items():
+    for name, relation in mapping_registry.relations_of(model).items():
         declared = meta.fields.get(name)
         to_many = declared is not None and declared.many and relation.kind == "foreign_key"
         if not to_many or getattr(relation, "owned", True) is False:
@@ -342,7 +342,7 @@ def planned_save(session: Session, records: list[Any]) -> Plan:
            visited.
            3.1 An assignment it carries out is noted, to mark it written afterwards.
            3.2 Blind: logged, nothing settled. Assigned over a whole reading on a stored
-               record: what that reading saw is kept to find the orphans (step 2).
+               record: what that reading saw is stored to find the orphans (step 2).
         """
         if id(record) in seen:
             return
@@ -352,12 +352,13 @@ def planned_save(session: Session, records: list[Any]) -> Plan:
             plan.writes.append(record)
             if not explicit:
                 moved[id(root)] = root
+        relations = HeldRelations(record)
         for owned in owned_by(type(record)):
-            how = held(record, owned.name)
+            how = relations.held(owned.name)
             if how is None:
                 continue
             key = getattr(record, owned.here)
-            for child in record.__dict__[RESOLVED][owned.name] or ():
+            for child in relations.value(owned.name) or ():
                 if getattr(child, owned.there) != key:
                     setattr(child, owned.there, key)
                 visit(child, explicit=False, root=root)
@@ -371,7 +372,7 @@ def planned_save(session: Session, records: list[Any]) -> Plan:
                 )
             elif how is Held.ASSIGNED and not getattr(record, "is_new", False):
                 _, read_by_key = settling.setdefault((type(record), owned.name), (owned, {}))
-                read_by_key.setdefault(key, set()).update(read_before(record, owned.name))
+                read_by_key.setdefault(key, set()).update(relations.read_before(owned.name))
                 root_by_key.setdefault((type(record), owned.name, key), []).append(root)
 
     for one in records:

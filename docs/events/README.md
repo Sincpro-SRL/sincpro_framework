@@ -1,4 +1,4 @@
-# Events: entities kept with the change, delivered by a relay, carried by queues to buses
+# Events: entities persisted with the change, delivered by a relay, carried by queues to buses
 
 For an existing service, read [upgrading.md](upgrading.md) before changing imports or migrating
 history. It records the main revision, removed APIs and verified delivery/query limitations.
@@ -10,7 +10,7 @@ class DatasetRegistered(CatalogDomainEvent):                 # the context's bas
     dataset_id: str
 
 dataset.record(DatasetRegistered(dataset_id=dataset.id))     # the aggregate says it; in memory
-self.repository.save(dataset)                                # kept with it, when the context has an event table
+self.repository.save(dataset)                                # persisted with it, when the context has an event table
 for event in dataset.pull_events():                          # the Feature may still pull and publish
     self.publisher.publish(event)
 
@@ -24,7 +24,7 @@ Nothing is wired by default. A project builds the queue it wants with the buses 
 publishes when a Feature decides to. What an aggregate recorded lives in memory and dies with the
 object — unless the context gives its events a table. **A domain event is an entity**: the
 context maps its base event class to one table (`event_table`, `map_events`), every subclass
-goes there, and the repository it already has keeps and queries them — `save(aggregate)` in the
+goes there, and the repository it already has stores and queries them — `save(aggregate)` in the
 same commit as the change, `search(InvoicePaid, criteria)` like any entity. What must leave the
 context is marked `DeliverableEventMixin` and sent on by an `EventRelay`:
 
@@ -56,18 +56,19 @@ is the parts.
 |---|---|---|
 | `DomainEvent` | `ddd/events/domain_event.py` | An `Entity` with the envelope: `id` (UUID v7), `created_at`, `entity_type`, `entity_id`, `entity_version`, `correlation_id`, `causation_id`, `label` |
 | `Entity.record` / `pull_events` | `ddd/entity/entity.py` | Records with the aggregate's type and id; pulling hands them back and forgets them |
-| `ChangeTrackingMixin` | `ddd/entity/mixins/change_tracking.py` | One `Updated` event with every field that changed — see [change-tracking.md](change-tracking.md) |
-| `DeliverableEventMixin` | `ddd/events/mixins/deliverable.py` | Marks an event delivered beyond the context, and keeps its delivery: `delivered_at`, `next_delivery_at`, `delivery` |
+| `ChangeTrackingMixin` | `ddd/events/mixins/change_tracking.py` | One `Updated` event with every field that changed — see [change-tracking.md](change-tracking.md) |
+| `DeliverableEventMixin` | `ddd/events/mixins/deliverable.py` | Marks an event delivered beyond the context, and stores its delivery: `delivered_at`, `next_delivery_at`, `delivery` |
 | `EventSourcedMixin` | `ddd/entity/mixins/event_sourced.py` | An entity whose state is its events: `happened`, `apply`, rebuilt by `get`, appended by `save` |
 | `event_table` / `map_events` | `orm/sqlalchemy/entrypoint/template_table/events.py`, `orm/sqlalchemy/services/event_mapping.py` | The context's one event table, and its base class mapped to it — every subclass with it |
-| `EventRelay` | `event_driven/entrypoint/relay.py` | Delivers the deliverable events not delivered and due, over any repository; `run_once()` → `RelayPass` |
+| `EventRelay` | `event_driven/entrypoint/relay.py` → `services/relaying.py` | Delivers the deliverable events not delivered and due, over any repository; `run_once()` → `RelayPass` |
 | `DeliveryFailurePolicy` | `event_driven/domain/failure.py` | `RetryInPlace` · `RetryLater` · `ParkAndContinue` · `SkipAndContinue`; `ExponentialBackoff`, `FixedBackoff` |
-| `Publisher` | `event_driven/entrypoint/publisher.py` | Emits to a queue, with the signature of a bus |
-| `Subscriber` | `event_driven/entrypoint/subscriber.py` | The bus instances handed in explicitly; executes the ones whose registry knows the event — every one, whatever another raised |
+| `Publisher` | `event_driven/entrypoint/publisher.py` → `services/publication.py` | Emits to a queue, with the signature of a bus |
+| `Subscriber` | `event_driven/entrypoint/subscriber.py` → `services/dispatch.py` | The bus instances handed in explicitly; executes the ones whose registry knows the event — every one, whatever another raised |
 | `Queue` | `event_driven/domain/queue.py` | The protocol: `put` and `aput` |
+| `Envelope` | `event_driven/domain/envelope.py` | What travels with a message on a broker: `Envelope.headers_for(message, source=...)` stamps it, `Envelope.of(headers)` reads it |
 | `SyncQueue` | `event_driven/adapters/sync_queue.py` | Same process; `publish` runs the subscriber and returns |
 | `BackgroundQueue` | `event_driven/adapters/background_queue.py` | Another process consumes; `start()` / `stop()`; not durable |
-| `RepositoryQueue` | `event_driven/adapters/repository_queue.py` | `publish` keeps the event through the repository, in the unit of work in play, for the relay |
+| `RepositoryQueue` | `event_driven/adapters/repository_queue.py` | `publish` saves the event through the repository, in the unit of work in play, for the relay |
 
 **A bus declares nothing.** Its registry already says which DTOs it answers, an event is a DTO,
 and the subscriber executes the bus with it. `@bus.feature([SomeCommand, SomeEvent])` is the
@@ -76,7 +77,7 @@ whole subscription; `Subscriber(planning, assurance)` is the whole wiring.
 **A redelivery runs again only what failed — when told where to remember.** Delivery is at least
 once: a relay or a broker delivers an event again when a bus failed, and every bus that answers it
 runs again, so a handler of an event is idempotent. `Subscriber(planning, assurance,
-receipts=store)` keeps which bus handled which event (`keep_for`, a day by default) in a
+receipts=store)` stores which bus handled which event (`keep_for`, a day by default) in a
 `KeyValueStore` — `RedisKeyValue`, `DynamoKeyValue`, shared by the replicas — and a redelivery
 then runs only the bus that failed.
 
@@ -111,13 +112,13 @@ publisher = Publisher(SyncQueue(lambda: Subscriber(*BUSES.values())))   # before
 A queue needs a subscriber, a subscriber needs the buses, and a bus needs the publisher the
 queue is behind — wire that in one breath and it is a circle. Handed a function, the queue asks
 for nothing until somebody publishes, and by then every bus is registered. Built once, on that
-first publish, and kept. It is the same shape `BackgroundQueue` has always had, for a different
+first publish, and reused. It is the same shape `BackgroundQueue` has always had, for a different
 reason: there, the function runs in the worker because a bus cannot cross a process.
 
 **Publishing runs the subscriber in the call**, so a subscriber that publishes re-enters the
 queue depth-first — a listener registered after it hears the *inner* fact first. Where the order
 of facts matters, write the fact down in the context it happened in, or send it through an
-outbox whose relay keeps them in order (a waiting retry holds back what comes after it).
+outbox whose relay delivers them in order (a waiting retry holds back what comes after it).
 
 **`BackgroundQueue(build_subscriber)`** — the smallest «do it in the background»:
 
@@ -186,8 +187,8 @@ two classes; while only v1 exists, one `domain/events.py` is enough, and the day
 become `domain/events/{v1,v2}.py` without consumers noticing, because they import from
 `entrypoints/events.py`. A breaking change is always a new class; both versions are published while
 consumers migrate. The aggregate records the current version only: a consumer that still needs v1
-gets a translation in `entrypoints/`, never a second `record` in the domain. A kept event of an old
-version is still its own class: the table keeps the wire name and the payload. Historical
+gets a translation in `entrypoints/`, never a second `record` in the domain. A stored event of an old
+version is still its own class: the table stores the wire name and the payload. Historical
 classes must remain imported and mapped while those rows exist; an unknown discriminator
 cannot be reconstructed just because its JSON is still present. Removing a class requires
 an explicit migration or compatibility plan.

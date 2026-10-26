@@ -2,7 +2,7 @@
 the run was given.
 
 The comparisons are against facts the population knows (`census`) and against the in-memory
-evaluator over the whole set, so a translation that drifts from what `matches` says shows up
+evaluator over the whole set, so a translation that drifts from what `Evaluation.matches` says shows up
 here as a set difference and not as a hunch.
 """
 
@@ -12,7 +12,9 @@ from math import ceil
 import pytest
 
 from sincpro_framework.data_layer.orm.sqlalchemy.entrypoint.repository import Repository
-from sincpro_framework.data_layer.orm.sqlalchemy.services.model_introspection import describe
+from sincpro_framework.data_layer.orm.sqlalchemy.services.model_introspection import (
+    ModelIntrospection,
+)
 from sincpro_framework.data_layer.orm.sqlalchemy.services.workflows.reading import (
     DEFAULT_COUNT_CAP,
 )
@@ -21,10 +23,10 @@ from sincpro_framework.ddd.criteria import (
     Condition,
     CountMode,
     Criteria,
+    Evaluation,
     Operator,
     Pagination,
-    matches,
-    parse_order,
+    Sort,
 )
 
 from .ledger import Account, Entries, Entry, Line, Lines
@@ -46,7 +48,7 @@ def test_a_keyset_walk_visits_every_line_once_in_order(
     ledger: Repository, census: Census, timed
 ):
     criteria = Criteria(
-        where=POPULATION, order=parse_order("-posted_at"), pagination=Pagination(limit=PAGE)
+        where=POPULATION, order=Sort.parse("-posted_at"), pagination=Pagination(limit=PAGE)
     )
 
     with timed("keyset walk, pages of 500", census.lines):
@@ -98,14 +100,16 @@ def test_the_capped_count_says_when_it_stopped_counting(ledger: Repository, cens
 def test_the_sql_answer_is_the_in_memory_answer(
     ledger: Repository, every_line: Lines, expression
 ):
-    """`matches` is the specification; the translation has to agree with it on every row.
+    """`Evaluation.matches` is the specification; the translation has to agree with it on every row.
     The values are read through the definition first, the way the repository reads them, so
     the ISO strings above become datetimes on both sides."""
-    read, dropped = describe(Line).accept(All(all=[POPULATION, expression]))
+    read, dropped = ModelIntrospection.describe(Line).accept(
+        All(all=[POPULATION, expression])
+    )
     assert not dropped
 
     fetched = ledger.fetch_all(Lines, Criteria(where=read, pagination=Pagination(limit=1000)))
-    expected = {line.id for line in every_line if matches(line, read)}
+    expected = {line.id for line in every_line if Evaluation.matches(line, read)}
 
     assert expected, "a filter that matches nothing proves nothing"
     assert set(fetched.ids) == expected
@@ -158,7 +162,7 @@ def test_the_entries_of_one_month_page_by_fifty(ledger: Repository, census: Cens
             value=["2024-03-01T00:00:00", "2024-04-01T00:00:00"],
             operator=Operator.BETWEEN,
         ),
-        order=parse_order("posted_at"),
+        order=Sort.parse("posted_at"),
         pagination=Pagination(limit=50),
         count=CountMode.EXACT,
     )
@@ -183,7 +187,7 @@ def test_a_keyset_walk_ordered_by_an_amount_visits_every_line(
 ):
     """`debit` is a Numeric column: the cursor has to carry a Decimal and give it back as one."""
     criteria = Criteria(
-        where=POPULATION, order=parse_order("-debit"), pagination=Pagination(limit=PAGE)
+        where=POPULATION, order=Sort.parse("-debit"), pagination=Pagination(limit=PAGE)
     )
 
     visited = [line for page in ledger.stream(Lines, criteria) for line in page]

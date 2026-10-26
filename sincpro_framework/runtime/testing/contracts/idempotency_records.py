@@ -13,7 +13,7 @@ runs on them. Nothing here imports pytest.
 import threading
 from datetime import timedelta
 
-from sincpro_framework.data_layer.caching.domain.idempotency_records import (
+from sincpro_framework.data_layer.caching import (
     IdempotencyRecord,
     IdempotencyRecords,
     RecordState,

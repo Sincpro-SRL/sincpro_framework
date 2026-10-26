@@ -65,7 +65,7 @@ class CronDefinition:
     policies `Crons.cron` was given.
 
     Context: built by the registry, read by the gateway — the name is the cron's identity in
-    the record of runs, so a class that `replaces` another keeps the replaced one's name.
+    the record of runs, so a class that `replaces` another takes over the replaced one's name.
 
         CronDefinition("cron-payments.Reconcile", Reconcile,
                        CronExpression("0 2 * * *", "UTC"), Overlap.SKIP, Missed.RUN_LATEST,

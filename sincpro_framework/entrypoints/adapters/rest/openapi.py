@@ -12,7 +12,7 @@ import copy
 from collections.abc import Iterable, Mapping
 from typing import Any
 
-from sincpro_framework.auth.entrypoint.access_control import access_control_of
+from sincpro_framework.auth import AccessControl
 from sincpro_framework.entrypoints.adapters.rest.routing import RestRoute, is_plain
 from sincpro_framework.sincpro_logger import logger
 
@@ -51,7 +51,7 @@ class _Components:
 
     def _pointed(self, node: Any) -> Any:
         """`node` with every `#/$defs/X` reference pointed at `#/components/schemas/X` — the
-        place `keep` lifts the `$defs` to.
+        place `register` lifts the `$defs` to.
 
             _pointed({"$ref": "#/$defs/Line"})  ->  {"$ref": "#/components/schemas/Line"}
         """
@@ -69,8 +69,8 @@ class _Components:
         return node
 
     def _put(self, name: str, schema: dict[str, Any]) -> None:
-        """Keep `schema` under `name` — the first one kept wins when two differ, with a
-        warning; the same shape twice is kept once, silently."""
+        """Store `schema` under `name` — the first one stored wins when two differ, with a
+        warning; the same shape twice is stored once, silently."""
         held = self.schemas.get(name)
         if held is not None and held != schema:
             logger.warning(
@@ -79,14 +79,14 @@ class _Components:
             return
         self.schemas[name] = schema
 
-    def keep(self, name: str, schema: Mapping[str, Any], qualifier: str = "") -> str:
-        """`schema` kept under `name`, its `$defs` lifted beside it; the name it was kept under
-        answered.
+    def register(self, name: str, schema: Mapping[str, Any], qualifier: str = "") -> str:
+        """`schema` registered under `name`, its `$defs` lifted beside it; the name it was
+        registered under answered.
 
         Context: two operations of two buses may publish models of one class name with
-        different shapes (`billing.CommandCreate`, `sales.CommandCreate`). The second is kept as
+        different shapes (`billing.CommandCreate`, `sales.CommandCreate`). The second is registered as
         `{qualifier}.{name}` rather than dropped, so every operation points at its own shape.
-        A nested model (`$defs`) under one name and two shapes keeps the first, and says so.
+        A nested model (`$defs`) under one name and two shapes retains the first, and says so.
         """
         owned = copy.deepcopy(dict(schema))
         for nested, definition in owned.pop("$defs", {}).items():
@@ -121,7 +121,7 @@ def operation_security(bus: Any, dto: type) -> dict[str, Any]:
     Final: a `requires` declaration also says its requirements and what happens when they
     are denied.
     """
-    access = access_control_of(bus)
+    access = AccessControl.of(bus)
     if access is None:
         return {}
     declaration = access.requirements_of(dto)
@@ -147,17 +147,12 @@ def security_schemes(buses: Iterable[Any]) -> dict[str, Any]:
     """
     schemes: dict[str, Any] = {}
     for bus in buses:
-        access = access_control_of(bus)
+        access = AccessControl.of(bus)
         for provider in access.providers if access else ():
             scheme = provider.security_scheme()
             if scheme is not None:
                 schemes.setdefault(provider.name, scheme)
     return schemes
-
-
-def _security(route: RestRoute) -> dict[str, Any]:
-    """`operation_security` of the use case `route` answers."""
-    return operation_security(route.bus, route.operation.dto)
 
 
 def _query_parameters(
@@ -194,7 +189,7 @@ def _query_parameters(
 def _operation(route: RestRoute, method: str, components: _Components) -> dict[str, Any]:
     """The OpenAPI operation of `route` on `method`.
 
-    1. The DTO's schema and the answer's kept in `components` — qualified by the alias when
+    1. The DTO's schema and the answer's registered in `components` — qualified by the alias when
        another bus published a model of the same name and another shape.
     2. `operationId` — `_by_body` on the `POST` twin of a `GET` — summary (the description's
        first line), tags (alias and layer), a 200 and every failure as `Error`, the DTO and
@@ -204,12 +199,12 @@ def _operation(route: RestRoute, method: str, components: _Components) -> dict[s
     optional JSON body.
     """
     operation = route.operation
-    kept = components.keep(operation.name, operation.json_schema, route.alias)
-    input_ref = reference(kept)
-    lifted = components.schemas[kept]
+    registered = components.register(operation.name, operation.json_schema, route.alias)
+    input_ref = reference(registered)
+    lifted = components.schemas[registered]
     answered = (
         reference(
-            components.keep(
+            components.register(
                 operation.response_json_schema.get("title", f"{operation.name}Answer"),
                 operation.response_json_schema,
                 route.alias,
@@ -244,7 +239,7 @@ def _operation(route: RestRoute, method: str, components: _Components) -> dict[s
         },
         "x-sincpro-dto": operation.name,
         "x-sincpro-layer": operation.layer,
-        **_security(route),
+        **operation_security(route.bus, route.operation.dto),
     }
     parameters = [
         {
@@ -300,7 +295,7 @@ def openapi_document(
         item = paths.setdefault(route.path, {})
         for method in route.methods:
             item[method.lower()] = _operation(route, method, components)
-        access = access_control_of(route.bus)
+        access = AccessControl.of(route.bus)
         for provider in access.providers if access else ():
             scheme = provider.security_scheme()
             if scheme is not None:

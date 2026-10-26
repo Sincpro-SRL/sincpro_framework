@@ -1,7 +1,7 @@
 """A frame as Arrow and Parquet — the `[data-analysis]` extra: pyarrow.
 
-Context: a decimal keeps its value as `decimal128(38, scale)`, the scale being the largest among
-the column's values, so it can differ between two reads; an aware datetime is an instant, kept in
+Context: a decimal holds its value as `decimal128(38, scale)`, the scale being the largest among
+the column's values, so it can differ between two reads; an aware datetime is an instant, stored in
 UTC; a column with no value is null. Nothing else is decided here: the frame's own types say what
 each column is.
 """
@@ -115,7 +115,7 @@ def frame_columns(
     table: Any,
 ) -> tuple[tuple[str, ...], tuple[str, ...], tuple[tuple[Any, ...], ...]]:
     """A `pyarrow.Table` as a frame's columns, types and values — the schema says the types, so
-    a table with no rows keeps them."""
+    a table with no rows still has them."""
     columns = tuple(table.column_names)
     kinds = tuple(_frame_type(one.type) for one in table.schema)
     values = tuple(tuple(table.column(name).to_pylist()) for name in columns)

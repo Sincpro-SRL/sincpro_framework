@@ -13,7 +13,7 @@ from faststream.kafka import KafkaBroker, TestKafkaBroker
 from faststream.rabbit import RabbitBroker, TestRabbitBroker
 
 from sincpro_framework import DataTransferObject, Feature, exceptions
-from sincpro_framework.entrypoints.adapters.queue import subscribe
+from sincpro_framework.entrypoints import subscribe
 from sincpro_framework.event_driven import (
     AsyncPublisher,
     Publisher,

@@ -113,7 +113,7 @@ ENGINES: "weakref.WeakSet[Engine]" = weakref.WeakSet()
 
 class Database:
     """One engine, its pool and its session factory — and the rules every write through it
-    keeps, whoever opens the session.
+    follows, whoever opens the session.
 
         database = Database("postgresql+psycopg://…", actor=lambda: current_user())
         with database.session() as session:          commits at the end, rolls back on error
@@ -122,7 +122,7 @@ class Database:
 
     Context: the stamping, the change tracking, the preview guard and the read tracking hang
     on the session factory rather than on a repository, so a plain session a script opens by
-    hand keeps them too.
+    hand follows them too.
     """
 
     def __init__(

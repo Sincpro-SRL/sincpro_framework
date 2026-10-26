@@ -37,7 +37,7 @@ order. A cycle, a field computed twice or an unknown name is refused when the cl
 **`save` runs `recompute_whole(record)` before the `before_save` hooks** — the lines first, then
 the record — so stored = previewed, in memory and in SQL. **A save never reads**: a
 derivation over a relation not held whole (not loaded, cut by a specification, assigned blind)
-is skipped and keeps its stored value, and what reads it computes from that. Never read →
+is skipped and retains its stored value, and what reads it computes from that. Never read →
 silent; cut or blind → a warning names the field and says to read the relation whole (inside
 `context()`, or a specification that does not filter it). The held lines are computed either
 way. An entity with no derivations is not looked into. `upsert` and `update_all` compute nothing.
@@ -66,7 +66,7 @@ class InvoiceReads(EntityReads[Invoice]):
 
 ## 3. A form that is not always saved: `Edit`
 
-The preview kept as the caller's draft, saved or discarded when the form says so, is the built-in
+The preview stored as the caller's draft, saved or discarded when the form says so, is the built-in
 `Edit` + `EntityEdits` ([edits.md](edits.md)) — no hand-written Command needed.
 
 ## 4. A hand-written edit Command reuses the same pieces
@@ -97,7 +97,7 @@ self.repository.save(invoice)        # derivations recomputed, before_save hooks
   preview never answers them. A line may carry its `id`: it is the line the order already
   holds, edited in place, so its row is updated — read the lines first (inside `context()`); an
   `id` the order does not hold is refused. Lines without ids over lines never read replace
-  them, exactly as `order.lines = [...]` does — blind, so the save keeps the totals and warns.
+  them, exactly as `order.lines = [...]` does — blind, so the save retains the totals and warns.
 - **Computing in a hook instead of a derivation.** A `before_save` hook runs on save only; the
   preview would not show it. A value a form must see comes from `derivations`.
 - **A derivation with side effects.** `by` reads the record and answers a value: no repository,

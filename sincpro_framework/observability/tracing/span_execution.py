@@ -14,7 +14,7 @@ from typing import Any, Generator
 from sincpro_framework.observability.tracing.setup import OTEL_AVAILABLE, tracer_for
 
 _use_case_span: ContextVar[Any] = ContextVar("sincpro_use_case_span", default=None)
-"""The span of the use case running now — `None` outside one, or with no tracer. Kept apart from
+"""The span of the use case running now — `None` outside one, or with no tracer. Separate from
 OTel's active span: an adapter that opens a span of its own (an HTTP client, a SQL statement) must
 not become where the use case's attributes land."""
 

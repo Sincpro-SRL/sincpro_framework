@@ -67,7 +67,8 @@ class Ping(Feature):
         return ResponsePing(pong=True)
 
 
-from sincpro_framework.observability import of, traces
+from sincpro_framework.observability import traces
+from sincpro_framework.observability.metrics import of
 
 
 class CommandStamp(DataTransferObject):
@@ -138,7 +139,7 @@ assert registry.execute("core-only.CommandEcho", {"said": "hi"}).said == "hi"
 
 from dataclasses import dataclass as _dataclass
 from sincpro_framework.data_layer.caching import QueryCachePolicy, QueryCaching
-from sincpro_framework.store import InMemoryKeyValue
+from sincpro_framework.data_layer.store import InMemoryKeyValue
 from sincpro_framework.entrypoints.adapters.cron import KeyValueRuns
 from sincpro_framework.ddd import Entity
 from sincpro_framework.data_layer.repositories import MemoryRepository
@@ -193,7 +194,7 @@ from sincpro_framework.auth import (
     Permission,
     PermissionDenied,
     ServiceTokenProvider,
-    as_identity,
+    security,
 )
 from sincpro_framework.runtime.testing import AuthProviderContract, granting
 
@@ -218,7 +219,7 @@ class GuardedPing(Feature):
 
 auth.on(guarded)
 bot = auth.authenticate(Credentials(transport="http", headers={"x-api-key": secret}))
-with as_identity(bot):
+with security.as_identity(bot):
     assert guarded(CommandPing(), ResponsePing).pong
     assert auth.authenticate(Credentials(**auth.credentials_for(bot).model_dump())).subject == "apikey:bot"
 with granting():
@@ -255,7 +256,7 @@ else:
     raise AssertionError("the FastMCP verifier was built without FastMCP")
 
 from sincpro_framework.ddd.query import Query
-from sincpro_framework.entrypoints.adapters.rest import RestGateway
+from sincpro_framework.entrypoints import RestGateway
 
 
 class QueryPings(Query):
@@ -327,11 +328,10 @@ from sincpro_framework.data_layer.caching import (
     CachePolicy,
     Lru,
     Sliding,
-    declares_once,
 )
 from sincpro_framework.entrypoints import Exposure, Gateway
 from sincpro_framework.entrypoints.entrypoint.decorators import grpc, mcp, queue, rest, rpc
-from sincpro_framework.entrypoints.entrypoint.internal import internal
+from sincpro_framework.entrypoints import internal
 from sincpro_framework import FailureKind
 from sincpro_framework.common.failures import refined_failure_kind
 
@@ -383,7 +383,7 @@ class Secret(Feature):
 for key in ("k-1", "k-1"):
     with exposed.context({IDEMPOTENCY_KEY: key}):
         exposed(CommandCharge(amount=5), ResponseCharge)
-assert charges == [5] and declares_once(Charge)
+assert charges == [5] and Idempotency.declared_by(Charge)
 
 
 class RestSurface(Gateway):
@@ -410,7 +410,7 @@ for module, extra in (
 
 import sincpro_framework.entrypoints.adapters.queue  # any broker: FastStream is one of them
 
-from sincpro_framework.store.adapters.dynamodb import DynamoKeyValue
+from sincpro_framework.data_layer.store import DynamoKeyValue
 from sincpro_framework.entrypoints.adapters.queue import SqsBroker
 from sincpro_framework.event_driven.adapters.aws import EventBridgeQueue, SnsQueue, SqsQueue
 from sincpro_framework.settings.adapters.aws import ParameterStore, SecretsManager
@@ -431,9 +431,9 @@ for build in (
     else:
         raise AssertionError("an AWS adapter was built without boto3")
 
-from sincpro_framework.entrypoints.adapters.grpc import GrpcGateway
-from sincpro_framework.entrypoints.adapters.mcp import McpGateway
-from sincpro_framework.entrypoints.adapters.rpc import RpcGateway
+from sincpro_framework.entrypoints import GrpcGateway
+from sincpro_framework.entrypoints import McpGateway
+from sincpro_framework.entrypoints import RpcGateway
 
 for gateway, serve, extra in (
     (GrpcGateway([exposed], unguarded=True), "server", "grpc"),

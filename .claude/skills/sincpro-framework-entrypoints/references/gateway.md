@@ -17,7 +17,7 @@ Gateway(..., layers=("app_services",))
 `include`/`exclude`/`wrap` take the Command class or its name; a name no use case answers is warned
 about (in `exclude` it would leave exposed what it meant to hide).
 
-`@internal` (from `sincpro_framework.entrypoints`) keeps a use case off **every** wire, now or
+`@internal` (from `sincpro_framework.entrypoints`) excludes a use case from **every** wire, now or
 later. It runs only in the process.
 
 ## Declared exposure
@@ -35,7 +35,7 @@ binding types are frozen DTOs:
 
 Every one takes `deprecated=True` or `deprecated=Deprecation(since=, sunset=, replacement=)`.
 
-- Bindings are kept **by class, never on the class**; the order the decorators are written never
+- Bindings are keyed **by class, never stored on the class**; the order the decorators are written never
   matters.
 - **One binding per wire** per class; a second is refused where written (`ProgrammingError`).
 - A `replaces=` handler inherits the binding of the one it replaces, wire by wire.

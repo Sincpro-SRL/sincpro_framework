@@ -24,16 +24,13 @@ from anyio import CapacityLimiter
 from fastapi import Depends, Request
 from pydantic import ConfigDict, Field
 
-from sincpro_framework.auth.domain.identity import Credentials
-from sincpro_framework.auth.entrypoint.transports import (
-    authenticated_as,
-    credentials_from_asgi,
+from sincpro_framework.auth import Credentials, security
+from sincpro_framework.context import EntrypointKind, context_executions, context_propagation
+from sincpro_framework.data_layer.caching import (
+    IDEMPOTENCY_KEY,
+    Idempotency,
+    IdempotentCommand,
 )
-from sincpro_framework.context.adapters.propagation import extract
-from sincpro_framework.context.domain.execution import CHAIN_KEYS, IDENTITY_HEADERS
-from sincpro_framework.context.domain.level import EntrypointKind
-from sincpro_framework.data_layer.caching import IDEMPOTENCY_KEY, declares_once
-from sincpro_framework.data_layer.caching.domain.idempotent_command import IdempotentCommand
 from sincpro_framework.entrypoints.adapters.fastapi import exceptions
 from sincpro_framework.entrypoints.adapters.fastapi.problems import BUSES_STATE, TRACE_STATE
 from sincpro_framework.observability import process
@@ -79,7 +76,7 @@ class RequestContext(DataTransferObject):
         found: dict[str, Any] = dict(self.carried)
         if self.idempotency_key:
             found[IDEMPOTENCY_KEY] = self.idempotency_key
-        for key in CHAIN_KEYS:
+        for key in context_executions.chain_keys:
             if getattr(self, key):
                 found[key] = getattr(self, key)
         return found
@@ -94,20 +91,27 @@ class RequestContext(DataTransferObject):
 async def acting_credentials(request: Request) -> Credentials:
     """Who the request says is calling — read, never checked: the bus's `AccessControl`
     authenticates them, in the thread that runs the use case. No I/O, so async."""
-    return credentials_from_asgi(request.scope)
+    return Credentials.from_asgi(request.scope)
 
 
 async def request_context(request: Request) -> RequestContext:
     """The `Idempotency-Key`, the W3C trace headers, the identity of the request and the context
     the caller carried (`baggage`, `sincpro-context`)."""
     headers = request.headers
-    carried = extract(dict(headers))
+    carried = context_propagation.extract(dict(headers))
     return RequestContext(
         idempotency_key=headers.get("idempotency-key") or None,
         traceparent=headers.get("traceparent") or None,
         tracestate=headers.get("tracestate") or None,
-        **{key: headers.get(header) or None for header, key in IDENTITY_HEADERS.items()},
-        carried={key: value for key, value in carried.items() if key not in CHAIN_KEYS},
+        **{
+            key: headers.get(header) or None
+            for header, key in context_propagation.identity_headers.items()
+        },
+        carried={
+            key: value
+            for key, value in carried.items()
+            if key not in context_executions.chain_keys
+        },
     )
 
 
@@ -117,7 +121,7 @@ def requires_idempotency_key(bus: UseFramework, command: type) -> bool:
     handler = bus.handler_of(command)
     return (
         handler is not None
-        and declares_once(handler)
+        and Idempotency.declared_by(handler)
         and not issubclass(command, IdempotentCommand)
     )
 
@@ -140,10 +144,10 @@ def run_on_bus(
     2. The request's context keys (`Idempotency-Key`, correlation id) into the bus context.
     3. The trace: the host's span when its instrumentation opened one, else the caller's
        `traceparent`; no second root.
-    4. Final: `bus(dto)`; on failure, the trace it belongs to is kept in `seen`.
+    4. Final: `bus(dto)`; on failure, the trace it belongs to is recorded in `seen`.
     """
     with ExitStack() as stack:
-        stack.enter_context(authenticated_as(bus, credentials))
+        stack.enter_context(security.authenticated_as(bus, credentials))
         extra = context.bus_context()
         if extra:
             stack.enter_context(bus.context(extra, kind=EntrypointKind.REST))
@@ -182,7 +186,7 @@ def bus_call(
        2.2 a use case that runs once, with no `Idempotency-Key` and a Command that does not
            identify itself — `IdempotencyKeyMissing`, before the bus;
        2.3 `run_on_bus` in a worker thread, bounded by `limiter`;
-       2.4 on failure, the trace it belongs to kept on the request state.
+       2.4 on failure, the trace it belongs to stored on the request state.
     Final: `provide` — FastAPI calls it, the route gets `call`.
     """
 
@@ -201,7 +205,7 @@ def bus_call(
             2. A use case that runs once, with no `Idempotency-Key` and a Command that does
                not identify itself, is refused before the bus (400).
             3. `run_on_bus` in a worker thread, bounded by `limiter`.
-            4. Final: on failure, the trace it belongs to is kept on the request state, so the
+            4. Final: on failure, the trace it belongs to is stored on the request state, so the
                problem answered names it.
             """
             setattr(request.state, BUSES_STATE, [bus])

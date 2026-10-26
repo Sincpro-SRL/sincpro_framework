@@ -14,9 +14,9 @@ import pytest
 
 from sincpro_framework import DataTransferObject, Feature, UseFramework
 from sincpro_framework.data_layer.caching import Cache, Idempotency
+from sincpro_framework.data_layer.store import InMemoryKeyValue
 from sincpro_framework.ddd import DomainEvent
 from sincpro_framework.observability.metrics import InMemoryRecorder, metrics
-from sincpro_framework.store import InMemoryKeyValue
 
 
 @pytest.fixture
@@ -78,7 +78,8 @@ class TicketClosed(DomainEvent):
 def test_every_queue_delivery_is_counted_by_how_it_was_settled(recorder):
     from faststream.kafka import KafkaBroker, TestKafkaBroker
 
-    from sincpro_framework.entrypoints.adapters.queue import QueueGateway, QueueOptions
+    from sincpro_framework.entrypoints import QueueGateway
+    from sincpro_framework.entrypoints.adapters.queue import QueueOptions
 
     bus = UseFramework("support", log_after_execution=False)
 

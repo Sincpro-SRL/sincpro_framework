@@ -16,7 +16,7 @@ from dataclasses import dataclass, field
 from sqlalchemy import Column, ForeignKey, Text
 from sqlalchemy.orm import registry
 
-from sincpro_framework.data_layer.orm import Relation, map_aggregates
+from sincpro_framework.data_layer.orm import TableRelation, map_aggregates
 from sincpro_framework.data_layer.orm.sqlalchemy.domain.relations import Orphans
 from sincpro_framework.data_layer.orm.sqlalchemy.entrypoint.template_table import (
     archive_columns,
@@ -182,19 +182,19 @@ def declare() -> None:
         },
         relations={
             Workspace: {
-                "repositories": Relation.foreign_key(
+                "repositories": TableRelation.foreign_key(
                     CodeRepo, identified_by="workspace_id", orphans=Orphans.DELETE
                 ),
-                "notes": Relation.foreign_key(
+                "notes": TableRelation.foreign_key(
                     Note, identified_by="workspace_id", orphans=Orphans.DETACH
                 ),
-                "docs": Relation.foreign_key(
+                "docs": TableRelation.foreign_key(
                     Doc, identified_by="workspace_id", orphans=Orphans.DELETE
                 ),
-                "members": Relation.foreign_key(
+                "members": TableRelation.foreign_key(
                     Member, identified_by="workspace_id", owned=False
                 ),
-                "open_issues": Relation.foreign_key(
+                "open_issues": TableRelation.foreign_key(
                     Issue,
                     identified_by="workspace_id",
                     orphans=Orphans.DELETE,
@@ -202,17 +202,17 @@ def declare() -> None:
                 ),
             },
             Tag: {
-                "labels": Relation.foreign_key(
+                "labels": TableRelation.foreign_key(
                     Label, parent_field="label", related_field="label"
                 )
             },
             Folder: {
-                "children": Relation.foreign_key(
+                "children": TableRelation.foreign_key(
                     Folder, identified_by="parent_id", orphans=Orphans.DELETE
                 )
             },
             CodeRepo: {
-                "checks": Relation.foreign_key(
+                "checks": TableRelation.foreign_key(
                     Check, identified_by="repo_id", orphans=Orphans.DELETE
                 )
             },

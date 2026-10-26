@@ -44,12 +44,11 @@ from sincpro_framework.ddd.criteria import (
     Expression,
     FromField,
     Grain,
-    Level,
+    GroupingLevel,
     Not,
     Operator,
     Pagination,
     Sort,
-    parse_order,
 )
 from sincpro_framework.ddd.entity import extensions
 from sincpro_framework.ddd.entity.entity_meta import Meta
@@ -119,7 +118,7 @@ class _ManyMembers(ColumnElement[bool]):
     type = Boolean()
 
     def __init__(self, column: Any, values: Sequence[Any], negated: bool) -> None:
-        """The values are kept as a list; which form is written is decided at compile time,
+        """The values are held as a list; which form is written is decided at compile time,
         by the dialect."""
         self.column = column
         self.values = list(values)
@@ -268,7 +267,7 @@ def stored_by_an_extension(entity: type, field: str) -> Any:
     """What a field an extension below `entity` adds is, as a column of a statement over it.
 
         in      Move, "route"     →  out  (SELECT route FROM move_delivery WHERE id = move.id)
-        in      Move, "zone"      →  out  move.zone              the extension keeps it in Move's table
+        in      Move, "zone"      →  out  move.zone              the extension stores it in Move's table
 
     A field the entity does not have, filtered, ordered or grouped by like one it does. A record
     with no row of the extension holds NULL there. Reading it through a correlated subquery is
@@ -343,7 +342,7 @@ def ordering_for(criteria: Criteria, meta: Meta) -> tuple[Sort, ...]:
     A keyset needs a total order or rows repeat across pages, so the identity is appended —
     in the leading sort's direction, so a composite index on `(column, identity)` stays usable.
     """
-    sorts = criteria.order or parse_order(meta.default_order)
+    sorts = criteria.order or Sort.parse(meta.default_order)
     for sort in sorts:
         meta.orderable(sort.field)
 
@@ -567,13 +566,15 @@ GRAIN_TRANSLATORS: dict[str, GrainTranslator] = {
 }
 
 
-def grouping_column(model: type, level: Level, dialect: str = "sqlite") -> ColumnElement[Any]:
+def grouping_column(
+    model: type, level: GroupingLevel, dialect: str = "sqlite"
+) -> ColumnElement[Any]:
     """The column a grouping splits by, read at the grain asked for.
 
-        in      Dataset, Level(field='produced_by')
+        in      Dataset, GroupingLevel(field='produced_by')
         out     dataset.produced_by                          as is
 
-        in      Dataset, Level(field='registered_at', grain='month'), "sqlite"
+        in      Dataset, GroupingLevel(field='registered_at', grain='month'), "sqlite"
         out     strftime('%Y-%m', dataset.registered_at)     one bucket per month
 
         in      …, "postgresql"
@@ -660,13 +661,13 @@ def bucket_range(grain: str, value: str) -> tuple[datetime, datetime]:
     )
 
 
-def bucket_condition(level: Level, value: Any) -> Expression:
+def bucket_condition(level: GroupingLevel, value: Any) -> Expression:
     """The condition that opens a bucket: what to ask to see its rows.
 
-        in   Level(field="encoding"), "utf-8"
+        in   GroupingLevel(field="encoding"), "utf-8"
         out  Condition(encoding = 'utf-8')
 
-        in   Level(field="registered_at", grain="year"), "2026"
+        in   GroupingLevel(field="registered_at", grain="year"), "2026"
         out  All([registered_at >= 2026-01-01, registered_at < 2027-01-01])
 
     **Without a grain it is an equality; with a grain it CANNOT be.** The value of a cut

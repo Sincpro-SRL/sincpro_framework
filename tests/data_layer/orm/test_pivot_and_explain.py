@@ -13,10 +13,10 @@ from sincpro_framework.ddd.criteria import (
     Condition,
     Criteria,
     Grain,
-    Level,
+    GroupingLevel,
     Pagination,
+    Sort,
     Specification,
-    parse_order,
 )
 
 from .models import ROW_COUNT, Things
@@ -70,7 +70,7 @@ def test_a_pivot_cuts_a_date_on_either_axis(store: Repository):
     matrix = store.pivot(
         Things,
         rows=["owner"],
-        columns=[Level(field="made_at", grain=Grain.DAY)],
+        columns=[GroupingLevel(field="made_at", grain=Grain.DAY)],
         n=("count", "size"),
     )
 
@@ -93,7 +93,7 @@ def test_a_pivot_needs_both_axes_and_a_fold_it_knows(store: Repository):
 def test_explain_says_what_will_run_without_running_it(store: Repository, queries_run):
     asked = Criteria(
         where=Condition(field="size", value=1),
-        order=parse_order("-made_at"),
+        order=Sort.parse("-made_at"),
         pagination=Pagination(limit=10),
     )
 

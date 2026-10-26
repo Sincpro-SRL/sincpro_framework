@@ -2,7 +2,7 @@
 
 Context: `otlp_endpoint`, `otlp_headers` and `otlp_protocol` come from the project's file or from
 `OTEL_EXPORTER_OTLP_*`, so a host that cannot set environment variables (Odoo.sh) still reaches a
-collector that asks for a token. A setting left unset changes nothing: the exporter keeps reading
+collector that asks for a token. A setting left unset changes nothing: the exporter still reads
 its own environment variable, and gRPC stays the default with HTTP as its fallback.
 """
 
@@ -54,7 +54,7 @@ def _http_endpoint(endpoint: str, path: str) -> str:
 
 def _kwargs(endpoint: str) -> dict[str, Any]:
     """What an exporter is built with: the endpoint, and the headers only when some are set —
-    so an exporter with none keeps reading `OTEL_EXPORTER_OTLP_HEADERS` itself."""
+    so an exporter with none still reads `OTEL_EXPORTER_OTLP_HEADERS` itself."""
     headers = configured_headers()
     return {"endpoint": endpoint, **({"headers": headers} if headers else {})}
 

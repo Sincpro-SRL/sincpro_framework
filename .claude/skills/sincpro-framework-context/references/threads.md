@@ -6,7 +6,7 @@
 | `ContextExecutor` (a `ThreadPoolExecutor`) | yes — each task a copy of its submitter's |
 | `ContextThread` (a `threading.Thread`) | yes — where its creator stood |
 | `in_context(fn)` submitted to any pool | yes — the context it was wrapped in |
-| `bus.thread_context().execute` | yes — one per task (kept for existing code) |
+| `bus.thread_context().execute` | yes — one per task (still there for existing code) |
 | a bare `ThreadPoolExecutor.submit`, `loop.run_in_executor`, `threading.Thread` | **no** on the default build; yes on the free-threaded 3.14 build — never rely on it |
 
 ```python
@@ -25,4 +25,4 @@ Every worker sees the same nodes; nodes are copy-on-write, so a worker never see
 and what a worker `set`s stays in its own execution's node.
 
 Processes do not share a tree: across processes the context **travels** (headers, a message) or is
-**kept** in a store (`stores-and-propagation.md`).
+**persisted** in a store (`stores-and-propagation.md`).

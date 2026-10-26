@@ -23,12 +23,11 @@ from sincpro_framework import (
     UseFramework,
     exceptions,
 )
-from sincpro_framework.entrypoints.adapters.grpc import GrpcGateway
+from sincpro_framework.entrypoints import GrpcGateway, internal
 from sincpro_framework.entrypoints.adapters.grpc.client import GrpcClient
 from sincpro_framework.entrypoints.domain.bindings import GrpcBinding
 from sincpro_framework.entrypoints.domain.surface import Exposure
 from sincpro_framework.entrypoints.entrypoint.decorators import grpc
-from sincpro_framework.entrypoints.entrypoint.internal import internal
 
 
 class CommandIssueInvoice(DataTransferObject):

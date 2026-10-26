@@ -17,12 +17,8 @@ from sincpro_framework import DataTransferObject, Feature, UseFramework, excepti
 from sincpro_framework.auth import AccessControl, Permission
 from sincpro_framework.ddd import DomainEvent
 from sincpro_framework.ddd import exceptions as ddd_exceptions
-from sincpro_framework.entrypoints import Exposure
-from sincpro_framework.entrypoints.adapters.queue import (
-    QueueGateway,
-    QueueOptions,
-    QueueWire,
-)
+from sincpro_framework.entrypoints import Exposure, QueueGateway
+from sincpro_framework.entrypoints.adapters.queue import QueueOptions, QueueWire
 from sincpro_framework.entrypoints.domain.bindings import QueueBinding
 from sincpro_framework.entrypoints.entrypoint.decorators import queue
 

@@ -55,24 +55,24 @@ The client evaluates each condition over the record with the same evaluator it f
 decimals: an amount arrives as the text `"0"`). A component prop wins over the hint:
 `<Field name="partner_id" required />`, or hiding by the user's groups, is the client's call.
 
-## 3. When the server must keep a rule: the project's own hook
+## 3. When the server must enforce a rule: the project's own hook
 
-The framework enforces no hint. A rule the server keeps is a normal hook, ordered with
+The framework enforces no hint. A rule the server enforces is a normal hook, ordered with
 `after=`/`sequence=` like any other; read the published condition so the rule is written once:
 
 ```python
-from sincpro_framework.ddd import matches, presentation_of
-from sincpro_framework.ddd import exceptions
+from sincpro_framework.ddd import exceptions, presentation_of
+from sincpro_framework.ddd.criteria import Evaluation
 
 @billing_hooks.on(Invoice)
 class PaymentNeedsItsReference(BillingHook):
     def before_save(self, invoice: Invoice) -> None:
         for name, condition in presentation_of(Invoice).required_when.items():
-            if matches(invoice, condition) and not getattr(invoice, name):
+            if Evaluation.matches(invoice, condition) and not getattr(invoice, name):
                 raise exceptions.ConstraintViolation(f"{name} is required for this invoice")
 ```
 
-A state lock ("a confirmed invoice keeps its partner") is better written as the aggregate's
+A state lock ("a confirmed invoice cannot change its partner") is better written as the aggregate's
 own method refusing the change, or a `before_save` hook comparing with the stored version.
 
 ## Mistakes to avoid

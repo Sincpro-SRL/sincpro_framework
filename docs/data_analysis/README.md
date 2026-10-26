@@ -70,7 +70,7 @@ posted = Criteria.model_validate(
 
 ## Page after page, each read once
 
-A `QueryCache` keeps a read under the repository's fingerprint of it — the filter, the order, the
+A `QueryCache` caches a read under the repository's fingerprint of it — the filter, the order, the
 mask and the scope a repository reads under, never the page. The same question with more pages
 reads only the pages not held — `pages` is how many the frame holds after the call, not how many
 more to read; asking again reads nothing:
@@ -91,7 +91,7 @@ assert again is more and repository.reads == 2
 ```
 
 A frame has a column per field of the aggregate — `id`, `created_at`, `updated_at` and `version`
-of `Entity` included — or the ones the `Criteria`'s specification keeps. Pages are read with the repository's keyset cursor and without a count, and merged by `id`, so
+of `Entity` included — or the ones the `Criteria`'s specification selects. Pages are read with the repository's keyset cursor and without a count, and merged by `id`, so
 a row that moved between two pages is held once. `"1000"` and `1000`, `"10.0"` and `"10.00"`, or
 the parts of an `all` in another order are the same question and share what is held.
 
@@ -165,13 +165,12 @@ from sincpro_framework.data_layer.orm import (
 
     Repository,
 
-    invalidate_on_commit,
-
     map_aggregates,
 
     template_table,
 
 )
+from sincpro_framework.data_layer.orm import invalidate_on_commit
 
 
 @dataclass
@@ -195,7 +194,7 @@ assert frames.get(payments, Payment, every_payment) is None
 assert len(frames.fetch_all(payments, Payment, every_payment)) == 1
 ```
 
-A read that answers no row still has its columns — the identity and what the specification keeps,
+A read that answers no row still has its columns — the identity and what the specification selects,
 or every field the model describes — typed by the model, so it joins, and goes to Arrow and
 Parquet, as one with rows would.
 
@@ -222,7 +221,7 @@ assert len(in_pandas) == len(sales)
 ```
 
 What DuckDB or polars answer as Arrow comes back as a frame with `DataFrame.from_arrow`, its types
-read from the schema — so an answer with no rows keeps its columns:
+read from the schema — so an answer with no rows still has its columns:
 
 ```python
 from sincpro_framework.data_layer.data_analysis import DataFrame
@@ -234,11 +233,11 @@ assert set(journals.column("journal")) == {"SAL", "PUR", "BNK"}
 assert dict(zip(journals.columns, journals.types))["total"] == "decimal"
 ```
 
-To a client, a frame travels as Parquet — to download or keep — or as an Arrow IPC stream,
+To a client, a frame travels as Parquet — to download or store — or as an Arrow IPC stream,
 `application/vnd.apache.arrow.stream`, for one that appends page after page. Both are a
 fraction of the JSON. `to_json` answers by column, with decimals as text and `types` saying so,
 and `version` is the frame's content as a key — the same rows, the same version, a strong ETag.
-In Arrow, a decimal column's scale is the largest among its values, an aware datetime is kept in
+In Arrow, a decimal column's scale is the largest among its values, an aware datetime is stored in
 UTC, and a column with no value is null:
 
 ```python
@@ -261,7 +260,7 @@ assert sales.version == cache.fetch_all(repository, InvoiceLine, posted).version
 ## Reference
 
 `QueryCache` holds the rows of a read in this process, for analysis; the answer of a bus Query is
-kept by `QueryCaching`, in [caching](../caching/README.md).
+cached by `QueryCaching`, in [caching](../caching/README.md).
 
 
 | | |

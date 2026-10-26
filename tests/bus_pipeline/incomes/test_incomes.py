@@ -13,11 +13,14 @@ from sincpro_framework import (
     UseFramework,
 )
 from sincpro_framework.bus_pipeline.incomes.events import ExecutionStarted
-from sincpro_framework.bus_pipeline.incomes.listeners import starts
+from sincpro_framework.bus_pipeline.incomes.listeners import start_listeners
 from sincpro_framework.bus_pipeline.outcomes.events import ExecutionCompleted, ExecutionFailed
-from sincpro_framework.bus_pipeline.outcomes.listeners import completions, failures
+from sincpro_framework.bus_pipeline.outcomes.listeners import (
+    completion_listeners,
+    failure_listeners,
+)
 from sincpro_framework.context import requires_context
-from sincpro_framework.context.infrastructure.tree import current_execution
+from sincpro_framework.context.services.executions import current_execution
 from sincpro_framework.event_driven import Publisher, Subscriber, SyncQueue
 
 
@@ -40,9 +43,9 @@ class SiatUnavailable(Exception):
 @pytest.fixture(autouse=True)
 def nobody_listens_after():
     yield
-    starts.clear()
-    completions.clear()
-    failures.clear()
+    start_listeners.clear()
+    completion_listeners.clear()
+    failure_listeners.clear()
 
 
 def _warehouse(name: str) -> UseFramework:
@@ -275,7 +278,7 @@ def test_a_bus_hears_only_its_own_starts_and_a_broken_listener_changes_nothing()
     def broken(started: ExecutionStarted) -> None:
         raise RuntimeError("the audit is down")
 
-    starts.subscribe(of_process.append)
+    start_listeners.subscribe(of_process.append)
 
     for bus in (warehouse, other):
         assert bus(CommandReserveStock(order_id="O-9")) == ResponseReserveStock(

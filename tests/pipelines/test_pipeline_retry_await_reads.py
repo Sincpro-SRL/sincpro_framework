@@ -16,12 +16,13 @@ from sincpro_framework.pipelines import (
     Pipeline,
     PipelineReads,
     PipelineRun,
+    PipelineRuns,
     PipelineState,
     ResponseRuns,
     Retry,
     StepStatus,
 )
-from sincpro_framework.pipelines import exceptions as pipelines_exceptions
+from sincpro_framework.pipelines.domain import exceptions as pipelines_exceptions
 
 
 class CommandRunIssue(DataTransferObject):
@@ -116,7 +117,7 @@ def test_retries_run_out_and_the_run_fails_with_the_last_error():
     with pytest.raises(Unavailable):
         bus(CommandRunIssue(run_id="i-2"))
 
-    [run] = bus.current_context().pipelines().find("forge-pipelines.CommandRunIssue")
+    [run] = PipelineRuns.of(bus.current_context()).find("forge-pipelines.CommandRunIssue")
     assert run.state is PipelineState.FAILED and run.steps[0].attempts == 2
     assert did == ["close ok=False"]
 
@@ -214,9 +215,7 @@ def test_a_read_that_names_no_pipeline_says_how():
     with pytest.raises(
         pipelines_exceptions.ProgrammingError, match=r"GetRun\[CommandRunNightly\]"
     ):
-        from sincpro_framework.pipelines.reads import pipeline_of
-
-        pipeline_of(QueryWrong)
+        QueryWrong.pipeline_command()
 
 
 def test_an_await_its_input_cannot_answer_is_a_programming_error():

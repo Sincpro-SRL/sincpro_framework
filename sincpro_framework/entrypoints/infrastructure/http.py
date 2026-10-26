@@ -3,7 +3,7 @@
 from collections.abc import Mapping
 from typing import Any
 
-from sincpro_framework.context.adapters.propagation import extract
+from sincpro_framework.context import context_propagation
 
 
 def merge_http_context(headers: Mapping[str, str]) -> dict[str, Any]:
@@ -20,7 +20,7 @@ def merge_http_context(headers: Mapping[str, str]) -> dict[str, Any]:
     3. Final: a context dict handle_payload treats as inherited; empty becomes {}.
     """
     lowered = {key.lower(): value for key, value in headers.items()}
-    merged: dict[str, Any] = extract(lowered)
+    merged: dict[str, Any] = context_propagation.extract(lowered)
     traceparent = lowered.get("traceparent")
     if traceparent:
         merged["carrier"] = {"traceparent": traceparent}

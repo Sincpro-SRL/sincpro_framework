@@ -78,14 +78,14 @@ transparency make the same promise: the bus is the API, where it runs is configu
    travels with its type — a `Secret`, an enum, a `Decimal`, a DTO; the framework filters nothing,
    what a project puts in its context is its decision. The host's spans land in the caller's trace.
 9. **Bounded in time.** Each call has a deadline — the address's `timeout`, 30 seconds when not said.
-   **And, when asked, not called while it does not answer:** `?circuit=on` on the address — or
-   `hosted_by(address, circuit=True)`, or a `Circuit` of the project's — gives it a circuit: after
-   `circuit_failures` calls in a row that did not reach the context (5), calls fail at once with
-   `ContextUnavailable` and its `retry_after` for `circuit_open_for` seconds (30), then one is let
+   **And, when asked, not called while it does not answer:** `?circuit_breaker=on` on the address — or
+   `hosted_by(address, circuit_breaker=True)`, or a `CircuitBreaker` of the project's — gives it a circuit: after
+   `circuit_breaker_failures` calls in a row that did not reach the context (5), calls fail at once with
+   `ContextUnavailable` and its `retry_after` for `circuit_breaker_open_for` seconds (30), then one is let
    through to try. It counts only what this process's transport raised — the context not reached,
    no answer back; whatever the host raised, even its own `CircuitOpen` or a context *it* could
    not reach, is an answer, arrives as itself with its `retry_after`, and never counts. None
-   unless asked. See [core/circuits.md](../core/circuits.md).
+   unless asked. See [core/circuit-breaker.md](../core/circuit-breaker.md).
 10. **What only a network can do is named**: `ContextUnavailable` — it did not run, retry;
     `ContextOutcomeUnknown` / `ContextTimeout` — it may have run, verify before retrying or
     undoing.
@@ -102,7 +102,7 @@ context becomes a reference only when something says where it is hosted:
 |---|---|---|
 | nothing | — | one process, dev, every existing project: all local |
 | configuration | `context_map:` in the conf file, `SINCPRO_CONTEXT_MAP` in the environment | **services in production** — the same code runs together in dev and split in production |
-| code | `billing.hosted_by("grpc://billing-svc:50051")` or `billing.hosted_by(HostedAt(Wire.GRPC, "billing-svc:50051", timeout=5))` | tests, scripts, a composition root that wires by hand |
+| code | `billing.hosted_by("grpc://billing-svc:50051")` or `billing.hosted_by(HostedAt(Scheme.GRPC, "billing-svc:50051", timeout=5))` | tests, scripts, a composition root that wires by hand |
 | forced local | `billing.run_here()` — what `serve`, `open_host` and `open_host_routes` do | a process that runs the context whatever the configuration says |
 
 **Which wins — the last one applied:**
@@ -121,7 +121,7 @@ billing.serve("0.0.0.0:50051")                         # 3. served here: local, 
 
 `billing.hosted_at` says where it is hosted (`None` when nothing does); `billing.is_reference` says
 whether this process forwards to it. A code address is checked exactly as a configured one
-(`InvalidAddress`), logged the same way, and kept by every generation `fresh()` makes.
+(`InvalidAddress`), logged the same way, and carried over to every generation `fresh()` makes.
 
 ## The context map
 
@@ -134,9 +134,9 @@ address = grpc://<host>:<port>[?<options>]
         | http://<host>:<port>[?<options>]
         | https://<host>:<port>[?<options>]
 options = timeout=<seconds>              each call's deadline (30)
-        & circuit=on|off                 stop calling it while it does not answer (off)
-        & circuit_failures=<count>       calls in a row not reaching it that open it (5) — with circuit=on
-        & circuit_open_for=<seconds>     how long an open one fails calls at once (30) — with circuit=on
+        & circuit_breaker=on|off                 stop calling it while it does not answer (off)
+        & circuit_breaker_failures=<count>       calls in a row not reaching it that open it (5) — with circuit_breaker=on
+        & circuit_breaker_open_for=<seconds>     how long an open one fails calls at once (30) — with circuit_breaker=on
 ```
 
 - The name is the bus's own — the one given to `UseFramework("billing")`.
@@ -154,8 +154,8 @@ typed, immutable `HostedAt`, as SQLAlchemy reads a database URL into its `URL`:
 
 | | Type | |
 |---|---|---|
-| `Wire` | `StrEnum` — `GRPC`, `HTTP`, `HTTPS` | the scheme; it picks the transport |
-| `HostedAt` | `wire`, `address` (`host:port`), `timeout`, `circuit`, `circuit_failures`, `circuit_open_for` | `HostedAt.parse(url)`, or built in code |
+| `Scheme` | `StrEnum` — `GRPC`, `HTTP`, `HTTPS` | the scheme; it picks the transport |
+| `HostedAt` | `wire`, `address` (`host:port`), `timeout`, `circuit`, `circuit_breaker_failures`, `circuit_breaker_open_for` | `HostedAt.parse(url)`, or built in code |
 | `HostedContext` | `context`, `at` | one entry of `context_map:` in the settings |
 
 The conf file's entries are validated **when it is loaded**, each error at its path; the
@@ -163,10 +163,10 @@ environment's when the first bus is created, naming the variable. Every refusal 
 written and what to write:
 
 ```text
-context_map.0.at        'grcp://b:1': 'grcp' is not a wire a context is reached by — write grpc://<host>:<port>, …
+context_map.0.at        'grcp://b:1': 'grcp' is not a scheme a context is reached by — write grpc://<host>:<port>, …
 context_map.1.contxt    Extra inputs are not permitted
 SINCPRO_CONTEXT_MAP     billing: 'grpc://billing-svc': 'billing-svc' is not <host>:<port> — write grpc://<host>:<port>, …
-hosted_by(...)          'billing-svc:50051' names no wire — write grpc://billing-svc:50051 (or http://, https://)
+hosted_by(...)          'billing-svc:50051' names no scheme — write grpc://billing-svc:50051 (or http://, https://)
 ```
 
 Refused: no scheme or another one, no host, no port, a path, a `timeout` that is not seconds above
@@ -187,7 +187,7 @@ itself.
 
 | Step | What happens |
 |---|---|
-| created | `UseFramework("billing")` reads this process's map — nothing named, local; named, a reference, said in the logs; registrations are kept, never resolved |
+| created | `UseFramework("billing")` reads this process's map — nothing named, local; named, a reference, said in the logs; registrations are stored, never resolved |
 | decided | at every call: a **reference** when the map places it elsewhere and this process does not run it (`bus.is_reference`) |
 | served | `serve`, `open_host`, `open_host_routes` mark it as run here (`run_here()`), then build it — the host's bus is real |
 | built | `build_root_bus()` — a local bus builds once, under a lock; a reference returns at once, never fails, builds nothing |
@@ -291,7 +291,7 @@ doing it again or undoing it. Every wire answers it: REST 504, JSON-RPC `-32024`
 
 - **The same package on both ends, at whatever version each deployment has.** A DTO is found by its
   identity — `context.Class`, an event by its `name` — and rebuilt by the receiver's class. A field
-  added with a default keeps every caller working; renaming a class is the one change that breaks
+  added with a default breaks no caller; renaming a class is the one change that breaks
   one, and it says so.
 - **Python on both ends.** `/sincpro.Contexts/Execute` and `/sincpro/contexts/execute` carry Python's
   values; another language uses the gateway's `Struct` methods and its `.proto` export.
@@ -323,7 +323,7 @@ doing it again or undoing it. Every wire answers it: REST 504, JSON-RPC `-32024`
 | `ContextFailed`, `ContextUnavailable`, `ContextOutcomeUnknown`, `ContextTimeout`, `DTODoesNotFit` | `sincpro_framework.remote_execution` |
 | `Payload` · `pack` / `unpack` | `sincpro_framework.remote_execution.domain.payload` · `sincpro_framework.common.serialization` — what a call and its answer travel as |
 | `registered_name` | `sincpro_framework.common.naming` — what a DTO is known by: an event's `name`, any other `context.Class` |
-| `Wire`, `HostedAt`, `HostedContext`, `InvalidAddress` | `sincpro_framework.remote_execution` (from `common.transport.addresses`) |
+| `Scheme`, `HostedAt`, `HostedContext`, `InvalidAddress` | `sincpro_framework.remote_execution` |
 | `open_host([...])` → `.server()` / `.mount(server)` | the gRPC open host as a server of its own (what `bus.serve` runs: the door and its health, never the contexts' public catalog), or mounted on a server of the caller's — beside a public `GrpcGateway` on one port, on purpose |
 
 ## Module map
@@ -332,17 +332,19 @@ doing it again or undoing it. Every wire answers it: REST 504, JSON-RPC `-32024`
 
 | Module | What it holds |
 |---|---|
-| `sincpro_framework.common.transport.addresses` | `Wire`, `HostedAt`, `HostedContext`, `InvalidAddress` — where a context is reached; the settings declare it too, so it imports neither |
-| `domain/errors.py` | what a failed call raises, an error's details, and raising a remote exception as itself |
-| `adapters/transport.py` | `Transport`, the contract `transport_for` holds the transports by (only the adapters call it) |
+| `domain/address.py` | `Scheme`, `HostedAt`, `HostedContext` — where a context is reached; the settings declare the context map with it |
+| `domain/exceptions.py` | what a failed call raises (`InvalidAddress` among them); `error.unreached` when this process's transport raised it |
+| `domain/payload.py` | `Payload`, what a call and its answer travel as |
+| `domain/transport.py` | `Transport`, what every wire answers |
+| `domain/failure_codec.py` | `FailureCodec`: an error's details written by the host, the exception rebuilt as itself by the caller |
+| `services/transports.py` | `transport_for(address)`, chosen by the scheme, and `circuit_breaker_for(address)` — one of each per address |
+| `services/hosted_execution.py` | `execute_hosted`, the execution both Open Hosts run |
 | `adapters/http.py` | the caller's side over HTTP — the standard library, no extra |
 | `adapters/grpc.py` | the caller's side over gRPC — `[grpc]`, imported only when an address names it |
-| `adapters/__init__.py` | `transport_for(address)`, chosen by the scheme |
-| `configuration.py` | the context map, read from the conf file and `SINCPRO_CONTEXT_MAP` |
+| `infrastructure/configuration.py` | the context map, read from the conf file and `SINCPRO_CONTEXT_MAP` |
 | `entrypoint/hosts.py` | `serve_contexts`, `Attach`, `OpenHost` — what `bus.serve` runs |
 | `entrypoint/http.py` | `open_host_routes`, the HTTP Open Host — `[rpc]` |
 | `entrypoint/grpc.py` | `open_host`, the gRPC Open Host — its own server, or mounted on one — `[grpc]` |
-| `entrypoint/execution.py` | the execution both Open Hosts run |
 | `entrypoint/host_process.py` | the subprocess `Attach.PROCESS` launches |
 
 The core imports `remote_execution` and runs a local bus with every extra missing; an `http://`

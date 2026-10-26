@@ -132,10 +132,10 @@ from billing_two_processes import (
 )
 from sincpro_framework.remote_execution.domain.payload import Payload
 from sincpro_framework.remote_execution import ContextTimeout
-from sincpro_framework.remote_execution.domain import failures
+from sincpro_framework.remote_execution.domain import failure_codec
 
 wire: list[bytes] = []
-write, read, read_details = Payload.as_json, Payload.from_json.__func__, failures.read_values
+write, read, read_details = Payload.as_json, Payload.from_json.__func__, failure_codec.read_values
 
 
 def written(self):
@@ -156,7 +156,7 @@ def details(raw):
 
 Payload.as_json = written
 Payload.from_json = classmethod(received)
-failures.read_values = details
+failure_codec.read_values = details
 
 pdf = bytes(range(256)) * 400
 with billing.context({"user_id": 7}):

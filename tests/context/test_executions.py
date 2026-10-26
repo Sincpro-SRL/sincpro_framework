@@ -21,8 +21,8 @@ from sincpro_framework import (
     Feature,
     UseFramework,
 )
-from sincpro_framework.context import ContextKey, Execution, Level, carrying
-from sincpro_framework.context.infrastructure.tree import current_execution
+from sincpro_framework.context import ContextKey, ContextLevel, Execution, carrying
+from sincpro_framework.context.services.executions import current_execution
 from sincpro_framework.ddd import DomainEvent
 from sincpro_framework.event_driven import Publisher, Subscriber, SyncQueue
 from sincpro_framework.observability.correlation import execution_context
@@ -83,11 +83,11 @@ def test_every_execution_is_one_with_its_parent_named(seen):
     head, first, second, reserve = seen
     assert (head.use_case, head.level, head.bus) == (
         "CommandConfirmSale",
-        Level.APPLICATION,
+        ContextLevel.APPLICATION,
         "identity-sales",
     )
     assert head.causation_id is None and head.correlation_id == head.execution_id
-    assert (first.level, reserve.bus) == (Level.FEATURE, "identity-warehouse")
+    assert (first.level, reserve.bus) == (ContextLevel.FEATURE, "identity-warehouse")
     assert len({one.execution_id for one in seen}) == 4
     for child in (first, second, reserve):
         assert child.causation_id == head.execution_id

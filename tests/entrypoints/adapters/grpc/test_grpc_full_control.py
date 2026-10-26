@@ -31,16 +31,13 @@ from sincpro_framework.auth import (
     Identity,
     Permission,
     StaticProvider,
-    current_identity,
+    security,
 )
 from sincpro_framework.context import ContextKey
 from sincpro_framework.context.domain.execution import CHAIN_KEYS
-from sincpro_framework.entrypoints.adapters.grpc import (
-    GrpcGateway,
-    bus_call,
-    framework_interceptors,
-)
+from sincpro_framework.entrypoints import GrpcGateway, bus_call
 from sincpro_framework.entrypoints.adapters.grpc.wire import (
+    framework_interceptors,
     scalar_to_struct,
     struct_to_scalar,
 )
@@ -81,7 +78,7 @@ def _parity() -> UseFramework:
                 raise exceptions.ProgrammingError("an invoice has to balance")
             return Issued(
                 number=f"F-{dto.total}",
-                by=current_identity().subject,
+                by=security.identity.subject,
                 tenant=self.context.get("tenant"),
             )
 

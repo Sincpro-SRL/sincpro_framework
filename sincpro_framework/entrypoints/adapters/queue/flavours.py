@@ -1,6 +1,6 @@
 """What differs from one broker to the next, said once: how a subscription is declared, whether the
 broker counts deliveries, how a retry and a dead letter are carried, what a republished copy
-keeps.
+carries over.
 
 | Broker | Consumer group | Delivery count | Retry by default | Dead letter by default |
 |---|---|---|---|---|
@@ -44,7 +44,7 @@ class DeadLetterBy(StrEnum):
     """A copy to `{channel}{suffix}` with the reason in its headers, then the delivery is
     acked."""
     NATIVE = "native"
-    """Reject: the broker's own dead-lettering (RabbitMQ's dead-letter exchange) keeps it —
+    """Reject: the broker's own dead-lettering (RabbitMQ's dead-letter exchange) holds it —
     the reason is logged, the broker adds its own headers (`x-death`)."""
 
 
@@ -192,7 +192,7 @@ def delivery_count(name: BrokerName, message: Any) -> int | None:
 
 
 def republish_options(name: BrokerName, message: Any) -> dict[str, Any]:
-    """What a copy keeps of the original so it lands where the original did — Kafka's key,
+    """What a copy carries over from the original so it lands where the original did — Kafka's key,
     so one entity's messages share a partition."""
     if name == "kafka":
         key = getattr(message.raw_message, "key", None)

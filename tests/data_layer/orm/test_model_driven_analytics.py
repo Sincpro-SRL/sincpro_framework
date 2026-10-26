@@ -22,7 +22,9 @@ from sincpro_framework.data_layer.orm.sqlalchemy.entrypoint.repository import Re
 from sincpro_framework.data_layer.orm.sqlalchemy.entrypoint.template_table.entity import (
     entity_table,
 )
-from sincpro_framework.data_layer.orm.sqlalchemy.services.model_introspection import describe
+from sincpro_framework.data_layer.orm.sqlalchemy.services.model_introspection import (
+    ModelIntrospection,
+)
 from sincpro_framework.data_layer.repositories import MemoryRepository
 from sincpro_framework.ddd import Entity, computed
 from sincpro_framework.ddd import exceptions as ddd_exceptions
@@ -32,7 +34,7 @@ from sincpro_framework.ddd.criteria import (
     Criteria,
     Grain,
     Grouping,
-    Level,
+    GroupingLevel,
     Measure,
     Operator,
     Pagination,
@@ -133,7 +135,7 @@ def bills(request: pytest.FixtureRequest) -> Any:
 
 
 def grouped(
-    store: Any, *levels: Level, measures: dict | None = None, where: Any = None
+    store: Any, *levels: GroupingLevel, measures: dict | None = None, where: Any = None
 ) -> Any:
     return store.group_by_levels(
         Bill,
@@ -152,7 +154,7 @@ def counts(buckets: Any) -> dict:
 
 
 def test_a_computed_field_says_so_and_is_read_only():
-    for meta in (describe_class(Bill), describe(Bill)):
+    for meta in (describe_class(Bill), ModelIntrospection.describe(Bill)):
         field = meta.fields["balance"]
 
         assert (field.computed, field.readonly, field.groupable) == (True, True, True)
@@ -204,7 +206,7 @@ def test_a_computed_field_is_ordered_like_a_column(bills: Any):
 def test_a_computed_field_is_grouped_and_folded_like_a_column(bills: Any):
     buckets = grouped(
         bills,
-        Level(field="owner"),
+        GroupingLevel(field="owner"),
         measures={"owing": Measure(function="sum", field="balance")},
     )
 
@@ -213,7 +215,7 @@ def test_a_computed_field_is_grouped_and_folded_like_a_column(bills: Any):
         "beto": Decimal("10"),
         "caro": Decimal("50"),
     }
-    assert counts(grouped(bills, Level(field="balance"))) == {
+    assert counts(grouped(bills, GroupingLevel(field="balance"))) == {
         Decimal("0"): 2,
         Decimal("10"): 1,
         Decimal("50"): 1,
@@ -260,7 +262,7 @@ def test_a_memory_store_refuses_a_field_it_has_no_python_for():
     for criteria in (
         Criteria(where=Condition(field="doubled", operator=Operator.GT, value=1)),
         Criteria(order=(Sort(field="doubled"),)),
-        Criteria(grouping=Grouping(group_by=(Level(field="doubled"),))),
+        Criteria(grouping=Grouping(group_by=(GroupingLevel(field="doubled"),))),
     ):
         with pytest.raises(
             ddd_exceptions.InvalidCriteria, match="SqlOnly.doubled is computed in SQL"
@@ -287,20 +289,20 @@ def test_a_memory_store_refuses_a_field_it_has_no_python_for():
     ],
 )
 def test_a_date_is_grouped_by_the_number_it_holds(bills: Any, part, expected):
-    got = counts(grouped(bills, Level(field="posted_at", part=part)))
+    got = counts(grouped(bills, GroupingLevel(field="posted_at", part=part)))
 
     assert got == {key: value for key, value in expected.items() if value}
 
 
 def test_a_part_is_a_number_whatever_the_year(bills: Any):
-    march = counts(grouped(bills, Level(field="posted_at", part=Part.MONTH)))[3]
+    march = counts(grouped(bills, GroupingLevel(field="posted_at", part=Part.MONTH)))[3]
 
     assert march == 2  # 2026-03-14 and 2027-03-02 are the same March
 
 
 def test_the_weeks_are_iso_and_monday_is_one(bills: Any):
-    weeks = counts(grouped(bills, Level(field="posted_at", part=Part.ISO_WEEK)))
-    days = counts(grouped(bills, Level(field="posted_at", part=Part.DAY_OF_WEEK)))
+    weeks = counts(grouped(bills, GroupingLevel(field="posted_at", part=Part.ISO_WEEK)))
+    days = counts(grouped(bills, GroupingLevel(field="posted_at", part=Part.DAY_OF_WEEK)))
 
     assert weeks[2] == 1  # 2026-01-05 is a Monday, the first day of ISO week 2
     assert days[1] == 2  # 2026-01-05 and 2026-08-31 are both Mondays
@@ -308,29 +310,29 @@ def test_the_weeks_are_iso_and_monday_is_one(bills: Any):
 
 
 def test_a_part_cannot_be_opened_and_says_so(bills: Any):
-    buckets = grouped(bills, Level(field="posted_at", part=Part.MONTH))
+    buckets = grouped(bills, GroupingLevel(field="posted_at", part=Part.MONTH))
 
     assert all(one.openable is False for one in buckets)
     assert all(one.criteria.where is None for one in buckets)
 
 
 def test_an_ordinary_group_can_be_opened(bills: Any):
-    buckets = grouped(bills, Level(field="owner"))
+    buckets = grouped(bills, GroupingLevel(field="owner"))
 
     assert all(one.openable for one in buckets)
 
 
 def test_a_level_takes_a_grain_or_a_part_and_not_both():
     with pytest.raises(ddd_exceptions.InvalidCriteria, match="a grain.*or a part"):
-        Level(field="posted_at", grain=Grain.MONTH, part=Part.MONTH)
+        GroupingLevel(field="posted_at", grain=Grain.MONTH, part=Part.MONTH)
     with pytest.raises(ddd_exceptions.InvalidCriteria, match="not a part of a date"):
-        Level(field="posted_at", part="fortnight")  # type: ignore[arg-type]
+        GroupingLevel(field="posted_at", part="fortnight")  # type: ignore[arg-type]
 
 
 def test_a_page_of_ids_per_group_is_refused_for_a_part(bills: Any):
     asked = Criteria(
         pagination=Pagination(limit=2),
-        grouping=Grouping(group_by=(Level(field="posted_at", part=Part.MONTH),)),
+        grouping=Grouping(group_by=(GroupingLevel(field="posted_at", part=Part.MONTH),)),
     )
 
     with pytest.raises(ddd_exceptions.InvalidCriteria, match="has no rows to page"):
@@ -341,7 +343,7 @@ def test_a_page_of_ids_per_group_is_refused_for_a_part(bills: Any):
 
 
 def test_an_enum_lists_every_choice_even_the_ones_with_no_rows(bills: Any):
-    got = counts(grouped(bills, Level(field="state", fill=True)))
+    got = counts(grouped(bills, GroupingLevel(field="state", fill=True)))
 
     assert got == {"open": 3, "overdue": 0, "paid": 2}
 
@@ -349,13 +351,13 @@ def test_an_enum_lists_every_choice_even_the_ones_with_no_rows(bills: Any):
 def test_a_boolean_lists_both_values(bills: Any):
     only_open = Condition(field="state", value="open")
 
-    got = counts(grouped(bills, Level(field="settled", fill=True), where=only_open))
+    got = counts(grouped(bills, GroupingLevel(field="settled", fill=True), where=only_open))
 
     assert got == {False: 3, True: 0}
 
 
 def test_a_part_lists_every_number_it_can_be(bills: Any):
-    got = grouped(bills, Level(field="posted_at", part=Part.MONTH, fill=True))
+    got = grouped(bills, GroupingLevel(field="posted_at", part=Part.MONTH, fill=True))
 
     assert [one.value for one in got] == list(range(1, 13))
     assert [one.count for one in got] == [2, 0, 2, 0, 0, 0, 0, 1, 0, 0, 0, 0]
@@ -364,7 +366,7 @@ def test_a_part_lists_every_number_it_can_be(bills: Any):
 def test_an_empty_group_folds_to_nothing_and_a_count_to_zero(bills: Any):
     buckets = grouped(
         bills,
-        Level(field="state", fill=True),
+        GroupingLevel(field="state", fill=True),
         measures={
             "owing": Measure(function="sum", field="balance"),
             "owners": Measure(function="count_distinct", field="owner"),
@@ -377,7 +379,9 @@ def test_an_empty_group_folds_to_nothing_and_a_count_to_zero(bills: Any):
 
 
 def test_a_filled_level_is_listed_under_every_parent(bills: Any):
-    buckets = grouped(bills, Level(field="owner"), Level(field="state", fill=True))
+    buckets = grouped(
+        bills, GroupingLevel(field="owner"), GroupingLevel(field="state", fill=True)
+    )
 
     assert {one.value: [(g.value, g.count) for g in one.groups] for one in buckets} == {
         "ana": [("open", 1), ("overdue", 0), ("paid", 1)],
@@ -388,12 +392,12 @@ def test_a_filled_level_is_listed_under_every_parent(bills: Any):
 
 def test_a_level_with_nothing_to_list_cannot_be_filled(bills: Any):
     with pytest.raises(ddd_exceptions.InvalidCriteria, match="cannot be filled"):
-        grouped(bills, Level(field="owner", fill=True))
+        grouped(bills, GroupingLevel(field="owner", fill=True))
 
 
 def test_a_filled_level_cannot_be_filtered_or_paged_by_its_groups(bills: Any):
     having = Grouping(
-        group_by=(Level(field="state", fill=True),),
+        group_by=(GroupingLevel(field="state", fill=True),),
         where_measures=Condition(field="count", operator=Operator.GT, value=0),
     )
 
@@ -414,7 +418,11 @@ def test_a_date_grain_is_filled_between_the_bounds_the_filter_gives():
     )
 
     got = counts(
-        grouped(store, Level(field="posted_at", grain=Grain.MONTH, fill=True), where=quarter)
+        grouped(
+            store,
+            GroupingLevel(field="posted_at", grain=Grain.MONTH, fill=True),
+            where=quarter,
+        )
     )
 
     assert got == {"2026-01": 2, "2026-02": 0, "2026-03": 1, "2026-04": 0}
@@ -426,7 +434,7 @@ def test_a_date_grain_with_no_bounds_cannot_be_filled():
     with pytest.raises(
         ddd_exceptions.InvalidCriteria, match="needs the filter to bound it at both ends"
     ):
-        grouped(store, Level(field="posted_at", grain=Grain.MONTH, fill=True))
+        grouped(store, GroupingLevel(field="posted_at", grain=Grain.MONTH, fill=True))
 
 
 # ── the folds a closed list adds ──────────────────────────────────────────────
@@ -437,7 +445,7 @@ def test_all_or_any_of_a_boolean(bills: Any):
         one.value: one.measures
         for one in grouped(
             bills,
-            Level(field="owner"),
+            GroupingLevel(field="owner"),
             measures={
                 "all_settled": Measure(function="bool_and", field="settled"),
                 "any_settled": Measure(function="bool_or", field="settled"),
@@ -456,7 +464,7 @@ def test_a_boolean_fold_is_refused_for_anything_that_is_not_a_boolean(bills: Any
     with pytest.raises(ddd_exceptions.InvalidCriteria, match="folds a boolean"):
         grouped(
             bills,
-            Level(field="owner"),
+            GroupingLevel(field="owner"),
             measures={"x": Measure(function="bool_and", field="total")},
         )
 
@@ -471,16 +479,19 @@ def test_the_median_is_answered_in_memory_and_refused_where_sql_has_no_percentil
     memory = MemoryRepository(*(bill(row) for row in ROWS))
     median = {"mid": Measure(function="median", field="total")}
 
-    assert grouped(memory, Level(field="owner"), measures=median)[0].measures == {"mid": 75.0}
+    assert grouped(memory, GroupingLevel(field="owner"), measures=median)[0].measures == {
+        "mid": 75.0
+    }
 
     sqlite = Repository(fresh("sqlite://", analytics.metadata))
     with pytest.raises(ddd_exceptions.InvalidCriteria, match="does not compute percentiles"):
-        grouped(sqlite, Level(field="owner"), measures=median)
+        grouped(sqlite, GroupingLevel(field="owner"), measures=median)
 
 
 def test_numbers_are_ordered_as_numbers_in_memory_as_in_sql(bills: Any):
     ordered = [
-        one.value for one in grouped(bills, Level(field="posted_at", part=Part.DAY_OF_MONTH))
+        one.value
+        for one in grouped(bills, GroupingLevel(field="posted_at", part=Part.DAY_OF_MONTH))
     ]
 
     assert ordered == sorted(ordered)
@@ -507,7 +518,7 @@ def test_a_part_is_written_in_the_words_of_each_dialect(dialect, part, expected)
         grouping_column,
     )
 
-    column = grouping_column(Bill, Level(field="posted_at", part=part), dialect)
+    column = grouping_column(Bill, GroupingLevel(field="posted_at", part=part), dialect)
     engine_dialect = {"postgresql": postgresql.dialect(), "sqlite": sqlite.dialect()}.get(
         dialect, postgresql.dialect()
     )
@@ -524,7 +535,7 @@ def test_a_dialect_with_no_part_translation_is_refused_naming_how_to_add_one():
     )
 
     with pytest.raises(exceptions.ProgrammingError, match="register_part_translator"):
-        grouping_column(Bill, Level(field="posted_at", part=Part.MONTH), "oracle")
+        grouping_column(Bill, GroupingLevel(field="posted_at", part=Part.MONTH), "oracle")
 
 
 def test_the_boolean_folds_use_the_native_function_where_there_is_one():
@@ -536,8 +547,10 @@ def test_the_boolean_folds_use_the_native_function_where_there_is_one():
 
     folds = {"all": Measure(function="bool_and", field="settled")}
 
-    on_postgres = measure_columns(Bill, describe(Bill), folds, "postgresql")[0]
-    on_sqlite = measure_columns(Bill, describe(Bill), folds, "sqlite")[0]
+    on_postgres = measure_columns(
+        Bill, ModelIntrospection.describe(Bill), folds, "postgresql"
+    )[0]
+    on_sqlite = measure_columns(Bill, ModelIntrospection.describe(Bill), folds, "sqlite")[0]
 
     assert "bool_and(" in str(on_postgres.compile(dialect=postgresql.dialect()))
     assert "min(" in str(on_sqlite.compile(dialect=postgresql.dialect())).lower()
@@ -586,9 +599,9 @@ def test_the_iso_week_and_weekday_use_nothing_newer_than_sqlite_has_always_had()
     )
 
     for level in (
-        Level(field="posted_at", part=Part.ISO_WEEK),
-        Level(field="posted_at", part=Part.DAY_OF_WEEK),
-        Level(field="posted_at", grain=Grain.WEEK),
+        GroupingLevel(field="posted_at", part=Part.ISO_WEEK),
+        GroupingLevel(field="posted_at", part=Part.DAY_OF_WEEK),
+        GroupingLevel(field="posted_at", grain=Grain.WEEK),
     ):
         rendered = str(
             grouping_column(Bill, level, "sqlite").compile(
@@ -650,7 +663,7 @@ def test_the_median_is_the_same_number_in_memory_and_where_the_engine_has_percen
         one.value: one.measures["mid"]
         for one in grouped(
             bills,
-            Level(field="owner"),
+            GroupingLevel(field="owner"),
             measures={"mid": Measure(function="median", field="total")},
         )
     }

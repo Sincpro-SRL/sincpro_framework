@@ -10,6 +10,7 @@ from dataclasses import dataclass, fields, is_dataclass
 from typing import TYPE_CHECKING, Any, get_args, get_origin
 
 from sincpro_framework.ddd import exceptions
+from sincpro_framework.ddd.criteria import Evaluation
 from sincpro_framework.sincpro_abstractions import DataTransferObject
 
 if TYPE_CHECKING:
@@ -378,7 +379,7 @@ class EntityCollection[T]:
         return self.items[0]
 
     def filtered(self, predicate: Callable[[T], bool]) -> "EntityCollection[T]":
-        """The records this predicate keeps, in order.
+        """The records this predicate accepts, in order.
 
             in      EntityCollection([ds_a(rows=10), ds_b(rows=900)]), lambda d: d.row_count > 100
             out     EntityCollection([ds_b])          no cursor, no count — it is not a page
@@ -395,15 +396,15 @@ class EntityCollection[T]:
             out     EntityCollection([ds_b])          no cursor, no count — it is not a page
 
         Answered in memory by the same rules the engine translates to SQL, so what a page
-        keeps of itself is what the database would have kept. Values are compared as the
+        selects of itself is what the database would have selected. Values are compared as the
         field's own type: a condition written as text goes through `Meta.accept` first.
 
         >>> page.filtered_by(criteria.expression).ids
         ['ds_01b2…']
         """
-        from sincpro_framework.ddd.criteria import matches
-
-        return self._derived(record for record in self.items if matches(record, expression))
+        return self._derived(
+            record for record in self.items if Evaluation.matches(record, expression)
+        )
 
     def partition(
         self, predicate: Callable[[T], bool]
@@ -470,7 +471,7 @@ class EntityCollection[T]:
         """The records as dictionaries, masked the way the wire masks them.
 
             in      nothing asked   →  out  every field the record declares
-            in      {"code": {}}    →  out  [{'id': …, 'code': '1010'}, …]   identity kept
+            in      {"code": {}}    →  out  [{'id': …, 'code': '1010'}, …]   identity included
 
         **Python values, not JSON**: a `datetime` stays a `datetime` and a `Decimal` a
         `Decimal`, because this is for what the process does next — a CSV, a comparison, a

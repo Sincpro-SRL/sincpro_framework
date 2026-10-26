@@ -42,7 +42,7 @@ apart by what the annotation inherits, never by whether an ORM maps it.
 
 ## Where the diff comes from
 
-- **On SQLAlchemy**, the engine already keeps the loaded and pending value, so the diff is read at
+- **On SQLAlchemy**, the engine already holds the loaded and pending value, so the diff is read at
   `before_flush`. It is registered on the **session**, not the repository — so it covers every route
   to the database, including a plain session or a script.
 - **`MemoryRepository`** has no flush to ask: it takes a baseline when it hands an aggregate out
@@ -81,7 +81,7 @@ class Invoice(ChangeTrackingMixin, Entity):
     change_event = InvoiceUpdated
 ```
 
-`BillingEvent` is this context's `DomainEvent` base mapped through `map_events`. This keeps
+`BillingEvent` is this context's `DomainEvent` base mapped through `map_events`. This stores
 `InvoiceUpdated` in its event table without mapping the framework-wide `EntityUpdated` base.
 
 `changes` is enough for a program; the event also carries the words a person reads:

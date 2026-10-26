@@ -1,4 +1,4 @@
-"""`RecordingQueue`: the events a use case published, kept for a test to assert on.
+"""`RecordingQueue`: the events a use case published, recorded for a test to assert on.
 
     published = RecordingQueue()                                    # nothing hears them
     published = RecordingQueue(SyncQueue(Subscriber(accounting)))   # and the subscribers still do
@@ -14,21 +14,21 @@ without a harness to learn.
 from typing import Any
 
 from sincpro_framework.ddd.events import DomainEvent
-from sincpro_framework.event_driven.domain.queue import Queue
+from sincpro_framework.event_driven import Queue
 
 
 class RecordingQueue:
-    """A `Queue` that keeps every event put on it, in order, and hands it on to `then`."""
+    """A `Queue` that records every event put on it, in order, and hands it on to `then`."""
 
     def __init__(self, then: Queue | None = None) -> None:
-        """`then` is the queue each event is handed on to after it is kept; none, and nobody
-        hears it."""
+        """`then` is the queue each event is handed on to after it is recorded; none, and
+        nobody hears it."""
         self.then = then
         self.events: list[DomainEvent] = []
 
     def put(self, event: DomainEvent) -> list[Any] | None:
-        """Keep `event`, then hand it to `then` — `None` when there is none, else what `then`
-        answers."""
+        """Record `event`, then hand it to `then` — `None` when there is none, else what
+        `then` answers."""
         self.events.append(event)
         return None if self.then is None else self.then.put(event)
 
@@ -42,5 +42,5 @@ class RecordingQueue:
         return [event for event in self.events if isinstance(event, event_type)]
 
     def clear(self) -> None:
-        """Forget what was kept — between two acts of one test."""
+        """Forget what was recorded — between two acts of one test."""
         self.events.clear()

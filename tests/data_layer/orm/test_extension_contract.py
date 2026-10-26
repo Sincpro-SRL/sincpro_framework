@@ -14,10 +14,12 @@ from sqlalchemy import Column, ForeignKey, MetaData, Numeric, Table, Text
 from sqlalchemy.orm import registry
 
 from sincpro_framework import exceptions
-from sincpro_framework.data_layer.orm import Relation, map_aggregates
+from sincpro_framework.data_layer.orm import TableRelation, map_aggregates
 from sincpro_framework.data_layer.orm.sqlalchemy.entrypoint.repository import Repository
 from sincpro_framework.data_layer.orm.sqlalchemy.entrypoint.template_table import entity_table
-from sincpro_framework.data_layer.orm.sqlalchemy.services.model_introspection import describe
+from sincpro_framework.data_layer.orm.sqlalchemy.services.model_introspection import (
+    ModelIntrospection,
+)
 from sincpro_framework.ddd import Criteria, Entity
 from sincpro_framework.ddd.criteria import Specification
 
@@ -111,7 +113,7 @@ def test_a_relation_an_extension_installs_says_its_own_cardinality(engine_url):
         {MoveFiscal: fiscal_t},
         relations={
             Move: {
-                "fiscal": Relation.foreign_key(
+                "fiscal": TableRelation.foreign_key(
                     MoveFiscal, parent_field="id", related_field="id", many=False
                 )
             }
@@ -143,13 +145,13 @@ def test_a_module_changes_how_a_field_of_the_core_is_shown_and_nothing_else():
         overlay={Move: {"total": {"label": {"default": "Amount"}, "readonly": True}}},
     )
 
-    total = describe(Move).fields["total"]
+    total = ModelIntrospection.describe(Move).fields["total"]
     assert (total.label, total.readonly, total.type) == (
         {"default": "Amount"},
         True,
-        describe(Move).fields["total"].type,
+        ModelIntrospection.describe(Move).fields["total"].type,
     )
-    assert describe(Move).fields["number"].readonly is False
+    assert ModelIntrospection.describe(Move).fields["number"].readonly is False
 
 
 def test_what_a_field_is_cannot_be_overlaid_by_a_module():
@@ -176,7 +178,7 @@ def test_the_overlay_of_the_core_reaches_the_extensions_that_inherit_the_field()
         reg, {MoveDelivery: delivery_t}, overlay={Move: {"total": {"required": True}}}
     )
 
-    assert describe(MoveDelivery).fields["total"].required is True
+    assert ModelIntrospection.describe(MoveDelivery).fields["total"].required is True
 
 
 # ── the kit a module runs in its own CI ────────────────────────────────────────

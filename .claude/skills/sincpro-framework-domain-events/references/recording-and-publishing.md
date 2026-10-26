@@ -10,7 +10,7 @@ from sincpro_framework.event_driven import Publisher, Subscriber, SyncQueue
 
 @dataclass(kw_only=True)
 class InvoicePosted(DomainEvent):
-    name = "billing.invoice.v1.posted"     # the wire name; keep it stable
+    name = "billing.invoice.v1.posted"     # the wire name; never change it
     invoice_id: str = ""
     total: int = 0
 
@@ -31,7 +31,7 @@ class Invoice(Entity):
 - `record` stores a **stamped copy** (the aggregate's type and id) and
   returns it; the instance you passed is left as it was. `pull_events()` hands the recorded events
   back **and forgets them** — pull once, after the save. `recorded_events()` looks without taking.
-- With `map_events` on the context's base event, `save(aggregate)` keeps these facts in the
+- With `map_events` on the context's base event, `save(aggregate)` persists these facts in the
   same transaction without pulling them. Plain `record` does not assign a stream version;
   `EventSourcedMixin.happened` assigns `entity_version` and applies the fact.
 - For durable delivery, mark the event `DeliverableEventMixin` and let `EventRelay` send it.
@@ -97,7 +97,7 @@ def config_billing_framework(name: str) -> UseFramework[BillingDependencies]:
 
 A queue needs a subscriber, a subscriber needs the buses, and a bus needs the publisher the queue is
 behind. Handed a function, `SyncQueue` asks for nothing until somebody publishes — by then every
-bus is registered — and keeps the subscriber it built. A publisher registered with
+bus is registered — and reuses the subscriber it built. A publisher registered with
 `add_dependency` after the first execution reaches the handlers from the next one.
 
 ## The two queues
@@ -106,7 +106,7 @@ bus is registered — and keeps the subscriber it built. A publisher registered 
 process, development, tests, and reactions that must be visible at once. **Publishing runs the
 subscriber in the call**, so a subscriber that publishes re-enters the queue depth-first. Where
 order of facts matters, write the fact down in the context it happened in, or send it through an
-outbox whose relay keeps them in order (a waiting retry holds back what comes after it).
+outbox whose relay delivers them in order (a waiting retry holds back what comes after it).
 
 **`BackgroundQueue(build_subscriber)`** — the smallest "do it in the background":
 

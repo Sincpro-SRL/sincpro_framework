@@ -1,15 +1,14 @@
-"""Module to handle configuration based on yaml or init
+"""The framework's settings, by the door every project has always imported them from.
 
-The entry point every project imports — `SincproConfig`, `build_config_obj`, the framework's own
-`settings` — as it always has. The implementation lives in `sincpro_framework.settings`: one
-document, any shape, one resolution (see `docs/core/settings.md`).
+    from sincpro_framework.sincpro_conf import SincproConfig, build_config_obj, settings
+    settings.sentry_dsn          # what the framework reads to report errors
+
+Context: the implementation lives in `sincpro_framework.settings` — one document, any shape, one
+resolution (`docs/core/settings.md`) — and both doors answer the same objects, so a project
+written against either keeps working.
 """
 
-import logging
-import os
-
 from sincpro_framework.settings import (
-    DefaultFrameworkConfig,
     FrameworkSettings,
     Secret,
     SettingDescription,
@@ -18,21 +17,11 @@ from sincpro_framework.settings import (
     build_config_obj,
     describe_settings,
     load_yaml_file,
-    usable_env_value,
 )
-
-DEFAULT_CONFIG_FILE_PATH = (
-    os.getenv("SINCPRO_FRAMEWORK_CONFIG_FILE", default=None)
-    or os.path.dirname(__file__) + "/conf/sincpro_framework_conf.yml"
-)
-
-logger = logging.getLogger("sincpro_framework")
-
-settings = build_config_obj(DefaultFrameworkConfig, DEFAULT_CONFIG_FILE_PATH)
+from sincpro_framework.settings.entrypoint.building import DEFAULT_CONFIG_FILE_PATH, settings
 
 __all__ = [
     "DEFAULT_CONFIG_FILE_PATH",
-    "DefaultFrameworkConfig",
     "FrameworkSettings",
     "Secret",
     "SettingDescription",
@@ -41,7 +30,5 @@ __all__ = [
     "build_config_obj",
     "describe_settings",
     "load_yaml_file",
-    "logger",
     "settings",
-    "usable_env_value",
 ]

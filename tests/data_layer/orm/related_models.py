@@ -18,7 +18,7 @@ from sqlalchemy import Column, ForeignKey, Integer, Table, Text
 from sqlalchemy.orm import registry
 
 from sincpro_framework import Feature, UseFramework
-from sincpro_framework.data_layer.orm import Relation, map_aggregates
+from sincpro_framework.data_layer.orm import TableRelation, map_aggregates
 from sincpro_framework.data_layer.orm.sqlalchemy.domain.custom_fields import JsonText
 from sincpro_framework.data_layer.orm.sqlalchemy.entrypoint.repository import Repository
 from sincpro_framework.data_layer.orm.sqlalchemy.entrypoint.template_table import entity_table
@@ -160,14 +160,14 @@ def declare_library(reviews: UseFramework) -> None:
         {Author: author_table, Tag: tag_table, Book: book_table},
         relations={
             Book: {
-                "tags": Relation.many_to_many(
+                "tags": TableRelation.many_to_many(
                     Tag, through=book_tag, this_key="book_id", related_key="tag_id"
                 ),
-                "sources": Relation.id_list(Book, identified_by="source_ids"),
-                "reviews": Relation.bus(
+                "sources": TableRelation.id_list(Book, identified_by="source_ids"),
+                "reviews": TableRelation.bus(
                     Review, reviews, CommandSearchReviews, identified_by="book_id"
                 ),
-                "publisher": Relation.resolved_by(
+                "publisher": TableRelation.resolved_by(
                     Publisher, identified_by="publisher_id", resolver=fetch_publishers
                 ),
             },

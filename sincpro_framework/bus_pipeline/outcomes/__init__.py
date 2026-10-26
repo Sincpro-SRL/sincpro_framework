@@ -7,7 +7,7 @@
 
     billing.publish_completions(to=Publisher(queue))     a queue: another bus, a broker topic
     billing.publish_failures(to=Publisher(queue))
-    completions.subscribe(audit) · failures.subscribe(audit)     every bus of the process
+    completion_listeners.subscribe(audit) · failure_listeners.subscribe(audit)     every bus of the process
 
     try:
         billing(CommandIssueInvoice(...))

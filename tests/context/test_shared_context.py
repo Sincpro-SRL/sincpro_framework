@@ -17,9 +17,10 @@ from typing import Any
 import pytest
 
 from sincpro_framework import ApplicationService, DataTransferObject, Feature, UseFramework
-from sincpro_framework.context import InMemoryContexts, Level, use_context
-from sincpro_framework.context.adapters.propagation import extract, inject
+from sincpro_framework.context import ContextLevel, InMemoryContexts, use_context
+from sincpro_framework.context.adapters.propagation import extract
 from sincpro_framework.context.domain.level import EntrypointKind
+from sincpro_framework.context.services.propagation import inject
 from tests.remote_execution.hosting import TRANSPORTS, host_over
 
 
@@ -132,13 +133,15 @@ def test_a_bus_without_a_context_store_keeps_nothing_and_works_as_always():
     @bus.feature(CommandReadGlobal)
     class ReadGlobal(Feature):
         def execute(self, dto: CommandReadGlobal) -> None:
-            seen.append((self.context.get("tenant_id"), use_context().at(Level.GLOBAL)))
+            seen.append(
+                (self.context.get("tenant_id"), use_context().at(ContextLevel.GLOBAL))
+            )
 
     with bus.context({"tenant_id": "acme"}):
         bus(CommandReadGlobal())
 
     assert seen == [("acme", None)]
-    assert use_context().at(Level.GLOBAL) is None
+    assert use_context().at(ContextLevel.GLOBAL) is None
     assert store.version("global") == 0
 
 
@@ -356,7 +359,7 @@ def test_the_global_level_is_seen_by_every_sharing_bus():
         def execute(self, dto: CommandReadGlobal) -> None:
             read.append(self.context.get("maintenance"))
 
-    global_level = use_context().at(Level.GLOBAL)
+    global_level = use_context().at(ContextLevel.GLOBAL)
     assert global_level is not None
     global_level.set("maintenance", True)
     _in_a_new_thread(lambda: billing(CommandReadGlobal()))
@@ -405,7 +408,7 @@ def test_every_node_is_kept_for_the_ttl_the_bus_was_given():
 def test_over_redis_every_key_of_a_node_expires_nothing_grows_without_end():
     fakeredis = pytest.importorskip("fakeredis")
     from sincpro_framework.context import KeyValueContexts
-    from sincpro_framework.store.adapters.redis import RedisKeyValue
+    from sincpro_framework.data_layer.store import RedisKeyValue
 
     redis = fakeredis.FakeRedis()
     store = KeyValueContexts(RedisKeyValue(redis))

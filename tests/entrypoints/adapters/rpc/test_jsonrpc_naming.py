@@ -26,25 +26,29 @@ from sincpro_framework import (
     UseFramework,
     exceptions,
 )
-from sincpro_framework.auth import AccessControl, Identity, Permission, StaticProvider
-from sincpro_framework.auth.entrypoint.transports import credentials_from_asgi
+from sincpro_framework.auth import (
+    AccessControl,
+    Credentials,
+    Identity,
+    Permission,
+    StaticProvider,
+)
 from sincpro_framework.data_layer.caching import Idempotency
+from sincpro_framework.data_layer.store import InMemoryKeyValue
 from sincpro_framework.ddd import Query
-from sincpro_framework.entrypoints import Exposure
+from sincpro_framework.entrypoints import Exposure, RpcGateway
 from sincpro_framework.entrypoints.adapters.rpc import (
     JsonRpcWire,
-    RpcGateway,
     RpcSurface,
     dispatch,
     http_status,
+    is_json_media_type,
     operation_name,
 )
-from sincpro_framework.entrypoints.adapters.rpc.entrypoint import is_json_media_type
 from sincpro_framework.entrypoints.adapters.rpc.errors import METHOD_NOT_FOUND
 from sincpro_framework.entrypoints.domain.bindings import RpcBinding
 from sincpro_framework.entrypoints.domain.surface import Wire
 from sincpro_framework.entrypoints.entrypoint.decorators import rpc
-from sincpro_framework.store import InMemoryKeyValue
 
 
 class CommandIssueInvoice(DataTransferObject):
@@ -409,7 +413,7 @@ def _own_app(gateway: RpcGateway) -> Starlette:
         reply = dispatch(
             surface,
             await request.body(),
-            credentials=credentials_from_asgi(request.scope),
+            credentials=Credentials.from_asgi(request.scope),
             headers=request.headers,
         )
         status, headers = http_status(surface, reply)

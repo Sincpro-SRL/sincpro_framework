@@ -20,15 +20,14 @@ Every block on this page runs, in order, in `tests/docs/test_persistence_guide.p
 | a `Query` whose criteria is too long for a URL | `POST` to the same path, the fields in the body | the way `_search` is answered on both |
 | a path of the project's | `rest.route(Dto, "GET /billing/invoices/{invoice_id}")` | the path's names are the DTO's fields |
 
-The path never carries the layer: a Feature that becomes an ApplicationService keeps its URL.
+The path never carries the layer: a Feature that becomes an ApplicationService is still served at the same URL.
 
 ```python
 from starlette.testclient import TestClient
 
 from sincpro_framework import DataTransferObject, Feature, UseFramework
 from sincpro_framework.ddd.query import Query
-from sincpro_framework.entrypoints import internal
-from sincpro_framework.entrypoints.adapters.rest import RestGateway
+from sincpro_framework.entrypoints import RestGateway, internal
 
 
 class CommandIssueInvoice(DataTransferObject):

@@ -36,32 +36,26 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 from pydantic import Field, PydanticSchemaGenerationError, TypeAdapter, computed_field
 from pydantic_core import PydanticSerializationError
 
-from sincpro_framework.context.entrypoint.facade import use_context
+from sincpro_framework.context import use_context
 from sincpro_framework.ddd import exceptions
 from sincpro_framework.ddd.criteria import (
     MULTI_VALUED,
     RESOLVERS,
-    All,
     Any_,
     Condition,
     Criteria,
     Expression,
     FromField,
-    Not,
+    Node,
     Operator,
+    Resolution,
     ResolutionContext,
     ResolverMeta,
     Sort,
     Specification,
-    conditions_of,
-    has_dynamic_values,
-    holds_text,
-    mapped,
-    resolve,
 )
 from sincpro_framework.ddd.entity.computed import computations_of
 from sincpro_framework.ddd.entity.derivations import Derivations, Derive
-from sincpro_framework.ddd.entity.entity import Translated
 from sincpro_framework.ddd.entity.entity_collection import Dropped
 from sincpro_framework.ddd.entity.presentation import (
     Fields,
@@ -70,6 +64,15 @@ from sincpro_framework.ddd.entity.presentation import (
     field_name,
 )
 from sincpro_framework.sincpro_abstractions import DataTransferObject
+
+Translated = dict[str, str]
+"""One piece of text in every language the project speaks, `{"default": "Note", "es": "Nota"}`
+— always a `"default"`, plus whatever languages beyond it. The shape `Entity.translations()`
+answers for the aggregate's own name, and the same shape `field(metadata={"label": …, "help":
+…})` uses for one field. A field's label and help are never in `translations()` — they live on
+the field itself, read by `describe_class`/`describe` straight off the dataclass, because they
+are a property of that field, not of the class."""
+
 
 TRUTHY = frozenset({"1", "true", "yes", "on", "t"})
 
@@ -134,7 +137,7 @@ class FieldType(StrEnum):
         3. Text, by type:
            3.1 INTEGER, NUMBER — `int`, `float`;
            3.2 BOOLEAN — one of the truthy words, any case; any other word is `False`;
-           3.3 DATETIME, DATE — ISO text; a datetime keeps the zone the text wrote, if any;
+           3.3 DATETIME, DATE — ISO text; a datetime retains the zone the text wrote, if any;
            3.4 UUID — a `uuid.UUID`;
            3.5 any other type — the text as it is.
         Final: a `ValueError` on the way is `Unreadable`, saying why.
@@ -498,7 +501,7 @@ class FieldMeta(DataTransferObject):
     ordering by one loses rows from the pagination in silence."""
 
     groupable: bool = False
-    """Whether a grouping may split by this field (`Level(field=…)`): a scalar that is not a list
+    """Whether a grouping may split by this field (`GroupingLevel(field=…)`): a scalar that is not a list
     or a translation. A date is grouped by a grain or by a part, which the level says."""
     aggregates: tuple[str, ...] = ()
     """The functions this field can be folded with (`Measure(function=…, field=…)`), by its type.
@@ -775,10 +778,10 @@ class Meta(DataTransferObject):
             name: field for name, field in self.fields.items() if field.type.is_relational
         }
 
-    def _kept(
+    def _accepted_condition(
         self, condition: Condition, timezone: tzinfo = UTC
     ) -> tuple[Condition | None, Dropped | None]:
-        """One condition, kept and read — or dropped with the reason.
+        """One condition, accepted and read — or dropped with the reason.
 
             in      Condition(row_count, "1000", GT)
             out     (Condition(row_count, 1000, GT), None)          it fits
@@ -853,24 +856,25 @@ class Meta(DataTransferObject):
             in      nothing asked
             out     left alone: the whole record
 
-        A field is kept when the model has it, as a column or as a relation, and dropped and
-        named when it does not. Which of the two it is never reaches the caller: telling them
-        apart is this object's job, which is why a specification has one bucket and not two.
+        A field is accepted when the model has it, as a column or as a relation, and dropped
+        and named when it does not. Which of the two it is never reaches the caller: telling
+        them apart is this object's job, which is why a specification has one bucket and not
+        two.
         """
         if specification is None:
             return None, []
 
         dropped: list[Dropped] = []
-        kept = {}
+        accepted = {}
         for name, criteria in specification.root.items():
             if name in self.fields:
-                kept[name] = criteria
+                accepted[name] = criteria
             else:
                 dropped.append(Dropped(field=name, reason="unknown_field"))
-        return Specification(kept), dropped
+        return Specification(accepted), dropped
 
     def masked(self, specification: Specification) -> list[str]:
-        """The names a specification keeps besides the identity.
+        """The names a specification selects besides the identity.
 
             in      {"code": {}, "name": {}}    →  out  ["code", "name"]
             in      {}                          →  out  ["name"]      the display, when named
@@ -889,7 +893,7 @@ class Meta(DataTransferObject):
             in      {}                  →  out  fields={identity, display}
             in      nothing asked       →  out  every scalar and embedded field, no relation
             in      {"size": {"specification": {"width": {}}}}
-                                        →  out  the embedded shape cut to {width}, identity kept
+                                        →  out  the embedded shape cut to {width}, identity included
 
         **This is what makes the mask one mask.** A client that asked for three fields gets
         three in the payload AND three in the definition, so its filter builder and its column
@@ -901,7 +905,7 @@ class Meta(DataTransferObject):
         1. Nothing asked: every field but the relations — a relation is brought only when
            asked for by name.
         2. Else the names, the identity first and each once: the identity, then what the
-           specification keeps (`masked` — the display when it names none).
+           specification selects (`masked` — the display when it names none).
            2.1 A name this definition does not have is skipped.
            2.2 An embedded field whose node asks for a specification of its own has its
                definition cut by it, in turn.
@@ -918,7 +922,7 @@ class Meta(DataTransferObject):
                 }
             )
 
-        kept: dict[str, FieldMeta] = {}
+        narrowed: dict[str, FieldMeta] = {}
         for name in dict.fromkeys([self.identity, *self.masked(specification)]):
             field = self.fields.get(name)
             if field is None:
@@ -933,8 +937,8 @@ class Meta(DataTransferObject):
                 field = field.model_copy(
                     update={"definition": field.definition.only(node.specification)}
                 )
-            kept[name] = field
-        return self.model_copy(update={"fields": kept})
+            narrowed[name] = field
+        return self.model_copy(update={"fields": narrowed})
 
     def accept(
         self, expression: Expression | None, resolution: ResolutionContext | None = None
@@ -960,39 +964,45 @@ class Meta(DataTransferObject):
         2. No resolution yet, and a plain date compared with a DATETIME field: the ambient
            one is taken anyway, so the date's midnight is read in the context's timezone.
         3. The timezone: the resolution's, else UTC.
-        4. Each leaf through `_kept`:
+        4. Each leaf through `_accepted_condition`:
            4.1 an unknown field — `unknown_field`; an operator its type does not take —
                `unsupported_operator`;
            4.2 another column (`FromField`): it must exist, be of the same type and be
                compared by a same-row operator — else `bad_value`;
            4.3 else its value read as the field's type — a value that will not read is
                `bad_value`.
-        Final: the tree of what was kept, a group that lost every part gone, and the drops.
+        Final: the tree of what was accepted, a group that lost every part gone, and the
+        drops.
         """
-        if has_dynamic_values(expression):
+        if Resolution.has_dynamic_values(expression):
             resolution = resolution or ambient_resolution()
-            expression = resolve(expression, resolution)
+            expression = Resolution.resolve(expression, resolution)
 
-        if resolution is None and any(
-            isinstance(leaf.value, date)
-            and not isinstance(leaf.value, datetime)
-            and (held := self.fields.get(leaf.field)) is not None
-            and held.type is FieldType.DATETIME
-            for leaf in conditions_of(expression)
+        if (
+            resolution is None
+            and expression is not None
+            and any(
+                isinstance(leaf.value, date)
+                and not isinstance(leaf.value, datetime)
+                and (held := self.fields.get(leaf.field)) is not None
+                and held.type is FieldType.DATETIME
+                for leaf in expression.conditions()
+            )
         ):
             resolution = ambient_resolution()
         timezone = resolution.timezone if resolution is not None else UTC
 
         dropped: list[Dropped] = []
 
-        def kept(condition: Condition) -> Condition | None:
-            """One leaf through `_kept`: read, or `None` with its loss noted in `dropped`."""
-            read, loss = self._kept(condition, timezone)
+        def accepted(condition: Condition) -> Condition | None:
+            """One leaf through `_accepted_condition`: read, or `None` with its loss noted
+            in `dropped`."""
+            read, loss = self._accepted_condition(condition, timezone)
             if loss is not None:
                 dropped.append(loss)
             return read
 
-        return mapped(expression, kept), dropped
+        return (expression.mapped(accepted) if expression is not None else None), dropped
 
 
 def _worded(fields: dict[str, "FieldMeta"], declared: type) -> dict[str, "FieldMeta"]:
@@ -1147,8 +1157,8 @@ def _search_checked(
             f"{owner}.DEFAULT_LITERAL_SEARCH sets {', '.join(extra)}: a template is a where "
             f"alone — the page, the order and what each record brings are the read's own"
         )
-    conditions = conditions_of(answered.where)
-    if not any(holds_text(one) for one in conditions):
+    conditions = answered.where.conditions() if answered.where is not None else []
+    if not any(one.holds_text() for one in conditions):
         raise exceptions.ProgrammingError(
             f"{owner}.DEFAULT_LITERAL_SEARCH never uses TEXT: a template says where the typed "
             f'text goes, as in Condition(field="name", operator=Operator.LIKE, value=TEXT)'
@@ -1159,7 +1169,7 @@ def _search_checked(
                 f"{owner}.DEFAULT_LITERAL_SEARCH searches {one.field}, "
                 f"which is not a field of {owner}"
             )
-        if not holds_text(one):
+        if not one.holds_text():
             continue
         kind = logical_type(annotations[one.field])
         if (one.operator is Operator.STARTS_WITH and kind is not FieldType.TEXT) or (
@@ -1195,13 +1205,13 @@ def _while(
                 f"lambda a: [When(Condition.on(a.state, Operator.EQ, State.DRAFT), a.partner_id)]; "
                 f"it was given {entry!r}"
             )
-        if not isinstance(entry.condition, (Condition, All, Any_, Not)):
+        if not isinstance(entry.condition, Node):
             raise exceptions.ProgrammingError(
                 f"{owner}.presentation {part} takes a condition as Condition, All, Any or Not, "
                 f"as in When(Condition.on(a.state, Operator.EQ, State.DRAFT), a.partner_id); "
                 f"it was given {entry.condition!r}"
             )
-        for leaf in conditions_of(entry.condition):
+        for leaf in entry.condition.conditions():
             if leaf.field not in annotations:
                 raise exceptions.ProgrammingError(
                     f"{owner}.presentation {part} asks about {leaf.field}, "

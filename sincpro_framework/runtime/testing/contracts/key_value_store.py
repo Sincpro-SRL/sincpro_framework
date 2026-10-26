@@ -12,7 +12,7 @@ port (query caching, crons across replicas) works on it. Nothing here imports py
 import threading
 from datetime import timedelta
 
-from sincpro_framework.store import KeyValueStore
+from sincpro_framework.data_layer.store import KeyValueStore
 
 
 class KeyValueStoreContract:
@@ -142,11 +142,11 @@ class KeyValueStoreContract:
         store = self.make_store()
         store.set("short", b"1", ttl=timedelta(seconds=1))
         store.add("claimed", b"1", ttl=timedelta(seconds=1))
-        store.set("kept", b"1")
+        store.set("lasting", b"1")
         self.expire(store, 1.5)
         if store.get("short") is not None or not store.add("claimed", b"2"):
             raise AssertionError("a value outlived its ttl")
-        if store.get("kept") != b"1":
+        if store.get("lasting") != b"1":
             raise AssertionError("a value without a ttl expired")
 
     def test_replace_writes_only_over_what_was_expected(self) -> None:

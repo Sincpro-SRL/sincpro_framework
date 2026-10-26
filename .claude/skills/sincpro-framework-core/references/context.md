@@ -23,7 +23,7 @@ class MyFeature(Feature):
 ```
 
 - **One block, many calls.** Every call inside the same `with` block shares its context.
-- **Nested contexts** override and inherit: an inner context changes the keys it names and keeps the
+- **Nested contexts** override and inherit: an inner context changes the keys it names and inherits the
   rest.
 - **Across buses.** Buses in one process share the tree. A bus called from inside another's
   execution (`self.common(...)`, a subscriber reached through a `SyncQueue`) or inside another bus's
@@ -36,10 +36,10 @@ class MyFeature(Feature):
   siblings see it, it stays for the rest of the enclosing `with` block and goes on the signals
   recorded after it. `self.context.set("key", value)` writes only the current node — what it runs
   afterwards. Without an enclosing block the call has its own scope, gone when it returns.
-- **Standard keys:** `user_id`, `tenant_id`, `tenant_ids`. Signals keep their names (`tenant`,
+- **Standard keys:** `user_id`, `tenant_id`, `tenant_ids`. Signals use their own names (`tenant`,
   `user_id`).
 - **On every signal.** Each context key goes on the bus's log lines, spans and error events.
-  `UseFramework(name, hide_in_logs=["TOKEN"])` keeps a key off all of them; `metric_labels=[...]`
+  `UseFramework(name, hide_in_logs=["TOKEN"])` excludes a key from all of them; `metric_labels=[...]`
   puts a key on metric series.
 - **Typed.** `class MyFeature(Feature[Command, Response, MyContext])` with
   `class MyContext(TypedDict, total=False)` types `self.context` for the IDE.

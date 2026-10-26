@@ -161,7 +161,7 @@ def test_two_extensions_that_name_a_field_alike_are_refused_naming_both(engine_u
 def test_a_report_over_the_consolidated_record_groups_by_a_field_of_an_extension_in_a_join(
     engine_url,
 ):
-    from sincpro_framework.ddd.criteria import Grouping, Level, Measure
+    from sincpro_framework.ddd.criteria import Grouping, GroupingLevel, Measure
 
     reg, md, (Move, MoveDelivery, MoveFiscal, MoveConsolidated) = world(engine_url)
     map_aggregates(reg, {MoveConsolidated: Consolidated(Move, MoveDelivery, MoveFiscal)})
@@ -177,7 +177,7 @@ def test_a_report_over_the_consolidated_record_groups_by_a_field_of_an_extension
     )
     criteria = Criteria(
         grouping=Grouping(
-            group_by=(Level(field="route"),),
+            group_by=(GroupingLevel(field="route"),),
             measures={"total": Measure(function="sum", field="total")},
         )
     )

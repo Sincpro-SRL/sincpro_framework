@@ -11,7 +11,7 @@
         )
 
 `balance` is not a column, and it is not written: it is an expression over the row, so it can
-be filtered, ordered and grouped by like one — `Level(field="balance")`, `Condition(field=
+be filtered, ordered and grouped by like one — `GroupingLevel(field="balance")`, `Condition(field=
 "balance", operator=Operator.GT, value=0)` — without the project writing the SQL of a query.
 
 Two implementations of one value, on purpose: `sql` is what a database runs and `python` is what

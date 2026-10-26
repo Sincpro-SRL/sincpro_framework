@@ -25,15 +25,9 @@ from sincpro_framework.data_layer.orm.sqlalchemy.entrypoint.template_table impor
     entity_table,
     event_columns,
 )
-from sincpro_framework.ddd.entity import (
-    ArchivableMixin,
-    AuditedMixin,
-    ChangeTrackingMixin,
-    Entity,
-    Translated,
-)
+from sincpro_framework.ddd.entity import ArchivableMixin, AuditedMixin, Entity, Translated
 from sincpro_framework.ddd.entity.entity_collection import EntityCollection
-from sincpro_framework.ddd.events import DomainEvent
+from sincpro_framework.ddd.events import ChangeTrackingMixin, DomainEvent
 
 EPOCH = datetime(2026, 1, 1, 12, 0, 0)
 

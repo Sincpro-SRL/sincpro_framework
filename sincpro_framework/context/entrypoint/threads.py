@@ -30,7 +30,7 @@ def in_context[R](function: Callable[..., R]) -> Callable[..., R]:
             task = in_context(work)
         executor.submit(task, invoice)   ->  `work(invoice)` reads tenant_id "acme"
 
-    The copy is taken when wrapped, not when called, and keeps `function`'s name and doc.
+    The copy is taken when wrapped, not when called, and carries `function`'s name and doc.
     """
     captured = copy_context()
 

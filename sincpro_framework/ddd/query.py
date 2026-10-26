@@ -77,22 +77,23 @@ def _adapter(aggregate: type) -> TypeAdapter:
 
 def _shaped(value: Any, specification: Specification, definition: Meta) -> Any:
     """An embedded value, already written out, cut to what its node named — a value object
-    has no identity to keep; a list of them, each one cut the same way.
+    has no identity to include; a list of them, each one cut the same way.
 
         {"amount": 5, "currency": "BOB", "rate": 1}, {"amount": {}}   ->  {"amount": 5}
 
     1. `None` stays `None`; a list is cut item by item.
     2. Only the names the node lists survive.
-    Final: a kept name that is itself an embedded value with its own node is cut the same way.
+    Final: a selected name that is itself an embedded value with its own node is cut the same
+    way.
     """
     if value is None:
         return None
     if isinstance(value, list):
         return [_shaped(one, specification, definition) for one in value]
-    keep = set(specification.named)  # a value object has no identity to keep
+    selected = set(specification.named)  # a value object has no identity to include
     shaped: dict[str, Any] = {}
     for name, inner in value.items():
-        if name not in keep:
+        if name not in selected:
             continue
         node = specification.root.get(name)
         field = definition.fields.get(name)
@@ -161,7 +162,7 @@ def _cut(
     meta: Meta | None,
     mode: Literal["json", "python"],
 ) -> dict[str, Any]:
-    """One record as the answer shows it: the scalars the mask keeps, then the relations
+    """One record as the answer shows it: the scalars the mask selects, then the relations
     it names.
 
         Invoice, {"number": {}, "lines": {"specification": {"qty": {}}}}
@@ -171,7 +172,7 @@ def _cut(
     1. The whole record dumped, its relation attributes taken out — they are written below
        from what was resolved, never from the attribute.
     2. No mask: that is the answer, every scalar.
-    3. A mask keeps the identity and what it names — through the model's definition when
+    3. A mask selects the identity and what it names — through the model's definition when
        there is one, else the names as given, or the entity's display when none.
     4. Each named field the model knows:
     4.1 an embedded value is cut to its own node (`_shaped`);
@@ -188,12 +189,12 @@ def _cut(
         return written
 
     if meta is not None:
-        keep = {meta.identity, *meta.masked(specification)}
+        selected = {meta.identity, *meta.masked(specification)}
     else:
         display = presentation_of(type(record)).display
         named = specification.named or ([display] if display else [])
-        keep = {identity_name(type(record)), *named}
-    written = {name: value for name, value in written.items() if name in keep}
+        selected = {identity_name(type(record)), *named}
+    written = {name: value for name, value in written.items() if name in selected}
     for name, node in specification.root.items():
         if meta is None or name not in meta.fields:
             continue
@@ -292,7 +293,7 @@ class ResponsePaginatedQuery(DataTransferObject):
         class ResponseListDatasets(ResponsePaginatedQuery):
             datasets: list[Dataset]         →   .datasets .cursor .count .entity_meta_data
 
-    The records keep the subclass's own name — `datasets`, `runs`, `plans` — because a reader
+    The records carry the subclass's own name — `datasets`, `runs`, `plans` — because a reader
     of a response should see what it is about, not `items`.
     """
 
@@ -345,7 +346,7 @@ class ResponsePaginatedQuery(DataTransferObject):
     def _written_out(self, info: SerializationInfo) -> dict[str, Any]:
         """On the wire, a record shows what the specification named plus its identity, and each
         named relation under its own name: a to-one as an object or `null`, a to-many as
-        `{"items", "count", "cursor"}`. An empty specification keeps the identity and the
+        `{"items", "count", "cursor"}`. An empty specification selects the identity and the
         display field. Without a specification, every scalar and no relation.
 
         The mask is applied here and nowhere earlier: inside the process the records stay the
@@ -440,7 +441,8 @@ class ResponsePaginatedQuery(DataTransferObject):
 
 
 class DraftState(DataTransferObject):
-    """The record was answered from its owner's draft — what a form kept and nobody saved yet.
+    """The record was answered from its owner's draft — what a form saved as a draft and
+    nobody stored yet.
 
     `version` is what the next edit names as `version`; `stale` says the stored record moved on
     since the draft started, so saving it would be refused.
@@ -458,7 +460,7 @@ class ResponseRecord(DataTransferObject):
     class ResponseAccount(ResponseRecord):
         account: Account            →   .account .entity_meta_data .dropped
 
-    The record keeps the subclass's own name for the same reason a page's records do. On the
+    The record carries the subclass's own name for the same reason a page's records do. On the
     wire it is cut by the specification exactly as a record of a page is.
     """
 

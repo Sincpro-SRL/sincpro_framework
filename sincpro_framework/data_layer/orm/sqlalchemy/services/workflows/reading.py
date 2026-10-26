@@ -8,7 +8,9 @@ from sqlalchemy import Select, func, literal, select
 from sqlalchemy.orm import Session, aliased
 
 from sincpro_framework.data_layer import exceptions
-from sincpro_framework.data_layer.orm.sqlalchemy.domain.registry import relations_of
+from sincpro_framework.data_layer.orm.sqlalchemy.infrastructure.mapping_registry import (
+    mapping_registry,
+)
 from sincpro_framework.data_layer.orm.sqlalchemy.services import sql_translator
 from sincpro_framework.data_layer.orm.sqlalchemy.services.aggregation import (
     bucketed,
@@ -23,7 +25,9 @@ from sincpro_framework.data_layer.orm.sqlalchemy.services.event_mapping import (
     readable_names,
     warn_unreadable,
 )
-from sincpro_framework.data_layer.orm.sqlalchemy.services.model_introspection import describe
+from sincpro_framework.data_layer.orm.sqlalchemy.services.model_introspection import (
+    ModelIntrospection,
+)
 from sincpro_framework.data_layer.orm.sqlalchemy.services.relation_resolver import (
     resolve_relations,
 )
@@ -35,15 +39,14 @@ from sincpro_framework.ddd.criteria import (
     Condition,
     CountMode,
     Criteria,
-    Level,
+    GroupingLevel,
+    Node,
     Operator,
     Pagination,
     Pivot,
     PivotCell,
     Sort,
     Specification,
-    combined,
-    parse_order,
 )
 from sincpro_framework.ddd.entity import ArchivableMixin, EventSourcedMixin
 from sincpro_framework.ddd.entity.entity_collection import (
@@ -89,7 +92,7 @@ def _relations_named(
     """
     if specification is None:
         return []
-    declared = relations_of(model)
+    declared = mapping_registry.relations_of(model)
     named = []
     for name, node in specification.root.items():
         relation = declared.get(name)
@@ -109,15 +112,15 @@ class Reading(RepositoryState):
         """Everything a criteria becomes before any statement exists.
 
             in      Dataset, Criteria(where={'field': 'row_count', 'operator': '>', 'value': '1000'})
-            read    describe(Dataset)                    fields, types, what is orderable
+            read    ModelIntrospection.describe(Dataset)                    fields, types, what is orderable
             accept  Condition(row_count, 1000, GT)       "1000" read as an integer
             out     (dataset.row_count > 1000, (Sort(dataset_id, desc),), Meta, [])
                      └ WHERE            └ ordering, tiebreaker included   └ Meta  └ dropped
 
-        Kept together because `search`, `count` and `group_by` all need exactly these four, and
+        Built together because `search`, `count` and `group_by` all need exactly these four, and
         a count computed from a different clause than the page it labels is silently wrong.
         """
-        meta = describe(model)
+        meta = ModelIntrospection.describe(model)
         expression, dropped = meta.accept(self._asked(model, meta, criteria))
         _, unanswerable = meta.accept_specification(criteria.specification)
         clause = readable_clause(model, sql_translator.where_clause(model, expression))
@@ -142,7 +145,7 @@ class Reading(RepositoryState):
         readable = readable_names(model)
         if readable is None:
             return []
-        meta = describe(model)
+        meta = ModelIntrospection.describe(model)
         expression, _ = meta.accept(self._asked(model, meta, criteria))
         name = cast(Any, model).wire_name
         statement = select(name).distinct().where(name.not_in(readable))
@@ -199,11 +202,11 @@ class Reading(RepositoryState):
 
             limit   20
             fetch   21 rows                     one past the limit
-            keep    20                          the extra one only says there is more
+            read    20                          the extra one only says there is more
             out     EntityCollection(items=20, cursor=<of row 20>, count=Count(197, exact=True))
 
         Asking for one more row is how "is there a next page" is answered without a second
-        query, and the last kept row is what the cursor is minted from.
+        query, and the last row of the page is what the cursor is minted from.
         """
         clause, sorts, meta, dropped = prepared
 
@@ -212,21 +215,21 @@ class Reading(RepositoryState):
         if skipped:
             statement = statement.offset(skipped)
         rows = list(session.scalars(statement.limit(page.limit + 1)))
-        kept = [self._read(row) for row in rows[: page.limit]]
+        items = [self._read(row) for row in rows[: page.limit]]
         has_more = len(rows) > page.limit
 
-        next_cursor = page.next_from(kept[-1], sorts) if has_more and kept else None
+        next_cursor = page.next_from(items[-1], sorts) if has_more and items else None
 
         if criteria.specification is not None:
             dropped = list(dropped)
             meta = resolve_relations(
-                self.prepare, session, model, kept, criteria.specification, meta, dropped
+                self.prepare, session, model, items, criteria.specification, meta, dropped
             )
 
         return holder(
-            items=tuple(kept),
+            items=tuple(items),
             cursor=next_cursor,
-            count=self._counted(session, model, clause, criteria, len(kept)),
+            count=self._counted(session, model, clause, criteria, len(items)),
             dropped=(*dropped, *self._unreadable(session, model, criteria)),
             meta=meta,
         )
@@ -338,7 +341,7 @@ class Reading(RepositoryState):
         `for_update` locks the page's rows until the unit of work commits — a worker that
         takes a batch of pending items and marks them taken. See `get`.
 
-        >>> self.repository.search(Dataset, Criteria(pagination=Pagination(limit=20), order=parse_order("-registered_at")))
+        >>> self.repository.search(Dataset, Criteria(pagination=Pagination(limit=20), order=Sort.parse("-registered_at")))
         EntityCollection(20 records of 197, more)
         >>> self.repository.search(Dataset)                      # no criteria: first page of everything
         EntityCollection(50 records of 197, more)
@@ -385,7 +388,7 @@ class Reading(RepositoryState):
 
             in      Run, Criteria(where=dataset_id in (…), order=-started_at,
                                   pagination=Pagination(limit=5),
-                                  grouping=Grouping(group_by=(Level(field="dataset_id"),)))
+                                  grouping=Grouping(group_by=(GroupingLevel(field="dataset_id"),)))
             out     up to five runs per dataset, ordered inside each, one statement
 
         This is what the other side of a relation resolved through a bus receives, so that no
@@ -543,11 +546,11 @@ class Reading(RepositoryState):
         the entity: applying the others without it would answer a state that never existed.
         """
         about = Criteria(
-            where=combined(
+            where=Node.combined(
                 Condition(field="entity_type", value=model.__name__),
                 Condition(field="entity_id", value=identity),
             ),
-            order=parse_order("id"),
+            order=Sort.parse("id"),
         )
         history = self.fetch_all(model.event_base, about)
         if any(one.reason == UNKNOWN_EVENT for one in history.dropped):
@@ -631,7 +634,7 @@ class Reading(RepositoryState):
         that order, not in whatever order the database felt like.
         """
         model, holder = model_and_collection(target)
-        meta = describe(model)
+        meta = ModelIntrospection.describe(model)
         if not ids:
             return self._searched(target, holder(meta=meta))
 
@@ -678,7 +681,7 @@ class Reading(RepositoryState):
         1. Refused with no field to group by.
         2. Each field checked on the model's definition; the criteria prepared into its
            clause.
-        3. One statement: the fields' columns and `count(*)`, over the rows the clause keeps,
+        3. One statement: the fields' columns and `count(*)`, over the rows the clause selects,
            grouped and ordered by those columns.
         Final: one dict per bucket — each field's value and its `count`.
         """
@@ -690,7 +693,7 @@ class Reading(RepositoryState):
 
         criteria = criteria or Criteria()
         model, _ = model_and_collection(target)
-        meta = describe(model)
+        meta = ModelIntrospection.describe(model)
         for field in by:
             meta.field(field)
 
@@ -755,7 +758,7 @@ class Reading(RepositoryState):
         1. Refused with no measure.
         2. The criteria prepared into its clause.
         3. One statement: each measure as its labelled aggregate (`measure_columns` —
-           percentiles refused on SQLite), over the rows the clause keeps.
+           percentiles refused on SQLite), over the rows the clause selects.
         Final: the one row it answers, by the caller's names.
         """
         if not measures:
@@ -765,7 +768,7 @@ class Reading(RepositoryState):
 
         criteria = criteria or Criteria()
         model, _ = model_and_collection(target)
-        meta = describe(model)
+        meta = ModelIntrospection.describe(model)
         clause, _, _, _ = self.prepare(model, criteria)
 
         statement = select(
@@ -827,7 +830,7 @@ class Reading(RepositoryState):
         """The first record the criteria's order puts in front, or `None` — claimed, with
         `for_update`, until the unit of work ends.
 
-        >>> self.repository.first(Entries, Criteria(order=parse_order("-posted_at")))
+        >>> self.repository.first(Entries, Criteria(order=Sort.parse("-posted_at")))
         Entry(…)
         """
         criteria = criteria or Criteria()
@@ -937,7 +940,7 @@ class Reading(RepositoryState):
                 "get_by needs at least one value, e.g. code='1010'"
             )
         asked = Criteria(
-            where=combined(
+            where=Node.combined(
                 *(
                     Condition(field=field, operator=Operator.EQ, value=value)
                     for field, value in values.items()
@@ -987,7 +990,7 @@ class Reading(RepositoryState):
             in      Line, "entry_state"     →  out  ['draft', 'posted']
 
         What a filter's select offers, answered by the database rather than by a list somebody
-        keeps in step with it by hand.
+        maintains in step with it by hand.
         """
         criteria = criteria or Criteria()
         model, _ = model_and_collection(target)
@@ -1023,8 +1026,8 @@ class Reading(RepositoryState):
     def pivot(
         self,
         target: type,
-        rows: Sequence[str | Level],
-        columns: Sequence[str | Level],
+        rows: Sequence[str | GroupingLevel],
+        columns: Sequence[str | GroupingLevel],
         criteria: Criteria | None = None,
         **measures: Any,
     ) -> Pivot:

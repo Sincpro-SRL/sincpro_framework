@@ -10,21 +10,18 @@ from sqlalchemy.orm import Session
 
 from sincpro_framework.data_layer import exceptions
 from sincpro_framework.data_layer.orm.sqlalchemy.services import sql_translator
-from sincpro_framework.data_layer.orm.sqlalchemy.services.model_introspection import describe
+from sincpro_framework.data_layer.orm.sqlalchemy.services.model_introspection import (
+    ModelIntrospection,
+)
 from sincpro_framework.ddd.criteria import (
+    Aggregation,
     Bucket,
     Criteria,
     Grouping,
-    Level,
+    GroupingLevel,
     Measure,
     PivotCell,
-    axis_values,
-    check_levels,
-    check_measures,
-    conditions_of,
-    empty_measure,
-    has_dynamic_values,
-    resolve,
+    Resolution,
 )
 from sincpro_framework.ddd.entity.entity_meta import FieldType, Meta, ambient_resolution
 
@@ -36,16 +33,16 @@ COUNT = "count"
 """What a grouping's `where_measures` and `order` call the number of rows in a group."""
 
 
-def level_of(one: str | Level) -> Level:
+def level_of(one: str | GroupingLevel) -> GroupingLevel:
     """A level as a caller writes it.
 
-    in  "posted_at:month"  →  out  Level(field='posted_at', grain='month')
-    in  "journal_id"       →  out  Level(field='journal_id')
+    in  "posted_at:month"  →  out  GroupingLevel(field='posted_at', grain='month')
+    in  "journal_id"       →  out  GroupingLevel(field='journal_id')
     """
-    if isinstance(one, Level):
+    if isinstance(one, GroupingLevel):
         return one
     field, _, grain = one.partition(":")
-    return Level.read({"field": field, "grain": grain or None})
+    return GroupingLevel.read({"field": field, "grain": grain or None})
 
 
 NATIVE_BOOLEAN_FOLDS = frozenset({"postgresql", "duckdb"})
@@ -115,9 +112,8 @@ def measure_columns(
                 func.percentile_cont(fraction).within_group(column.asc()).label(name)
             )
         elif measure.function in ("bool_and", "bool_or"):
-            check_measures(
-                Grouping(measures={name: measure}),
-                {measure.field: meta.field(measure.field).type.value},
+            Grouping(measures={name: measure}).check_measures(
+                {measure.field: meta.field(measure.field).type.value}
             )
             columns.append(_boolean_fold(measure.function, column, dialect).label(name))
         else:
@@ -145,9 +141,9 @@ def where_measures_clause(grouping: Grouping, measures: dict[str, Any]) -> Any:
     having = grouping.where_measures
     if having is None:
         return None
-    if has_dynamic_values(having):
-        having = resolve(having, ambient_resolution())
-    for condition in conditions_of(having):
+    if Resolution.has_dynamic_values(having):
+        having = Resolution.resolve(having, ambient_resolution())
+    for condition in having.conditions() if having is not None else []:
         if condition.field not in measures:
             raise exceptions.InvalidCriteria(
                 f"'{condition.field}' is not something a group folded; `where_measures` reads "
@@ -207,10 +203,10 @@ def ids_per_group(
 
     1. The criteria's order, as sorts and as clauses; the group columns labelled.
     2. The inner select: the sort columns, the group columns, each row's position in its
-       group under that order, and its group's total — over the rows `clause` keeps.
-    3. The outer select keeps the first `criteria.limit` rows of each group, ordered by group
+       group under that order, and its group's total — over the rows `clause` selects.
+    3. The outer select takes the first `criteria.limit` rows of each group, ordered by group
        then position.
-    4. Each row read: its ids appended under its group's path; the group's last row kept.
+    4. Each row read: its ids appended under its group's path; the group's last row remembered.
     Final: per group, its ids and a cursor minted from its last row — `None` when the page
     already holds every row of the group.
     """
@@ -258,7 +254,7 @@ def ids_per_group(
 
 def filled_levels(
     rows_by_level: list[Sequence[Any]],
-    levels: Sequence[Level],
+    levels: Sequence[GroupingLevel],
     grouping: Grouping,
     meta: Meta,
     criteria: Criteria,
@@ -274,7 +270,7 @@ def filled_levels(
 
     1. The criteria's filter as the model accepts it, and the empty value of each measure.
     2. Each level, top first:
-       2.1 one that does not `fill` is kept as it came;
+       2.1 one that does not `fill` is left as it came;
        2.2 otherwise the values its axis can take — the field's choices, true and false for
            a boolean — narrowed by the filter;
        2.3 its parents: none for the first level, else every distinct path of the level
@@ -285,7 +281,7 @@ def filled_levels(
     Final: every level's rows, filled.
     """
     where, _ = meta.accept(criteria.expression)
-    empties = [empty_measure(measure) for measure in grouping.measures.values()]
+    empties = [measure.over_no_rows() for measure in grouping.measures.values()]
     completed: list[Sequence[Any]] = []
     for how_deep, rows in enumerate(rows_by_level, start=1):
         level = levels[how_deep - 1]
@@ -293,7 +289,9 @@ def filled_levels(
             completed.append(rows)
             continue
         field = meta.field(level.field)
-        values = axis_values(level, field.choices, field.type is FieldType.BOOLEAN, where)
+        values = Aggregation.axis_values(
+            level, field.choices, field.type is FieldType.BOOLEAN, where
+        )
         parents = (
             [()]
             if how_deep == 1
@@ -345,9 +343,9 @@ def bucketed(
     Two levels over eight buckets is two statements, not nine; four levels over a ledger
     is four. The size of the answer is the number of groups, which `by` decides.
     """
-    meta = describe(model)
+    meta = ModelIntrospection.describe(model)
     resolved = grouping.group_by
-    check_levels(criteria, grouping)
+    grouping.check_levels(criteria.pagination)
     columns = []
     for level in resolved:
         meta.field(level.field)
@@ -362,17 +360,17 @@ def bucketed(
     where_measures = where_measures_clause(grouping, measures)
 
     rows_by_level: list[Sequence[Any]] = []
-    kept_first: list[Any] | None = None
+    first_page: list[Any] | None = None
     for how_deep in range(1, len(resolved) + 1):
         keys = columns[:how_deep]
         statement = select(*keys, counted, *folded).select_from(model)
         if clause is not None:
             statement = statement.where(clause)
-        if kept_first is not None:
-            # The deeper levels answer for the groups the first level's page kept, and for
+        if first_page is not None:
+            # The deeper levels answer for the groups on the first level's page, and for
             # nothing else: a page of groups that dragged the whole tree behind it would
             # cost what the page was asked to save.
-            statement = statement.where(one_of(columns[0], kept_first))
+            statement = statement.where(one_of(columns[0], first_page))
         statement = statement.group_by(*keys)
         if where_measures is not None:
             statement = statement.having(where_measures)
@@ -383,7 +381,7 @@ def bucketed(
         rows = session.execute(statement).all()
         rows_by_level.append(rows)
         if how_deep == 1 and grouping.paged:
-            kept_first = [row[0] for row in rows]
+            first_page = [row[0] for row in rows]
 
     if any(level.fill for level in resolved):
         rows_by_level = filled_levels(rows_by_level, resolved, grouping, meta, criteria)
@@ -395,7 +393,7 @@ def bucketed(
             path = tuple(row[:how_deep])
             # Opening a group is a plain reading of its rows: the grouping stays behind, or
             # a page asked on the bucket's criteria would be read as «a page per group». A
-            # part of a date cannot be opened — `Bucket.openable` says so — and keeps the
+            # part of a date cannot be opened — `Bucket.openable` says so — and carries the
             # parent's criteria instead of a filter that would select rows that are not its own.
             opens[path] = (
                 opens[path[:-1]]

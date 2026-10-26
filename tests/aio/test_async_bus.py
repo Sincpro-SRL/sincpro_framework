@@ -1,11 +1,11 @@
 """Tests for `Bus.get_async_bus()` / `AsyncBus`.
 
-`AsyncBus` is the async-caller counterpart to `ThreadContextBus`
-(tests/context/test_thread_context_bus.py): a caller that is itself `async def` and
+`AsyncBus` is the async-caller counterpart to `Bus.thread_context()`
+(tests/context/test_thread_context.py): a caller that is itself `async def` and
 wants to fan out DTOs concurrently (e.g. `asyncio.gather`) still needs the
 `contextvars` overlay propagated into the worker thread `asyncio.to_thread`
 spawns. These tests pin down that propagation, plus the opposite reuse rule
-from `ThreadContextBus`: an `AsyncBus` is stateless and safe to share across
+from `thread_context()`: an `AsyncBus` is stateless and safe to share across
 concurrent calls.
 """
 
@@ -36,10 +36,8 @@ class RaisingDTO(DataTransferObject):
     pass
 
 
-# Deliberately NOT a RuntimeError subclass: ThreadContextBus.execute() catches
-# RuntimeError to detect concurrent reuse of one captured snapshot, so a
-# RuntimeError from the Feature's own business logic would be misreported as
-# that error instead of propagating as-is.
+# Deliberately NOT a RuntimeError subclass: entering one captured snapshot from two threads
+# raises RuntimeError, so the Feature's own error is kept apart from that one.
 class FeatureBoom(Exception):
     pass
 
@@ -120,7 +118,7 @@ class TestAsyncBus:
         assert result.context_data == {"TOKEN": "abc123"}
 
     def test_async_bus_is_reusable_across_concurrent_calls(self):
-        """Unlike `ThreadContextBus`, one `AsyncBus` instance can be awaited
+        """Unlike `thread_context()`, one `AsyncBus` instance can be awaited
         concurrently many times (e.g. `asyncio.gather`) without raising —
         each call captures its own snapshot instead of reusing one up front."""
         framework = _build_framework("async-bus-concurrent-reuse")

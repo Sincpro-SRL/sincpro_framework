@@ -13,8 +13,7 @@ from typing import ClassVar
 import pytest
 from pydantic import ConfigDict, ValidationError
 
-from sincpro_framework.settings import Secret
-from sincpro_framework.sincpro_conf import SincproConfig, build_config_obj
+from sincpro_framework.settings import Secret, SincproConfig, build_config_obj
 
 DOCUMENT = """
 sincpro_payments_sdk:

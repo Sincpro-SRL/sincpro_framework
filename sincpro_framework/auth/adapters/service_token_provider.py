@@ -66,7 +66,7 @@ class ServiceTokenProvider(AuthProvider):
             ServiceTokenProvider("billing", keys={})
                 ->  raises ValueError("ServiceTokenProvider needs at least one key")
 
-        The rest is kept as given: `issuer`, `audience`, `ttl_seconds`, `name`.
+        The rest is taken as given: `issuer`, `audience`, `ttl_seconds`, `name`.
         """
         if not keys:
             raise ValueError("ServiceTokenProvider needs at least one key")

@@ -2,7 +2,7 @@
 deadlines, health that drains, reflection v1 + v1alpha, the server's options.
 
 Imports `grpc`, `protobuf` and `grpcio-status` at module level — importing this module is already
-"I want to serve gRPC". `entrypoint.py` imports it lazily so `GrpcGateway` and the
+"I want to serve gRPC". `gateway.py` imports it lazily so `GrpcGateway` and the
 `.proto` export stay usable without the `[grpc]` extra.
 
 There is no generated `*_pb2_grpc.py` anywhere: services are registered as generic
@@ -18,7 +18,7 @@ from typing import Any, NoReturn
 
 from pydantic import ValidationError
 
-from sincpro_framework.auth.entrypoint.transports import challenges_of, refusal_body
+from sincpro_framework.auth import security
 from sincpro_framework.common.failures import (
     failure_reason,
     json_safe_validation_errors,
@@ -36,13 +36,11 @@ from sincpro_framework.common.transport.grpc import (
     health_handler,
     is_past,
 )
-from sincpro_framework.context.domain.level import EntrypointKind
-from sincpro_framework.entrypoints.adapters.grpc import exceptions, naming, proto
+from sincpro_framework.context import EntrypointKind
+from sincpro_framework.entrypoints.adapters.grpc import exceptions, proto
 from sincpro_framework.entrypoints.adapters.grpc.proto import GrpcMethodSpec
-from sincpro_framework.entrypoints.domain.layers import RunFn, Scalar
-from sincpro_framework.entrypoints.services.scalar_executor import dump_scalar_result, execute
+from sincpro_framework.entrypoints.domain.layers import CallFn, Scalar
 from sincpro_framework.observability import process
-from sincpro_framework.sincpro_abstractions import DataTransferObject
 from sincpro_framework.sincpro_logger import logger
 from sincpro_framework.use_bus import UseFramework
 
@@ -111,7 +109,7 @@ def scalar_to_struct(payload: Scalar) -> Struct:
         scalar_to_struct({"pair": (1, 2), "by": {1: "a"}})
         ->  Struct {pair: [1.0, 2.0], by: {"1": "a"}}
 
-    `dump_scalar_result` guarantees the payload survives `json.dumps`, which still
+    What the bus answered, dumped as a Scalar, survives `json.dumps`, which still
     admits values `ParseDict` refuses (a tuple, a dict keyed by int). Re-parsing
     the JSON normalises those instead of failing after the Feature already ran.
     """
@@ -184,9 +182,9 @@ def refusal_metadata(
 ) -> tuple[tuple[str, str], ...]:
     """What a refused caller reads besides the code: why, and — for nobody known — where to get
     a credential, as `www-authenticate`."""
-    metadata = [("sp-auth-refusal", json.dumps(refusal_body(error)))]
+    metadata = [("sp-auth-refusal", json.dumps(error.refusal_body()))]
     if isinstance(error, exceptions.Unauthenticated):
-        metadata += [("www-authenticate", one) for one in challenges_of([framework])]
+        metadata += [("www-authenticate", one) for one in security.challenges([framework])]
     return tuple(metadata)
 
 
@@ -221,7 +219,7 @@ def status_for(
     info = error_details_pb2.ErrorInfo(reason=reason, domain=domain)
     info.metadata["kind"] = kind.value
     if isinstance(error, exceptions.AuthError):
-        for key, value in refusal_body(error).items():
+        for key, value in error.refusal_body().items():
             info.metadata[key] = str(value)
     details: list[Any] = [info]
     if isinstance(error, ValidationError):
@@ -271,13 +269,13 @@ def through_the_bus(
     framework: UseFramework,
     domain: str,
     subject: Callable[[], str],
-    run: RunFn,
+    call: CallFn,
     payload: Scalar,
 ) -> Scalar:
     """The one path every gRPC call takes to the bus — a generated method and `bus_call` alike.
 
         through_the_bus(context, billing, "billing.v1", lambda: "CommandIssueInvoice",
-                        operation.run, {"total": 10.0})
+                        operation.call, {"total": 10.0})
         ->  {"id": "F-1", "total": 10}
         through_the_bus(<deadline already past>, ...)   ->  aborted DEADLINE_EXCEEDED
 
@@ -285,10 +283,10 @@ def through_the_bus(
        `context["deadline"]` (epoch seconds) for adapters' own timeouts.
     2. A call whose deadline already passed answers DEADLINE_EXCEEDED and never runs: its caller
        gave up, and a write it no longer waits for is a write nobody sees.
-    3. `run` on the bus, authenticated in this same thread (identity is a ContextVar).
+    3. `call` on the bus, authenticated in this same thread (identity is a ContextVar).
     4. A failure is answered as a `google.rpc.Status` (`status_for`); a validation error is the
        caller's mistake and is not logged as a failure.
-    5. Final: what `run` answered.
+    5. Final: what `call` answered.
     """
     call_context = context_from_metadata(context.invocation_metadata())
     credentials = credentials_of(context)
@@ -298,9 +296,7 @@ def through_the_bus(
     if is_past(deadline):
         _abort(context, deadline_exceeded(domain))
     try:
-        return execute(
-            framework, run, payload, call_context or None, credentials, EntrypointKind.GRPC
-        )
+        return call(payload, call_context or None, credentials, EntrypointKind.GRPC)
     except Exception as error:
         if not isinstance(error, ValidationError) and not process.was_reported(error):
             logger.exception("gRPC call [%s] in [%s] failed", subject(), domain)
@@ -309,7 +305,7 @@ def through_the_bus(
 
 def method_handler(spec: GrpcMethodSpec) -> Any:
     """Bind one spec to a unary-unary handler over Struct: the payload is validated as the DTO
-    inside `run`, on the one path (`through_the_bus`).
+    inside `call`, on the one path (`through_the_bus`).
 
         method_handler(<IssueInvoice spec>)(Struct {total: 10.0}, context)
         ->  Struct {id: "F-1", total: 10.0}
@@ -325,63 +321,12 @@ def method_handler(spec: GrpcMethodSpec) -> Any:
             spec.framework,
             spec.package,
             lambda: command,
-            spec.operation.run,
+            spec.operation.call,
             struct_to_scalar(request),
         )
         return scalar_to_struct(answered)
 
     return handle
-
-
-def bus_call[R](
-    context: Any,
-    bus: UseFramework,
-    dto: DataTransferObject | Callable[[], DataTransferObject],
-    to_response: Callable[[Any], R] | None = None,
-    domain: str | None = None,
-) -> R | Struct:
-    """A hand-written servicer's call to the bus, on the path a generated method takes.
-
-    `dto` is the Command, or a function building it — built inside, its validation error is
-    answered INVALID_ARGUMENT with `BadRequest` as a generated method's is. `to_response` turns
-    what the bus answered into the servicer's message; without it the answer is a `Struct`.
-    `domain` names the package in `ErrorInfo` — the bus's default package (`billing.v1`) when
-    not given.
-
-        bus_call(context, billing, CommandIssueInvoice(total=10), to_invoice_pb)
-        ->  invoice_pb2.Invoice(id="F-1", total=10)
-        bus_call(context, billing, lambda: CommandIssueInvoice(total="ten"))
-        ->  aborted INVALID_ARGUMENT, a `BadRequest` naming `total`
-
-    1. A `run` for `through_the_bus` that builds the Command — calling `dto` when it is a
-       function — notes its name, and keeps what the bus answered aside.
-    2. Through the bus with an empty payload, the domain given or the bus's default
-       package; the subject of a failure is the Command, once built.
-    Final: what the bus answered — through `to_response`, or as a `Struct`.
-    """
-    answered: list[Any] = []
-    built: list[str] = []
-
-    def run(_payload: Scalar) -> Scalar:
-        """The bus's run for `through_the_bus`: build the Command here — so its validation
-        error is answered like any other — call the bus, keep the answer aside; the Scalar
-        answered is unused."""
-        command = dto() if callable(dto) else dto
-        built.append(type(command).__name__)
-        answered.append(bus(command))
-        return {}
-
-    through_the_bus(
-        context,
-        bus,
-        domain or naming.default_package(bus.name),
-        lambda: built[0] if built else "",
-        run,
-        {},
-    )
-    if to_response is None:
-        return scalar_to_struct(dump_scalar_result(answered[0]))
-    return to_response(answered[0])
 
 
 def _package_of(method: str) -> str:
@@ -755,7 +700,7 @@ def server_options(
     """The server's channel options: keepalive, `max_connection_age`, the message size limit
     both ways — each replaced by the caller's option of the same key.
 
-    `max_connection_age=None` keeps connections for ever (grpcio's default).
+    `max_connection_age=None` holds connections open indefinitely (grpcio's default).
 
         server_options()
         ->  [("grpc.keepalive_time_ms", 60000), ..., ("grpc.max_receive_message_length",
@@ -763,7 +708,7 @@ def server_options(
         server_options([("grpc.keepalive_time_ms", 30000)], max_connection_age=None)
         ->  keepalive every 30 s, no `max_connection_age_ms` nor its grace
 
-    A key the caller gives keeps its place when it replaces one; a new key goes last.
+    A key the caller gives takes the place of the one it replaces; a new key goes last.
     """
     chosen: dict[str, Any] = dict(KEEPALIVE_OPTIONS)
     chosen["grpc.max_receive_message_length"] = max_message_bytes

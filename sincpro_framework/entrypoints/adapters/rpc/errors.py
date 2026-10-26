@@ -7,13 +7,11 @@ same request may succeed if sent again (`retryable`). The codes are PRD_15 §1.3
 column, published once in the OpenRPC document's `components.errors`.
 """
 
-import re
 from collections.abc import Mapping
 from typing import Any, NamedTuple
 
 from pydantic import ValidationError
 
-from sincpro_framework.auth.entrypoint.transports import refusal_body
 from sincpro_framework.common.failures import (
     failure_reason,
     json_safe_validation_errors,
@@ -101,21 +99,9 @@ NOT_RETRYABLE = (exceptions.DuplicateAggregate,)
 """A duplicate stays a duplicate: sending the same write again collides again — unlike a stale
 write, which a fresh run re-reads."""
 
-UPPER_SNAKE_BOUNDARY = re.compile(r"(?<=[a-z0-9])(?=[A-Z])|(?<=[A-Z])(?=[A-Z][a-z])")
 
 type Answer = tuple[int, str, dict[str, Any]]
 """The code, message and `data` one error is answered with."""
-
-
-def upper_snake(name: str) -> str:
-    """A class name as an UPPER_SNAKE reason — acronyms kept whole.
-
-        upper_snake("InvoiceNotFound")  ->  "INVOICE_NOT_FOUND"
-        upper_snake("HTTPTimeout")      ->  "HTTP_TIMEOUT"
-
-    What a domain error's class name becomes as its `reason`.
-    """
-    return UPPER_SNAKE_BOUNDARY.sub("_", name).upper()
 
 
 def error_data(kind: str, reason: str, retryable: bool, **disclosed: Any) -> dict[str, Any]:
@@ -149,7 +135,7 @@ def answer_for(error: Exception) -> Answer:
                                         "retryable": True})
 
     1. A `ValidationError` is invalid params, with the validation errors.
-    2. An auth refusal keeps what the caller comes back with (`step_up`, `requirement`), its
+    2. An auth refusal carries what the caller comes back with (`step_up`, `requirement`), its
        text as `message`.
     3. Any other failure is answered by its kind; a kind with no code here is internal.
     4. Final: the reason is `failure_reason`'s, the one every wire answers with — the error's
@@ -174,7 +160,7 @@ def answer_for(error: Exception) -> Answer:
     retryable = RETRYABLE_BY_KIND[kind] and not isinstance(error, NOT_RETRYABLE)
     reason = failure_reason(error, exceptions.FailureKind(kind))
     if isinstance(error, exceptions.AuthError):
-        refusal = {**refusal_body(error), "message": error.reason}
+        refusal = {**error.refusal_body(), "message": error.reason}
         return code.code, code.message, {**refusal, **error_data(kind, reason, retryable)}
     disclosed = said_to_the_caller(error)
     extra = {"message": disclosed} if disclosed is not None else {}

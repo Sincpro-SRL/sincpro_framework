@@ -29,22 +29,21 @@ from sincpro_framework.data_layer.caching import (
     KeyValueRecords,
     RecordState,
 )
+from sincpro_framework.data_layer.store import InMemoryKeyValue
 from sincpro_framework.ddd import DomainEvent
 from sincpro_framework.ddd import exceptions as ddd_exceptions
+from sincpro_framework.entrypoints import QueueGateway
 from sincpro_framework.entrypoints.adapters.queue import (
-    ATTEMPTS_HEADER,
     DEAD_LETTER_FROM,
     DEAD_LETTER_KIND,
     DEAD_LETTER_REASON,
-    QueueGateway,
     QueueOptions,
     Settlement,
-    cloud_event_headers,
     inbox_key,
 )
 from sincpro_framework.entrypoints.entrypoint.decorators import queue
+from sincpro_framework.event_driven import ATTEMPTS_HEADER, Envelope
 from sincpro_framework.event_driven.adapters.faststream import FastStreamQueue
-from sincpro_framework.store import InMemoryKeyValue
 
 from .test_queue_gateway import (
     ISSUE_CHANNEL,
@@ -113,7 +112,7 @@ def issue(
     amount: int, customer_id: int = 7, headers: dict[str, str] | None = None
 ) -> tuple[bytes, str, dict[str, str]]:
     command = CommandIssueInvoice(customer_id=customer_id, amount=amount)
-    envelope = cloud_event_headers(command, source=SALES, id=f"msg-{customer_id}-{amount}")
+    envelope = Envelope.headers_for(command, source=SALES, id=f"msg-{customer_id}-{amount}")
     return command.model_dump_json().encode(), ISSUE_CHANNEL, {**envelope, **(headers or {})}
 
 
@@ -205,7 +204,7 @@ def test_a_domain_refusal_is_dead_lettered_at_once(broker_cls, test_broker):
 
 @pytest.mark.parametrize(("broker_cls", "test_broker"), BROKERS)
 def test_poison_reaches_the_dead_letter_queue_with_its_reason(broker_cls, test_broker):
-    headers = cloud_event_headers(source=SALES, type="CommandIssueInvoice", id="poison")
+    headers = Envelope.headers_for(source=SALES, type="CommandIssueInvoice", id="poison")
 
     delivery = Delivery(broker_cls, test_broker).run((b"not json", ISSUE_CHANNEL, headers))
 
@@ -217,7 +216,7 @@ def test_poison_reaches_the_dead_letter_queue_with_its_reason(broker_cls, test_b
 
 
 def test_an_invalid_dto_is_dead_lettered():
-    headers = cloud_event_headers(source=SALES, id="wrong-shape")
+    headers = Envelope.headers_for(source=SALES, id="wrong-shape")
     body = json.dumps({"customer_id": "not a number", "amount": 1}).encode()
 
     delivery = Delivery(KafkaBroker, TestKafkaBroker).run((body, ISSUE_CHANNEL, headers))
@@ -492,7 +491,7 @@ def test_an_event_nobody_here_handles_on_a_shared_channel_is_skipped():
     delivery = Delivery(KafkaBroker, TestKafkaBroker)
     delivery.gateway  # built: InvoiceIssued heard on its channel
     other = InvoiceVoided(number="F-9")
-    headers = cloud_event_headers(other, source="urn:svc:billing")
+    headers = Envelope.headers_for(other, source="urn:svc:billing")
 
     delivery.run((other.as_json().encode(), InvoiceIssued.name, headers))
 
@@ -520,10 +519,10 @@ def test_the_dead_letter_copy_carries_the_cloudevents_envelope():
 def test_a_message_says_what_it_is_by_its_identity():
     """`ce_type` is the identity every registry routes by: a Command's `context.Class`, an
     event's name — the body read alone in a dead-letter queue says which message it is."""
-    command = cloud_event_headers(
+    command = Envelope.headers_for(
         CommandIssueInvoice(customer_id=7, amount=1), source=SALES, context="billing"
     )
-    event = cloud_event_headers(InvoiceIssued(number="F-1"), source=SALES, context="billing")
+    event = Envelope.headers_for(InvoiceIssued(number="F-1"), source=SALES, context="billing")
 
     assert command["ce_type"] == "billing.CommandIssueInvoice"
     assert billing_bus([]).dto_registry[command["ce_type"]] is CommandIssueInvoice
@@ -531,8 +530,6 @@ def test_a_message_says_what_it_is_by_its_identity():
 
 
 def test_an_envelope_is_read_in_every_binding_spelling():
-    from sincpro_framework.entrypoints.adapters.queue import Envelope
-
     for prefix in ("ce_", "ce-", "cloudEvents:", "cloudEvents_"):
         envelope = Envelope.of({f"{prefix}id": "1", f"{prefix}source": SALES})
         assert (envelope.id, envelope.source) == ("1", SALES)

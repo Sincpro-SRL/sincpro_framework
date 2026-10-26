@@ -75,7 +75,7 @@ Do **not** put this in `domain/` or on Feature classes.
 
 ```python
 # sincpro_siat_soap/entrypoint_mcp.py
-from sincpro_framework.entrypoints.adapters.mcp import Entrypoint
+from sincpro_framework.entrypoints import Entrypoint
 from sincpro_siat_soap import siat_soap_sdk
 from sincpro_siat_soap.services.auth_permissions.extract_p12_credentials import (
     CommandExtractP12Credentials,
@@ -94,7 +94,7 @@ if __name__ == "__main__":
 
 `pip install sincpro-framework[mcp]` on the SDK extra. Features stay as they are.
 
-Default `build_mcp_server(siat_soap_sdk).run()` also works. `exclude` is required in production because **revoking certificates is JSON-safe** and would otherwise become a tool.
+Default `Entrypoint(siat_soap_sdk).run()` also works. `exclude` is required in production because **revoking certificates is JSON-safe** and would otherwise become a tool.
 
 The safer shape is declared exposure: bind only the tools an agent should have with `@mcp()` and serve `McpGateway([siat_soap_sdk]).server()` — a new use case (a revocation included) is then no tool until someone binds it, and a write nobody declared harmless is advertised `destructiveHint: true` ([mcp.md](mcp.md#declared-exposure--mcpgateway-prd_14)).
 
@@ -117,7 +117,7 @@ The skip of `bytes` is automatic. Destructive or secret operations are **not**.
 | `CommandCompressFile` | **skipped** | Response is a zip blob (`Any` / binary). |
 | `CommandExtractP12Credentials` | **skipped + exclude** | `p12_payload: bytes \| str` is skipped for `bytes`; if someone passes a PEM `str`, **exclude anyway** (private key out). |
 | `CommandRevokeCerts` | **exclude** | JSON-safe and **destructive**. Must not be a default tool. |
-| `CmdGenerateXML` / `CommandSignXML` | case by case | XML as `str` can be a tool; keep payloads small. Signing may need the cert already in process memory (adapter), not in the MCP payload. |
+| `CmdGenerateXML` / `CommandSignXML` | case by case | XML as `str` can be a tool; payloads should stay small. Signing may need the cert already in process memory (adapter), not in the MCP payload. |
 
 Binary invoice send stays **Python/Odoo**: generate XML in-process, then `siat_soap_sdk(CommandInvoiceReceptionRequest(xml=bytes, ...))`. The agent can still own CUF / CUFD / verify.
 
@@ -135,7 +135,7 @@ Do not invent base64-on-the-DTO in the framework. If SIAT later wants packages o
 
 ### 2. `raw_response: Any`
 
-Many response DTOs keep the Zeep SOAP object. `model_dump(mode="json")` can fail or emit garbage. The Feature still succeeded.
+Many response DTOs hold the Zeep SOAP object. `model_dump(mode="json")` can fail or emit garbage. The Feature still succeeded.
 
 **SDK work:** agents need `cuf`, `cufd`, `reception_code`, `literal_status`. Leave `raw_response` out of the JSON dump or type it as `dict`. That is a DTO cleanup, independent of MCP, but MCP makes it visible.
 

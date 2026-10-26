@@ -116,7 +116,7 @@ every other caller does nothing. That claim is the whole mechanism — no lock, 
 ```python
 import redis
 
-from sincpro_framework.store.adapters.redis import RedisKeyValue   # extra [redis]
+from sincpro_framework.data_layer.store import RedisKeyValue   # extra [redis]
 from sincpro_framework.entrypoints.adapters.cron import KeyValueRuns
 
 shared_runs = KeyValueRuns(RedisKeyValue(redis.Redis.from_url(url)))   # retention=30 days, prefix="cron"

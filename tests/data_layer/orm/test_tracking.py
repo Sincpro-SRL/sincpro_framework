@@ -14,8 +14,8 @@ from sincpro_framework import exceptions
 from sincpro_framework.data_layer.orm.sqlalchemy.domain.transaction import Writes
 from sincpro_framework.data_layer.orm.sqlalchemy.entrypoint.repository import Repository
 from sincpro_framework.data_layer.orm.sqlalchemy.infrastructure.database import Database
-from sincpro_framework.ddd.criteria import Criteria, Grouping, Level, Pagination
-from sincpro_framework.ddd.entity import EntityUpdated
+from sincpro_framework.ddd.criteria import Criteria, Grouping, GroupingLevel, Pagination
+from sincpro_framework.ddd.events import EntityUpdated
 
 from .models import TrackedNote, TrackedNotes
 
@@ -89,7 +89,7 @@ def test_a_row_from_a_grouped_page_is_snapshotted_like_any_other(database: Datab
         TrackedNotes,
         Criteria(
             pagination=Pagination(limit=5),
-            grouping=Grouping(group_by=(Level(field="body"),)),
+            grouping=Grouping(group_by=(GroupingLevel(field="body"),)),
         ),
     )
 

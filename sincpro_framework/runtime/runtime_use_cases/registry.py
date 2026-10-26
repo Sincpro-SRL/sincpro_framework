@@ -193,7 +193,7 @@ class BusRegistry:
             registry.check_all()   ->  [UseCaseRefused("billing.quote: ...")], after a rename
 
         1. The store's active use cases, onto a `fresh()` copy of the code's bus.
-        2. Each loaded in order; a refusal is kept and the next one still tried.
+        2. Each loaded in order; a refusal is recorded and the next one still tried.
         3. None refused: the root bus built — a failure there is one refusal, of the
            generation.
         4. `sys.modules` settled back, so nothing loaded here stays.

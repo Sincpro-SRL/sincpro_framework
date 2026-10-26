@@ -12,11 +12,7 @@ import threading
 from collections import Counter
 
 from sincpro_framework.observability.api import process
-from sincpro_framework.observability.metrics.domain.instruments import (
-    Instrument,
-    InstrumentKind,
-)
-from sincpro_framework.observability.metrics.infrastructure.active import active
+from sincpro_framework.observability.metrics import Instrument, InstrumentKind, metrics
 
 CACHE_OUTCOMES = Instrument(
     name="sincpro.cache.outcomes",
@@ -96,7 +92,7 @@ class MetricsObserver:
 
     def observed(self, outcome: str, namespace: str) -> None:
         """One on the counter, labelled by namespace (`-` when empty) and outcome."""
-        active.emit(
+        metrics.emit(
             self.instrument,
             1,
             {"sincpro.namespace": namespace or "-", "sincpro.outcome": outcome},
@@ -118,7 +114,11 @@ class Observers:
             except Exception:
                 continue
 
+    @classmethod
+    def traced_and_measured(cls, instrument: Instrument) -> "Observers":
+        """The default observer of `Cache` and `Idempotency`: the span and the metrics.
 
-def traced_and_measured(instrument: Instrument) -> Observers:
-    """The default observer: the span and the metrics."""
-    return Observers(SpanObserver(), MetricsObserver(instrument))
+        Observers.traced_and_measured(CACHE_OUTCOMES)
+            ->  Observers(SpanObserver(), MetricsObserver(CACHE_OUTCOMES))
+        """
+        return cls(SpanObserver(), MetricsObserver(instrument))

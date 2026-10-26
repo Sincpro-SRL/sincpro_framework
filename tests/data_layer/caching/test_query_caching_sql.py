@@ -17,8 +17,8 @@ from sincpro_framework.data_layer.orm import (
     map_aggregates,
     template_table,
 )
+from sincpro_framework.data_layer.store import InMemoryKeyValue
 from sincpro_framework.ddd import Entity
-from sincpro_framework.store import InMemoryKeyValue
 
 
 @dataclass

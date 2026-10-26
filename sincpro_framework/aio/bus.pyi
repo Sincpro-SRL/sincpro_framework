@@ -10,7 +10,7 @@ class AsyncBus:
 
     Dispatches via `asyncio.to_thread`, which propagates the caller's
     `contextvars.Context` to the worker thread on its own (stdlib, documented
-    behavior) — no `ThreadContextBus` involved. Stateless and safe to reuse
+    behavior) — no `bus.thread_context()` involved. Stateless and safe to reuse
     concurrently (e.g. inside `asyncio.gather`): each call gets its own fresh
     context snapshot from `asyncio.to_thread` itself.
     """

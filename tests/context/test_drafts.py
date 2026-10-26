@@ -28,12 +28,12 @@ from sincpro_framework.context import (
 )
 from sincpro_framework.context.domain import exceptions as context_exceptions
 from sincpro_framework.data_layer.repositories import MemoryRepository
+from sincpro_framework.data_layer.store import InMemoryKeyValue
 from sincpro_framework.ddd import assign
 from sincpro_framework.ddd import exceptions as ddd_exceptions
 from sincpro_framework.ddd import refuse_stale
 from sincpro_framework.ddd.entity import Entity
-from sincpro_framework.entrypoints.adapters.cron.adapters.clocks import ManualClock
-from sincpro_framework.store.adapters.in_memory import InMemoryKeyValue
+from sincpro_framework.runtime.testing import ManualClock
 
 TTL = timedelta(hours=1)
 ANA = {"user_id": "ana"}
@@ -266,14 +266,14 @@ def test_a_keep_that_won_its_slot_but_did_not_move_the_head_is_still_read():
         key=ENTRY,
         values={"values": {"discount": "20"}, "origin_version": 3},
         version=first.version + 1,
-        kept_at=clock.now(),
+        saved_at=clock.now(),
     )
     lagging = Draft(
         key=KEY,
         values={"discount": "20"},
         version=slot.version,
         origin_version=3,
-        kept_at=slot.kept_at,
+        kept_at=slot.saved_at,
     )
     kv.add(f"{RAW}:{slot.version}", slot.model_dump_json().encode(), TTL)
 
@@ -363,7 +363,7 @@ def test_under_racing_tabs_every_kept_draft_is_unique_and_the_last_is_what_read_
 
 def test_every_key_of_a_draft_carries_the_ttl_over_redis():
     fakeredis = pytest.importorskip("fakeredis")
-    from sincpro_framework.store.adapters.redis import RedisKeyValue
+    from sincpro_framework.data_layer.store import RedisKeyValue
 
     redis = fakeredis.FakeRedis()
     drafts = Drafts(KeyValueContexts(RedisKeyValue(redis), entry_ttl=TTL), ANA)
@@ -415,7 +415,7 @@ def test_a_head_the_store_evicted_is_found_again_from_the_chain():
 
 def test_over_redis_an_evicted_head_neither_hides_the_draft_nor_locks_the_key():
     fakeredis = pytest.importorskip("fakeredis")
-    from sincpro_framework.store.adapters.redis import RedisKeyValue
+    from sincpro_framework.data_layer.store import RedisKeyValue
 
     redis = fakeredis.FakeRedis()
     drafts = Drafts(KeyValueContexts(RedisKeyValue(redis), entry_ttl=TTL), ANA)
@@ -804,7 +804,7 @@ def test_the_drafts_are_kept_where_the_context_is_kept():
     )
 
 
-def test_a_context_store_of_a_project_that_keeps_no_entries_says_so():
+def test_a_context_store_of_a_project_that_saves_no_entries_says_so():
     class OnlyContexts(ContextStore):
         def save(self, key, values, ttl=None) -> None: ...
 
@@ -817,7 +817,7 @@ def test_a_context_store_of_a_project_that_keeps_no_entries_says_so():
             return 0
 
     with use_context().scoped({"user_id": "ana"}) as scope:
-        with pytest.raises(exceptions.ProgrammingError, match="keeps no entries"):
+        with pytest.raises(exceptions.ProgrammingError, match="saves no entries"):
             scope.drafts(store=OnlyContexts()).save("invoice:7", {}, 0, 0)
 
 

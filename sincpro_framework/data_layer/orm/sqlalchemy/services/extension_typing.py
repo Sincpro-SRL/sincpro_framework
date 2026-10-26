@@ -33,7 +33,7 @@ STORED_ATTRIBUTE = "extension_type"
 """The column a core may declare to store the type of each row, instead of working it out."""
 
 HIDDEN = frozenset({TYPE_ATTRIBUTE, STORED_ATTRIBUTE})
-"""Attributes the engine keeps for the type of a row: not fields of the entity."""
+"""Attributes the engine holds for the type of a row: not fields of the entity."""
 
 STORED_TYPE: dict[type, Column] = {}
 """Per root, the column that stores the type of its rows, when its table declares one."""
@@ -157,9 +157,9 @@ def compile_extension_type(element: ExtensionType, compiler, **kw):  # type: ign
         for one in below
         if STORED_IN[one.entity][1] is None
     ]
-    kept = case(
+    resolved = case(
         *shared,
         (stored.in_([identity_of(within), *(one.identity for one in below)]), stored),
         else_=literal(identity_of(within), String()),
     )
-    return compiler.process(kept, **kw)
+    return compiler.process(resolved, **kw)

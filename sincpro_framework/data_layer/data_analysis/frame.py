@@ -26,9 +26,9 @@ from sincpro_framework.ddd.criteria import (
     Any_,
     Condition,
     Criteria,
+    Evaluation,
     Expression,
     Not,
-    holds,
 )
 
 WIDER = {
@@ -145,7 +145,7 @@ def _coerced(
     expression: Expression, kinds: Mapping[str, str], samples: Mapping[str, Any]
 ) -> Expression:
     """A filter written as JSON made one a frame can evaluate: every condition's value read as
-    its column's type, the `all` / `any` / `not` around it kept.
+    its column's type, the `all` / `any` / `not` around it preserved.
 
     Context: a filter that comes from a client says `"2026-09-01"` and `"3"`; compared as text
     with a date or an integer column it would answer wrong rows without an error.
@@ -240,7 +240,7 @@ class DataFrame:
     @classmethod
     def from_arrow(cls, table: Any, key: str = "id") -> "DataFrame":
         """A `pyarrow.Table` — what DuckDB or polars answer — as a frame, its types taken from the
-        schema, so one with no rows keeps its columns.
+        schema, so one with no rows still has its columns.
 
         Context: pyarrow is imported here, as in `to_arrow`."""
         from sincpro_framework.data_layer.data_analysis.arrow import frame_columns
@@ -316,7 +316,7 @@ class DataFrame:
         3. This frame's rows and the added ones built into one frame, with this frame's filter
            and the page's cursor and completeness.
         Final: that frame — or, when neither held a row, this one with the page's cursor and
-        completeness, so its columns are kept.
+        completeness, so its columns are preserved.
         """
         if len(self) and len(page) and page.columns != self.columns:
             missing = sorted(set(self.columns) ^ set(page.columns))
@@ -350,7 +350,7 @@ class DataFrame:
                 ->  [{"id": 2, "total": 200}]
 
         A condition's value is read as its column's type first — `"100"` compares as 100 — and
-        the frame answered keeps both filters, `{"all": [its filter, where]}`, if it has one.
+        the frame answered carries both filters, `{"all": [its filter, where]}`, if it has one.
         """
         if not self.complete:
             raise exceptions.ProgrammingError(
@@ -365,9 +365,9 @@ class DataFrame:
             for name, column in zip(self.columns, self.values)
         }
         condition = _coerced(expression, kinds, samples) if expression is not None else None
-        kept = [row for row in rows if holds(condition, row.get)]
+        matching = [row for row in rows if Evaluation.holds(condition, row.get)]
         combined = {"all": [self.where, where]} if self.where else where
-        return self._with_rows(kept, combined)
+        return self._with_rows(matching, combined)
 
     def sort(self, keys: Sequence[tuple[str, Direction]]) -> "DataFrame":
         """Ordered by `keys` — `null` last in both directions.
@@ -391,7 +391,7 @@ class DataFrame:
         return self._with_rows(ordered, self.where)
 
     def select(self, columns: Sequence[str]) -> "DataFrame":
-        """Only these columns, in this order — the rows, the filter and the completeness kept;
+        """Only these columns, in this order — the rows, the filter and the completeness preserved;
         a column the frame does not have is refused as `KeyError`.
 
             frame.select(["total", "id"]).columns  ->  ("total", "id")
@@ -421,7 +421,7 @@ class DataFrame:
         return self.to_arrow().__arrow_c_stream__(requested_schema)
 
     def to_parquet(self) -> bytes:
-        """The frame as a Parquet file — to download, to cache, to keep."""
+        """The frame as a Parquet file — to download, to cache, to store."""
         from sincpro_framework.data_layer.data_analysis.arrow import parquet_bytes
 
         return parquet_bytes(self)

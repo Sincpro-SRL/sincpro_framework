@@ -24,7 +24,9 @@ from sqlalchemy.orm import registry
 from sincpro_framework.data_layer.orm import map_aggregates
 from sincpro_framework.data_layer.orm.sqlalchemy.entrypoint.repository import Repository
 from sincpro_framework.data_layer.orm.sqlalchemy.entrypoint.template_table import entity_table
-from sincpro_framework.data_layer.orm.sqlalchemy.services.model_introspection import describe
+from sincpro_framework.data_layer.orm.sqlalchemy.services.model_introspection import (
+    ModelIntrospection,
+)
 from sincpro_framework.ddd import Criteria
 from sincpro_framework.ddd.criteria import Condition
 from sincpro_framework.ddd.entity import Entity, Translated
@@ -141,19 +143,33 @@ def contexts(request, engine_url):
 def test_each_class_publishes_its_own_values_and_words(contexts):
     (Invoice, InvoiceSiat, InvoiceSiatOnline, InvoiceExport), _ = contexts
 
-    assert describe(Invoice).fields["state"].choices == ["draft", "posted"]
-    assert describe(InvoiceSiat).fields["state"].choices == ["draft", "posted", "observed"]
-    assert describe(InvoiceSiatOnline).fields["state"].choices == [
+    assert ModelIntrospection.describe(Invoice).fields["state"].choices == ["draft", "posted"]
+    assert ModelIntrospection.describe(InvoiceSiat).fields["state"].choices == [
+        "draft",
+        "posted",
+        "observed",
+    ]
+    assert ModelIntrospection.describe(InvoiceSiatOnline).fields["state"].choices == [
         "draft",
         "posted",
         "observed",
         "contingency",
     ]
-    assert describe(InvoiceExport).fields["state"].choices == ["draft", "posted", "shipped"]
-    assert describe(Invoice).fields["state"].label["es"] == "Estado"
-    assert describe(InvoiceSiat).fields["state"].label["es"] == "Estado SIAT"
-    assert describe(InvoiceSiat).fields["state"].choice_labels["posted"] == {"es": "Validada"}
-    assert describe(Invoice).fields["state"].choice_labels["posted"] == {"es": "Publicada"}
+    assert ModelIntrospection.describe(InvoiceExport).fields["state"].choices == [
+        "draft",
+        "posted",
+        "shipped",
+    ]
+    assert ModelIntrospection.describe(Invoice).fields["state"].label["es"] == "Estado"
+    assert (
+        ModelIntrospection.describe(InvoiceSiat).fields["state"].label["es"] == "Estado SIAT"
+    )
+    assert ModelIntrospection.describe(InvoiceSiat).fields["state"].choice_labels[
+        "posted"
+    ] == {"es": "Validada"}
+    assert ModelIntrospection.describe(Invoice).fields["state"].choice_labels["posted"] == {
+        "es": "Publicada"
+    }
 
 
 def test_a_query_by_each_class_reads_its_own_rows_and_those_below_it(contexts):

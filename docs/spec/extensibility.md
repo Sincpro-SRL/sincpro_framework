@@ -68,7 +68,7 @@ release then collides with all of them. We choose independence over that speed, 
 | Read it with the record, without a query per row | ✅ | A relation named in the specification: one more statement for the whole page. An extension that is a subclass needs no naming: the row comes back as the extension |
 | Add a value computed from the record | ✅ | An expression mapped from outside (`properties=`), filtered, ordered and grouped like a column |
 | Keep light fields in a JSON slot the core reserves | ✅ | `properties_column()` on the core's table, `slot_field(table, "zone")` in the module's `properties=`: a field filtered, grouped and measured like a column (`tests/data_layer/orm/test_properties_slot.py`) |
-| Keep the data in **another context** and read it by the bus | ✅ | `Relation.bus`: one call to the other bus per page, carrying the page's keys |
+| Keep the data in **another context** and read it by the bus | ✅ | `TableRelation.bus`: one call to the other bus per page, carrying the page's keys |
 | Filter the entity by a field the other context owns | 🟡 | Ask that context for the ids, then `id in (…)`; a long list travels as one array on PostgreSQL |
 | Add a behaviour when the entity is saved or read | ✅ | Hooks (`extends=`, `replaces=`, ordering), interceptors, `replaces=` of a use case |
 | Add a new kind of the entity, with behaviour of its own | ✅ | A subclass with a table of its own (joined-table inheritance), in a chain of any depth |
@@ -77,7 +77,7 @@ release then collides with all of them. We choose independence over that speed, 
 | Read several sibling extensions as one flat record | ✅ | `Consolidated(Core, A, B)`, declared by a module that knows them all |
 | Filter, group or measure the core by a field of an extension | ✅ | The core's criteria names it (`Condition(field="route")`); it is read through a correlated subquery, which costs 15–30× a join on a report over millions of rows, so such a report reads the extension's class. Ordering by it is refused: a record may lack the extension, so the field is nullable |
 | Reach the entity's own attributes from the extension (`delivery.move.total`) | ✅ | A back-reference; see below |
-| Declare the cardinality of what it installs | ✅ | `Relation.foreign_key(…, many=False)`: the data mapper writes the annotation the module cannot (`test_a_relation_an_extension_installs_says_its_own_cardinality`) |
+| Declare the cardinality of what it installs | ✅ | `TableRelation.foreign_key(…, many=False)`: the data mapper writes the annotation the module cannot (`test_a_relation_an_extension_installs_says_its_own_cardinality`) |
 | Change how a core field is shown (label, help, read-only, required) | ✅ | `map_aggregates(…, overlay={Core: {field: {…}}})`: an overlay on `Meta`, never an edit of the core's `presentation`; anything else about the field is refused as the core's |
 | Add values to a core's enum field, or name them differently | ✅ | The subclass redeclares the field with an enum of its own (`state: SiatState`) — Python refuses to subclass an enum that has members, so it is rewritten, ideally a superset of the core's. `describe` of the subclass publishes its values and labels; the core's stays as the core declared it; a query by the core or by the subclass reads the new values (`test_inheritance_of_an_enum_field.py`). A type checker flags the override (`reportIncompatibleVariableOverride`): the core's own code may meet a value it never knew, which is the subclass's to own |
 | Say what it reads from the core and what it was written against | ✅ | `uses={Core: ("total",)}` and `requires={Core: "2.1"}`, checked when the module is mapped; see [§8](#8-when-a-release-comes) |
@@ -138,10 +138,10 @@ and nothing else changes for the module that writes it.
 | Mode | Declare | Read as | Its migration |
 |---|---|---|---|
 | **A table of its own, flat** | `class MoveDelivery(Move)` and `map_aggregates(reg, {MoveDelivery: delivery_t})`; the table's `id` references the parent's | The class, with every field of the parent: `move.number`, `move.route` | Creates its table, in its own chain |
-| **A table of its own, delegated** | A class of its own and `relations={Move: {"delivery": Relation.foreign_key(…)}}` | Nested: `move.delivery.route`, named in the specification | The same |
+| **A table of its own, delegated** | A class of its own and `relations={Move: {"delivery": TableRelation.foreign_key(…)}}` | Nested: `move.delivery.route`, named in the specification | The same |
 | **The parent's own table** | The same subclass, given the parent's table: `{MoveZone: move_t}` | The class, flat. A row *has* the extension when any column the extension owns holds a value | Adds columns to a table that is not its own; see [§8](#8-when-a-release-comes) |
 | **A JSON slot** | `properties=` over the core's `JSON` column | A field, filtered and grouped like a column | None |
-| **Another context** | `Relation.bus(…)` | Nested, one call per page | Its own context's |
+| **Another context** | `TableRelation.bus(…)` | Nested, one call per page | Its own context's |
 
 The shared-table mode is allowed and not preferred: it makes two owners migrate one table, and the
 row cannot tell an extension whose columns are all empty from no extension at all.
@@ -248,7 +248,7 @@ already takes. Nothing in the data layer knows about it.
 - It is all or nothing per entity. Choosing per extension would need the choice to live on the
   extension (`map_aggregates` has nowhere to say it today).
 - The key cannot be named; it is derived. A module that wants another word needs a place to say it.
-- An extension installed as a relation (`Relation.foreign_key` on a side table) is not part of
+- An extension installed as a relation (`TableRelation.foreign_key` on a side table) is not part of
   this: it is already one named relation, nested under its name when the specification names it.
 - Not every client needs it. The TypeScript client has not been taught either shape.
 
@@ -459,7 +459,7 @@ from dataclasses import dataclass
 
 from sqlalchemy import Column, ForeignKey, Table, Text
 
-from sincpro_framework.data_layer.orm import Relation, map_aggregates
+from sincpro_framework.data_layer.orm import TableRelation, map_aggregates
 
 
 @dataclass
@@ -481,7 +481,7 @@ def install(registry, invoice_class, invoice_table):
         registry,
         {InvoiceFiscal: table},
         relations={invoice_class: {
-            "fiscal": Relation.foreign_key(
+            "fiscal": TableRelation.foreign_key(
                 InvoiceFiscal, parent_field="id", related_field="id", many=False)}},
     )
 ```
@@ -526,7 +526,7 @@ data_layer/orm/sqlalchemy/
   services/extension_typing.py      `ExtensionType`, the SQL expression that says what a row is
   services/extension_writing.py     the rows of an extension: give, remove, complete, reclassify
   services/sql_translator.py        a field of an extension as a column of a statement
-  entrypoint/migrations/engine.py   `declared_elsewhere`: each chain leaves the columns of another
+  adapters/migrations/engine.py     `declared_elsewhere`: each chain leaves the columns of another
 runtime/testing/contracts/extension.py   `ExtensionContract`
 ```
 

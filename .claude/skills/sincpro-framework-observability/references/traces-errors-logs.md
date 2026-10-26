@@ -39,7 +39,8 @@ its child.
 ## Business fields on the span
 
 ```python
-from sincpro_framework.observability import of, traces
+from sincpro_framework.observability import traces
+from sincpro_framework.observability.metrics import of
 
 @billing.feature(CommandIssueInvoice)
 @traces.attributes(
@@ -79,19 +80,19 @@ framework.add_app_service_error_handler(handler)
 Handlers can be registered before or after the first execution. **What a handler returns becomes the
 bus's answer** — a handler written only to watch returns `None` and silently swallows the failure.
 Re-raise (`raise error`) to delegate. `bus.ignore_sentry_exceptions(SomeError)` makes it an answer,
-not a fault: not reported, an `info` line, `sincpro.fault="false"` — its kind kept.
+not a fault: not reported, an `info` line, `sincpro.fault="false"` — its kind preserved.
 
 An error handler takes the same `replaces=`, `before=`, `after=`, `sequence=` as an interceptor.
 
 ## Embedding in an already-instrumented host
 
-Inside Odoo (or any host with its own OTel/Sentry), the SDK keeps **its own name and version** on
+Inside Odoo (or any host with its own OTel/Sentry), the SDK reports **its own name and version** on
 the signals, and the framework does not re-init the host's client. `SINCPRO_FRAMEWORK_LOG_LEVEL`
-controls the framework's own log lines (`INFO` keeps the debug SQL out).
+controls the framework's own log lines (`INFO` leaves the debug SQL out).
 
 ## What the framework itself sends
 
 SQL travels without its values (`INSERT INTO thing (…) VALUES (?, ?, ?)`); the framework's error
 report carries names, never values; an internal failure's text never reaches a wire
 (`said_to_the_caller`). What a project adds — context keys, span attributes, log fields — goes as
-written: the choice is the project's, and `hide_in_logs` keeps a key off every signal.
+written: the choice is the project's, and `hide_in_logs` excludes a key from every signal.

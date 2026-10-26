@@ -87,7 +87,7 @@ def unpacked(target: Any, _context: Any) -> None:
         unpacked(event, context)   ->  None; event.invoice_id == "F-1",
                                        event.amount == Decimal("10.50") as the class declares
 
-    The envelope the row already set is kept; only the fields missing from the event are
+    The envelope the row already set is preserved; only the fields missing from the event are
     taken from the event rebuilt out of envelope and payload.
     """
     known = target.__dict__
@@ -185,7 +185,7 @@ def readable_clause(model: type, clause: Any) -> Any:
         readable_clause(LedgerEvent, None)   ->  name IN ('Posted', 't.ledger.v1.event', …)
         readable_clause(Posted, entity_id = 'a1')   ->  entity_id = 'a1', as given
 
-    A subclass, or anything that is not a mapped base, keeps its clause: its read is narrowed
+    A subclass, or anything that is not a mapped base, retains its clause: its read is narrowed
     to its own names already.
     """
     readable = readable_names(model)

@@ -23,7 +23,7 @@ class RunOutcome(StrEnum):
 
 
 class Run(DataTransferObject):
-    """One claimed tick — a DTO because the shared record keeps it as JSON."""
+    """One claimed tick — a DTO because the shared record stores it as JSON."""
 
     model_config = ConfigDict(frozen=True)
 

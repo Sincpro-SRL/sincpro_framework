@@ -11,7 +11,7 @@ from structlog.testing import capture_logs
 
 from sincpro_framework import ApplicationService, DataTransferObject, Feature, UseFramework
 from sincpro_framework.ddd import ValueObject
-from sincpro_framework.entrypoints.adapters.mcp import Entrypoint, build_mcp_server
+from sincpro_framework.entrypoints import Entrypoint
 from sincpro_framework.entrypoints.adapters.mcp.mcp import fastmcp_callable
 from sincpro_framework.entrypoints.infrastructure.json_schema import dto_is_json_serializable
 
@@ -252,9 +252,9 @@ def test_fastmcp_callable_signature_is_dto_fields():
     assert parameters["cvv"].annotation is str
 
 
-def test_build_mcp_server_requires_extra_or_returns_host():
+def test_mcp_server_requires_extra_or_returns_host():
     try:
-        server = build_mcp_server(_build_framework())
+        server = Entrypoint(_build_framework()).server()
         assert server is not None
     except ImportError as error:
         assert "sincpro-framework[mcp]" in str(error)

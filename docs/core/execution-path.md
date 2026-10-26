@@ -12,7 +12,7 @@ UseFramework.__call__
   1. a reference to a context hosted elsewhere forwards the call (remote_execution)
   2. the bus is built under a lock the first time it is called — and again, as a new
      generation, when something was registered after the last build
-  3. outside a scope of this bus, one opens: the bus's node (Level.BUS) and, when no entrance
+  3. outside a scope of this bus, one opens: the bus's node (ContextLevel.BUS) and, when no entrance
      opened the flow, an entrypoint (EntrypointKind.DIRECT)
 
 FrameworkBus.execute                       the facade; marks the outermost call
@@ -70,7 +70,7 @@ The income is announced before the interceptors, so it is the call as its caller
 outcome after them, so it says what the caller received. An interceptor that answers by itself, a
 cache for one, still leaves its income and its completion.
 
-Observation is never the place to keep state a use case or a process depends on: a listener may
+Observation is never the place to hold state a use case or a process depends on: a listener may
 fail, be slow or not run, and the execution neither knows nor waits. What must follow a commit goes
 through the context's event table and its relay ([events](../events/README.md)).
 
@@ -81,7 +81,7 @@ through the context's event table and its relay ([events](../events/README.md)).
 | `use_bus.py`, `bus.py`, `ioc.py` | the registries of Features and ApplicationServices, the dependencies, building the bus, routing and running a call |
 | `context` | the flow: who and for which tenant, the tree from the process to each execution, the execution's identity, providers, stores, drafts |
 | `bus_pipeline` | the three layers on the path of a call: interceptors (control), incomes and outcomes (observation) |
-| `pipelines` | an ApplicationService that is the order of its steps, and the interceptor the bus attaches to keep each run in the context |
+| `pipelines` | an ApplicationService that is the order of its steps, and the interceptor the bus attaches to store each run in the context |
 | `observability` | the signals sent to external backends: traces, errors, logs, metrics |
 | `event_driven` | delivering events: `Publisher`, queues, `Subscriber`, the relay |
 | `entrypoints` | everything that starts the application layer from outside: wires, the clock, workers |
@@ -93,9 +93,9 @@ Three ways to hand something to a handler, with three different owners:
 |---|---|---|---|
 | An adapter, a client, a connection | `add_dependency` | `self.<name>` | no |
 | What the flow knows: tenant, user, language, correlation | `bus.context(...)`, a provider | `self.context`, `use_context()` | yes, as text |
-| Configuration ([settings](settings.md)) | `add_dependency` of the settings shape (`self.settings`), or kept in the context under its type | `self.settings`, or `use_context()[Shape]` | no |
+| Configuration ([settings](settings.md)) | `add_dependency` of the settings shape (`self.settings`), or stored in the context under its type | `self.settings`, or `use_context()[Shape]` | no |
 
-A value may be kept in the context under its type (a settings object, a store); it stays in its
+A value may be stored in the context under its type (a settings object, a store); it stays in its
 process and never travels.
 
 ## Entrypoints and adapters
@@ -138,5 +138,5 @@ tells them too.
   node in the context and the prefix of every use case identity.
 - **A use case's identity** is `<bus>.<ClassName>` (`registered_name`), what incomes, outcomes, wires
   and the remote bus say. `current_execution().use_case` is the DTO's class name alone.
-- **The layer** is `Level.APPLICATION` (`"application"`) in the context and `"application_service"`
+- **The layer** is `ContextLevel.APPLICATION` (`"application"`) in the context and `"application_service"`
   in events and observability.

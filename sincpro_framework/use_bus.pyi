@@ -27,19 +27,19 @@ from sincpro_framework.observability.tracing.span_context import FrameworkSpanCo
 from .aio import AsyncBus
 from .bus import FrameworkBus
 from .bus_pipeline.interceptors.interceptor import Interceptor
-from .circuits import Circuit
-from .common.transport.addresses import HostedAt
+from .circuit_breaker import CircuitBreaker
 from .context.domain.level import EntrypointKind
+from .context.domain.providers import ContextProviderFunction
+from .context.domain.store import ContextStore
 from .context.entrypoint.bus import FrameworkContext
+from .context.entrypoint.bus_context import BusContextMixin
 from .context.entrypoint.facade import Context
-from .context.entrypoint.providers import ContextProviderFunction
-from .context.mixins.bus_context import BusContextMixin
 from .data_layer.caching.entrypoint.facades import CacheFacade, IdempotencyFacade
 from .dependencies import TDeps
 from .error_handler import ErrorHandler
+from .remote_execution.domain.address import HostedAt
 from .remote_execution.entrypoint.hosts import Attach, OpenHost
 from .sincpro_abstractions import DataTransferObject, TypeDTO, TypeDTOResponse
-from .store.domain.store import ContextStore
 
 DTOClass = Type[DataTransferObject] | Type[DataclassInstance]
 DTORegistration = DTOClass | list[DTOClass]
@@ -86,7 +86,7 @@ class UseFramework(BusContextMixin, Generic[TDeps]):
 
         The name is its logger, its GlitchTip app and the prefix of its use cases' names.
         `log_*` silence execution logs (all, or one kind); `package` is the distribution named
-        in the Sentry release and OTel `service.name`; `hide_in_logs` keeps context keys off
+        in the Sentry release and OTel `service.name`; `hide_in_logs` removes context keys from
         every signal; `metric_labels` puts context keys on every metric series — a key
         (`"company"`) or `of(BillingContext).company` — declared before the build.
         """
@@ -139,7 +139,7 @@ class UseFramework(BusContextMixin, Generic[TDeps]):
     def deps(self) -> TDeps:
         """Read-only locator of dependencies registered with ``add_dependency``.
 
-        Inside a Feature / ApplicationService keep using ``self.<name>``.
+        Inside a Feature / ApplicationService still use ``self.<name>``.
         Use this from the bounded-context root (SDK caller, test, entrypoint).
         """
         ...
@@ -221,12 +221,12 @@ class UseFramework(BusContextMixin, Generic[TDeps]):
         ...
 
     def hosted_by(
-        self, address: HostedAt | str, circuit: Circuit | bool | None = None
+        self, address: HostedAt | str, circuit_breaker: CircuitBreaker | bool | None = None
     ) -> None:
         """Execute every DTO of this context on the service at `address` — a URL
-        (`grpc://host:port?timeout=5`, `http://host:port?circuit=on`) or the typed `HostedAt`;
+        (`grpc://host:port?timeout=5`, `http://host:port?circuit_breaker=on`) or the typed `HostedAt`;
         refused with `InvalidAddress` when no wire reaches it. `circuit` stops calling it while it
-        does not answer — `True` the address's own circuit, a `Circuit` that one, `False` none;
+        does not answer — `True` the address's own circuit, a `CircuitBreaker` that one, `False` none;
         left out, the address decides (none by default).
         """
         ...
@@ -467,9 +467,9 @@ class UseFramework(BusContextMixin, Generic[TDeps]):
         ttl: timedelta = ...,
         every: timedelta = ...,
     ) -> None:
-        """Share this bus's context through `store`, and keep there what the bus keeps beside
+        """Share this bus's context through `store`, and store there what the bus stores beside
         it — drafts, pipeline runs, leases, `cache`, `idempotency`. The API does not change;
-        every node of its executions is kept for `ttl`, what others wrote is read again at
+        every node of its executions is retained for `ttl`, what others wrote is read again at
         most once per `every`.
 
             billing.store_context_in(KeyValueContexts(RedisKeyValue(redis)))
@@ -477,14 +477,14 @@ class UseFramework(BusContextMixin, Generic[TDeps]):
         ...
 
     def store(self) -> ContextStore:
-        """Where this bounded context keeps what it keeps: its own store
+        """Where this bounded context stores what it stores: its own store
         (`bus.store_context_in`), else the process's (`store_context_in`), else this process's
         memory."""
         ...
 
     @property
     def cache(self) -> CacheFacade:
-        """This bounded context's cache, kept where its context is kept — `@billing.cache`,
+        """This bounded context's cache, stored where its context is stored — `@billing.cache`,
         `@billing.cache.ttl(...)`, `.sliding(...)`, `.versioned(...)`, or handed to an
         adapter.
         """
@@ -492,7 +492,7 @@ class UseFramework(BusContextMixin, Generic[TDeps]):
 
     @property
     def idempotency(self) -> IdempotencyFacade:
-        """This bounded context's idempotency, kept where its context is kept —
+        """This bounded context's idempotency, stored where its context is stored —
         `@billing.idempotency` on a Feature or an ApplicationService."""
         ...
 

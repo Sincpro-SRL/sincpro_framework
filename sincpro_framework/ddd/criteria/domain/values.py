@@ -4,8 +4,8 @@
 
 A dynamic value is stored as itself and read when the filter is used, so a saved view that says
 `today` means the day it is opened. It is an object with the reserved key `"$"` naming what it
-is; no literal can collide with it. `resolve.py` turns it into a literal, on the server, with the
-server's clock and context.
+is; no literal can collide with it. `services/dynamic_values.py` turns it into a literal, on the
+server, with the server's clock and context.
 
 Dates move with `plus` (a signed `Span`) and then snap to the start of a calendar unit with
 `start_of`: thirty days ago is `{"$": "today", "plus": {"days": -30}}` and the first of this month
@@ -16,12 +16,15 @@ In Python the nodes are written as their classes and shifted with `before`, `aft
 `at_start_of`; none of them is on the wire, which only carries the signed `plus`.
 """
 
+import calendar
+from datetime import UTC, date, datetime, timedelta, tzinfo
 from enum import StrEnum
 from typing import Annotated, Any, Literal, Self
 
 from pydantic import ConfigDict, Field, model_validator
 
 from sincpro_framework.ddd import exceptions
+from sincpro_framework.ddd.criteria.domain.resolution import ResolutionContext
 from sincpro_framework.ddd.criteria.domain.strict import Strict
 
 
@@ -33,6 +36,77 @@ class Grain(StrEnum):
     MONTH = "month"
     QUARTER = "quarter"
     YEAR = "year"
+
+    @property
+    def span(self) -> "Span":
+        """One unit of this grain, as the span that moves a date by it.
+
+        >>> Grain.QUARTER.span
+        Span(months=3)
+        """
+        match self:
+            case Grain.DAY:
+                return Span(days=1)
+            case Grain.WEEK:
+                return Span(weeks=1)
+            case Grain.MONTH:
+                return Span(months=1)
+            case Grain.QUARTER:
+                return Span(months=3)
+            case Grain.YEAR:
+                return Span(years=1)
+
+    def snap[D: date](self, day: D, week_starts_on: int = 0) -> D:
+        """A day snapped to the start of the unit of this grain it falls in; a datetime also
+        loses its time.
+
+            Grain.QUARTER.snap(date(2026, 8, 14))          ->  date(2026, 7, 1)
+            Grain.WEEK.snap(date(2026, 10, 24))            ->  date(2026, 10, 19)  # Monday
+            Grain.WEEK.snap(date(2026, 10, 24), 6)         ->  date(2026, 10, 18)  # Sunday
+            Grain.MONTH.snap(datetime(2026, 10, 24, 15, 9))
+                ->  datetime(2026, 10, 1, 0, 0)
+
+        Context: `week_starts_on` counts as `date.weekday()` does — 0 is Monday; only a week
+        reads it.
+        """
+        match self:
+            case Grain.DAY:
+                start = day
+            case Grain.WEEK:
+                start = day - timedelta(days=(day.weekday() - week_starts_on) % 7)
+            case Grain.MONTH:
+                start = day.replace(day=1)
+            case Grain.QUARTER:
+                start = day.replace(month=3 * ((day.month - 1) // 3) + 1, day=1)
+            case Grain.YEAR:
+                start = day.replace(month=1, day=1)
+        if isinstance(start, datetime):
+            return start.replace(hour=0, minute=0, second=0, microsecond=0)
+        return start
+
+    def label(self, day: date) -> str:
+        """The text a database writes for the unit of this grain a date falls in.
+
+            Grain.WEEK.label(date(2026, 3, 14))        ->  '2026-W11'    # ISO year and week
+            Grain.QUARTER.label(date(2026, 8, 2))      ->  '2026-Q3'
+            Grain.MONTH.label(date(2026, 10, 24))      ->  '2026-10'
+            Grain.YEAR.label(date(2026, 10, 24))       ->  '2026'
+            Grain.DAY.label(date(2026, 10, 24))        ->  '2026-10-24'
+
+        Context: the date is labelled as it is — snapping it to its grain is the caller's.
+        """
+        match self:
+            case Grain.YEAR:
+                return f"{day.year}"
+            case Grain.QUARTER:
+                return f"{day.year}-Q{(day.month - 1) // 3 + 1}"
+            case Grain.MONTH:
+                return f"{day.year}-{day.month:02d}"
+            case Grain.WEEK:
+                year, week, _ = day.isocalendar()
+                return f"{year}-W{week:02d}"
+            case Grain.DAY:
+                return day.isoformat()
 
 
 class Part(StrEnum):
@@ -50,6 +124,44 @@ class Part(StrEnum):
     DAY_OF_WEEK = "day_of_week"
     DAY_OF_MONTH = "day_of_month"
     HOUR = "hour"
+
+    def of(self, value: Any) -> int | None:
+        """The number this part is of a date: what a database extracts from the column.
+
+            Part.MONTH.of(datetime(2026, 3, 14, 15, 9))   ->  3
+            Part.DAY_OF_WEEK.of(date(2026, 3, 14))        ->  6     # Saturday; Monday 1
+            Part.QUARTER.of("2026-08-14")                 ->  3     # text read as ISO
+            Part.HOUR.of(date(2026, 3, 14))               ->  0     # a date has no hour
+            Part.MONTH.of(None)                           ->  None
+
+        1. No value: `None` — a row with no date has no part.
+        2. Text is read as an ISO date or datetime.
+        3. The part:
+           3.1 `YEAR`, `MONTH`, `DAY_OF_MONTH`, `HOUR` — the field of the value, a date's hour 0;
+           3.2 `QUARTER` — the month's quarter, 1 to 4;
+           3.3 `ISO_WEEK` — the ISO week number;
+           3.4 `DAY_OF_WEEK` — the ISO weekday, Monday 1 to Sunday 7.
+        Final: that number, as a database's `EXTRACT` would answer it.
+        """
+        if value is None:
+            return None
+        if isinstance(value, str):
+            value = datetime.fromisoformat(value)
+        match self:
+            case Part.YEAR:
+                return value.year
+            case Part.QUARTER:
+                return (value.month - 1) // 3 + 1
+            case Part.MONTH:
+                return value.month
+            case Part.ISO_WEEK:
+                return value.isocalendar()[1]
+            case Part.DAY_OF_WEEK:
+                return value.isoweekday()
+            case Part.DAY_OF_MONTH:
+                return value.day
+            case Part.HOUR:
+                return value.hour if isinstance(value, datetime) else 0
 
 
 PART_VALUES: dict[Part, tuple[int, int] | None] = {
@@ -95,6 +207,26 @@ class Periods(StrEnum):
     NEXT_YEAR = "next_year"
 
 
+PERIOD_STARTS: dict[Periods, tuple[Grain, int]] = {
+    Periods.TODAY: (Grain.DAY, 0),
+    Periods.YESTERDAY: (Grain.DAY, -1),
+    Periods.TOMORROW: (Grain.DAY, 1),
+    Periods.THIS_WEEK: (Grain.WEEK, 0),
+    Periods.LAST_WEEK: (Grain.WEEK, -1),
+    Periods.NEXT_WEEK: (Grain.WEEK, 1),
+    Periods.THIS_MONTH: (Grain.MONTH, 0),
+    Periods.LAST_MONTH: (Grain.MONTH, -1),
+    Periods.NEXT_MONTH: (Grain.MONTH, 1),
+    Periods.THIS_QUARTER: (Grain.QUARTER, 0),
+    Periods.LAST_QUARTER: (Grain.QUARTER, -1),
+    Periods.NEXT_QUARTER: (Grain.QUARTER, 1),
+    Periods.THIS_YEAR: (Grain.YEAR, 0),
+    Periods.LAST_YEAR: (Grain.YEAR, -1),
+    Periods.NEXT_YEAR: (Grain.YEAR, 1),
+}
+"""Each named period: the calendar unit it spans, and how many of them from the current one."""
+
+
 def _is_none(value: Any) -> bool:
     """`exclude_if` for an optional part: a unit nobody asked for does not travel.
 
@@ -118,6 +250,35 @@ class Span(Strict):
     weeks: int | None = Field(default=None, exclude_if=_is_none)
     months: int | None = Field(default=None, exclude_if=_is_none)
     years: int | None = Field(default=None, exclude_if=_is_none)
+
+    def shift_on_calendar[D: date](self, day: D) -> D:
+        """A day moved by the calendar units of this span: months and years first — a month
+        end clamped, 31 January plus one month is 28 February — then days and weeks."""
+        month_index = (
+            day.year * 12 + day.month - 1 + (self.months or 0) + 12 * (self.years or 0)
+        )
+        year, month = divmod(month_index, 12)
+        last = calendar.monthrange(year, month + 1)[1]
+        moved = day.replace(year=year, month=month + 1, day=min(day.day, last))
+        return moved + timedelta(days=(self.days or 0) + 7 * (self.weeks or 0))
+
+    def shift(self, day: date | datetime, timezone: tzinfo) -> date | datetime:
+        """A day moved by this span. Calendar units follow the wall clock of the timezone, so a
+        day across a clock change is still a day; hours and minutes are elapsed time.
+
+            in      2026-01-31, months=1          →  out  2026-02-28
+            in      2026-10-12, days=-30          →  out  2026-09-12
+        """
+        if not isinstance(day, datetime):
+            if self.hours or self.minutes:
+                raise exceptions.InvalidCriteria(
+                    "a date has no hours or minutes; use `now` to move by them"
+                )
+            return self.shift_on_calendar(day)
+
+        wall = self.shift_on_calendar(day.astimezone(timezone).replace(tzinfo=None))
+        elapsed = timedelta(hours=self.hours or 0, minutes=self.minutes or 0)
+        return wall.replace(tzinfo=timezone).astimezone(UTC) + elapsed
 
 
 class Shiftable(Strict):
@@ -277,6 +438,66 @@ class Period(Strict):
             )
         return self
 
+    def _window(
+        self, today: date, resolution: ResolutionContext
+    ) -> tuple[date | datetime, date | datetime]:
+        """A window of whole units counted from the current one: the `last` N before it, or the
+        `next` N after it, with or without the current unit itself."""
+        assert self.unit is not None
+        unit = self.unit.span
+        current = self.unit.snap(today, resolution.week_starts_on)
+        count = self.last if self.last is not None else self.next
+        assert count is not None
+
+        def units(amount: int) -> date | datetime:
+            """The start of the unit `amount` units away from the current one.
+
+            unit = month, current = 2026-03-01:   units(-2)  ->  2026-01-01
+            """
+            scaled = Span(
+                **{
+                    name: amount * step
+                    for name, step in unit.model_dump(exclude_none=True).items()
+                }
+            )
+            return scaled.shift(current, resolution.timezone)
+
+        if self.last is not None:
+            return units(-(count - 1 if self.include_current else count)), units(
+                1 if self.include_current else 0
+            )
+        return units(0 if self.include_current else 1), units(
+            count + (0 if self.include_current else 1)
+        )
+
+    def range(self, resolution: ResolutionContext) -> tuple[date | datetime, date | datetime]:
+        """The `[start, end)` this period covers, in dates of the context's timezone.
+
+            # now = 2026-10-24 15:00 UTC, weeks starting on Monday
+            Period(name="last_month").range(resolution)
+                ->  (date(2026, 9, 1), date(2026, 10, 1))
+            Period(unit="day", last=30).range(resolution)
+                ->  (date(2026, 9, 24), date(2026, 10, 24))     # today left out
+            Period(unit="week", next=2, include_current=True).range(resolution)
+                ->  (date(2026, 10, 19), date(2026, 11, 2))
+
+        Context: a named period is its unit moved from today and snapped to its start, one unit
+        long; a window is counted from the current unit by `_window`.
+        """
+        today = resolution.now.astimezone(resolution.timezone).date()
+        if self.name is None:
+            return self._window(today, resolution)
+        grain, away = PERIOD_STARTS[self.name]
+        scaled = Span(
+            **{
+                name: amount * away
+                for name, amount in grain.span.model_dump(exclude_none=True).items()
+            }
+        )
+        moved = scaled.shift(today, resolution.timezone)
+        start = grain.snap(moved, resolution.week_starts_on)
+        return start, grain.span.shift(start, resolution.timezone)
+
 
 Dynamic = Annotated[
     Today | Now | FromContext | Param | Period | FromField, Field(discriminator="resolver")
@@ -293,7 +514,7 @@ TEXT = Param(name="text")
 
     Condition(field="code", operator=Operator.STARTS_WITH, value=TEXT)
 
-`with_text` puts the literal in its place. It is a value, so a template is still a `Criteria`
+`Node.with_text` puts the literal in its place. It is a value, so a template is still a `Criteria`
 that travels as JSON — `{"$": "param", "name": "text"}` — and a client fills the same way."""
 
 

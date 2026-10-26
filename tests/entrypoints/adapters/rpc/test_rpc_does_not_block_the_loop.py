@@ -7,7 +7,7 @@ import threading
 import httpx
 
 from sincpro_framework import DataTransferObject, Feature, UseFramework
-from sincpro_framework.entrypoints.adapters.rpc import RpcGateway
+from sincpro_framework.entrypoints import RpcGateway
 from sincpro_framework.entrypoints.entrypoint.decorators import rpc
 
 

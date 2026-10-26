@@ -1,11 +1,11 @@
-"""`InMemoryRuns`: the record of runs kept in the process — enough for crons that run on one
+"""`InMemoryRuns`: the record of runs held in the process — enough for crons that run on one
 replica. Crons that run on several replicas need a record those replicas share: the project
 implements `CronRuns` on its own storage."""
 
 from datetime import UTC, datetime
 from threading import Lock
 
-from sincpro_framework.entrypoints.adapters.cron.domain import CronRuns, Run, RunOutcome
+from sincpro_framework.entrypoints.adapters.cron.domain.runs import CronRuns, Run, RunOutcome
 
 
 class InMemoryRuns(CronRuns):
@@ -15,7 +15,7 @@ class InMemoryRuns(CronRuns):
         CronGateway([cron_payments])                       # InMemoryRuns: one replica
         CronGateway([cron_payments], runs=KeyValueRuns(store))   # several replicas
 
-    Context: every run is kept for the life of the process, keyed by
+    Context: every run is held for the life of the process, keyed by
     `(name, scheduled_for, key)`; a restart forgets them, so a cron starts again from now —
     fine on one replica, wrong on several, where each would run every tick.
     """
@@ -61,7 +61,7 @@ class InMemoryRuns(CronRuns):
         return sorted(runs, key=lambda run: run.scheduled_for)
 
     def running(self, name: str, since: datetime) -> bool:
-        """Any unfinished run of a tick at or after `since` — every run is kept, so unlike
+        """Any unfinished run of a tick at or after `since` — every run is retained, so unlike
         `KeyValueRuns` an older unfinished one under a newer finished one still counts."""
         return any(
             run.finished_at is None and run.scheduled_for >= since for run in self._own(name)

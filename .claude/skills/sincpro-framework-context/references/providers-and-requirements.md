@@ -13,7 +13,7 @@ def credentials(context):
   `gives`. Registration order; registered before the bus is built.
 - Its answer lands on **that execution's node**: what it runs finds the keys there, so a nested
   execution does not ask again — once per scope.
-- It receives a read-only mapping and returns a mapping (or `None`). Keep I/O out of it when you can;
+- It receives a read-only mapping and returns a mapping (or `None`). Leave I/O out of it when you can;
   when it must read (a NIT record), read through a dependency, not the context.
 
 Replaces the boilerplate of rebuilding credentials at every call site: callers open

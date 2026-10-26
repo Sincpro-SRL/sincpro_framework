@@ -70,7 +70,7 @@ class GetInvoice(Feature): ...
 
 Every one takes `deprecated=True` or `deprecated=Deprecation(since=, sunset=, replacement=)`.
 
-- A decorator records its binding in a registry kept **by class, never on the class**, and
+- A decorator records its binding in a registry keyed **by class, never stored on the class**, and
   returns the class unchanged — the order the lines are written in never matters. It records only
   what it was told: a field left at its default stays unset, so it never overrides a group.
 - **One binding per wire** per class: a second `@rest...` on the same class is refused where it

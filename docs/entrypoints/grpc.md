@@ -22,8 +22,10 @@ server reflection, grpc.health.v1                                         ValueO
 Python remains: billing(dto)
 ```
 
-Package: `sincpro_framework.entrypoints.adapters.grpc` (`GrpcGateway`, `GrpcWire`, `bus_call`,
-`framework_interceptors`, `build_grpc_server`). Feature name: **`entrypoint_grpc`**.
+Package: `GrpcGateway` and `bus_call` from `sincpro_framework.entrypoints`; the wire,
+`sincpro_framework.entrypoints.adapters.grpc` (`GrpcWire`), with the server pieces of a
+hand-written servicer (`framework_interceptors`) in its `wire` module, which needs the `[grpc]`
+extra — as `bus_call` does when called. Feature name: **`entrypoint_grpc`**.
 
 What is exposed is decided once for every wire by the declared-exposure core
 ([PRD_14](../prd/PRD_14_declared-exposure.md)): `@internal`, `include` / `exclude`, `override` /
@@ -83,10 +85,10 @@ are the core's, and work here as on every wire. `gateway.methods()` is the built
 
 A typed `message ChargePayment { double amount = 1; }` needs **stable field numbers**, and a
 Pydantic DTO has no such registry. Inserting a field in the middle of the class would renumber
-everything after it, and every deployed client would keep reading the old number into the new
+everything after it, and every deployed client would go on reading the old number into the new
 field — silently, because proto3 does not carry names on the wire.
 
-Nothing in the bus can prevent that. So the wire keeps names: `Struct` is `map<string, Value>`,
+Nothing in the bus can prevent that. So the wire carries names: `Struct` is `map<string, Value>`,
 which is exactly the compatibility contract `entrypoint_rpc` already has, and the one the DTO
 itself has. Field-level types are still published — as the DTO's JSON Schema in `Describe`, the
 same schema MCP publishes as a tool schema and OpenRPC as content descriptors.
@@ -369,9 +371,9 @@ is replaced by the caller's `options=` entry of the same key:
 | Option | Default | Why |
 |---|---|---|
 | `max_message_bytes=` → `grpc.max_receive_message_length` / `grpc.max_send_message_length` | **4 MiB**, both ways | grpcio's own receive limit, made explicit; a message over it is refused `RESOURCE_EXHAUSTED` before the use case runs |
-| `max_connection_age=` → `grpc.max_connection_age_ms` | **300 s** (+ 30 s grace) | clients reconnect periodically, so a rolling deploy or a new replica gets its share instead of every client pinned to the old pods; `None` keeps connections for ever |
+| `max_connection_age=` → `grpc.max_connection_age_ms` | **300 s** (+ 30 s grace) | clients reconnect periodically, so a rolling deploy or a new replica gets its share instead of every client pinned to the old pods; `None` holds connections open indefinitely |
 | `grpc.keepalive_time_ms` / `grpc.keepalive_timeout_ms` | 60 s / 20 s | the server pings an idle connection, and a peer a load balancer dropped silently is noticed |
-| `grpc.keepalive_permit_without_calls` / `grpc.http2.min_recv_ping_interval_without_data_ms` | 1 / 10 s | clients may keep idle connections alive with their own pings, every 10 s at most |
+| `grpc.keepalive_permit_without_calls` / `grpc.http2.min_recv_ping_interval_without_data_ms` | 1 / 10 s | clients may hold idle connections open with their own pings, every 10 s at most |
 
 ```python
 GrpcGateway([billing]).server(max_message_bytes=16 * 1024 * 1024)       # 16 MiB both ways
@@ -413,7 +415,8 @@ services in `reflection_extra`, to a server you built.
 ### A hand-written servicer
 
 ```python
-from sincpro_framework.entrypoints.adapters.grpc import GrpcGateway, bus_call, framework_interceptors
+from sincpro_framework.entrypoints import GrpcGateway, bus_call
+from sincpro_framework.entrypoints.adapters.grpc.wire import framework_interceptors
 
 class BillingServicer(billing_pb2_grpc.BillingServiceServicer):
     def IssueInvoice(self, request, context):
@@ -497,10 +500,9 @@ files of `reflection_extra` (and the files they import), and each reflection ser
 | `.server(max_workers=, interceptors=, options=, reflection=, health_check=, maximum_concurrent_rpcs=, max_message_bytes=, max_connection_age=)` | A `grpc.Server`, no port bound, not started. |
 | `.run(address=, credentials=, grace=, handle_signals=, ...)` | Bind, serve; on SIGTERM/SIGINT health `NOT_SERVING`, then drain. |
 | `.drain()` | Every service `NOT_SERVING` in health, for a caller owning its lifecycle. |
-| `bus_call(context, bus, dto, to_response=None, *, domain=None)` | A hand-written servicer's call, on the generated path. |
-| `framework_interceptors()` | Deadline pre-check and call log for a server of yours. |
+| `wire.bus_call(context, bus, dto, to_response=None, domain=None)` | A hand-written servicer's call, on the generated path. |
+| `wire.framework_interceptors()` | Deadline pre-check and call log for a server of yours. |
 | `GrpcWire` | The naming `Wire` — subclass it to name differently (`port=`). |
-| `build_grpc_server(instances, exposure=, unguarded=, **server_kwargs)` | Same as `GrpcGateway(...).server()`. |
 | `GrpcClient(target)` | Python caller with no generated stubs: dict in, dict out. |
 | — | This gateway never answers `/sincpro.Contexts/Execute`: that is remote execution's internal door ([calling services](bounded-contexts-across-services.md)), served by `bus.serve(...)`, or mounted on this gateway's server on purpose with `open_host([...]).mount(gateway.server())`. |
 
@@ -520,20 +522,22 @@ sincpro_framework/
 │   ├── failures.py        # the kinds, the stable reason, retry delay, what a caller may read
 │   └── grpc.py            # server (pool, backpressure), health, metadata ↔ context, deadline
 └── entrypoints/
-    ├── scalar_executor.py # shared: Scalar (dict) in/out execution against a UseFramework
-    ├── catalog.py         # shared: metadata → PackedFeatureOrAppService (JSON schema, binary check)
-    ├── gateway.py         # shared: Gateway — declared exposure, precedence, build validation
-    ├── exposure/          # shared: the bindings and decorators (@grpc, ...) — PRD_14
-    └── grpc/              # entrypoint_grpc
-        ├── __init__.py    # GrpcGateway, GrpcWire, bus_call, framework_interceptors, build_grpc_server
+    ├── services/
+    │   ├── scalar_execution.py # shared: ScalarExecution — Scalar (dict) in/out against a UseFramework
+    │   ├── catalog.py     # shared: metadata → PackedFeatureOrAppService (JSON schema, binary check)
+    │   └── gateway.py     # shared: Gateway — declared exposure, precedence, build validation
+    ├── domain/            # shared: the bindings and the surface — PRD_14
+    ├── entrypoint/        # the decorators (@grpc, ..., @internal) — PRD_14 — and each wire's gateway
+    │   └── grpc.py        # the GrpcGateway facade (surface → server, mount, run, drain) and bus_call
+    └── adapters/grpc/     # entrypoint_grpc — the wire, knowing nothing of the services
+        ├── __init__.py    # GrpcWire
         ├── naming.py      # AIP names + GrpcWire (derive, validate, build) — no grpc import
         ├── proto.py       # GrpcMethodSpec, Describe document, .proto rendering — no grpc import
-        ├── wire.py        # Struct, the one call path, bus_call, rich status, health, reflection, options
-        ├── entrypoint.py  # the GrpcGateway facade: surface → server, mount, run, drain
+        ├── wire.py        # Struct, the one call path, rich status, health, reflection, options
         └── client.py      # dict-in/dict-out client for Python callers
 ```
 
-`entrypoint.py` orchestrates, `wire.py` holds everything that needs grpcio; `naming.py` and
+`entrypoint/grpc.py` composes, `wire.py` holds everything that needs grpcio; `naming.py` and
 `proto.py` exist so the names and the contract are computed and exported without the runtime.
 
 ---
@@ -545,7 +549,7 @@ sincpro_framework/
 | No gRPC types on Feature | Hexagonal. |
 | Unary only | The bus answers one DTO with one response; streaming would be a second execution model. |
 | Alias is a proto package segment | No hyphen, no dot. |
-| No layer in a name | A Feature promoted to an ApplicationService keeps its method. |
+| No layer in a name | A Feature promoted to an ApplicationService is still served under the same method. |
 | Declared by default | Nothing is public by being registered. |
 | Payload is `Struct` | Field numbers cannot be derived safely from a Pydantic class. |
 | A thread pool, not `grpc.aio` | `execute` blocks, and `framework.context` is a ContextVar the handler enters in its own worker thread. |

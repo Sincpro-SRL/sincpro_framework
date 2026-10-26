@@ -282,7 +282,7 @@ Por severidad. Cada uno se revisa y se corrige o se descarta en su propio cambio
 - `common/ids/uuid7.py`: con más de ~2000 ids por milisegundo el orden por id deja de ser
   temporal.
 - `entrypoints/adapters/rpc` `RpcGateway.routes()`: no ve lo registrado después de construir.
-- `data_layer/orm/sqlalchemy/entrypoint/runtime_use_cases.py` `SqlUseCases.save`: `max+1` sin
+- `data_layer/orm/sqlalchemy/adapters/runtime_use_cases.py` `SqlUseCases.save`: `max+1` sin
   lock; dos réplicas pueden tomar la misma posición.
 
 **Inconsistencias entre implementaciones**

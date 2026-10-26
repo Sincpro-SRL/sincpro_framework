@@ -20,12 +20,12 @@ class Lru(Eviction):
         `ProgrammingError`.
 
             Lru()                  ->  holds up to 10 000 keys, none tracked yet
-            Lru(max_entries=0)     ->  ProgrammingError("Lru keeps at least one entry: …")
+            Lru(max_entries=0)     ->  ProgrammingError("Lru holds at least one entry: …")
 
         Only keys are tracked, oldest first, behind one lock shared by every thread."""
         if max_entries < 1:
             raise exceptions.ProgrammingError(
-                "Lru keeps at least one entry: max_entries must be >= 1"
+                "Lru holds at least one entry: max_entries must be >= 1"
             )
         self.max_entries = max_entries
         self._order: OrderedDict[str, None] = OrderedDict()

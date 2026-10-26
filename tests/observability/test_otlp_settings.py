@@ -103,7 +103,7 @@ def test_http_protocol_keeps_an_endpoint_that_already_has_a_path(monkeypatch, co
 
 
 def test_an_unknown_protocol_in_the_environment_does_not_take_the_process_down(tmp_path):
-    from sincpro_framework.settings import DefaultFrameworkConfig, build_config_obj
+    from sincpro_framework.settings import FrameworkSettings, build_config_obj
 
     file = tmp_path / "conf.yml"
     file.write_text("otlp_protocol: $ENV:SINCPRO_TEST_PROTOCOL\n")
@@ -111,7 +111,7 @@ def test_an_unknown_protocol_in_the_environment_does_not_take_the_process_down(t
 
     os.environ["SINCPRO_TEST_PROTOCOL"] = "carrier-pigeon"
     try:
-        built = build_config_obj(DefaultFrameworkConfig, str(file))
+        built = build_config_obj(FrameworkSettings, str(file))
     finally:
         del os.environ["SINCPRO_TEST_PROTOCOL"]
 

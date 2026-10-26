@@ -64,7 +64,7 @@ class BusInterceptorsMixin:
         """
 
         def register(interceptor: T) -> T:
-            """The registration kept, and its replay for every new generation of the bus — on
+            """The registration stored, and its replay for every new generation of the bus — on
             a bus already built it wraps from the next execution; the function is answered
             unchanged, so it can still be called or named by `replaces`."""
             with self._build_lock:

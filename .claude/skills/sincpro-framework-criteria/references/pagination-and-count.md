@@ -48,7 +48,7 @@ for page in repository.stream(Invoices, big_ones):
 
 `repository.fetch_all(Invoices, criteria)` is every page as one complete collection (exact count,
 no cursor) — for a set somebody already knows is small. `repository.export(...)` walks the pages as
-dicts, one record at a time. Inside a unit of work, `unit.commit()` after each streamed batch keeps
+dicts, one record at a time. Inside a unit of work, `unit.commit()` after each streamed batch stops
 a long job from holding one transaction for the whole run.
 
 ## Count: capped by default

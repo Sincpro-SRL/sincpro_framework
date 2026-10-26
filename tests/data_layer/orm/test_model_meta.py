@@ -12,12 +12,20 @@ empty `OR` matches nothing — opposite answers to the same accident.
 
 from datetime import datetime
 
-from sincpro_framework.data_layer.orm.sqlalchemy.services.model_introspection import describe
-from sincpro_framework.ddd.criteria import All, Any_, Condition, Not, Operator
+from sincpro_framework.data_layer.orm.sqlalchemy.services.model_introspection import (
+    ModelIntrospection,
+)
+from sincpro_framework.ddd.criteria import (
+    All,
+    Any,
+    Condition,
+    Not,
+    Operator,
+)
 
 from .models import Thing
 
-META = describe(Thing)
+META = ModelIntrospection.describe(Thing)
 
 
 def test_a_number_arrives_as_text_and_leaves_as_a_number():
@@ -96,9 +104,7 @@ def test_the_usable_half_of_a_conjunction_survives():
 def test_a_connective_that_loses_everything_disappears():
     """An empty AND matches everything and an empty OR matches nothing; neither was asked."""
     clean, dropped = META.accept(
-        Any_(
-            any=[Condition(field="gone", value="1"), Condition(field="also_gone", value="1")]
-        )
+        Any(any=[Condition(field="gone", value="1"), Condition(field="also_gone", value="1")])
     )
 
     assert clean is None

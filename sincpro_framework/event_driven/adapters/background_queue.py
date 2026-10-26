@@ -4,33 +4,30 @@ spawned, which builds its own subscriber because a bus does not cross a process.
     queue = BackgroundQueue(build_subscriber).start()
 
 **Not durable.** What is in the queue when the process dies is gone. A fact that must survive a
-crash is kept by the repository in the transaction of the change, marked
+crash is saved by the repository in the transaction of the change, marked
 `DeliverableEventMixin`, and handed on by an `EventRelay`.
 """
 
 import json
 import multiprocessing
 from collections.abc import Callable
-from typing import TYPE_CHECKING, Any
+from typing import Any
 
 from pydantic import ValidationError
 
 from sincpro_framework import exceptions
 from sincpro_framework.ddd.events import DomainEvent
 from sincpro_framework.ddd.events.domain_event import NAME
-from sincpro_framework.observability.api import process
-from sincpro_framework.observability.tracing.propagation import trace_carrier, within_trace
+from sincpro_framework.event_driven.domain.subscribes import Subscribes
+from sincpro_framework.observability import process, trace_carrier, within_trace
 from sincpro_framework.sincpro_logger import logger
 
 STOP = ("", {})
 """What `stop()` puts in so the worker returns. The same two parts every event travels in — its
 JSON and the trace — so the consumer unpacks one shape and nothing else."""
 
-if TYPE_CHECKING:
-    from sincpro_framework.event_driven.entrypoint.subscriber import Subscriber
 
-
-def _consume(inbox: Any, build_subscriber: "Callable[[], Subscriber]") -> None:
+def _consume(inbox: Any, build_subscriber: Callable[[], Subscribes]) -> None:
     """The worker: its own subscriber, one message at a time, until told to stop."""
     subscriber = build_subscriber()
     while True:
@@ -74,7 +71,7 @@ class BackgroundQueue:
     """
 
     def __init__(
-        self, build_subscriber: "Callable[[], Subscriber]", context: str = "spawn"
+        self, build_subscriber: Callable[[], Subscribes], context: str = "spawn"
     ) -> None:
         """`spawn` and never `fork`: a spawned worker starts a fresh interpreter, so what
         `build_subscriber()` builds — engines, pools, sessions — is its own. A forked one

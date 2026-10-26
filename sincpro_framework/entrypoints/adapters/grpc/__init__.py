@@ -1,28 +1,20 @@
-"""The gRPC wire: a bus's declared surface as AIP-named unary services over `Struct`.
+"""The gRPC wire: a bus's declared surface as AIP-named unary services over `Struct` — what
+`GrpcGateway` builds on.
 
-    from sincpro_framework.entrypoints.adapters.grpc import GrpcGateway
+    GrpcWire().derive(operation, group)     # /billing.v1.BillingService/IssueInvoice
 
-    GrpcGateway([billing]).run("0.0.0.0:50051")     # /billing.v1.BillingService/IssueInvoice
-    GrpcGateway([billing]).write_proto_files("protos/")   # stubs for Go / TypeScript clients
-    server = grpc.server(pool, interceptors=framework_interceptors())   # a server of mine:
+A server of the project's, with hand-written servicers next to the generated ones, takes the
+server pieces from `wire` — which needs the `[grpc]` extra:
+
+    from sincpro_framework.entrypoints.adapters.grpc.wire import framework_interceptors
+
+    server = grpc.server(pool, interceptors=framework_interceptors())
     GrpcGateway([billing]).mount(server)              # bus_call in hand-written servicers
 
-Importing it needs no `[grpc]` extra: the gateway, the names and the `.proto` export load
-`grpc` / `protobuf` only once a server or handlers are asked for (`wire.py`).
+Importing this package needs no `[grpc]` extra: the names and the `.proto` export load `grpc` /
+`protobuf` only once a server or handlers are asked for (`wire.py`).
 """
 
-from sincpro_framework.entrypoints.adapters.grpc.entrypoint import (
-    GrpcGateway,
-    build_grpc_server,
-    bus_call,
-    framework_interceptors,
-)
 from sincpro_framework.entrypoints.adapters.grpc.naming import GrpcWire
 
-__all__ = [
-    "GrpcGateway",
-    "GrpcWire",
-    "build_grpc_server",
-    "bus_call",
-    "framework_interceptors",
-]
+__all__ = ["GrpcWire"]

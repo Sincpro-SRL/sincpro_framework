@@ -33,13 +33,13 @@ with the row and is filtered, ordered and grouped like a column:
 
 ```python
 from sincpro_framework.ddd import Condition, Criteria, Operator
-from sincpro_framework.ddd.criteria import Grouping, Level, Measure
+from sincpro_framework.ddd.criteria import Grouping, GroupingLevel, Measure
 
 owing = Criteria(where=Condition(field="balance", operator=Operator.GT, value=0))
 
 by_owner = Criteria(
     grouping=Grouping(
-        group_by=(Level(field="owner"),),
+        group_by=(GroupingLevel(field="owner"),),
         measures={"owing": Measure(function="sum", field="balance")},
     )
 )
@@ -77,10 +77,10 @@ A **grain** cuts a date into ranges (`2026-03`); a **part** extracts the number 
 March groups together whatever the year:
 
 ```python
-from sincpro_framework.ddd.criteria import Level, Part
+from sincpro_framework.ddd.criteria import GroupingLevel, Part
 
-Level(field="posted_at", part=Part.MONTH)         # 1 … 12
-Level(field="posted_at", part=Part.DAY_OF_WEEK)   # 1 (Monday) … 7
+GroupingLevel(field="posted_at", part=Part.MONTH)         # 1 … 12
+GroupingLevel(field="posted_at", part=Part.DAY_OF_WEEK)   # 1 (Monday) … 7
 ```
 
 `Part` is `YEAR`, `QUARTER`, `MONTH`, `ISO_WEEK`, `DAY_OF_WEEK`, `DAY_OF_MONTH`, `HOUR`. One level
@@ -93,13 +93,13 @@ does for grains. The quarter is also a grain (`2026-Q3`).
 ## Groups with no rows
 
 A group that happens to be empty is silently absent from a grouping, and a chart with a hole in its
-axis lies. `Level(fill=True)` lists every value the level can take, with a count of 0:
+axis lies. `GroupingLevel(fill=True)` lists every value the level can take, with a count of 0:
 
 ```python
-Level(field="state", fill=True)                      # every choice of the enum
-Level(field="settled", fill=True)                    # False and True
-Level(field="posted_at", part=Part.MONTH, fill=True) # 1 … 12
-Level(field="posted_at", grain=Grain.MONTH, fill=True)  # every month the filter spans
+GroupingLevel(field="state", fill=True)                      # every choice of the enum
+GroupingLevel(field="settled", fill=True)                    # False and True
+GroupingLevel(field="posted_at", part=Part.MONTH, fill=True) # 1 … 12
+GroupingLevel(field="posted_at", grain=Grain.MONTH, fill=True)  # every month the filter spans
 ```
 
 An empty group's count is 0, its `count` and `count_distinct` folds are 0 and every other fold is

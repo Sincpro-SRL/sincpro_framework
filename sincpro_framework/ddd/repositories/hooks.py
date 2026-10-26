@@ -31,8 +31,7 @@ from sincpro_framework.common.ordering import (
     name_of,
     ordered,
 )
-from sincpro_framework.context.domain.level import Level
-from sincpro_framework.context.infrastructure.tree import child, entered
+from sincpro_framework.context import ContextLevel, context_scopes
 from sincpro_framework.ddd import exceptions
 from sincpro_framework.sincpro_abstractions import ContextT
 from sincpro_framework.sincpro_logger import logger
@@ -215,7 +214,7 @@ class Hooks:
         billing_hooks = Hooks()                          # walks this package on first read
         repository = Repository(database, billing_hooks)
 
-    Context: an object somebody made and passed, never a registry the framework keeps — two
+    Context: an object somebody made and passed, never a registry the framework holds — two
     contexts have two collections. A hook in a module nobody imports never registers, which is
     why the collection walks its own package the first time a repository uses it.
     """
@@ -317,7 +316,7 @@ class Hooks:
             @hooks.on(Invoice, before=[Numbers, Totals])        one hook or a list of them
 
         1. Refused when it is late, or when what it declares cannot work (see `_checked`).
-        2. The aggregates it is for kept by the collection, never written onto the class.
+        2. The aggregates it is for stored by the collection, never written onto the class.
         3. Final: placed — `replaces` and `extends` take the position of the one they name.
         """
         entities = tuple(entity) if isinstance(entity, Sequence) else (entity,)
@@ -365,7 +364,7 @@ class Hooks:
         return tuple(one.item for one in self._placements)
 
     def entities_of(self, hook: type[Hook]) -> tuple[type, ...]:
-        """The aggregates `hook` was registered for — kept here, never on the class, so one
+        """The aggregates `hook` was registered for — stored here, never on the class, so one
         hook class can sit in two collections for different aggregates."""
         return self._entities[hook]
 
@@ -599,12 +598,12 @@ class HookChain:
         """
         for link in self._compiled()[moment]:
             if isinstance(record, link.entities) and self._admits(link.hook, moment, record):
-                with entered(child(Level.HOOK, label=link.hook.__name__)):
+                with context_scopes.child(ContextLevel.HOOK, label=link.hook.__name__):
                     getattr(self._instance(link.hook), moment)(record)
 
     def read(self, record: Any) -> Any:
-        """`after_read`, in order; a hook that answers a record puts it in place, `None` keeps
-        the one it was handed.
+        """`after_read`, in order; a hook that answers a record puts it in place, `None`
+        leaves the one it was handed.
 
             read(Invoice(approved=False))   →   Invoice(approved=True)    when a hook approves it
         """
@@ -625,7 +624,7 @@ class HookChain:
             searched(Partner, page)   ->  page, as it came — no hook is for Partner
 
         Context: matched by the model asked for, not by each record — the page is one answer,
-        and a hook returning `None` keeps it.
+        and a hook returning `None` leaves it as it is.
         """
         for link in self._compiled()["after_search"]:
             if issubclass(model, link.entities) and self._admits(

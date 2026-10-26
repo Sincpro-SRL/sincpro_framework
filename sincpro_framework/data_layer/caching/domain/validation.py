@@ -1,4 +1,4 @@
-"""`Validation`: whether a kept value is still right — the strategy checked beside its lifetime.
+"""`Validation`: whether a cached value is still right — the strategy checked beside its lifetime.
 
     Unconditional()                                     the lifetime is the whole answer
     ExternalVersion(current=registry.version_of_tenant,  an ETag: the version the source
@@ -18,7 +18,7 @@ from datetime import timedelta
 
 
 class Validation[T](ABC):
-    """The port: the mark a value is kept with, and whether that mark still holds."""
+    """The port: the mark a value is cached with, and whether that mark still holds."""
 
     trusted_for: timedelta = timedelta(0)
     """How long a check that held is believed without asking again."""
@@ -28,12 +28,12 @@ class Validation[T](ABC):
         return None
 
     def after(self, value: T, before: str | None) -> str | None:
-        """The mark the computed value is kept with — `None` to answer it and keep nothing."""
+        """The mark the computed value is cached with — `None` to answer it and cache nothing."""
         return before
 
     @abstractmethod
     def holds(self, mark: str) -> bool:
-        """Whether a value kept with `mark` is still right."""
+        """Whether a value cached with `mark` is still right."""
 
 
 class Unconditional[T](Validation[T]):
@@ -49,7 +49,7 @@ class Unconditional[T](Validation[T]):
 
 
 class ExternalVersion[T](Validation[T]):
-    """An ETag: the value is kept with the source's version, and holds while it is current."""
+    """An ETag: the value is cached with the source's version, and holds while it is current."""
 
     def __init__(
         self,

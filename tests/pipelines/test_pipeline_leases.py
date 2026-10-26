@@ -10,9 +10,9 @@ import pytest
 
 from sincpro_framework import ApplicationService, DataTransferObject, Feature, UseFramework
 from sincpro_framework.context import InMemoryContexts, use_context
-from sincpro_framework.pipelines import Pipeline, PipelineRun, PipelineState
-from sincpro_framework.store import LeaseState
-from sincpro_framework.store.domain import exceptions as store_exceptions
+from sincpro_framework.data_layer.store import LeaseState
+from sincpro_framework.data_layer.store.domain import exceptions as store_exceptions
+from sincpro_framework.pipelines import Pipeline, PipelineRun, PipelineRuns, PipelineState
 
 PIPELINE = "leased-pipelines.CommandRunNightly"
 
@@ -69,7 +69,7 @@ def nightly(
 
 def lease_state(contexts: InMemoryContexts, run_id: str) -> LeaseState:
     with use_context().scoped({}) as context:
-        runs = context.pipelines(store=contexts)
+        runs = PipelineRuns.of(context, store=contexts)
         return contexts.leases().state(runs.lease_name(PIPELINE, run_id))
 
 
@@ -110,7 +110,7 @@ def test_a_run_whose_worker_died_is_found_abandoned():
     clock = [now]
     contexts = InMemoryContexts(now=lambda: clock[0])
     with use_context().scoped({}) as context:
-        runs = context.pipelines(store=contexts)
+        runs = PipelineRuns.of(context, store=contexts)
         runs.save(PipelineRun(pipeline=PIPELINE, run_id="R-2", started_at=now))
         contexts.leases().take(
             runs.lease_name(PIPELINE, "R-2"), owner="worker-a", ttl=timedelta(minutes=2)
@@ -127,7 +127,7 @@ def test_a_worker_that_lost_its_lease_stops_before_its_next_step_and_writes_noth
 
     def stolen() -> None:
         with use_context().scoped({}) as context:
-            name = context.pipelines(store=contexts).lease_name(PIPELINE, "R-3")
+            name = PipelineRuns.of(context, store=contexts).lease_name(PIPELINE, "R-3")
         leases = contexts.leases()
         leases.store.delete(leases.claim_key(name))  # its time passed, as in a long pause
         assert leases.take(name, owner="worker-b", ttl=timedelta(minutes=5)) is not None
@@ -140,5 +140,5 @@ def test_a_worker_that_lost_its_lease_stops_before_its_next_step_and_writes_noth
 
     assert did == ["collect"]  # no bill, and no close: the run is another worker's now
     with use_context().scoped({}) as context:
-        kept = context.pipelines(store=contexts).read(PIPELINE, "R-3")
+        kept = PipelineRuns.of(context, store=contexts).read(PIPELINE, "R-3")
     assert kept is not None and kept.state is PipelineState.RUNNING

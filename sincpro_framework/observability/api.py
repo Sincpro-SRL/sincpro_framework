@@ -51,14 +51,15 @@ from sincpro_framework.observability.domain import (
     ObservabilityIdentity,
     ObservabilityStatus,
     caller_module,
-    log_fields,
     off,
     on,
     resolve_identity,
 )
 from sincpro_framework.observability.errors.record_error import ErrorKind, record_error
 from sincpro_framework.observability.errors.setup import setup_errors
-from sincpro_framework.observability.registry import PROCESS, registry
+from sincpro_framework.observability.metrics import metrics
+from sincpro_framework.observability.registry import PROCESS, observability_registry
+from sincpro_framework.observability.tracing.attributes import describe
 from sincpro_framework.observability.tracing.setup import (
     OTEL_AVAILABLE,
     current_otel_context,
@@ -81,7 +82,7 @@ class Observability:
     """Who this bus is, which backends came up, and how it reports what happens."""
 
     def __init__(self, bus: str = "", package: str = "", version: str = "") -> None:
-        """Keep who the bus is — `bus`, its `package` and `version` — without resolving it.
+        """Store who the bus is — `bus`, its `package` and `version` — without resolving it.
 
             Observability("billing", "billing_sdk").bus_name   ->  "billing"
             Observability("billing").status.otel.reason         ->  "not_built"
@@ -125,7 +126,7 @@ class Observability:
                     logged as  "observability sentry=off:dsn_missing otel=off:no_endpoint"
 
         One line says how both came up — a `warning` when either `failed`, `info` otherwise;
-        called without a `logger`, the status is kept and nothing is logged.
+        called without a `logger`, the status is stored and nothing is logged.
         """
         if logger is not None:
             self.logger = logger
@@ -160,12 +161,12 @@ class Observability:
         try:
             if self._identity is None:
                 return {}
-            return log_fields(self._identity)
+            return correlation.log_fields(self._identity)
         except Exception:
             return {}
 
     def ignore(self, *error_types: Type[Exception]) -> None:
-        """Keep these exception types out of GlitchTip. They are expected, not bugs.
+        """Exclude these exception types from GlitchTip. They are expected, not bugs.
 
             observability.ignore(InvoiceLocked, InvoiceLocked)
             observability.ignored_errors   ->  (InvoiceLocked,)
@@ -248,19 +249,13 @@ class Observability:
     def measure(self, dto: object, handler: object, layer: str) -> ContextManager[Any]:
         """The metrics of one DTO execution: its duration by outcome, and what its use case
         declares — `answered(response)` and `failed(error)` on what it yields."""
-        from sincpro_framework.observability.metrics.infrastructure.execution import measured
-
-        return measured(self._bus, dto, handler, layer, who=self)
+        return metrics.measured(self._bus, dto, handler, layer, who=self)
 
     def _judged(self, error: BaseException) -> dict[str, str]:
         """`sincpro.outcome` — the failure's kind — and `sincpro.fault`, as the metrics carry
         them, so the span, the log line and GlitchTip say the same."""
         try:
-            from sincpro_framework.observability.metrics.infrastructure.execution import (
-                outcome_of,
-            )
-
-            judged = outcome_of(error, self.faulted(error))
+            judged = metrics.outcome_of(error, self.faulted(error))
             return {OUTCOME: judged[OUTCOME], FAULT: judged[FAULT]}
         except Exception:
             return {OUTCOME: "internal", FAULT: "true"}
@@ -330,8 +325,6 @@ class Observability:
         its Command before it runs, its Response after a success. Never raises."""
         if span is None:
             return
-        from sincpro_framework.observability.tracing.attributes import describe
-
         describe(span, type(handler), source)
 
     def execution(self) -> ContextManager[bool]:
@@ -451,7 +444,7 @@ class ProcessObservability:
 
         Nothing announced: resolved from the caller's module, its bus emptied.
         """
-        announced = registry.process_identity()
+        announced = observability_registry.process_identity()
         if announced is not None:
             return announced
         resolved = resolve_identity("", module_name=caller_module())
@@ -472,7 +465,7 @@ class ProcessObservability:
         """
         if not OTEL_AVAILABLE:
             return off("sdk_missing")
-        if registry.tracer_provider(PROCESS) is not None:
+        if observability_registry.tracer_provider(PROCESS) is not None:
             return on("installed")
         if host_provider_is_real():
             return on("host")
@@ -544,7 +537,7 @@ class ProcessObservability:
 
         Without this an access log line, or a line from uvicorn, has no trace_id and
         cannot be found from the trace it belongs to. Never raises: a logger that
-        does not support it simply keeps logging.
+        does not support it simply goes on logging.
         """
         try:
             logger.add_context_source(self.trace_ids)

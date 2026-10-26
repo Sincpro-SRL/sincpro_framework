@@ -7,7 +7,7 @@ SQS or EventBridge — what `Publisher(queue)` and `bus.publish_*(to=...)` hand 
 
 Context: the body is the event as JSON; its envelope — id, wire name, chain, trace, context — goes
 beside it (`attributes`), so the queue wire on the other side reads it as from any broker. A FIFO
-topic or queue keeps one entity's events in order and delivers a retried event once. On
+topic or queue delivers one entity's events in order and delivers a retried event once. On
 EventBridge, whose rules read the body, the detail is `{"metadata": <envelope>, "data": <event>}`
 and the detail type is the event's wire name. What the service does not take is a
 `ServiceUnavailableError`: retry later. Sending waits for AWS to take it; `aput` does it on a
@@ -27,7 +27,7 @@ from sincpro_framework.event_driven.adapters.aws.attributes import (
     filtered_on,
     message_attributes,
 )
-from sincpro_framework.event_driven.adapters.envelope import cloud_event_headers
+from sincpro_framework.event_driven.domain.envelope import Envelope
 
 
 def _sent(service: str, event: DomainEvent, send: Any) -> None:
@@ -66,7 +66,7 @@ class SnsQueue:
            attributes; a `.fifo` topic adds the group (entity, else flow) and dedup id.
         Final: SNS took it — or `ServiceUnavailableError`.
         """
-        headers = cloud_event_headers(event, source=self.source)
+        headers = Envelope.headers_for(event, source=self.source)
         _sent(
             "SNS",
             event,
@@ -102,7 +102,7 @@ class SqsQueue:
     def put(self, event: DomainEvent) -> None:
         """Send `event` to the queue and wait for SQS to take it — the same body, attributes
         and FIFO fields as `SnsQueue.put`."""
-        headers = cloud_event_headers(event, source=self.source)
+        headers = Envelope.headers_for(event, source=self.source)
         _sent(
             "SQS",
             event,
@@ -147,7 +147,7 @@ class EventBridgeQueue:
         `FailedEntryCount`, read here and raised — so it becomes a `ServiceUnavailableError`
         like a transport error.
         """
-        headers = cloud_event_headers(event, source=self.source)
+        headers = Envelope.headers_for(event, source=self.source)
         detail = {"metadata": headers, "data": json.loads(event.as_json())}
 
         def send() -> None:

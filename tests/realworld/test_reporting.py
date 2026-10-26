@@ -8,7 +8,9 @@ from sqlalchemy import func, select
 
 from sincpro_framework.data_layer.orm.sqlalchemy.entrypoint.repository import Repository
 from sincpro_framework.data_layer.orm.sqlalchemy.infrastructure.database import Database
-from sincpro_framework.data_layer.orm.sqlalchemy.services.model_introspection import describe
+from sincpro_framework.data_layer.orm.sqlalchemy.services.model_introspection import (
+    ModelIntrospection,
+)
 from sincpro_framework.ddd.criteria import (
     All,
     Condition,
@@ -16,10 +18,10 @@ from sincpro_framework.ddd.criteria import (
     Criteria,
     Grain,
     Grouping,
-    Level,
+    GroupingLevel,
     Measure,
     Pagination,
-    parse_order,
+    Sort,
 )
 from sincpro_framework.ddd.entity.entity_meta import FieldType, Operator
 
@@ -32,10 +34,10 @@ FOUR_LEVELS = Criteria(
     where=POSTED,
     grouping=Grouping(
         group_by=(
-            Level(field="journal_id"),
-            Level(field="account_id"),
-            Level(field="partner_id"),
-            Level(field="posted_at", grain=Grain.MONTH),
+            GroupingLevel(field="journal_id"),
+            GroupingLevel(field="account_id"),
+            GroupingLevel(field="partner_id"),
+            GroupingLevel(field="posted_at", grain=Grain.MONTH),
         ),
         measures={
             "debit": Measure(function="sum", field="debit"),
@@ -143,7 +145,10 @@ def test_a_bucket_opens_to_exactly_the_rows_it_counted(ledger: Repository):
 def test_the_flat_group_by_agrees_with_the_first_level(ledger: Repository):
     flat = ledger.group_by(Line, ["journal_id"], Criteria(where=POSTED))
     first_level = ledger.group_by_levels(
-        Line, Criteria(where=POSTED, grouping=Grouping(group_by=(Level(field="journal_id"),)))
+        Line,
+        Criteria(
+            where=POSTED, grouping=Grouping(group_by=(GroupingLevel(field="journal_id"),))
+        ),
     )
 
     assert {row["journal_id"]: row["count"] for row in flat} == {
@@ -153,7 +158,10 @@ def test_the_flat_group_by_agrees_with_the_first_level(ledger: Repository):
 
 def test_a_null_partner_is_a_bucket_of_its_own_that_opens(ledger: Repository):
     by_partner = ledger.group_by_levels(
-        Line, Criteria(where=POSTED, grouping=Grouping(group_by=(Level(field="partner_id"),)))
+        Line,
+        Criteria(
+            where=POSTED, grouping=Grouping(group_by=(GroupingLevel(field="partner_id"),))
+        ),
     )
     without = next(bucket for bucket in by_partner if bucket.value is None)
 
@@ -164,8 +172,8 @@ def test_a_null_partner_is_a_bucket_of_its_own_that_opens(ledger: Repository):
 
 
 def test_the_definition_says_what_a_line_and_an_account_can_be_asked(ledger: Repository):
-    line = describe(Line)
-    account = describe(Account)
+    line = ModelIntrospection.describe(Line)
+    account = ModelIntrospection.describe(Account)
 
     assert line.aggregate == "Line" and line.identity == "id"
     assert line.field("posted_at").type is FieldType.DATETIME
@@ -183,9 +191,11 @@ def test_two_levels_with_a_page_of_eighty_ids_per_group_match_a_hand_written_win
     that lists groups and lets the user open one needs, in three statements."""
     asked = Criteria(
         where=POSTED,
-        order=parse_order("-posted_at"),
+        order=Sort.parse("-posted_at"),
         pagination=Pagination(limit=80),
-        grouping=Grouping(group_by=(Level(field="journal_id"), Level(field="account_id"))),
+        grouping=Grouping(
+            group_by=(GroupingLevel(field="journal_id"), GroupingLevel(field="account_id"))
+        ),
     )
 
     with timed("grouping, two levels, 80 ids per group", census.lines):
@@ -232,7 +242,7 @@ def test_a_pivot_of_journals_by_month_matches_a_hand_written_group_by(
         matrix = ledger.pivot(
             Line,
             rows=["journal_id"],
-            columns=[Level(field="posted_at", grain=Grain.MONTH)],
+            columns=[GroupingLevel(field="posted_at", grain=Grain.MONTH)],
             criteria=Criteria(where=POSTED),
             debit=("sum", "debit"),
         )
@@ -264,10 +274,10 @@ def test_the_heaviest_accounts_come_first_and_only_the_top_ones(ledger: Reposito
     top = Criteria(
         where=POSTED,
         grouping=Grouping(
-            group_by=(Level(field="account_id"),),
+            group_by=(GroupingLevel(field="account_id"),),
             measures={"debit": Measure(function="sum", field="debit")},
             where_measures=Condition(field="count", value=10, operator=Operator.GT),
-            order=parse_order("-debit"),
+            order=Sort.parse("-debit"),
             pagination=Pagination(limit=5),
         ),
     )
@@ -283,9 +293,9 @@ def test_the_heaviest_accounts_come_first_and_only_the_top_ones(ledger: Reposito
         Criteria(
             where=POSTED,
             grouping=Grouping(
-                group_by=(Level(field="account_id"),),
+                group_by=(GroupingLevel(field="account_id"),),
                 measures={"debit": Measure(function="sum", field="debit")},
-                order=parse_order("-debit"),
+                order=Sort.parse("-debit"),
             ),
         ),
     )

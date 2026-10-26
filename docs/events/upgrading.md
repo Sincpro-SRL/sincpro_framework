@@ -57,9 +57,9 @@ Repositories using the **same Database instance** join the active transaction, i
 Features called through the bus. Separate Database objects, even with the same URL, do not
 provide that shared unit of work. `separate=True` deliberately starts another transaction.
 
-With `map_events(registry, ContextEvent, template_table.event_table(...))`, `save(aggregate)` keeps its mapped
+With `map_events(registry, ContextEvent, template_table.event_table(...))`, `save(aggregate)` persists its mapped
 recorded events in that same transaction, including mapped change-tracking events. It does
-not drain `recorded_events()`. Do not pull before saving or keep a second manual history row.
+not drain `recorded_events()`. Do not pull before saving or write a second manual history row.
 Standalone facts can be saved directly or through `Publisher(RepositoryQueue(repository))`.
 
 For durable delivery, add `DeliverableEventMixin` to the facts that should leave the context
@@ -80,7 +80,7 @@ migrations extras. The source locations below are relative to the Forge reposito
 - Auth, coding, delivery, issue, project and workspace maintain manual `...EventEntry`
   wrappers. Those wrappers do not automatically fail after upgrading; adopt the new event
   mapping deliberately and remove conversion writes only when readers and data are ready.
-- Issue and Run keep ordinary state rows. Retain that model unless rebuilding from a complete
+- Issue and Run store ordinary state rows. Retain that model unless rebuilding from a complete
   event stream is a real requirement; adding `EventSourcedMixin` is not a history migration.
 
 Suggested migration sequence:
@@ -91,7 +91,7 @@ Suggested migration sequence:
 3. Add each context's event table and map its base event class. Migrate old `event_type` and
    payload rows to the new schema with explicit field mapping; preserve ids and causal data
    that actually exist. Do not invent missing stream versions or historical causation.
-4. Reconcile event counts, identities, per-entity history and representative payloads. Keep
+4. Reconcile event counts, identities, per-entity history and representative payloads. Leave
    historical classes importable. Decide explicitly whether migrated events should be sent;
    blindly making all historical rows due can repeat old side effects.
 5. Move readers and writes to the new mapping; remove old wrappers after reconciliation and

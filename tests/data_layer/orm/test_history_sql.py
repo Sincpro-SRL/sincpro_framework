@@ -27,7 +27,10 @@ from sincpro_framework.ddd import (
     ResponsePaginatedQuery,
     history_of,
 )
-from sincpro_framework.ddd.criteria import Operator, parse_order
+from sincpro_framework.ddd.criteria import (
+    Operator,
+    Sort,
+)
 
 from .engines import fresh
 
@@ -155,7 +158,7 @@ def test_a_caller_time_filter_adds_and_its_order_replaces(repository):
     bus = site_reads(repository)
 
     newest_first = bus(
-        QuerySiteEvents(id="dev-1", criteria=Criteria(order=parse_order("-id"))),
+        QuerySiteEvents(id="dev-1", criteria=Criteria(order=Sort.parse("-id"))),
         ResponseSiteEvents,
     )
     none_yet = bus(
@@ -182,7 +185,7 @@ def test_history_of_reads_several_records_each_by_its_type(repository):
     folder = Folder(id="dev-1")
 
     both = repository.search(
-        SiteEvent, history_of(site, folder).replaced_by(Criteria(order=parse_order("id")))
+        SiteEvent, history_of(site, folder).replaced_by(Criteria(order=Sort.parse("id")))
     )
     only_folder = repository.search(SiteEvent, history_of(folder))
 
@@ -240,7 +243,7 @@ def test_the_context_log_filters_by_wire_name_on_sql(repository):
                 ],
                 operator=Operator.IN,
             ),
-            order=parse_order("id"),
+            order=Sort.parse("id"),
         ),
     )
 

@@ -68,7 +68,7 @@ def refuse(
     1. An aggregate that extends another across two tables: one INSERT cannot write it.
     2. A dialect with no `INSERT … ON CONFLICT` here (only Postgres and SQLite).
     3. A field in `on` or `overwrite` the model has no column for.
-    4. An `overwrite` naming a column the framework keeps (`fixed`).
+    4. An `overwrite` naming a column the framework sets (`fixed`).
     Final: `on` columns the table does not hold unique — a conflict would never fire, and
     every call would insert.
 
@@ -77,7 +77,7 @@ def refuse(
         refuse(Rate, rate, False, "mysql", names, ["currency", "day"], None, fixed)
             ->  ProgrammingError("mysql has no upsert this repository speaks; …")
         refuse(..., ["currency", "day"], ["version"], {"version", ...})
-            ->  ProgrammingError("upsert cannot overwrite version: the framework keeps it")
+            ->  ProgrammingError("upsert cannot overwrite version: the framework sets it")
 
     The first rule broken is the one raised.
     """
@@ -95,10 +95,10 @@ def refuse(
         raise exceptions.ProgrammingError(
             f"{model.__name__} has no column {', '.join(unknown)}"
         )
-    kept_by_framework = sorted(fixed & set(overwrite or ()))
-    if kept_by_framework:
+    set_by_framework = sorted(fixed & set(overwrite or ()))
+    if set_by_framework:
         raise exceptions.ProgrammingError(
-            f"upsert cannot overwrite {', '.join(kept_by_framework)}: the framework keeps it"
+            f"upsert cannot overwrite {', '.join(set_by_framework)}: the framework sets it"
         )
     if not unique_on(table, {names[name] for name in on}):
         raise exceptions.ProgrammingError(
@@ -107,7 +107,7 @@ def refuse(
         )
 
 
-KEPT_BY_DEFAULT = {"archived_at", "created_by"}
+PRESERVED_BY_DEFAULT = {"archived_at", "created_by"}
 """What a conflict does not overwrite unless named: an archived row stays archived, and who
 created a row stays who did."""
 
@@ -121,7 +121,7 @@ def one_per_key(records: Iterable[Any], on: Sequence[str]) -> list[Any]:
         one_per_key([Rate(None, 1), Rate(None, 2)], ["currency"])
             ->  [Rate(None, 1), Rate(None, 2)]
 
-    A key keeps the place it first took; its record is the last one given.
+    A key holds the place it first took; its record is the last one given.
     """
     latest: dict[Any, Any] = {}
     for one in records:
@@ -139,7 +139,7 @@ def rows(
              {"currency": "currency", "value": "value", "version": "version", ...}, now)
             ->  [{"currency": "USD", "value": 6.96, "version": 1, "updated_at": t1, ...}]
 
-    A record with no `created_at` is stamped `now`; a version already set is kept.
+    A record with no `created_at` is stamped `now`; a version already set is left as it is.
     """
     built = []
     for one in records:
@@ -163,12 +163,12 @@ def overwritten(
     framework's own and the scope's — a narrowed repository never moves a row out of it."""
     if overwrite is not None:
         return [names[name] for name in overwrite if name not in scope_fields]
-    kept = {
+    preserved = {
         names[name]
-        for name in [*on, *fixed, *scope_fields, *KEPT_BY_DEFAULT]
+        for name in [*on, *fixed, *scope_fields, *PRESERVED_BY_DEFAULT]
         if name in names
     }
-    return [column for column in names.values() if column not in kept]
+    return [column for column in names.values() if column not in preserved]
 
 
 def statement(

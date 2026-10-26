@@ -429,4 +429,4 @@ assert migrated(CommandCreateInvoice(customer_id="acme", total=5), ResponseCreat
 ```
 
 A middleware that answered with a *different* DTO class has no equivalent: the bus routes by class,
-and an interceptor keeps it.
+and an interceptor must preserve it.

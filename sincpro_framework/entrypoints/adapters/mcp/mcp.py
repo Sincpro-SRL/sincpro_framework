@@ -1,21 +1,28 @@
-"""FastMCP binding: a use case → typed function FastMCP 3 can register as a tool."""
+"""FastMCP binding: a use case → typed function FastMCP 3 can register as a tool, and the
+servers that register them — FastMCP is imported only when a server is built (`[mcp]` extra).
+"""
 
 import dataclasses
 import inspect
-from collections.abc import Callable, Iterator
+from collections.abc import Callable, Iterable, Iterator
 from typing import TYPE_CHECKING, Annotated, Any
 
 from pydantic import BaseModel, Field
 
-from sincpro_framework.context.domain.level import EntrypointKind
-from sincpro_framework.entrypoints.entrypoint.catalog import PackedFeatureOrAppService
+from sincpro_framework.context import EntrypointKind
+from sincpro_framework.entrypoints.adapters.mcp import exceptions
+from sincpro_framework.entrypoints.adapters.mcp.auth import (
+    acting_for_tool_call,
+    token_verifier,
+)
+from sincpro_framework.entrypoints.adapters.mcp.wire import McpTool, catalog_hints
+from sincpro_framework.entrypoints.domain.packed import PackedFeatureOrAppService
 
 if TYPE_CHECKING:
+    from sincpro_framework.auth import AccessControl
     from sincpro_framework.use_bus import UseFramework
 
 EMPTY = inspect.Parameter.empty
-
-FASTMCP_MISSING = "FastMCP is not installed. Install with: pip install sincpro-framework[mcp]"
 
 
 def _dto_parameters(
@@ -66,7 +73,7 @@ def tool_function(
         2.1 Required fields have no default.
         2.2 A default_factory travels as Annotated metadata, never as a value: a
             concrete default would freeze uuid4/datetime.now at import time.
-        2.3 Any other optional field keeps its declared default.
+        2.3 Any other optional field preserves its declared default.
     3. Stamp name and docstring (FastMCP infers tool name / description).
     4. Final: a function for mcp.tool(fn, name=..., description=...).
     """
@@ -77,8 +84,6 @@ def tool_function(
 
             tool_fn(amount=10, customer_id="C-1")  ->  {"invoice_id": "F-1", ...}
         """
-        from sincpro_framework.entrypoints.adapters.mcp.auth import acting_for_tool_call
-
         with acting_for_tool_call(bus):
             if bus is None:
                 return run(kwargs)
@@ -113,3 +118,85 @@ def fastmcp_callable(operation: PackedFeatureOrAppService, bus: "UseFramework | 
     return tool_function(
         operation.dto, operation.name, operation.description, operation.run, bus
     )
+
+
+def catalog_server(
+    name: str,
+    operations: Iterable[PackedFeatureOrAppService],
+    bus: "UseFramework",
+    auth: "AccessControl[Any] | None" = None,
+    base_url: str | None = None,
+) -> Any:
+    """A FastMCP 3 server with every catalog entry of `operations` a tool named by its DTO.
+
+        catalog_server("billing", catalog.get_scalar_use_cases(filter_binaries_schema=True),
+                       billing)
+        ->  FastMCP("billing") with tools "CommandIssueInvoice", "QueryInvoice", ...
+
+    1. Import FastMCP or raise with the extra-install hint.
+    2. Register each entry with mcp.tool(fn, name=..., description=..., tags=layer,
+       annotations=...) — the hints derived as the declared surface derives them, a declared
+       `@mcp` shaping only its hints; each call acts as whoever called, when `bus` is guarded.
+    Final: the server — with `auth`, FastMCP verifies bearer tokens itself, and with
+    `base_url` publishes the resource metadata.
+    """
+    try:
+        from fastmcp import FastMCP  # pyright: ignore[reportMissingImports]
+    except ImportError as error:
+        raise ImportError(exceptions.FASTMCP_MISSING) from error
+
+    verifier = token_verifier(auth, base_url) if auth is not None else None
+    mcp = FastMCP(name, auth=verifier)
+    for operation in operations:
+        mcp.tool(
+            fastmcp_callable(operation, bus),
+            name=operation.name,
+            description=operation.description,
+            tags={operation.layer},
+            annotations=catalog_hints(operation),
+        )
+    return mcp
+
+
+def surface_server(
+    name: str,
+    tools: Iterable[McpTool],
+    auth: "AccessControl[Any] | None" = None,
+    base_url: str | None = None,
+) -> Any:
+    """A FastMCP 3 server with every tool of a validated surface — returned, not run.
+
+        surface_server("sincpro-mcp", gateway.tools())
+        ->  FastMCP("sincpro-mcp"), tool "issue_invoice"
+
+    1. Import FastMCP or raise with the extra-install hint.
+    2. Each tool registered as a typed function over its Command, with its name, title,
+       description (deprecation first), layer tag and hints; each call acts as whoever
+       called, through its own bus.
+    Final: the server — with `auth`, FastMCP verifies bearer tokens itself, and with
+    `base_url` publishes the resource metadata.
+    """
+    try:
+        from fastmcp import FastMCP  # pyright: ignore[reportMissingImports]
+    except ImportError as error:
+        raise ImportError(exceptions.FASTMCP_MISSING) from error
+
+    verifier = token_verifier(auth, base_url) if auth is not None else None
+    mcp = FastMCP(name, auth=verifier)
+    for tool in tools:
+        operation = tool.operation
+        mcp.tool(
+            tool_function(
+                operation.command,
+                tool.name,
+                tool.description,
+                operation.run,
+                operation.bus,
+            ),
+            name=tool.name,
+            title=tool.title,
+            description=tool.description,
+            tags={str(operation.layer)},
+            annotations=tool.annotations,
+        )
+    return mcp

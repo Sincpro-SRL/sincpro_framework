@@ -25,7 +25,7 @@ import os
 import re
 from collections.abc import Callable
 from types import UnionType
-from typing import Annotated, Any, ClassVar, Literal, TypeVar, Union, get_args, get_origin
+from typing import Annotated, ClassVar, Literal, TypeVar, Union, get_args, get_origin
 
 from pydantic import (
     BaseModel,
@@ -38,39 +38,18 @@ from pydantic import (
     model_validator,
 )
 
-from sincpro_framework.common.transport.addresses import HostedContext
+from sincpro_framework.remote_execution import HostedContext
 
 logger = logging.getLogger("sincpro_framework")
 
 SENTINEL = re.compile(r"^\$([A-Z][A-Z0-9_]*):(.+)$")
 """`$ENV:NAME`, `$SSM:/path`, `$SECRET:name#key` — a value read from a source, by its name."""
 
+ENV_SENTINEL = "$ENV:"
+"""The sentinel of the environment — the one source every build reads without being handed it."""
+
 type SettingSource = Callable[[str], str | None]
 """A name to its value — `None` when the source holds none: a parameter store, a vault."""
-
-
-def usable_env_value(value: str, field_info) -> bool:
-    """Whether an env string satisfies the field it is going into.
-
-    ``settings`` is built at import time, so a malformed env var would otherwise
-    raise ValidationError before the framework is even importable — a typo in one
-    deployment variable would take down the whole process.
-
-        usable_env_value("5", <timeout: int>)        ->  True
-        usable_env_value("abc", <timeout: int>)      ->  False
-        usable_env_value("1.5", <rate: Annotated[float, Field(ge=0.0, le=1.0)]>)
-            ->  False    # the field's constraints are checked too
-
-    Context: the value is only tried, never kept — the model reads it again as it builds.
-    """
-    try:
-        annotation = field_info.annotation
-        if field_info.metadata:
-            annotation = Annotated[tuple([annotation, *field_info.metadata])]
-        TypeAdapter(annotation).validate_python(value)
-        return True
-    except Exception:
-        return False
 
 
 class SincproConfig(BaseModel):
@@ -83,8 +62,92 @@ class SincproConfig(BaseModel):
     the environment is read only through `$ENV:` sentinels, as it always was."""
 
     _sources: dict[str, str] = PrivateAttr(default_factory=dict)
-    """Where each value came from, by path — kept on the object `build_config_obj` answers, for
+    """Where each value came from, by path — stored on the object `build_config_obj` answers, for
     `describe_settings`."""
+
+    @classmethod
+    def field_accepts(cls, name: str, value: str) -> bool:
+        """Whether the field `name` of this shape accepts `value` — a string read from the
+        environment or a source — its type and its constraints both checked.
+
+        Context: the framework's settings are built at import time, so a malformed variable
+        would otherwise raise before the framework is even importable — a typo in one
+        deployment variable would take down the whole process. The value is only tried, never
+        stored — the model reads it again as it builds.
+
+            # class C(SincproConfig): timeout: int = 30
+            #                         rate: Annotated[float, Field(ge=0.0, le=1.0)] = 1.0
+            C.field_accepts("timeout", "5")      ->  True
+            C.field_accepts("timeout", "abc")    ->  False
+            C.field_accepts("rate", "1.5")       ->  False    # the constraints are checked too
+
+        1. The field's annotation, with its constraints (`Field(ge=…)`) when it declares any.
+        Final: `True` when that annotation validates `value`, else `False`.
+        """
+        field_info = cls.model_fields[name]
+        annotation = field_info.annotation
+        if field_info.metadata:
+            annotation = Annotated[tuple([annotation, *field_info.metadata])]
+        try:
+            TypeAdapter(annotation).validate_python(value)
+            return True
+        except Exception:
+            return False
+
+    @classmethod
+    def field_holds_secret(cls, name: str) -> bool:
+        """Whether the field `name` of this shape holds a `Secret` — `Secret[str]`, or one that
+        may be `None`.
+
+            # api_token: Secret[str] · dsn: Secret[str] | None · key: Optional[Secret[int]]
+            # masked: SecretStr · name: str
+            C.field_holds_secret("api_token")   ->  True
+            C.field_holds_secret("dsn")         ->  True
+            C.field_holds_secret("key")         ->  True
+            C.field_holds_secret("masked")      ->  False   # pydantic's own, not `Secret`
+            C.field_holds_secret("name")        ->  False
+
+        1. The members of the annotation: those of a union, else the annotation alone.
+        Final: `True` when any member is `Secret`, or a subclass of it, parametrised or not.
+        """
+        annotation = cls.model_fields[name].annotation
+        members = (
+            get_args(annotation)
+            if get_origin(annotation) in (Union, UnionType)
+            else (annotation,)
+        )
+        for one in members:
+            candidate = get_origin(one) or one
+            if isinstance(candidate, type) and issubclass(candidate, Secret):
+                return True
+        return False
+
+    @classmethod
+    def field_shape(cls, name: str) -> "type[SincproConfig] | None":
+        """The shape the field `name` of this shape holds — a section of its own — or `None` for
+        a value.
+
+            # qr: QRSettings · card: CardSettings | None · either: QRSettings | CardSettings
+            # many: list[QRSettings] · timeout: int
+            C.field_shape("qr")        ->  QRSettings
+            C.field_shape("card")      ->  CardSettings
+            C.field_shape("either")    ->  None    # which one is not said
+            C.field_shape("many")      ->  None    # a list is a value
+            C.field_shape("timeout")   ->  None
+
+        1. The members of the annotation: those of a union, else the annotation alone.
+        Final: the one member that is a `SincproConfig` — `None` when none is, or two or more.
+        """
+        annotation = cls.model_fields[name].annotation
+        members = (
+            get_args(annotation)
+            if get_origin(annotation) in (Union, UnionType)
+            else (annotation,)
+        )
+        shapes = [
+            one for one in members if isinstance(one, type) and issubclass(one, SincproConfig)
+        ]
+        return shapes[0] if len(shapes) == 1 else None
 
     def __eq__(self, other: object) -> bool:
         """Pydantic's equality, blind to `_sources`: where a value came from is not the value, and
@@ -118,9 +181,9 @@ class SincproConfig(BaseModel):
         2. The sources the build was handed, from the validation context.
         3. Each value that is a sentinel — `$<SOURCE>:<name>` — any other left alone:
            3.1 `ENV` reads the environment;
-           3.2 a source handed reads `name` — one that raises keeps the sentinel as written,
+           3.2 a source handed reads `name` — one that raises leaves the sentinel as written,
                with a warning;
-           3.3 a source not handed keeps the sentinel as written, with a warning.
+           3.3 a source not handed leaves the sentinel as written, with a warning.
         4. What was read:
            4.1 held, and the field takes it (or no field declares the key): the value;
            4.2 held, and the field refuses it: the field's default, logged;
@@ -150,19 +213,19 @@ class SincproConfig(BaseModel):
                 except Exception as error:  # noqa: BLE001 - settings never stop the start
                     logger.warning(
                         f"[{field_name}] could not be read from ${source_name}: "
-                        f"({type(error).__name__}: {error}) — it keeps {value!r} as written"
+                        f"({type(error).__name__}: {error}) — it leaves {value!r} as written"
                     )
                     held = value
             else:
                 logger.warning(
                     f"[{field_name}] reads ${source_name}:, a source this build was not "
-                    f"handed — it keeps {value!r} as written; pass "
+                    f"handed — it leaves {value!r} as written; pass "
                     f"sources={{'{source_name}': ...}} to build_config_obj to read it"
                 )
                 held = value
             field_info = cls.model_fields.get(field_name, None)
             if held is not None:
-                if field_info is None or usable_env_value(held, field_info):
+                if field_info is None or cls.field_accepts(field_name, held):
                     values[field_name] = held
                 else:
                     logger.info(
@@ -190,8 +253,17 @@ class SincproConfig(BaseModel):
 TypeSincproConfigModel = TypeVar("TypeSincproConfigModel", bound=SincproConfig)
 
 
-class DefaultFrameworkConfig(SincproConfig):
-    """Default configuration for the framework"""
+class FrameworkSettings(SincproConfig):
+    """The framework's own settings — the shape of `sincpro_framework.sincpro_conf.settings`,
+    built at import from the framework's file and the environment.
+
+    A project's shared shape may inherit it: the framework then reads what the project set (log
+    level and backend, OTLP, Sentry, release) from the project's object instead of its own
+    environment, and no `config.py` copies them by hand.
+
+        class SharedSettings(FrameworkSettings):
+            environment: Environment = Environment.TEST
+    """
 
     app_release: str | None = None
     """`$ENV:APP_RELEASE` — The release version of the application."""
@@ -207,7 +279,7 @@ class DefaultFrameworkConfig(SincproConfig):
 
     metrics_backend: Literal["auto", "prometheus", "otel", "off"] = "auto"
     """`$ENV:SINCPRO_METRICS_BACKEND` — where the metrics go (`docs/observability/metrics.md`).
-    Kept as an alias: set to anything but `auto`, it wins over `OTEL_METRICS_EXPORTER`."""
+    The framework's own name for `OTEL_METRICS_EXPORTER`: set to anything but `auto`, it wins."""
     sentry_dsn: str | None = None
     """`$ENV:SENTRY_PYTHON_DSN` — Sentry DSN for error tracking."""
     otlp_endpoint: str | None = None
@@ -223,7 +295,8 @@ class DefaultFrameworkConfig(SincproConfig):
     otel_service_name: str | None = None
     """`$ENV:OTEL_SERVICE_NAME` — OpenTelemetry service name for the framework."""
     otel_metrics_exporter: str | None = None
-    """`$ENV:OTEL_METRICS_EXPORTER` — OpenTelemetry's own switch: `otlp`, `prometheus`, `none`."""
+    """`$ENV:OTEL_METRICS_EXPORTER` — where the metrics go: `otlp`, `prometheus`, `none`
+    (`docs/observability/metrics.md`)."""
     otel_traces_exporter: str | None = None
     """`$ENV:OTEL_TRACES_EXPORTER` — `otlp` or `none`; `none` builds no provider of the framework's."""
     otel_sdk_disabled: bool = False
@@ -237,31 +310,3 @@ class DefaultFrameworkConfig(SincproConfig):
     each address validated when the file is loaded."""
     context_map_override: str | None = None
     """`$ENV:SINCPRO_CONTEXT_MAP` — `billing=grpc://host:port?timeout=5,…`, winning per context."""
-
-
-class FrameworkSettings(DefaultFrameworkConfig):
-    """The framework's own settings, inherited by a project's shared shape — the framework then
-    reads what the project set (log level and backend, OTLP, Sentry, release) from the project's
-    object instead of its own environment, and no `config.py` copies them by hand.
-
-        class SharedSettings(FrameworkSettings):
-            environment: Environment = Environment.TEST
-    """
-
-
-def is_secret(annotation: Any) -> bool:
-    """Whether a field holds a `Secret` — `Secret[str]`, or one that may be `None`.
-
-        is_secret(Secret[str])            ->  True
-        is_secret(Secret[str] | None)     ->  True
-        is_secret(Optional[Secret[int]])  ->  True
-        is_secret(SecretStr)              ->  False   # pydantic's own, not `Secret`
-        is_secret(str)                    ->  False
-
-    Context: a union is a secret when any of its members is; a subclass of `Secret` is one.
-    """
-    origin = get_origin(annotation)
-    if origin in (Union, UnionType):
-        return any(is_secret(one) for one in get_args(annotation))
-    candidate = origin or annotation
-    return isinstance(candidate, type) and issubclass(candidate, Secret)

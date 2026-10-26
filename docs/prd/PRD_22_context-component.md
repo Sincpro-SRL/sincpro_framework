@@ -326,7 +326,7 @@ moves. Each phase adds a benchmark to `tests/` that fails above its budget.
   only text keys travel.
 - **Entrances open their flow with a kind**: REST, JSON-RPC and gRPC through the scalar executor,
   FastAPI, MCP, a queue consumer, `remote_execution`, a cron (`carrying(..., EntrypointKind.CRON)`).
-- **One propagator** (`context/adapters/propagation.py`): `inject` / `extract` — `baggage`,
+- **One propagator** (the `propagation` facade, `context/entrypoint/propagation.py`): `inject` / `extract` — `baggage`,
   `sincpro-context`, the identity headers; brokers, HTTP and gRPC entrances use it; a frontend sends
   `sincpro-context` back.
 - **Measured** (Python 3.12, this machine): a read 29 ns, `use_context()` under 1 µs, a

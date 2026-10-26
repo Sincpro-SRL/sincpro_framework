@@ -82,7 +82,7 @@ except RateLimited:
     pass
 ```
 
-`extend` keeps the module, not what it registered one by one: a bus made with `fresh()` runs
+`extend` records the module, not what it registered one by one: a bus made with `fresh()` runs
 the module again against itself.
 
 ## What a module can add, and with what
@@ -134,7 +134,7 @@ assert shop(CommandQuote(amount=100), ResponseQuote).total == 113
 
 - **Whole or nothing.** An extension runs under the bus's build lock: an execution never meets
   half of it.
-- **What is running finishes where it started.** A request already running keeps the
+- **What is running finishes where it started.** A request already running stays on the
   generation it began on; the next one runs on the new generation.
 - **A wiring error is said where it can be fixed.** A generation that cannot be built — an
   interceptor naming a Command nobody answers — raises at the next execution, and the generation
@@ -189,7 +189,7 @@ Without `replaces`, a second object under a taken name raises `DependencyAlready
 naming the class of the one already there. A `replaces` that names something else — or nothing
 — is a warning, and the new object takes the name.
 
-## Where a module keeps its state
+## Where a module holds its state
 
 | State | Lives in | Why |
 |---|---|---|

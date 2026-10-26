@@ -11,7 +11,7 @@ import time
 from collections.abc import Callable
 from datetime import timedelta
 
-from sincpro_framework.store import KeyValueStore
+from sincpro_framework.data_layer.store import KeyValueStore
 
 POLL_SECONDS = 0.005
 
@@ -20,8 +20,8 @@ def awaited[T](read: Callable[[], T | None], within: timedelta) -> T | None:
     """What `read` answers once it answers something, or `None` after `within`.
 
         awaited(lambda: store.get("9f2c…"), timedelta(milliseconds=200))
-            ->  b"…", as soon as the leader kept it
-            ->  None, when nothing was kept within 200 ms — the caller computes itself
+            ->  b"…", as soon as the leader stored it
+            ->  None, when nothing was stored within 200 ms — the caller computes itself
 
     Polled every 5 ms (`POLL_SECONDS`); a `within` of zero reads nothing at all."""
     deadline = time.monotonic() + within.total_seconds()
@@ -37,7 +37,7 @@ class StoreSingleFlight:
     """One leader per key across replicas: a lock key written by the store's atomic `add`."""
 
     def __init__(self, store: KeyValueStore) -> None:
-        """`store` is the shared store the values themselves are kept in."""
+        """`store` is the shared store the values themselves are cached in."""
         self.store = store
 
     def lock_key(self, key: str) -> str:
@@ -87,7 +87,7 @@ class LocalSingleFlight:
     def forget(self, key: str) -> None:
         """Let go of the lock of a key the tier evicted, unless somebody leads it right now.
 
-        Context: one lock per key ever asked would outgrow the bound the tier keeps its values
+        Context: one lock per key ever asked would outgrow the bound the tier holds its values
         in. A lock dropped while a caller is about to take it costs one duplicate computation,
         never a wrong value."""
         with self._guard:

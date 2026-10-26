@@ -34,7 +34,7 @@ covers those three: `bus.context(...)`, `@bus.interceptor(...)` / `replaces=`, a
 | `self.context` | What a Feature/ApplicationService reads: the context of the execution in progress | DTO | attribute of `Feature` / `ApplicationService` |
 | `bus.current_context()` | The context in play as this bus sees it, read-only — the object `self.context` is | function | method of `UseFramework` |
 | `use_context()` | The same context from anywhere, no bus in hand (`sincpro-framework-context`) | function | `from sincpro_framework.context import use_context` |
-| `ThreadContextBus` | A bus handle bound to a captured context, for one `ThreadPoolExecutor` task (prefer `ContextExecutor`) | adapter | `from sincpro_framework.sincpro_abstractions import ThreadContextBus` |
+| `bus.thread_context()` | The bus bound to the caller's context (`in_context`), for one `ThreadPoolExecutor` task — hand its `.execute` to the pool (prefer `ContextExecutor`) | function | method of every `Bus` |
 | `AsyncBus` | Stateless `async` facade over a bus (`asyncio.to_thread` per call) | adapter | `from sincpro_framework.aio import AsyncBus` |
 | `@bus.interceptor(*Commands)` | Registers a function `(dto, call_next) -> response` around those Commands (all when none) | decorator | method of `UseFramework` |
 | `CallNext[R]` | Type of `call_next`: runs the next interceptor or the handler | function | `from sincpro_framework import CallNext` |
@@ -47,7 +47,7 @@ covers those three: `bus.context(...)`, `@bus.interceptor(...)` / `replaces=`, a
 | `extend(module.attach)` | Install a module: a function (or an object's `attach`) that registers on the bus; before or after the build — after, it answers from the next execution | method | method of `UseFramework`; guide `docs/core/extending.md` |
 | `add_dependency(name, dep, replaces=old)` | Put another adapter in the place of a registered one; without `replaces`, a taken name raises `DependencyAlreadyRegistered` | method | method of `UseFramework` |
 | `describe` / `features` | What answers a Command and which interceptors wrap it | function | `from sincpro_framework.introspection import describe, features` |
-| `Circuit(name, failures=5, open_for=30s)` | Stops calling a dependency that keeps failing: `with circuit:`, `@circuit` (functions, methods, coroutines, generators — guarded while iterated), `circuit.call(fn, ...)`, or handed to an adapter's constructor; open → `CircuitOpen` (`UNAVAILABLE` + `retry_after`, ≥ 1 s) without calling; `probe_for=` (default `open_for`) longer than the slowest call; state where the context keeps its leases | component | `from sincpro_framework.circuits import Circuit, CircuitOpen`; guide `docs/core/circuits.md` |
+| `CircuitBreaker(name, failures=5, open_for=30s)` | Stops calling a dependency that fails repeatedly: `with circuit:`, `@circuit` (functions, methods, coroutines, generators — guarded while iterated), `circuit.call(fn, ...)`, or handed to an adapter's constructor; open → `CircuitOpen` (`UNAVAILABLE` + `retry_after`, ≥ 1 s) without calling; `probe_for=` (default `open_for`) longer than the slowest call; state where the context stores its leases | component | `from sincpro_framework.circuit_breaker import CircuitBreaker, CircuitOpen`; guide `docs/core/circuit-breaker.md` |
 
 Look-alikes: `bus.context(...)` **opens** a context; `self.context` **reads** it inside a handler;
 `bus.current_context()` **reads** it from anywhere else. `replaces=` on a Feature swaps the handler;
@@ -124,7 +124,7 @@ entrypoint: with bus.context({"correlation_id": ..., "user_id": ...}):
   execution of that bus on every thread while the block is open. Use the default (isolated) form.
 - **Writing `self.context[...]` as scratch space.** A mapping write lands on the scope of the call:
   it stays for the rest of the enclosing `with bus.context(...)` block and goes on every later
-  signal. Keep request data in locals; `use_context().set(...)` when only what you run should see it.
+  signal. Put request data in locals; `use_context().set(...)` when only what you run should see it.
 
 ## Opening a context
 
@@ -142,7 +142,7 @@ anywhere with `use_context()`, two ways to write, threads, providers, required k
 propagation: **`sincpro-framework-context`**. What matters here:
 
 - Every context key goes on log lines, spans and error events of that bus;
-  `UseFramework(name, hide_in_logs=["TOKEN"])` keeps a key off them — or make it a `Secret`.
+  `UseFramework(name, hide_in_logs=["TOKEN"])` excludes a key from them — or make it a `Secret`.
 - A bus called from inside another's execution — or inside its `with` — runs under the caller's
   context; nothing it adds flows back.
 - A typed `self.context`: `Feature[Command, Response, MyContext]` with `MyContext` a `TypedDict`, and
@@ -221,14 +221,14 @@ and a `fresh()` generation hears it too.
 
 - **Income** (`sincpro_framework.bus_pipeline.incomes`): every Feature and ApplicationService that
   begins emits an `ExecutionStarted` — the DTO as it was handed, the flow's context — after the
-  context providers and **before the interceptors**. `@bus.on_start`, `starts.subscribe(fn)`,
+  context providers and **before the interceptors**. `@bus.on_start`, `start_listeners.subscribe(fn)`,
   `bus.publish_starts(to=…)`. Depth: `docs/core/incomes.md`.
 - **Outcome** (`sincpro_framework.bus_pipeline.outcomes`): every one that answered emits an
   `ExecutionCompleted` — the DTO, the response; none when an error handler answered for it. When no
   handler answered and the exception reaches the caller, an `ExecutionFailed` goes with it — once,
   where it left the call, naming the use case where it first failed, with its `kind` and
   `retry_after`; the exception carries `failure_id`. `@bus.on_completion` / `@bus.on_failure`,
-  `completions.subscribe(fn)` / `failures.subscribe(fn)`, `bus.publish_completions(to=…)` /
+  `completion_listeners.subscribe(fn)` / `failure_listeners.subscribe(fn)`, `bus.publish_completions(to=…)` /
   `bus.publish_failures(to=…)`. Every one of them hears less when told: `use_cases=[Command, ...]`,
   `when=Condition(field="context.tenant_id", value="acme")` (any criteria filter over the event by
   path — `kind`, `dto.amount`, `response.total`; a list must all hold; also as JSON), and the
@@ -239,8 +239,8 @@ the order of its steps, declared as data — `class RunNightly(Pipeline, Applica
 [CommandCollect, CommandBill]; always = CommandClose` — registered with `@bus.app_service(Command)`.
 Each step is a Feature of the same bus, filled from the input by the names of its fields; `ok=False`
 or an exception ends the run, `always` runs last with `ok` and `failure`. The bus attaches an
-interceptor (`PipelineRecorder`) that keeps the run — a `PipelineRun` — in the context
-(`use_context().pipelines()`), beside the drafts; the same `run_id` again starts over, or goes on
+interceptor (`PipelineRecorder`) that stores the run — a `PipelineRun` — in the context
+(`PipelineRuns.of()`), beside the drafts; the same `run_id` again starts over, or goes on
 with `resume = Resume.CONTINUE`. `by = "<field>"` picks one of several recipes; `records = False`
 leaves the recorder out. Nothing is refused: no tenant, no store or a step the bus does not answer
 is said in the logs. When it needs more, one line each: `retry = Retry()` runs again a step whose
@@ -248,11 +248,11 @@ failure is worth it by its kind (unavailable, conflict, in progress — never `o
 refusal); `Await("approval")` in the steps makes the run wait (`PipelineState.WAITING`) until the same
 `run_id` is run with the input's `approval` filled; `GetRun[Command]` / `FindRuns[Command]` answered
 by a `PipelineReads` Feature read the runs on any wire; `lease = timedelta(minutes=2)` makes it one run
-of a `run_id` at a time across replicas, renewed while it runs, and `use_context().pipelines().abandoned(…)`
+of a `run_id` at a time across replicas, renewed while it runs, and `PipelineRuns.of().abandoned(…)`
 lists the runs whose worker died. Depth: `docs/core/pipelines.md`, `docs/core/leases.md`.
 
-**Guarding a call out of the process** (`sincpro_framework.circuits`). An adapter that reaches
-SIAT, a gateway or another API takes a `Circuit("siat")` in its constructor (registered once in
+**Guarding a call out of the process** (`sincpro_framework.circuit_breaker`). An adapter that reaches
+SIAT, a gateway or another API takes a `CircuitBreaker("siat")` in its constructor (registered once in
 `dependencies.py`, shared by every Feature) and wraps its calls `with self.circuit:` — or decorates
 the method, or `circuit.call(...)`. After `failures` calls in a row that say the dependency is not
 answering (`UNAVAILABLE`, `UNKNOWN_OUTCOME`, `EXHAUSTED`, or an undeclared crash — never an answer
@@ -260,15 +260,15 @@ like `DomainError` or not found; `counts=` overrides) it opens: calls raise `Cir
 then one call is let through to try. A cancelled or interrupted call (`CancelledError`,
 `KeyboardInterrupt`, a generator closed early) neither counts nor clears — put the deadline inside
 the guarded call, not `asyncio.wait_for` around it. "In a row" is approximate under concurrency.
-No store is named: it reads where the running context keeps
+No store is named: it reads where the running context stores
 its leases (memory, or Redis shared by replicas); a store that does not answer lets calls through.
 A Feature never holds a circuit, and retrying is the orchestrator's (pipeline `Retry`, a queue) —
-one layer only. A bus hosted elsewhere has one only when asked: `?circuit=on` on its address, or
-`hosted_by(address, circuit=True | Circuit(...) | False)` in code, which wins; it counts only what
-the caller's transport raised (`is_unreached`), never what the host answered — not even the host's
-own `CircuitOpen`. Depth: `docs/core/circuits.md`.
+one layer only. A bus hosted elsewhere has one only when asked: `?circuit_breaker=on` on its address, or
+`hosted_by(address, circuit_breaker=True | CircuitBreaker(...) | False)` in code, which wins; it counts only what
+the caller's transport raised (`error.unreached`), never what the host answered — not even the host's
+own `CircuitOpen`. Depth: `docs/core/circuit-breaker.md`.
 
-An income and its outcome name the same `execution_id`. What a listener must not do: keep state a
+An income and its outcome name the same `execution_id`. What a listener must not do: hold state a
 process depends on (it may not run) or change the answer. The whole path, step by step:
 `docs/core/execution-path.md`.
 
@@ -288,4 +288,4 @@ on them.
 - Bootstrap, hard rules, DTO/dependency typing: `sincpro-framework`
 - Metrics, traces, errors reporting, `with_trace`: `sincpro-framework-observability`
 - Auth is the outermost interceptor: `sincpro-framework-auth`
-- Real idempotency and query caching — `bus.cache`, `bus.cache.queries(Query)`, `bus.idempotency` on every bus, kept where its context is kept: `sincpro-framework-caching`
+- Real idempotency and query caching — `bus.cache`, `bus.cache.queries(Query)`, `bus.idempotency` on every bus, stored where its context is stored: `sincpro-framework-caching`

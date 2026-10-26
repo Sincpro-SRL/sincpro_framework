@@ -802,12 +802,12 @@ def test_setup_otlp_passes_conf_endpoint_to_the_exporter(monkeypatch):
     )
 
     from sincpro_framework.observability import ObservabilityIdentity
-    from sincpro_framework.observability.registry import registry
+    from sincpro_framework.observability.registry import observability_registry
 
-    registry.reset()
+    observability_registry.reset()
     try:
         status = setup.setup_tracing(ObservabilityIdentity(bus="test-svc"))
         assert status.model_dump() == {"active": True, "state": "on", "reason": "init"}
         assert seen["endpoint"] == "http://collector:4317"
     finally:
-        registry.reset()
+        observability_registry.reset()

@@ -35,7 +35,8 @@ The wires of this package are the transports above. A program that stays up and 
 | `@internal` | Never on any wire, whatever else is declared | decorator | `sincpro_framework.entrypoints` |
 | **gateway** | Reads N buses, resolves what is published on its wire, builds what is served | class (`FastApiGateway`, `RpcGateway`, `GrpcGateway`, `McpGateway`, `QueueGateway`) | `sincpro_framework.entrypoints.<wire>` |
 | **mode** (`Exposure`) | What a gateway publishes: `DECLARED` = only use cases with a binding for its wire; `CATALOG` = every use case | enum | `sincpro_framework.entrypoints` |
-| **catalog** | Every use case of one bus, narrowed by `include` / `exclude` / `layers` / `@internal`. The raw material | class `Catalog` | `sincpro_framework.entrypoints.entrypoint.catalog` |
+| **profile** (`Profile`) | How `FastApiGateway` derives its routes: `RESOURCE` = declared REST paths; `RPC` = every use case, RPC over HTTP | enum | `sincpro_framework.entrypoints` |
+| **catalog** | Every use case of one bus, narrowed by `include` / `exclude` / `layers` / `@internal`. The raw material | class `Catalog` | `sincpro_framework.entrypoints.services.catalog` |
 | **group** | One bounded context's conventions on a wire: prefix, version, tags, namespace, package | DTO `Group`, set with `gateway.group(bus, ...)` | `sincpro_framework.entrypoints` |
 | **operation** | One published use case as facts: alias, Command, handler, schemas, Query or not, access | DTO `Operation` | `sincpro_framework.entrypoints` |
 | **resolved** | An operation with its final binding (precedence applied) and its group | DTO `Resolved` | `sincpro_framework.entrypoints` |
@@ -56,7 +57,7 @@ It reads catalogs, applies precedence, validates (fails closed) and hands the su
 wire's port. Each wire (`fastapi/`, `rpc/`, `grpc/`, `mcp/`, `queue/`) is an optional extra
 that translates the surface into its library's objects. The core never imports a web library.
 The queue wire runs on any `Broker`: a FastStream one (`[faststream]`) or `SqsBroker` (`[aws]`);
-`sincpro_framework.entrypoints.adapters.aws_lambda.sqs_handler([bus])` is a Lambda fed by SQS on
+`sincpro_framework.entrypoints.sqs_handler([bus])` is a Lambda fed by SQS on
 the same wire (`docs/aws/README.md`).
 
 **Inside a service:**
@@ -110,7 +111,7 @@ class IssueInvoice(Feature): ...
 class GetInvoice(Feature): ...
 
 # 2. entrypoints/http/app.py — the only new file
-from sincpro_framework.entrypoints.adapters.fastapi import FastApiGateway
+from sincpro_framework.entrypoints import FastApiGateway
 
 api = FastApiGateway({"billing": billing}, title="Billing API", unguarded=True)
 api.group(billing, version="v1")         # /v1/billing/invoices
@@ -119,7 +120,7 @@ app = api.app()                          # routes, OpenAPI, RFC 9457 problems, /
 
 `uvicorn my_service.entrypoints.http.app:app`. `unguarded=True` is only for a bus with no
 `AccessControl` (see `sincpro-framework-auth`). `FastApiGateway` is the REST host; `RestGateway`
-(Starlette) is frozen and only kept for older services.
+(Starlette) is frozen and remains only for older services.
 
 ## Mistakes an agent makes
 
@@ -200,10 +201,7 @@ the status but no `detail`; one without it is a 500 that says nothing.
 ## Every wire, one base
 
 ```python
-from sincpro_framework.entrypoints.adapters.fastapi import FastApiGateway
-from sincpro_framework.entrypoints.adapters.rpc import RpcGateway
-from sincpro_framework.entrypoints.adapters.grpc import GrpcGateway
-from sincpro_framework.entrypoints.adapters.mcp import McpGateway
+from sincpro_framework.entrypoints import FastApiGateway, GrpcGateway, McpGateway, RpcGateway
 
 FastApiGateway({"billing": billing}).app()
 RpcGateway({"billing": billing}).run()
@@ -222,8 +220,8 @@ alias (`{"billing": billing}`) on a public wire, so renaming the bus never moves
   include=, exclude=)`, `layers=` or `@internal`. In `DECLARED`, `include` only narrows. It
   never publishes.
 
-`FastApiGateway` also takes `profile`: `"resource"` (the default, `DECLARED`, REST paths) or
-`"rpc"` (implies `CATALOG`, `POST /{alias}/{kebab(Dto)}`, RPC over HTTP). An explicit
+`FastApiGateway` also takes `profile` (`Profile`, from `sincpro_framework.entrypoints`):
+`Profile.RESOURCE` (the default, `DECLARED`, REST paths) or `Profile.RPC` (implies `CATALOG`, `POST /{alias}/{kebab(Dto)}`, RPC over HTTP). An explicit
 `exposure=` wins over what the profile implies.
 
 Composition on the gateway, for a binding the code does not declare: `gateway.bind(Command,

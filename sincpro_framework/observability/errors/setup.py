@@ -11,13 +11,13 @@ from typing import Any, Optional
 from sincpro_framework.observability.domain import (
     ComponentStatus,
     ObservabilityIdentity,
+    deployment_tenant,
     failed,
     failure_of,
     off,
     on,
-    tenant,
 )
-from sincpro_framework.observability.registry import registry
+from sincpro_framework.observability.registry import observability_registry
 from sincpro_framework.sincpro_conf import settings
 
 try:
@@ -102,7 +102,7 @@ def client_for(release: str) -> Optional[Any]:
     configured_dsn = dsn()
     if not configured_dsn:
         return None
-    cached = registry.error_client(release)
+    cached = observability_registry.error_client(release)
     if cached is not None:
         return cached
 
@@ -115,11 +115,11 @@ def client_for(release: str) -> Optional[Any]:
         "auto_enabling_integrations": False,
         **privacy_options(),
     }
-    environment = tenant()
+    environment = deployment_tenant()
     if environment:
         client_kwargs["environment"] = environment
     client = sentry_sdk.Client(**client_kwargs)
-    registry.register_error_client(release, client)
+    observability_registry.register_error_client(release, client)
     return client
 
 

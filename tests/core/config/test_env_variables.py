@@ -14,7 +14,7 @@ import pytest
 from pydantic import Field, ValidationError
 from typing_extensions import Annotated
 
-from sincpro_framework.sincpro_conf import SincproConfig, build_config_obj
+from sincpro_framework.settings import SincproConfig, build_config_obj
 
 # Test resource file paths
 TEST_RESOURCES_PATH = os.path.join(os.path.dirname(__file__), "resources")

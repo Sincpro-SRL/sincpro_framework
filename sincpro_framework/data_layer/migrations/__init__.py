@@ -11,16 +11,24 @@ Opt-in, twice: a project may migrate however it likes and never import this; or 
 orchestrator and implement `MigrationEngine` for any store. The core needs no database — the
 Alembic engine is `sincpro_framework.data_layer.orm`, behind the `[migrations]` extra.
 
-`domain/` holds the vocabulary and the engine contract, `adapters/` the in-memory engine and
-a context's `meta_migration.json`, `entrypoint/` what a project drives: a context's stores, the
-timeline and its commands, the command line.
+`domain/` holds the vocabulary, the engine contract, a context's stores and the statuses;
+`adapters/` the in-memory engine and a context's `meta_migration.json`; `infrastructure/` the
+ids of new steps; `services/` the timeline and the operations; `entrypoint/` what a project
+drives: the `Migrations` facade and the command line.
 """
 
 from sincpro_framework.data_layer.migrations.adapters.in_memory import InMemoryEngine
+from sincpro_framework.data_layer.migrations.domain.context_migrations import (
+    ContextMigrations,
+)
 from sincpro_framework.data_layer.migrations.domain.engine import MigrationEngine
 from sincpro_framework.data_layer.migrations.domain.exceptions import (
     MigrationFailed,
     MigrationRefused,
+)
+from sincpro_framework.data_layer.migrations.domain.status import (
+    ChainStatus,
+    MigrationStatus,
 )
 from sincpro_framework.data_layer.migrations.domain.step import (
     Chain,
@@ -29,12 +37,7 @@ from sincpro_framework.data_layer.migrations.domain.step import (
     Step,
 )
 from sincpro_framework.data_layer.migrations.entrypoint.command_line import command_line
-from sincpro_framework.data_layer.migrations.entrypoint.orchestrator import (
-    ChainStatus,
-    Migrations,
-    MigrationStatus,
-)
-from sincpro_framework.data_layer.migrations.entrypoint.registry import ContextMigrations
+from sincpro_framework.data_layer.migrations.entrypoint.orchestrator import Migrations
 
 __all__ = [
     "Chain",

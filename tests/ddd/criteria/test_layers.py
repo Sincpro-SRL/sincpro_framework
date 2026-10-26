@@ -44,7 +44,10 @@ def test_a_layer_never_imports_the_ones_above_it(layer):
     assert reaching == {}
 
 
-def test_nothing_outside_the_package_reaches_into_its_layers():
+def test_outside_the_package_only_the_domain_is_reached_past_the_door():
+    """A name internal to the language — `CursorKeys`, `RESOLVERS`, the class behind `Any` — is
+    imported from the domain file that defines it; the operations are reached through the
+    facades of the door, never through `services/` or `entrypoint/`."""
     outside = {}
     framework = ROOT.parents[1]
     for path in framework.rglob("*.py"):
@@ -56,6 +59,7 @@ def test_nothing_outside_the_package_reaches_into_its_layers():
             if isinstance(node, ast.ImportFrom)
             and node.module
             and node.module.startswith(PREFIX)
+            and not node.module.startswith(f"{PREFIX}domain.")
         }
         if reached:
             outside[str(path.relative_to(framework))] = sorted(reached)

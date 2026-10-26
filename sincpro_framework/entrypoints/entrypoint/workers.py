@@ -21,7 +21,7 @@ Command, a relay pass, or whatever the project writes. This module does not know
 the row, or the broker.
 
 `faststream run` stays the broker's program. A server stays its gateway. This process is how
-a deployment that is not answering a request keeps those loops, one or several.
+a deployment that is not answering a request runs those loops, one or several.
 """
 
 import signal
@@ -92,7 +92,7 @@ class Process:
 
     `run` is called from the main thread when it should handle those signals. A test passes
     `handle_signals=False` and calls `stop`. One loop ending, or raising out of `run`, is
-    logged; the others keep going until `stop`.
+    logged; the others go on running until `stop`.
     """
 
     def __init__(self, *loops: Loop) -> None:

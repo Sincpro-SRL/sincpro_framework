@@ -1,6 +1,6 @@
-"""`Codec`: how a value becomes the bytes a shared store keeps, and back.
+"""`Codec`: how a value becomes the bytes a shared store holds, and back.
 
-Context: only a shared store needs one — a `Cache` with no store keeps the objects themselves.
+Context: only a shared store needs one — a `Cache` with no store holds the objects themselves.
 `adapters/json_codec.py` is the one the framework ships.
 """
 
@@ -13,11 +13,11 @@ class Codec[T](Protocol):
     @property
     def schema(self) -> str:
         """A fingerprint of the shape values are encoded in — part of the key, so a deploy that
-        changes the shape never reads what an older one kept."""
+        changes the shape never reads what an older one stored."""
         ...
 
     def encode(self, value: T) -> bytes:
-        """The bytes the shared store keeps for `value`."""
+        """The bytes the shared store holds for `value`."""
         ...
 
     def decode(self, raw: bytes) -> T:

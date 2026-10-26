@@ -16,7 +16,7 @@ from unittest.mock import MagicMock
 import pytest
 
 from sincpro_framework.observability import ObservabilityIdentity
-from sincpro_framework.observability.registry import registry
+from sincpro_framework.observability.registry import observability_registry
 from sincpro_framework.observability.tracing import setup
 from sincpro_framework.sincpro_conf import settings
 
@@ -30,9 +30,9 @@ ENDPOINT = "http://collector:4317"
 @pytest.fixture(autouse=True)
 def clean_registry():
     """Providers live in the registry; a test must not leak one into the next."""
-    registry.reset()
+    observability_registry.reset()
     yield
-    registry.reset()
+    observability_registry.reset()
 
 
 def identity_for(bus, artifact="sincpro-payments-sdk", version="5.1.0"):
@@ -46,7 +46,7 @@ def setup_for(bus, logger=None, **identity_fields) -> dict:
 
 def provider_of(bus: str):
     """The provider the registry holds for a bus, asserted present."""
-    provider = registry.tracer_provider(bus)
+    provider = observability_registry.tracer_provider(bus)
     assert provider is not None
     return provider
 
@@ -236,7 +236,7 @@ def test_opentelemetrys_own_switch_builds_no_provider(monkeypatch, variable, val
     status = setup_for("common_mcp")
 
     assert status["state"] == "off" and status["reason"] == reason
-    assert registry.tracer_provider("common_mcp") is None
+    assert observability_registry.tracer_provider("common_mcp") is None
 
 
 def test_with_its_exporter_off_a_bus_still_rides_the_hosts_tracer(monkeypatch):
@@ -250,7 +250,7 @@ def test_with_its_exporter_off_a_bus_still_rides_the_hosts_tracer(monkeypatch):
     status = setup_for("siat-soap-sdk")
 
     assert status["state"] == "on" and status["reason"] == "host"
-    assert registry.tracer_provider("siat-soap-sdk") is None
+    assert observability_registry.tracer_provider("siat-soap-sdk") is None
 
 
 def test_a_real_host_provider_is_never_replaced(monkeypatch):
@@ -263,7 +263,7 @@ def test_a_real_host_provider_is_never_replaced(monkeypatch):
     setup_for("payment")
 
     assert registered == []
-    assert registry.tracer_provider("payment") is not host_provider
+    assert observability_registry.tracer_provider("payment") is not host_provider
 
 
 def test_the_process_takes_the_global_provider_never_a_bus(monkeypatch):
@@ -280,8 +280,10 @@ def test_the_process_takes_the_global_provider_never_a_bus(monkeypatch):
 
     setup_for("payment", artifact="sincpro-odoo-mcp", version="0.8.0")
 
-    assert registered == [registry.tracer_provider(PROCESS)]
-    assert registry.tracer_provider(PROCESS) is not registry.tracer_provider("payment")
+    assert registered == [observability_registry.tracer_provider(PROCESS)]
+    assert observability_registry.tracer_provider(
+        PROCESS
+    ) is not observability_registry.tracer_provider("payment")
 
 
 def test_the_process_provider_is_the_same_service_as_its_buses(monkeypatch):
@@ -311,7 +313,7 @@ def test_every_bus_shares_one_process_provider(monkeypatch):
         setup_for(bus, artifact="sincpro-odoo-mcp", version="0.8.0")
 
     assert len(set(id(p) for p in registered)) == 1
-    assert registered[0] is registry.tracer_provider(PROCESS)
+    assert registered[0] is observability_registry.tracer_provider(PROCESS)
 
 
 def test_the_process_provider_is_not_installed_when_the_host_owns_otel(monkeypatch):
@@ -325,7 +327,7 @@ def test_the_process_provider_is_not_installed_when_the_host_owns_otel(monkeypat
     setup_for("payment")
 
     assert registered == []
-    assert registry.tracer_provider(PROCESS) is None
+    assert observability_registry.tracer_provider(PROCESS) is None
 
 
 def test_each_bus_keeps_its_own_provider_under_the_one_service(monkeypatch):
@@ -352,10 +354,10 @@ def test_setting_up_the_same_bus_twice_reuses_its_provider(monkeypatch):
     stub_host_provider(monkeypatch, proxy_provider())
 
     setup_for("payment")
-    first = registry.tracer_provider("payment")
+    first = observability_registry.tracer_provider("payment")
     setup_for("payment")
 
-    assert registry.tracer_provider("payment") is first
+    assert observability_registry.tracer_provider("payment") is first
 
 
 # ---------------------------------------------------------------------------
@@ -366,7 +368,7 @@ def test_setting_up_the_same_bus_twice_reuses_its_provider(monkeypatch):
 def test_tracer_comes_from_the_bus_provider_when_configured(monkeypatch):
     """Spans must be born in this bus's provider to keep its service.name."""
     provider = MagicMock(name="provider")
-    registry.register_tracer_provider("payment", provider)
+    observability_registry.register_tracer_provider("payment", provider)
 
     assert setup.tracer_for("payment") is provider.get_tracer.return_value
 
@@ -379,7 +381,7 @@ def test_tracer_falls_back_to_the_host_provider():
 def test_a_bus_never_borrows_another_bus_provider(monkeypatch):
     """A span exported under another service's name is worse than no span."""
     other = real_provider()
-    registry.register_tracer_provider("payment-qr", other)
+    observability_registry.register_tracer_provider("payment-qr", other)
     stub_host_provider(monkeypatch, other)
 
     assert setup.tracer_for("bank-account") is None
@@ -389,7 +391,7 @@ def test_tracer_is_none_instead_of_raising():
     """A broken provider degrades to no tracing; it never breaks the caller."""
     broken = MagicMock(name="broken_provider")
     broken.get_tracer.side_effect = RuntimeError("no tracer for you")
-    registry.register_tracer_provider("payment", broken)
+    observability_registry.register_tracer_provider("payment", broken)
 
     assert setup.tracer_for("payment") is None
 
@@ -556,7 +558,7 @@ def framework_with_exploding_spans(bus: str):
 
     provider = real_provider()
     provider.add_span_processor(exploding_processor())
-    registry.register_tracer_provider(bus, provider)
+    observability_registry.register_tracer_provider(bus, provider)
 
     class Charge(DataTransferObject):
         amount: int

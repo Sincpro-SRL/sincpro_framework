@@ -11,7 +11,7 @@ import pytest
 
 from sincpro_framework import ApplicationService, DataTransferObject, Feature, UseFramework
 from sincpro_framework.ddd import ValueObject, exceptions
-from sincpro_framework.entrypoints.adapters.grpc import GrpcGateway
+from sincpro_framework.entrypoints import GrpcGateway
 from sincpro_framework.entrypoints.adapters.grpc.client import GrpcClient
 from sincpro_framework.entrypoints.adapters.grpc.proto import DESCRIBE_PATH
 from sincpro_framework.entrypoints.adapters.grpc.wire import context_from_metadata

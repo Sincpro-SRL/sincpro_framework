@@ -1,7 +1,7 @@
 """What a cache or an idempotent run did with each call — for a span, a metric, a test.
 
 Context: without these, fail-safe and a bypassed store hide incidents: the caller gets an answer
-and nobody sees it was a stale one. Every outcome is reported, the observer decides what to keep.
+and nobody sees it was a stale one. Every outcome is reported, the observer decides what to record.
 """
 
 from enum import StrEnum
@@ -12,15 +12,15 @@ class CacheOutcome(StrEnum):
     """What a `Cache` or a `QueryCaching` call did — exactly one per call."""
 
     HIT = "hit"
-    """A kept value, fresh and valid, served as is."""
+    """A cached value, fresh and valid, served as is."""
     STALE = "stale"
-    """A kept value past its lifetime, served while another caller recomputes it."""
+    """A cached value past its lifetime, served while another caller recomputes it."""
     COMPUTED = "computed"
-    """Computed by this caller — missing, expiring or no longer valid — and kept."""
+    """Computed by this caller — missing, expiring or no longer valid — and cached."""
     COALESCED = "coalesced"
     """Waited for another caller's computation and served its value."""
     INVALIDATED = "invalidated"
-    """A kept value whose validation no longer holds: it was not served."""
+    """A cached value whose validation no longer holds: it was not served."""
     FALLBACK = "fallback"
     """Computing or validating failed and the last good value was served (fail-safe)."""
     BYPASSED = "bypassed"

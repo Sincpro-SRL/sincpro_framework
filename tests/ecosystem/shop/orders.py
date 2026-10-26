@@ -20,9 +20,9 @@ from sincpro_framework.data_layer.orm.sqlalchemy.entrypoint.template_table impor
     event_columns,
 )
 from sincpro_framework.ddd.criteria import Condition, Criteria, Sort
-from sincpro_framework.ddd.entity import ChangeTrackingMixin, Entity
+from sincpro_framework.ddd.entity import Entity
 from sincpro_framework.ddd.entity.entity_collection import EntityCollection
-from sincpro_framework.ddd.events import DomainEvent
+from sincpro_framework.ddd.events import ChangeTrackingMixin, DomainEvent
 
 from .contracts import InvoiceIssued, OrderPlaced, StockRejected, StockReserved
 

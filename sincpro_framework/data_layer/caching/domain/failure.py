@@ -1,4 +1,4 @@
-"""`FailurePolicy`: what a call answers when computing, or validating, a kept value fails.
+"""`FailurePolicy`: what a call answers when computing, or validating, a cached value fails.
 
     Raise()                                                 the default: the error, nothing served
     FailSafe(serve_for=timedelta(hours=1), throttle_for=timedelta(seconds=30),
@@ -7,8 +7,8 @@
 Context: a source that is down turns every call of a cached value into an error the moment the
 value lapses — although the value was right a minute ago, and still is, as far as anybody knows.
 `FailSafe` is RFC 5861's `stale-if-error` and FusionCache's fail-safe: past its servable life, a
-kept value is still served for `serve_for` when computing it raises, and re-kept fresh for
-`throttle_for`, so a source that is down is asked once per `throttle_for`, not once per call.
+cached value is still served for `serve_for` when computing it raises, and stored again as fresh
+for `throttle_for`, so a source that is down is asked once per `throttle_for`, not once per call.
 
 It never serves a value its validation *rejected*: fail-safe covers a source that cannot answer,
 not one that answered no — serving it would hand out what the source revoked. A validation that
@@ -28,7 +28,7 @@ class FailurePolicy(ABC):
     last_resort_for: timedelta = timedelta(0)
     """How long past its servable life a value may still be served when computing it fails."""
     throttle_for: timedelta = timedelta(0)
-    """How long a value served as a fallback is re-kept fresh, sparing the source."""
+    """How long a value served as a fallback is stored again as fresh, sparing the source."""
 
     @abstractmethod
     def handles(self, error: Exception) -> bool:

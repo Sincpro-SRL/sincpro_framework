@@ -13,11 +13,10 @@ import pytest
 
 from sincpro_framework import ApplicationService, DataTransferObject, Feature, UseFramework
 from sincpro_framework.ddd import Entity
-from sincpro_framework.entrypoints.adapters.grpc import GrpcGateway
-from sincpro_framework.entrypoints.adapters.rpc import RpcGateway
+from sincpro_framework.entrypoints import GrpcGateway, RpcGateway
 from sincpro_framework.entrypoints.domain.surface import Exposure
-from sincpro_framework.entrypoints.entrypoint.catalog import Catalog
-from sincpro_framework.entrypoints.services.scalar_executor import dump_scalar_result
+from sincpro_framework.entrypoints.services.catalog import Catalog
+from sincpro_framework.entrypoints.services.scalar_execution import ScalarExecution
 from sincpro_framework.introspection import inspector
 
 
@@ -230,7 +229,7 @@ def test_unrenderable_leaf_is_stringified_not_raised():
         def __str__(self) -> str:
             return "opaque-value"
 
-    dumped = dump_scalar_result({"label": "monthly", "raw": Opaque()})
+    dumped = ScalarExecution.dump({"label": "monthly", "raw": Opaque()})
 
     assert dumped == {"label": "monthly", "raw": "opaque-value"}
     assert json.dumps(dumped)

@@ -4,8 +4,8 @@ its tests use until it needs a store its replicas share."""
 import math
 from datetime import UTC, datetime
 
+from sincpro_framework.data_layer.store import InMemoryKeyValue, KeyValueStore
 from sincpro_framework.runtime.testing import KeyValueStoreContract, ManualClock
-from sincpro_framework.store import InMemoryKeyValue, KeyValueStore
 
 
 class TestInMemoryKeyValue(KeyValueStoreContract):

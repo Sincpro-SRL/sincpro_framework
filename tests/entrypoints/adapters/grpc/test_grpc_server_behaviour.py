@@ -17,7 +17,7 @@ from grpc_reflection.v1alpha import reflection_pb2  # pyright: ignore[reportMiss
 
 from sincpro_framework import DataTransferObject, Feature, UseFramework
 from sincpro_framework.common.transport import grpc as transport
-from sincpro_framework.entrypoints.adapters.grpc import GrpcGateway
+from sincpro_framework.entrypoints import GrpcGateway
 from sincpro_framework.entrypoints.adapters.grpc.client import GrpcClient
 from sincpro_framework.entrypoints.domain.surface import Exposure
 

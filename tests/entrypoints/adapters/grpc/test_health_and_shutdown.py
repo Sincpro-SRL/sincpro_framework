@@ -22,7 +22,7 @@ from grpc_health.v1 import (  # pyright: ignore[reportMissingImports]
 
 from sincpro_framework import DataTransferObject, Feature, UseFramework
 from sincpro_framework.common.transport.grpc import HEALTH_SERVICE, SHUTDOWN_SIGNALS
-from sincpro_framework.entrypoints.adapters.grpc import GrpcGateway
+from sincpro_framework.entrypoints import GrpcGateway
 from sincpro_framework.entrypoints.adapters.grpc.client import GrpcClient
 from sincpro_framework.entrypoints.domain.surface import Exposure
 
@@ -300,7 +300,7 @@ def test_sigterm_turns_every_service_not_serving_before_the_server_stops(monkeyp
 def test_rpc_app_serves_healthz_by_default():
     from starlette.testclient import TestClient
 
-    from sincpro_framework.entrypoints.adapters.rpc import RpcGateway
+    from sincpro_framework.entrypoints import RpcGateway
 
     bus = _bus("pay")
     client = TestClient(RpcGateway({"pay": bus}).app())
@@ -314,7 +314,7 @@ def test_rpc_app_serves_healthz_by_default():
 def test_rpc_health_path_none_drops_the_route():
     from starlette.testclient import TestClient
 
-    from sincpro_framework.entrypoints.adapters.rpc import RpcGateway
+    from sincpro_framework.entrypoints import RpcGateway
 
     client = TestClient(RpcGateway({"pay": _bus("pay")}).app(health_path=None))
 
@@ -322,7 +322,7 @@ def test_rpc_health_path_none_drops_the_route():
 
 
 def test_rpc_is_healthy_reflects_every_registered_bus():
-    from sincpro_framework.entrypoints.adapters.rpc import RpcGateway
+    from sincpro_framework.entrypoints import RpcGateway
 
     gateway = RpcGateway({"pay": _bus("pay"), "qr": _bus("qr")})
 

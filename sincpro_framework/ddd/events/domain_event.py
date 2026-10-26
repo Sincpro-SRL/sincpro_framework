@@ -12,11 +12,11 @@
 **An event is a DTO, and that is the whole design.** The framework already routes a DTO to
 the Feature registered for its class name, so a subscriber is nothing new: a Feature on some
 bounded context's bus, registered for the event class — `@bus.feature([CommandX, EventY])`
-takes both. There is no second registry to keep in step with the first.
+takes both. There is no second registry to hold in step with the first.
 
 The aggregate records; it never publishes. Publishing from `domain/` would put a bus there and
 announce facts a rollback then undoes. What is recorded lives in memory and dies with the
-object: nothing here stores an event. What keeps them is the repository — an event is an
+object: nothing here stores an event. What stores them is the repository — an event is an
 entity, saved in its bounded context's event table — and what carries them is
 `sincpro_framework.event_driven`.
 
@@ -53,7 +53,7 @@ from datetime import datetime
 from typing import Any, ClassVar
 
 from sincpro_framework.common.ids import new_entity_id
-from sincpro_framework.context.domain.execution import chained
+from sincpro_framework.context import Chain
 from sincpro_framework.ddd import exceptions
 from sincpro_framework.ddd.entity import Entity, utc_now
 from sincpro_framework.ddd.entity.entity import json_serializer
@@ -83,7 +83,7 @@ class DomainEvent(Entity):
 
     Carried on the event rather than looked up later: an event that crossed to another service
     has no class there to ask, and **an audit says what a person saw at the time** — rename the
-    wording next year and the old records have to keep the old words.
+    wording next year and the old records have to preserve the old words.
     """
     created_at: datetime = field(default_factory=utc_now)
     entity_type: str = ""
@@ -166,14 +166,14 @@ class DomainEvent(Entity):
         **For an event that caused another.** An event recorded, published or saved inside an
         execution already joins that execution's chain on its own (`chain_for`); `caused_by` is
         for the cause the framework cannot see — an event in hand, from another flow — and what it
-        sets is kept.
+        sets is preserved.
 
         A new event comes back; the one handed in is untouched, the way a fact should be. The rule
-        is `chained`, the one an execution follows too (`sincpro_framework.context.domain.execution`).
+        is `Chain.after`, the one an execution follows too (`sincpro_framework.context.domain.execution`).
         """
-        causation_id, correlation_id = chained(cause.id, cause.correlation_id, self.id)
+        chain = Chain.after(cause.id, cause.correlation_id, self.id)
         return dataclasses.replace(
-            self, causation_id=causation_id, correlation_id=correlation_id
+            self, causation_id=chain.causation_id, correlation_id=chain.correlation_id
         )
 
     def __repr__(self) -> str:

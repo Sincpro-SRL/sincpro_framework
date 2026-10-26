@@ -8,7 +8,11 @@ never run it.
 A select must not load the detail, and a get is one record, never a page.
 """
 
-from sincpro_framework.ddd.criteria import Criteria, Pagination, Specification, with_text
+from sincpro_framework.ddd.criteria import (
+    Criteria,
+    Pagination,
+    Specification,
+)
 from sincpro_framework.ddd.entity.entity_meta import presentation_of
 
 NAME_SEARCH_LIMIT = 8
@@ -37,7 +41,7 @@ def matching(model: type, text: str) -> Criteria:
         limit = NAME_SEARCH_LIMIT if not literal else 0
         return Criteria(pagination=Pagination(limit=limit), specification=reference)
     return Criteria(
-        where=with_text(template.where, literal),
+        where=template.where.with_text(literal) if template.where is not None else None,
         pagination=Pagination(limit=NAME_SEARCH_LIMIT),
         specification=reference,
     )

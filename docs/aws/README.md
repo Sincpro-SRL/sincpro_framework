@@ -22,7 +22,7 @@ does — the environment, a profile, the role of the task or the function. A cli
 
 ```python
 from sincpro_framework.context import KeyValueContexts
-from sincpro_framework.store.adapters.dynamodb import DynamoKeyValue
+from sincpro_framework.data_layer.store import DynamoKeyValue
 
 billing.store_context_in(KeyValueContexts(DynamoKeyValue("billing-shared")))      # simple
 DynamoKeyValue("billing-shared", client=dynamodb, prefix="billing:")            # advanced
@@ -64,7 +64,8 @@ outbox (`RepositoryQueue`) and let the relay send it with `Publisher(SnsQueue(..
 ## Consuming a queue: `SqsBroker`
 
 ```python
-from sincpro_framework.entrypoints.adapters.queue import QueueGateway, SqsBroker, subscribe
+from sincpro_framework.entrypoints import QueueGateway, subscribe
+from sincpro_framework.entrypoints.adapters.queue import SqsBroker
 
 broker = SqsBroker()                                                   # simple
 QueueGateway(broker, [billing, accounting]).build()                    # Commands declared, every event heard
@@ -85,7 +86,7 @@ EventBridge rule put on the queue is opened, raw delivery or not.
 ## A Lambda fed by SQS
 
 ```python
-from sincpro_framework.entrypoints.adapters.aws_lambda import sqs_handler
+from sincpro_framework.entrypoints import sqs_handler
 
 handler = sqs_handler([billing])                                       # simple
 handler = sqs_handler([billing], options=QueueOptions(max_attempts=5), broker=SqsBroker(queues=...))
@@ -120,10 +121,10 @@ service does not hold falls back to the default. See [settings](../core/settings
 
 | Adapter | Module | Test |
 |---|---|---|
-| `DynamoKeyValue` | `sincpro_framework.store.adapters.dynamodb` | `tests/data_layer/caching/test_provider_dynamodb.py` |
+| `DynamoKeyValue` | `sincpro_framework.data_layer.store` | `tests/data_layer/caching/test_provider_dynamodb.py` |
 | `SnsQueue` · `SqsQueue` · `EventBridgeQueue` | `sincpro_framework.event_driven.adapters.aws` | `tests/entrypoints/adapters/queue/test_sqs_broker.py` |
 | `SqsBroker` | `sincpro_framework.entrypoints.adapters.queue` | `tests/entrypoints/adapters/queue/test_sqs_broker.py` |
-| `sqs_handler` | `sincpro_framework.entrypoints.adapters.aws_lambda` | `tests/entrypoints/adapters/aws_lambda/test_sqs_handler.py` |
+| `sqs_handler` | `sincpro_framework.entrypoints` | `tests/entrypoints/adapters/aws_lambda/test_sqs_handler.py` |
 | `ParameterStore` · `SecretsManager` | `sincpro_framework.settings.adapters.aws` | `tests/settings/test_aws_sources.py` |
 
 Every test runs on [moto](https://github.com/getmoto/moto): no account, no network.

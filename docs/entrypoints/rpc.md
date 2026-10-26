@@ -15,10 +15,11 @@ rpc.discover                      registries                  DataTransferObject
 Python remains: framework(dto)                                ValueObject
 ```
 
-Package: `sincpro_framework.entrypoints.adapters.rpc` (`RpcGateway`, `build_rpc_app`, `JsonRpcWire`,
-`RpcSurface`, `dispatch`, `http_status`, `operation_name`). Feature name: **`entrypoint_rpc`**.
+Package: `RpcGateway` from `sincpro_framework.entrypoints`; the wire,
+`sincpro_framework.entrypoints.adapters.rpc` (`JsonRpcWire`, `RpcSurface`, `dispatch`,
+`http_status`, `is_json_media_type`, `operation_name`). Feature name: **`entrypoint_rpc`**.
 
-The bus projection is shared: `sincpro_framework.introspection` describes what exists (`FeatureOrAppServiceMetadata`/`DtoMetadata`), `Catalog` / `PackedFeatureOrAppService` in [`catalog.py`](../../sincpro_framework/entrypoints/entrypoint/catalog.py) packages it for JSON. MCP and JSON-RPC only add a wire. REST/CLI should do the same — reuse `Catalog`, do not reimplement it.
+The bus projection is shared: `sincpro_framework.introspection` describes what exists (`FeatureOrAppServiceMetadata`/`DtoMetadata`), `Catalog` ([`catalog.py`](../../sincpro_framework/entrypoints/services/catalog.py)) packages it for JSON as `PackedFeatureOrAppService` ([`packed.py`](../../sincpro_framework/entrypoints/domain/packed.py)). MCP and JSON-RPC only add a wire. REST/CLI should do the same — reuse `Catalog`, do not reimplement it.
 
 MCP stays `entrypoint_mcp`. Do not share a port with FastMCP — MCP already uses JSON-RPC methods `tools/list` / `tools/call`.
 
@@ -279,7 +280,7 @@ Both limits are the gateway's, and published in the document as `x-sincpro-limit
 ```python
 RpcGateway({"qr": qr})                                        # 50 calls, 1 MiB
 RpcGateway({"qr": qr}, max_batch_size=10, max_body_bytes=64 * 1024)
-build_rpc_app({"qr": qr}, max_batch_size=10)
+RpcGateway({"qr": qr}, max_batch_size=10).app()
 ```
 
 A body with a `Content-Length` over the limit is refused before a byte of it is read; a body
@@ -298,8 +299,9 @@ A route of the project's, under any framework, runs **the same path** the gatewa
 the gateway's own route calls `dispatch` too (PRD_15 §1.2; a parity test compares both):
 
 ```python
-from sincpro_framework.auth import credentials_from_asgi
-from sincpro_framework.entrypoints.adapters.rpc import RpcGateway, dispatch, http_status
+from sincpro_framework.auth import Credentials
+from sincpro_framework.entrypoints import RpcGateway
+from sincpro_framework.entrypoints.adapters.rpc import dispatch, http_status
 
 surface = RpcGateway({"billing": billing}).build()     # validated once, at startup
 
@@ -308,7 +310,7 @@ async def rpc_endpoint(request):
         dispatch,
         surface,
         await request.body(),                            # bytes: size-checked, then parsed
-        credentials=credentials_from_asgi(request.scope),
+        credentials=Credentials.from_asgi(request.scope),
         headers=request.headers,                         # X-Correlation-Id, traceparent
     )
     status, headers = http_status(surface, reply)        # 200 / 204 / 401 + WWW-Authenticate / 413
@@ -399,7 +401,6 @@ enforced after the request already arrived.
 | `.app(middleware=, routes=, lifespan=, health_path=, **kwargs)` | Starlette: `POST /rpc`, `GET /openrpc.json`, `GET /healthz`, composable. |
 | `.health_route(path=)`, `.is_healthy()` | The health route; the check itself. |
 | `.run(host=..., port=...)` | uvicorn. |
-| `build_rpc_app(buses, ..., exposure=, unguarded=)` | Same as `RpcGateway(...).app()`. |
 | `JsonRpcWire(title=, version=, max_batch_size=, max_body_bytes=)` | The wire: derivation, the wire's refusals, `build`. |
 | `dispatch`, `http_status`, `operation_name` | Full control; the operation of a DTO name. |
 
@@ -413,17 +414,21 @@ enforced after the request already arrived.
 sincpro_framework/
 ├── introspection/         # shared: bus → FeatureOrAppServiceMetadata/DtoMetadata (name, type, own-docstring description)
 └── entrypoints/
-    ├── scalar_executor.py # shared: Scalar (dict) in/out execution against a UseFramework
-    ├── catalog.py         # shared: FeatureOrAppServiceMetadata → PackedFeatureOrAppService (JSON schema, binary check)
-    └── rpc/               # entrypoint_rpc
-        ├── __init__.py    # re-exports RpcGateway, build_rpc_app, JsonRpcWire, dispatch, ...
+    ├── services/
+    │   ├── scalar_execution.py # shared: ScalarExecution — Scalar (dict) in/out against a UseFramework
+    │   ├── catalog.py     # shared: FeatureOrAppServiceMetadata → PackedFeatureOrAppService (JSON schema, binary check)
+    │   └── gateway.py     # shared: Gateway, the base every wire extends
+    ├── entrypoint/
+    │   └── rpc.py         # RpcGateway: the core Gateway on the "rpc" wire
+    └── adapters/rpc/      # entrypoint_rpc — the wire, knowing nothing of the services
+        ├── __init__.py    # re-exports JsonRpcWire, dispatch, http_status, ...
         ├── errors.py      # the error catalogue: codes, `data` (kind, reason, retryable), components.errors
         ├── jrpc.py        # the protocol: requests, batches, notifications, OpenRPC document
         ├── wire.py        # JsonRpcWire (names, refusals, build), RpcSurface, dispatch, http_status
-        └── entrypoint.py  # RpcGateway: the core Gateway on the "rpc" wire, and the Starlette routes
+        └── serving.py     # the Starlette routes, app and uvicorn
 ```
 
-Same split as `entrypoint_mcp`: `entrypoint.py` orchestrates, `jrpc.py` holds everything specific to the JSON-RPC wire. A future protocol under `entrypoints/` follows the same two-file recipe. `jrpc.py`'s `execute()` (context/tracing around a call) comes from `scalar_executor.py`, not from `catalog.py` — it is orthogonal to packaging metadata into a wire DTO, and MCP does not need it (FastMCP has no per-request context sibling field the way JSON-RPC does).
+Same split as `entrypoint_mcp`: `entrypoint/rpc.py` composes, `adapters/rpc/` holds everything specific to the JSON-RPC wire. A future protocol follows the same recipe. The context/tracing around a call in `jrpc.py` comes from each operation's `call` — `ScalarExecution.execute` bound by the catalog (`scalar_execution.py`), handed to the wire — not from `catalog.py`'s packaging — it is orthogonal to packaging metadata into a wire DTO, and MCP does not need it (FastMCP has no per-request context sibling field the way JSON-RPC does).
 
 ---
 

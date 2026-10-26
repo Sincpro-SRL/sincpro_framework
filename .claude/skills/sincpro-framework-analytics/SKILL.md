@@ -17,7 +17,7 @@ skill stands alone; the deep docs it names live in the framework repository, not
   pivot of its own), not a cache shared by replicas, and not the way to compute a total: an
   aggregate the database can answer is a `Criteria` with measures/group_by.
 - **Runtime use cases** change behaviour without a deploy: a Command, Response and one Feature or
-  ApplicationService kept as Python source in a store, loaded onto a new generation of the bus. It
+  ApplicationService stored as Python source in a store, loaded onto a new generation of the bus. It
   is not a sandbox (stored source runs with the service's permissions) and not configuration (that
   is settings). When a deploy is cheap, code reviewed in a PR is simpler.
 
@@ -30,7 +30,7 @@ skill stands alone; the deep docs it names live in the framework repository, not
 | Fingerprint | The key of a read: filter, order, mask, scope — never the page | function | `repository.fingerprint(target, criteria)` |
 | `invalidate_on_commit` | Lets a cache go of an aggregate's reads when a write of it commits | function | `from sincpro_framework.data_layer.orm import invalidate_on_commit` |
 | `RuntimeUseCase` | A use case as data: `name`, `source`, `version`, `active`, `replaces` | DTO | `from sincpro_framework.runtime.runtime_use_cases import RuntimeUseCase` |
-| `UseCaseStore` | Where use cases are kept: `active()`, `save(use_case)` | port (abstract) | `from sincpro_framework.runtime.runtime_use_cases import UseCaseStore` |
+| `UseCaseStore` | Where use cases are stored: `active()`, `save(use_case)` | port (abstract) | `from sincpro_framework.runtime.runtime_use_cases import UseCaseStore` |
 | `InMemoryUseCases` | Store in the process | adapter | `from sincpro_framework.runtime.runtime_use_cases import InMemoryUseCases` |
 | `SqlUseCases` / `use_case_table` | Store in a table of the context's database / that table on its `MetaData` | adapter / function | `from sincpro_framework.data_layer.orm import SqlUseCases, template_table` → `template_table.use_case_table` (extra `[sqlalchemy]`) |
 | `BusRegistry` | The code's bus plus the stored use cases, as generations: `current`, `generation`, `in_force`, `execute`, `reload`, `check`, `put`, `check_all` | registry | `from sincpro_framework.runtime.runtime_use_cases import BusRegistry` |
@@ -103,11 +103,11 @@ request → registry.execute("billing.CommandQuote", payload)
   the database (`sincpro-framework-criteria`); a cross-replica answer cache is `QueryCaching`.
 - **Serving from the context's bus, or mounting an entrypoint on one generation** — `billing` never
   answers a stored use case, and a stored `replaces=` silently loses to the code handler there. An
-  entrypoint holds the bus object it was given and keeps answering that generation after a
+  entrypoint holds the bus object it was given and still answers that generation after a
   reload. Read `registry.current` per request, or route by name through `registry.execute`.
 - **Expecting a save on one replica to reach the others** — each replica loads on its own
   `reload()` (`False` when nothing changed). Call it from a cron, or after each save.
-- **Building a stored Command from its class, or keeping one across a reload** — a stored Command
+- **Building a stored Command from its class, or holding one across a reload** — a stored Command
   is a new class per generation, answered only by that generation's bus. Reach it by name.
 - **`expose()` after the bus is built** — `catalog()`, `validate()`, `current` and the first
   execution build it; `expose()` then raises. Call it in the context's `__init__.py`, right after
@@ -143,7 +143,7 @@ registry.execute("billing.CommandQuote", {"amount": 100})
 
 `check(draft)` before saving; `put(use_case)` = check + save + swap, atomically; `check_all()` in
 CI (a refactor of the code can break a stored source that nothing reloads). Saving is running
-code: keep it behind the review a deploy has. Full detail:
+code: put it behind the review a deploy has. Full detail:
 [references/runtime-use-cases.md](references/runtime-use-cases.md); deep doc in the framework
 repo: `docs/runtime_use_cases/README.md`, PRD_06 and PRD_07.
 

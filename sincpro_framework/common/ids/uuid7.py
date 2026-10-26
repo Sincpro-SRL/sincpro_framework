@@ -5,7 +5,7 @@ event's and every execution's.
     moment_of(that)            datetime(2026, 10, 2, …, tzinfo=UTC)
 
 **Sortable, because its leading 48 bits are a millisecond timestamp** — ordering by id *is*
-ordering by time, and the moment something began is read off its id instead of being kept twice.
+ordering by time, and the moment something began is read off its id instead of being stored twice.
 Unique across machines with no coordination.
 
 Python 3.12 and 3.13 have no `uuid.uuid7`; `uuid7()` below is RFC 9562 by hand and defers to the

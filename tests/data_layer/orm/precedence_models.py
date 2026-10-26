@@ -18,7 +18,7 @@ from sqlalchemy.engine import Dialect
 from sqlalchemy.orm import registry
 from sqlalchemy.types import TypeDecorator
 
-from sincpro_framework.data_layer.orm import Relation, map_aggregates
+from sincpro_framework.data_layer.orm import TableRelation, map_aggregates
 from sincpro_framework.data_layer.orm.sqlalchemy.domain.custom_fields import JsonText
 from sincpro_framework.data_layer.orm.sqlalchemy.entrypoint.template_table import entity_table
 from sincpro_framework.ddd.entity import Entity
@@ -108,6 +108,8 @@ def declare() -> None:
         desk,
         {Person: person_table, Manuscript: manuscript_table, Chapter: chapter_table},
         relations={
-            Manuscript: {"editor": Relation.foreign_key(Person, identified_by="editor_id")}
+            Manuscript: {
+                "editor": TableRelation.foreign_key(Person, identified_by="editor_id")
+            }
         },
     )

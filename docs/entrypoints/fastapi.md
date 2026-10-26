@@ -37,8 +37,8 @@ my_service/
 
 | Profile | What is published | Paths |
 |---|---|---|
-| `resource` (the default) | only the use cases with a `@rest...` binding (PRD_14 `DECLARED`) | what each binding declares, under the group's prefix |
-| `rpc` (`profile="rpc"`) | every use case (`CATALOG`), each one logged | `POST /{group}/{kebab(Dto)}`; a `Query` on `GET`, and on `POST` for a criteria too long for a URL. This is RPC over HTTP, not REST |
+| `Profile.RESOURCE` (the default) | only the use cases with a `@rest...` binding (PRD_14 `DECLARED`) | what each binding declares, under the group's prefix |
+| `Profile.RPC` (`profile=Profile.RPC`) | every use case (`CATALOG`), each one logged | `POST /{group}/{kebab(Dto)}`; a `Query` on `GET`, and on `POST` for a criteria too long for a URL. This is RPC over HTTP, not REST |
 
 What a binding leaves out is derived: `GET` for a `Query`, `POST` for any other Command, `204` for a
 use case whose `execute` answers `None`. The `operationId` is the DTO's name. When two contexts
@@ -61,12 +61,12 @@ from sincpro_framework.ddd.query import Query
 from sincpro_framework.entrypoints.entrypoint.decorators import rest
 from sincpro_framework.entrypoints.adapters.fastapi import (
     BusCall,
-    FastApiGateway,
     bus_call,
     install_problem_handlers,
     operation_extra,
     problem_responses,
 )
+from sincpro_framework.entrypoints import FastApiGateway
 
 
 class BillingPermission(Permission):

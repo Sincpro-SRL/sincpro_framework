@@ -11,8 +11,8 @@ document by one rule.
 
 ## Context
 
-A service needs typed, validated configuration that differs per deployment, with secrets kept out
-of the repository, read once at import. The framework gives one function that turns the YAML file
+A service needs typed, validated configuration that differs per deployment, with secrets stored outside
+the repository, read once at import. The framework gives one function that turns the YAML file
 plus the environment into a pydantic object: the whole project's, one bounded context's, or any
 subset. The same mechanism configures the framework itself (log, OTLP, Sentry, release, tenant).
 
@@ -27,38 +27,38 @@ subset. The same mechanism configures the framework itself (log, OTLP, Sentry, r
 
 | Term | What it is | Kind | Import |
 |---|---|---|---|
-| `SincproConfig` | Base of every shape: a pydantic model that resolves `$ENV:` values | DTO | `from sincpro_framework.sincpro_conf import SincproConfig` |
+| `SincproConfig` | Base of every shape: a pydantic model that resolves `$ENV:` values | DTO | `from sincpro_framework.settings import SincproConfig` |
 | shape | Any `SincproConfig` subclass: the project's, a context's, a subset | DTO | (your class) |
-| `build_config_obj(Shape, file, path)` | Reads the file, resolves `Shape` at the dotted `path`, validates once | function | `from sincpro_framework.sincpro_conf import build_config_obj` |
+| `build_config_obj(Shape, file, path)` | Reads the file, resolves `Shape` at the dotted `path`, validates once | function | `from sincpro_framework.settings import build_config_obj` |
 | `$ENV:NAME` | A value in the YAML that reads environment variable `NAME` | setting | (YAML syntax) |
 | `env_prefix` | `ClassVar[str]` on the **root** shape: reads `<PREFIX>__<PATH>` variables | setting | attribute of `SincproConfig` |
-| `Secret[T]` | pydantic's `Secret`: masked in repr/str/logs, `.get_secret_value()` reads it | DTO | `from sincpro_framework.sincpro_conf import Secret` |
-| `describe_settings(obj)` | Each value by path, with its type and where it came from | function | `from sincpro_framework.sincpro_conf import describe_settings` |
-| `SettingDescription` | One row of `describe_settings`: `path`, `type`, `value`, `source` | DTO | `from sincpro_framework.sincpro_conf import SettingDescription` |
-| `FrameworkSettings` | The framework's own fields, inherited by a project's shared shape | DTO | `from sincpro_framework.sincpro_conf import FrameworkSettings` |
-| `DefaultFrameworkConfig` | The shape of the framework's own settings | DTO | `from sincpro_framework.sincpro_conf import DefaultFrameworkConfig` |
+| `Secret[T]` | pydantic's `Secret`: masked in repr/str/logs, `.get_secret_value()` reads it | DTO | `from sincpro_framework.settings import Secret` |
+| `describe_settings(obj)` | Each value by path, with its type and where it came from | function | `from sincpro_framework.settings import describe_settings` |
+| `SettingDescription` | One row of `describe_settings`: `path`, `type`, `value`, `source` | DTO | `from sincpro_framework.settings import SettingDescription` |
+| `FrameworkSettings` | The shape of the framework's own settings; a project's shared shape may inherit it | DTO | `from sincpro_framework.settings import FrameworkSettings` |
 | `settings` (framework's) | The framework's settings object, built at import | setting | `from sincpro_framework.sincpro_conf import settings` |
 | `SINCPRO_FRAMEWORK_CONFIG_FILE` | Env var: another file for the framework's own settings | setting | (environment) |
-| `load_yaml_file` | Reads the YAML document as a dict | adapter | `from sincpro_framework.sincpro_conf import load_yaml_file` |
+| `load_yaml_file` | Reads the YAML document as a dict | adapter | `from sincpro_framework.settings import load_yaml_file` |
 | `settings_scope_violations` | Test helper: a context reading another context's section | function | `from sincpro_framework.runtime.testing import settings_scope_violations` |
 | `override_dependencies` | Test helper: swap a registered dependency (a settings copy) | function | `from sincpro_framework.runtime.testing import override_dependencies` |
 
 Look-alikes: the **framework's** `settings` (`sincpro_framework.sincpro_conf.settings`) is not the
-**project's** singleton (`<pkg>.settings.settings`). `FrameworkSettings` is the class a project
-inherits; `DefaultFrameworkConfig` is the shape the framework builds for itself.
+**project's** singleton (`<pkg>.settings.settings`). `FrameworkSettings` is both the shape the
+framework builds for itself and the class a project's shared shape inherits. `sincpro_conf` and
+`sincpro_framework.settings` answer the same names; `sincpro_conf` also holds the framework's `settings`.
 
 ## Architecture
 
 **In the framework** (`sincpro_framework/settings/`, primary dependencies only: pydantic, PyYAML):
 
 ```text
-settings/domain/      SincproConfig, Secret, FrameworkSettings, DefaultFrameworkConfig;
-                      resolution: sections, nested shapes, the cascade
-settings/adapters/    the document's sources: the YAML file, the environment by path
-settings/building.py  build_config_obj
-settings/describe.py  describe_settings
-sincpro_conf.py       the entry point projects import; builds the framework's own `settings`
+settings/domain/      SincproConfig, Secret, FrameworkSettings, SettingDescription
+settings/adapters/    the document's sources: the YAML file, the environment by path, AWS
+settings/services/    resolution (sections, nested shapes, the cascade), building, description
+settings/entrypoint/  build_config_obj, and the framework's own `settings` built at import
                       from conf/sincpro_framework_conf.yml (or $SINCPRO_FRAMEWORK_CONFIG_FILE)
+settings/__init__.py  the door of every public name but `settings`
+sincpro_conf.py       the door projects have always used: the same names, and the framework's `settings`
 ```
 
 No ports and no optional extras: the sources are plain functions.
@@ -84,7 +84,7 @@ Each bounded context owns its settings, at its own root. The YAML stays one docu
 
 `<ctx>/settings.py` imports only `common/` and the framework (no import cycle); its shape still
 inherits from the sections above (`<pkg>.environment` reaches `<ctx>` unless `<ctx>:` sets it).
-A service with one context keeps a root `config.py` with `build_config_obj(Config, FILE, "<pkg>")`.
+A service with one context has a root `config.py` with `build_config_obj(Config, FILE, "<pkg>")`.
 
 **One resolution:**
 
@@ -96,7 +96,7 @@ env vars ──┘  (<PREFIX>__PATH placed as $ENV: at its path)                
 
 ## Mistakes an agent makes
 
-- **A typo in a YAML key.** Unknown keys are ignored and the field keeps its default, silently.
+- **A typo in a YAML key.** Unknown keys are ignored and the field falls back to its default, silently.
   Check `describe_settings(...)`: the field's source reads `default`.
 - **A secret or endpoint with a default and an unset `$ENV:`.** It falls back to the default with
   only an info log (`None` for a `None` default, without any log). Give a value that must come from
@@ -116,7 +116,7 @@ env vars ──┘  (<PREFIX>__PATH placed as $ENV: at its path)                
   release) are the process's: every context's build hands them to the framework, so one set in
   `<ctx>:` wins or loses by import order. Set them in the root section only.
 - **A central `settings/` package holding every context's shape.** The context no longer owns its
-  configuration, and moving it to another service leaves its settings behind. Keep each shape at
+  configuration, and moving it to another service leaves its settings behind. Put each shape at
   its context's root.
 - **Creating a bus before building the project's settings.** The framework reads its own settings
   when a bus is created (the context map) and when it is built (log, OTLP, Sentry); a
@@ -130,7 +130,7 @@ env vars ──┘  (<PREFIX>__PATH placed as $ENV: at its path)                
 ```python
 from enum import StrEnum
 
-from sincpro_framework.sincpro_conf import SincproConfig, Secret, build_config_obj
+from sincpro_framework.settings import SincproConfig, Secret, build_config_obj
 
 
 class Environment(StrEnum):
@@ -185,7 +185,7 @@ resolved alone at its path is equal by value, but its own object.
 1. **The section.** `path` is dotted; its first key is the project's section (the **anchor**). A
    missing section is a `ValueError` naming the path.
 2. **Nested shapes.** A field typed as a `SincproConfig` resolves at the section of its name; one
-   with a default and no section keeps its default.
+   with a default and no section takes its default.
 3. **The cascade.** A shared field (inherited from a shape) takes the nearest section above that
    sets it, never above the anchor. A field a shape declares itself is never taken from above, and a
    context that re-declares a shared field owns it.
@@ -206,7 +206,7 @@ A shape read at a section without a dot (a flat `config.py`) gets its section ex
 - **Other sources**, by their own sentinel: `$SSM:/billing/token`, `$SECRET:billing/db#password`,
   read from what the build is handed — `build_config_obj(Shape, path, key, sources={"SSM":
   ParameterStore(), "SECRET": SecretsManager()})` (`sincpro_framework.settings.adapters.aws`, extra
-  `[aws]`) or any function `name -> value | None`. A source not handed in, or one that fails, keeps
+  `[aws]`) or any function `name -> value | None`. A source not handed in, or one that fails, uses
   the value as written with a warning — settings never stop the start.
 
 ## Secrets
@@ -222,7 +222,7 @@ the environment, through `$ENV:`.
 ## Provenance
 
 ```python
-from sincpro_framework.sincpro_conf import describe_settings
+from sincpro_framework.settings import describe_settings
 
 for one in describe_settings(settings):
     print(one.path, one.type, one.value, one.source)

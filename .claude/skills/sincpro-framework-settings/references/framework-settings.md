@@ -1,6 +1,6 @@
 # The framework's own settings
 
-`sincpro_framework.sincpro_conf.settings` is a `DefaultFrameworkConfig` built at import from the
+`sincpro_framework.sincpro_conf.settings` is a `FrameworkSettings` built at import from the
 framework's packaged `conf/sincpro_framework_conf.yml`, or from the file named by
 `SINCPRO_FRAMEWORK_CONFIG_FILE`. The packaged file maps each field to its environment variable, so a
 service usually configures the framework with environment variables alone.
@@ -27,7 +27,7 @@ service usually configures the framework with environment variables alone.
 ## Setting them from the project's own document
 
 ```python
-from sincpro_framework.sincpro_conf import FrameworkSettings
+from sincpro_framework.settings import FrameworkSettings
 
 
 class SharedSettings(FrameworkSettings):

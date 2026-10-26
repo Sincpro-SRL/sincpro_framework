@@ -158,7 +158,7 @@ assert billing.deps.trail == ["audited CreditNote"]
 ```
 
 A hook selects by `isinstance`, so one on a base class covers its subclasses, and
-`@hooks.on(object)` covers every record — an audit, a log. What a hook is for is kept by the
+`@hooks.on(object)` covers every record — an audit, a log. What a hook is for is stored by the
 collection, not written onto the class: the same class may be registered in two collections.
 
 ## Dependencies, the request, and the lifetime

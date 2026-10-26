@@ -61,13 +61,13 @@ class Inbox:
     """
 
     def __init__(
-        self, records: IdempotencyRecords, in_progress_for: timedelta, keep_for: timedelta
+        self, records: IdempotencyRecords, in_progress_for: timedelta, retain_for: timedelta
     ) -> None:
-        """`in_progress_for` is how long a claim holds a run; `keep_for` how long a completed
+        """`in_progress_for` is how long a claim holds a run; `retain_for` how long a completed
         delivery is remembered."""
         self.records = records
         self.in_progress_for = in_progress_for
-        self.keep_for = keep_for
+        self.retain_for = retain_for
 
     def _claim(self, key: str, fingerprint: str, owner: str) -> Claimed:
         """1. Claim the key, held `in_progress_for`.
@@ -97,12 +97,12 @@ class Inbox:
         return claimed, owner
 
     async def complete(self, key: str, body: bytes, owner: str) -> None:
-        """Mark the delivery done, kept for `keep_for` — every redelivery of it until then is
+        """Mark the delivery done, stored for `retain_for` — every redelivery of it until then is
         replayed: acked without running."""
         record = IdempotencyRecord(
             state=RecordState.COMPLETED, fingerprint=fingerprint_of(body), owner=owner
         )
-        await asyncio.to_thread(self.records.complete, key, record, self.keep_for)
+        await asyncio.to_thread(self.records.complete, key, record, self.retain_for)
 
     async def release(self, key: str, owner: str) -> None:
         """Drop `owner`'s claim after a failure, so the retry runs at once — never a claim

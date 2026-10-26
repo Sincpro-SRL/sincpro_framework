@@ -8,6 +8,8 @@ each — authenticate again. `PermissionDenied`, not `PermissionError`: Python's
 `OSError` about files, and a handler catching one would catch the other.
 """
 
+from typing import Any
+
 from sincpro_framework.exceptions import ClientError, FailureKind, ProgrammingError
 
 
@@ -16,6 +18,26 @@ class AuthError(ClientError):
 
     reason: str
     """Why — what the caller is told, on every transport."""
+    http_status: int
+    """The HTTP answer to the refusal — 401 asks the caller to authenticate again, 403 does
+    not. A gRPC or JSON-RPC wire answers its own code for `failure_kind` instead."""
+
+    def refusal_body(self) -> dict[str, Any]:
+        """What a caller is told of a refusal — the reason, what was missing, what to come back
+        with — the same fields on every transport.
+
+            Unauthenticated("expired token").refusal_body()
+                ->  {"kind": "unauthenticated", "reason": "expired token"}
+            Unauthenticated("mfa required", step_up="mfa").refusal_body()
+                ->  {"kind": "unauthenticated", "reason": "mfa required", "step_up": "mfa"}
+            PermissionDenied("user:1", "billing.invoice.issue").refusal_body()
+                ->  {"kind": "permission_denied", "reason": "lacks billing.invoice.issue",
+                     "requirement": "billing.invoice.issue"}
+
+        Context: the kind and the reason here; each refusal adds what it alone knows —
+        `step_up` only when one was named, `requirement` only for a denied permission.
+        """
+        return {"kind": self.failure_kind.value, "reason": self.reason}
 
 
 class Unauthenticated(AuthError):
@@ -23,6 +45,7 @@ class Unauthenticated(AuthError):
     with — MFA, for RFC 9470's challenge."""
 
     failure_kind = FailureKind.UNAUTHENTICATED
+    http_status = 401
 
     def __init__(self, reason: str, step_up: str | None = None) -> None:
         """A refusal saying why — `"expired token"` — and, for a step-up, what to bring."""
@@ -30,12 +53,20 @@ class Unauthenticated(AuthError):
         self.reason = reason
         self.step_up = step_up
 
+    def refusal_body(self) -> dict[str, Any]:
+        """The kind and the reason, and `step_up` when one was named."""
+        body = super().refusal_body()
+        if self.step_up:
+            body["step_up"] = self.step_up
+        return body
+
 
 class PermissionDenied(AuthError):
     """A known identity may not do this — raised by the guard, or by a provider that wants to
     say why."""
 
     failure_kind = FailureKind.PERMISSION_DENIED
+    http_status = 403
 
     def __init__(self, subject: str, requirement: str, reason: str = "") -> None:
         """A refusal of `subject` for `requirement` — by default `lacks <requirement>`.
@@ -47,3 +78,7 @@ class PermissionDenied(AuthError):
         super().__init__(f"{subject} may not: {self.reason}")
         self.subject = subject
         self.requirement = requirement
+
+    def refusal_body(self) -> dict[str, Any]:
+        """The kind and the reason, and the `requirement` that was missing."""
+        return {**super().refusal_body(), "requirement": self.requirement}

@@ -1,7 +1,7 @@
 # Event sourcing: the facts are the state
 
 Use this when rebuilding state from facts is a requirement. An audit trail beside an ordinary
-aggregate is event storage, not event sourcing: keep the aggregate's row for that case.
+aggregate is event storage, not event sourcing: store the aggregate's row for that case.
 
 ## One event table per context
 
@@ -91,7 +91,7 @@ rows unless their completeness and ordering have been established.
     use ordinary row-backed read models for listing and analysis when needed.
 - Subclass payload fields are JSON, not individually mapped columns. Do not assume an
     `amount` payload field supports ordinary column filters or `measures`.
-- Version wire names for breaking shapes. Keep historical classes imported and mappable
+- Version wire names for breaking shapes. Leave historical classes imported and mappable
     while their rows exist; retaining JSON alone does not let the polymorphic ORM load an
     unknown discriminator. Plan an explicit data migration before removing a class.
 - A persisted event is not automatically deliverable. Add `DeliverableEventMixin` only to

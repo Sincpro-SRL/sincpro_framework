@@ -17,7 +17,7 @@ from sincpro_framework import DataTransferObject, Feature, UseFramework, excepti
 from sincpro_framework.bus_pipeline.outcomes.events import ExecutionFailed
 from sincpro_framework.ddd import exceptions as ddd_exceptions
 from sincpro_framework.observability.metrics import InMemoryRecorder, metrics
-from sincpro_framework.observability.metrics.infrastructure.execution import USE_CASE_DURATION
+from sincpro_framework.observability.metrics.services.measuring import USE_CASE_DURATION
 
 from .errors.test_sentry import CaptureState, _install_fake_sentry
 

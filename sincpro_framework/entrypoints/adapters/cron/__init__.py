@@ -10,25 +10,24 @@
     CronProcess(build_crons).start()             # its own process, beside the service
 
 `domain/` holds the vocabulary and the contracts, `adapters/` what the framework ships behind
-them, `registry` the `Crons` of a bounded context, `entrypoint/` how they run. This package answers
+them, `registry` the `Crons` of a bounded context, `gateway/` how they run. This package answers
 what a project uses; `ManualClock`, for tests, is in `sincpro_framework.runtime.testing`.
 """
 
-from sincpro_framework.entrypoints.adapters.cron.adapters import InMemoryRuns, KeyValueRuns
-from sincpro_framework.entrypoints.adapters.cron.domain import (
+from sincpro_framework.entrypoints.adapters.cron.adapters.in_memory_runs import InMemoryRuns
+from sincpro_framework.entrypoints.adapters.cron.adapters.key_value_runs import KeyValueRuns
+from sincpro_framework.entrypoints.adapters.cron.domain.cron import (
     Cron,
-    CronRuns,
     Missed,
     Overlap,
-    Run,
-    RunOutcome,
     Tick,
 )
-from sincpro_framework.entrypoints.adapters.cron.gateway import (
+from sincpro_framework.entrypoints.adapters.cron.domain.runs import CronRuns, Run, RunOutcome
+from sincpro_framework.entrypoints.adapters.cron.gateway.gateway import (
     CronGateway,
-    CronProcess,
     CronStatus,
 )
+from sincpro_framework.entrypoints.adapters.cron.gateway.process import CronProcess
 from sincpro_framework.entrypoints.adapters.cron.registry import Crons
 
 __all__ = [

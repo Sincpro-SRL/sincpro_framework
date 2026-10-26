@@ -12,8 +12,7 @@ import ast
 from dataclasses import dataclass
 
 from sincpro_framework.runtime.testing.analysis.architecture import _read_modules
-from sincpro_framework.settings.domain.config import SincproConfig
-from sincpro_framework.settings.domain.resolution import nested_shape
+from sincpro_framework.settings import SincproConfig
 
 
 @dataclass(frozen=True)
@@ -35,16 +34,6 @@ class SettingsScopeViolation:
             f"{self.module}:{self.line} — context {self.context!r} reads the section "
             f"{self.section!r} of another context"
         )
-
-
-def _sections_of(shape: type[SincproConfig]) -> set[str]:
-    """The fields of ``shape`` that are sections — a nested settings model, optional or not —
-    and so the names of the contexts."""
-    return {
-        name
-        for name, field in shape.model_fields.items()
-        if nested_shape(field.annotation) is not None
-    }
 
 
 def _imported_names(tree: ast.Module) -> set[str]:
@@ -87,7 +76,7 @@ def settings_scope_violations(
        those names, is a violation at its line.
     Final: the violations ordered by module, then line.
     """
-    sections = _sections_of(shape)
+    sections = {name for name in shape.model_fields if shape.field_shape(name) is not None}
     found: list[SettingsScopeViolation] = []
     for name, module in _read_modules(package).items():
         parts = name.split(".")[1:]

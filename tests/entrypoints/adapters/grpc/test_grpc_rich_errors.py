@@ -19,7 +19,7 @@ from sincpro_framework import DataTransferObject, Feature, UseFramework, excepti
 from sincpro_framework.auth.domain import exceptions as auth_exceptions
 from sincpro_framework.data_layer.caching.domain import exceptions as caching_exceptions
 from sincpro_framework.ddd import exceptions as ddd_exceptions
-from sincpro_framework.entrypoints.adapters.grpc import GrpcGateway
+from sincpro_framework.entrypoints import GrpcGateway
 from sincpro_framework.entrypoints.adapters.grpc.wire import scalar_to_struct
 from sincpro_framework.entrypoints.domain.surface import Exposure
 

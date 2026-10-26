@@ -11,7 +11,9 @@ from sqlalchemy import Column, Integer, Table, Text
 from sqlalchemy.orm import registry
 
 from sincpro_framework import exceptions
-from sincpro_framework.data_layer.orm.sqlalchemy.services.model_introspection import describe
+from sincpro_framework.data_layer.orm.sqlalchemy.services.model_introspection import (
+    ModelIntrospection,
+)
 
 mapper_registry = registry()
 
@@ -84,7 +86,7 @@ mapper_registry.map_imperatively(
 
 
 def test_a_singular_annotation_reads_as_one():
-    relations = describe(Book).relations
+    relations = ModelIntrospection.describe(Book).relations
 
     assert set(relations) == {"shelf"}
     assert relations["shelf"].relation == "Shelf"
@@ -92,7 +94,7 @@ def test_a_singular_annotation_reads_as_one():
 
 
 def test_a_list_annotation_reads_as_many():
-    relations = describe(Shelf).relations
+    relations = ModelIntrospection.describe(Shelf).relations
 
     assert relations["books"].relation == "Book"
     assert relations["books"].many is True
@@ -115,13 +117,13 @@ def test_an_attribute_is_a_relation_because_its_type_is_mapped():
         ),
     )
 
-    assert describe(Loose).relations == {}
+    assert ModelIntrospection.describe(Loose).relations == {}
 
 
 def test_a_relation_is_a_field_of_its_own_type_beside_its_key():
     """`shelf_id` is the column and is filterable; `shelf` is the relation, in the same map,
     with a relational type and no operator of its own."""
-    meta = describe(Book)
+    meta = ModelIntrospection.describe(Book)
 
     assert meta.fields["shelf_id"].ops
     assert meta.fields["shelf"].type.is_relational
@@ -130,10 +132,10 @@ def test_a_relation_is_a_field_of_its_own_type_beside_its_key():
 
 def test_a_class_that_is_not_mapped_cannot_be_described():
     with pytest.raises(exceptions.ProgrammingError, match="not a mapped aggregate"):
-        describe(Unmapped)
+        ModelIntrospection.describe(Unmapped)
 
 
 def test_an_annotation_that_does_not_resolve_fails_where_it_is_described():
     """At boot, not on the first request that asks for it."""
     with pytest.raises(exceptions.ProgrammingError, match="cannot be resolved"):
-        describe(Dangling)
+        ModelIntrospection.describe(Dangling)

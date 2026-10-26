@@ -1,17 +1,17 @@
-"""What governs a kept value and a run-once write — the policies each call is judged by.
+"""What governs a cached value and a run-once write — the policies each call is judged by.
 
 Context: frozen DTOs a composition builds once and hands every call. `CachePolicy` is what `Cache`
 answers by — one strategy per question (`Freshness`, `Validation`, `FailurePolicy`) — `QueryCachePolicy`
 what `QueryCaching` does (a Query's ttl, what it varies by, what it depends on),
 `IdempotencyPolicy` what `Idempotency` does. A field one of them does not have is refused, never
-ignored: `CachePolicy(ttl=...)` — a `QueryCachePolicy`'s field — would otherwise keep a value forever.
+ignored: `CachePolicy(ttl=...)` — a `QueryCachePolicy`'s field — would otherwise cache a value forever.
 """
 
 from collections.abc import Sequence
 from datetime import timedelta
 from typing import Any
 
-from pydantic import ConfigDict, Field, field_validator, model_validator
+from pydantic import ConfigDict, Field, field_validator
 
 from sincpro_framework.data_layer.caching.domain.failure import FailurePolicy, Raise
 from sincpro_framework.data_layer.caching.domain.freshness import Freshness, TimeToLive
@@ -20,7 +20,7 @@ from sincpro_framework.sincpro_abstractions import DataTransferObject
 
 
 class CachePolicy[T](DataTransferObject):
-    """How `Cache` judges one kept value — one strategy per question, plus two bounds.
+    """How `Cache` judges one cached value — one strategy per question, plus two bounds.
 
         CachePolicy(
             freshness=TimeToLive(ttl=timedelta(minutes=5), stale_for=timedelta(minutes=1)),
@@ -33,33 +33,19 @@ class CachePolicy[T](DataTransferObject):
     model_config = ConfigDict(frozen=True, extra="forbid")
 
     freshness: Freshness = Field(default_factory=TimeToLive)
-    """How long a kept value is served as is — `TimeToLive`, `Sliding`, or yours."""
+    """How long a cached value is served as is — `TimeToLive`, `Sliding`, or yours."""
     validation: Validation[T] = Field(default_factory=Unconditional)
-    """Whether a kept value is still right, checked beside its freshness."""
+    """Whether a cached value is still right, checked beside its freshness."""
     failure: FailurePolicy = Field(default_factory=Raise)
     """What a call answers when computing or validating fails — `Raise`, or `FailSafe`."""
     wait_for_others: timedelta = timedelta(seconds=2)
     """How long a caller that does not lead waits for the value the leader computes."""
     max_bytes: int = 1_048_576
-    """A value larger than this, encoded, is answered and not kept in a shared store."""
-
-    @model_validator(mode="before")
-    @classmethod
-    def _lifetime_is_freshness(cls, data: Any) -> Any:
-        """Context: phase 1 named the field `lifetime`; `CachePolicy(lifetime=...)` still works."""
-        if isinstance(data, dict) and "lifetime" in data and "freshness" not in data:
-            data = {**data, "freshness": data["lifetime"]}
-            del data["lifetime"]
-        return data
-
-    @property
-    def lifetime(self) -> Freshness:
-        """The `freshness` under its phase-1 name, for code written against `lifetime`."""
-        return self.freshness
+    """A value larger than this, encoded, is answered and not stored in a shared store."""
 
 
 class QueryCachePolicy(DataTransferObject):
-    """How `QueryCaching` keeps one Query's answers — flat knobs, turned into a `TimeToLive`.
+    """How `QueryCaching` caches one Query's answers — flat knobs, turned into a `TimeToLive`.
 
         QueryCachePolicy(ttl=timedelta(minutes=5), vary_by="tenant_id", depends_on=[Invoice])
 
@@ -71,7 +57,7 @@ class QueryCachePolicy(DataTransferObject):
     ttl: timedelta
     """How long an answer is served as is, before `jitter` spreads it."""
     vary_by: Sequence[str] = ()
-    """Context keys each answer is kept per — a tenant, a locale; one alone or a list, kept as a
+    """Context keys each answer is cached per — a tenant, a locale; one alone or a list, stored as a
     tuple."""
     stale_for: timedelta = timedelta(0)
     """How long past its ttl an answer is still served while one caller recomputes it."""
@@ -81,24 +67,24 @@ class QueryCachePolicy(DataTransferObject):
     """XFetch's β: how eagerly an answer about to expire is recomputed; 0 never early."""
     depends_on: Sequence[type] = ()
     """Aggregates the answer depends on beyond what the repository noted, as a list:
-    `depends_on=[Invoice, Customer]`; kept as a tuple."""
+    `depends_on=[Invoice, Customer]`; stored as a tuple."""
     max_bytes: int = 1_048_576
-    """An answer larger than this is answered and not kept."""
+    """An answer larger than this is answered and not cached."""
     wait_for_others: timedelta = timedelta(seconds=2)
     """How long a caller that did not win the lock waits for the answer the winner computes."""
 
     @field_validator("vary_by", "depends_on", mode="before")
     @classmethod
     def _one_or_several(cls, value: Any) -> Any:
-        """A list or a tuple, kept as a tuple so the policy stays hashable; one key alone stands
+        """A list or a tuple, stored as a tuple so the policy stays hashable; one key alone stands
         for a list of one: `vary_by="tenant_id"`."""
         return (value,) if isinstance(value, str) else tuple(value)
 
     @property
-    def lifetime(self) -> TimeToLive:
+    def time_to_live(self) -> TimeToLive:
         """The flat knobs as the `TimeToLive` the answer's timeline is computed with.
 
-            QueryCachePolicy(ttl=timedelta(minutes=5)).lifetime
+            QueryCachePolicy(ttl=timedelta(minutes=5)).time_to_live
                 ->  TimeToLive(ttl=5 min, jitter=0.1, stale_for=0, early_expiry=1.0)
 
         Built anew on every read — the policy itself stays flat.
@@ -112,7 +98,7 @@ class QueryCachePolicy(DataTransferObject):
 
 
 class IdempotencyPolicy(DataTransferObject):
-    """How `Idempotency` keeps a write to once per key — how long, and per which context keys.
+    """How `Idempotency` limits a write to once per key — how long, and per which context keys.
 
         IdempotencyPolicy(expires_after=timedelta(hours=24), vary_by="tenant_id")
 
@@ -130,12 +116,12 @@ class IdempotencyPolicy(DataTransferObject):
     """How long a duplicate arriving mid-run waits for the first answer before
     `AlreadyInProgress`."""
     vary_by: Sequence[str] = ()
-    """Context keys the key is kept per — a tenant, a caller; one alone or a list. What
+    """Context keys the key is separated by — a tenant, a caller; one alone or a list. What
     identifies the request, the Command says itself: its `idempotency_key()` method."""
 
     @field_validator("vary_by", mode="before")
     @classmethod
     def _one_or_several(cls, value: Any) -> Any:
-        """One context key alone stands for a list of one: `vary_by="tenant_id"`; kept as a
+        """One context key alone stands for a list of one: `vary_by="tenant_id"`; stored as a
         tuple so the policy stays hashable."""
         return (value,) if isinstance(value, str) else tuple(value)

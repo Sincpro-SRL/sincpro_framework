@@ -18,15 +18,15 @@ from sincpro_framework.data_layer.orm.sqlalchemy.services.sql_translator import 
 )
 from sincpro_framework.ddd.criteria import (
     All,
-    Any_,
+    Any,
     Condition,
     Criteria,
+    Evaluation,
     Grain,
-    Level,
+    GroupingLevel,
     Not,
     Operator,
     Pagination,
-    matches,
 )
 
 from .models import ROW_COUNT, Thing, Things, a_thing
@@ -107,8 +107,12 @@ def test_contains_reads_a_wildcard_as_itself_as_memory_does(store, value):
     holds = Condition(field="tags", operator=Operator.CONTAINS, value=value)
     lacks = Condition(field="tags", operator=Operator.NOT_CONTAINS, value=value)
 
-    assert matching(store, holds) == expected(lambda thing: matches(thing, holds)) == set()
-    assert matching(store, lacks) == expected(lambda thing: matches(thing, lacks))
+    assert (
+        matching(store, holds)
+        == expected(lambda thing: Evaluation.matches(thing, holds))
+        == set()
+    )
+    assert matching(store, lacks) == expected(lambda thing: Evaluation.matches(thing, lacks))
 
 
 def test_a_conjunction_narrows(store):
@@ -125,7 +129,7 @@ def test_a_conjunction_narrows(store):
 
 
 def test_a_disjunction_widens(store):
-    expression = Any_(
+    expression = Any(
         any=[
             Condition(field="size", operator=Operator.EQ, value=0),
             Condition(field="size", operator=Operator.EQ, value=4),
@@ -145,7 +149,7 @@ def test_nesting_holds_its_shape(store):
     """One `or` inside an `and`: the case where a flattened tree would answer differently."""
     expression = All(
         all=[
-            Any_(
+            Any(
                 any=[
                     Condition(field="size", operator=Operator.EQ, value=0),
                     Condition(field="size", operator=Operator.EQ, value=4),
@@ -219,11 +223,13 @@ def test_a_date_grain_is_translated_for_postgres_as_well():
     from sincpro_framework.data_layer.orm.sqlalchemy.services.sql_translator import (
         grouping_column,
     )
-    from sincpro_framework.ddd.criteria import Level
+    from sincpro_framework.ddd.criteria import GroupingLevel
 
     from .models import Thing
 
-    monthly = grouping_column(Thing, Level(field="made_at", grain=Grain.MONTH), "postgresql")
+    monthly = grouping_column(
+        Thing, GroupingLevel(field="made_at", grain=Grain.MONTH), "postgresql"
+    )
     rendered = str(
         monthly.compile(dialect=postgresql.dialect(), compile_kwargs={"literal_binds": True})
     )
@@ -235,12 +241,12 @@ def test_a_dialect_with_no_grain_translation_is_refused_rather_than_guessed():
     from sincpro_framework.data_layer.orm.sqlalchemy.services.sql_translator import (
         grouping_column,
     )
-    from sincpro_framework.ddd.criteria import Level
+    from sincpro_framework.ddd.criteria import GroupingLevel
 
     from .models import Thing
 
     with pytest.raises(exceptions.ProgrammingError, match="register_grain_translator"):
-        grouping_column(Thing, Level(field="made_at", grain=Grain.MONTH), "oracle")
+        grouping_column(Thing, GroupingLevel(field="made_at", grain=Grain.MONTH), "oracle")
 
 
 def test_the_week_grain_reads_the_same_on_both_dialects():
@@ -252,8 +258,12 @@ def test_the_week_grain_reads_the_same_on_both_dialects():
         bucket_range,
     )
 
-    weekly_sqlite = grouping_column(Thing, Level(field="made_at", grain=Grain.WEEK), "sqlite")
-    weekly_pg = grouping_column(Thing, Level(field="made_at", grain=Grain.WEEK), "postgresql")
+    weekly_sqlite = grouping_column(
+        Thing, GroupingLevel(field="made_at", grain=Grain.WEEK), "sqlite"
+    )
+    weekly_pg = grouping_column(
+        Thing, GroupingLevel(field="made_at", grain=Grain.WEEK), "postgresql"
+    )
 
     # The week is worked out from the Thursday of its week, not with `%G-W%V`, which SQLite only
     # reads from 3.46: a Python built on an older library answers NULL for it. The weeks it

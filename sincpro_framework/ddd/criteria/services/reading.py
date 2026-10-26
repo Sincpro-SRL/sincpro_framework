@@ -14,7 +14,6 @@ from sincpro_framework.ddd.criteria.domain.values import (
     Period,
     Today,
 )
-from sincpro_framework.ddd.criteria.services.calendar import moved, snapped
 
 
 def _read(source: Mapping[Any, Any], path: str, what: str) -> Any:
@@ -66,13 +65,13 @@ def _shifted(
         day = day.replace(tzinfo=UTC)
 
     if value.plus is not None:
-        day = moved(day, value.plus, resolution)
+        day = value.plus.shift(day, resolution.timezone)
     if value.start_of is not None:
         if isinstance(day, datetime):
             local = day.astimezone(resolution.timezone).replace(tzinfo=None)
-            start = snapped(local, value.start_of, resolution.week_starts_on)
+            start = value.start_of.snap(local, resolution.week_starts_on)
             return start.replace(tzinfo=resolution.timezone).astimezone(UTC)
-        return snapped(day, value.start_of, resolution.week_starts_on)
+        return value.start_of.snap(day, resolution.week_starts_on)
     return day
 
 

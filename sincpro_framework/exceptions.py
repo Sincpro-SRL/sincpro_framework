@@ -136,7 +136,7 @@ class ContextRequired(ProgrammingError):
     """
 
     def __init__(self, use_case: str, missing: list[str]) -> None:
-        """The use case and the keys it lacks, kept for a handler; the message says how to
+        """The use case and the keys it lacks, stored for a handler; the message says how to
         give them — `bus.context({...})` or a `context_provider`."""
         super().__init__(
             f"{use_case} requires {', '.join(missing)} in the context — open it with "
@@ -150,7 +150,7 @@ class BusAlreadyRegistered(ProgrammingError):
     """A second, different bus was added under a name this process already holds."""
 
     def __init__(self, name: str) -> None:
-        """The name taken, kept for a handler."""
+        """The name taken, stored for a handler."""
         super().__init__(
             f"a bus named {name!r} is already registered in this process; "
             "a context registers once"
@@ -162,6 +162,6 @@ class BusNotRegistered(ProgrammingError, LookupError):
     """`get` was asked for a name nobody added."""
 
     def __init__(self, name: str) -> None:
-        """The name asked for, kept for a handler."""
+        """The name asked for, stored for a handler."""
         super().__init__(f"no bus named {name!r} is registered in this process")
         self.name = name

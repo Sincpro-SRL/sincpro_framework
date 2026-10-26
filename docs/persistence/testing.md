@@ -26,7 +26,7 @@ bus.add_dependency("repository", ledger)
 ```
 
 It answers the reads, the short readings, the folds, the groups and the writes, with the same
-version check and the same archive rule. It filters with `matches`, the evaluator the SQL
+version check and the same archive rule. It filters with `Evaluation.matches`, the evaluator the SQL
 translator is checked against, so the two agree by construction. What it does not have —
 relations, units of work, date grains — it says rather than guesses, and that is where the
 suite below takes over.
@@ -50,12 +50,12 @@ against the census with `POPULATION` and are never disturbed.
 ## What is proven
 
 - **Reads at volume.** A keyset walk visits every line exactly once in order; the capped count
-  says when it stopped counting; every operator agrees with `matches`, the in-memory evaluator,
+  says when it stopped counting; every operator agrees with `Evaluation.matches`, the in-memory evaluator,
   over the whole set; set algebra over two readings equals the combined reading.
 - **Reporting in SQL.** Totals, balances, a grouping four levels deep (journal, account,
   partner, month) equal to a `GROUP BY` written by hand; a bucket opens to exactly the rows it
   counted; a `NULL` partner is a bucket of its own.
-- **Transactions.** A batch with a savepoint per group keeps what posted and undoes only the
+- **Transactions.** A batch with a savepoint per group commits what posted and undoes only the
   group that did not; a unit of work that raises leaves nothing; the second of two writers is
   `StaleAggregate` in one process and across two; `updated_at` is `created_at` on insert and stamped on update;
   a lock outside a unit of work is refused; row locks hold on Postgres.

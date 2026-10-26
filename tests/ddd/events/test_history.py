@@ -26,7 +26,10 @@ from sincpro_framework.ddd import (
 )
 from sincpro_framework.ddd import exceptions as ddd_exceptions
 from sincpro_framework.ddd import history_of
-from sincpro_framework.ddd.criteria import Operator, parse_order
+from sincpro_framework.ddd.criteria import (
+    Operator,
+    Sort,
+)
 
 
 @dataclass(kw_only=True)
@@ -211,7 +214,7 @@ def test_a_caller_time_filter_adds_to_the_record_and_its_order_replaces_the_defa
         ResponseProjectEvents,
     )
     newest_first = bus(
-        QueryIssueEvents(id=issue.id, criteria=Criteria(order=parse_order("-id"))),
+        QueryIssueEvents(id=issue.id, criteria=Criteria(order=Sort.parse("-id"))),
         ResponseProjectEvents,
     )
     future = bus(
@@ -296,7 +299,7 @@ def test_history_of_reads_several_records_together_each_by_its_type():
     _bus, repository = project(sandbox, workspace, issue, run)
 
     together = repository.search(
-        ProjectEvent, history_of(issue, run).replaced_by(Criteria(order=parse_order("id")))
+        ProjectEvent, history_of(issue, run).replaced_by(Criteria(order=Sort.parse("id")))
     )
     alone = repository.search(ProjectEvent, history_of(sandbox))
 

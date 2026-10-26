@@ -23,8 +23,8 @@ from sincpro_framework.data_layer.caching import (
     JsonCodec,
     TimeToLive,
 )
+from sincpro_framework.data_layer.store import InMemoryKeyValue, KeyValueStore
 from sincpro_framework.runtime.testing import ManualClock
-from sincpro_framework.store import InMemoryKeyValue, KeyValueStore
 
 
 class Tenant(DataTransferObject):

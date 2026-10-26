@@ -1,10 +1,10 @@
-"""Where the data is kept: the repositories that need no database (`repositories`), SQL (`orm`),
+"""Where the data is stored: the repositories that need no database (`repositories`), SQL (`orm`),
 the cache and its engines (`caching`), how a schema changes (`migrations`) and DataFrames
 (`data_analysis`).
 
     from sincpro_framework.data_layer.repositories import MemoryRepository   # tests
     from sincpro_framework.data_layer.orm import Database, Repository        # [sqlalchemy]
-    from sincpro_framework.data_layer.caching import Cache, QueryCaching      # kept answers
+    from sincpro_framework.data_layer.caching import Cache, QueryCaching      # cached answers
     from sincpro_framework.data_layer.migrations import Migrations, command_line
     from sincpro_framework.data_layer.data_analysis import QueryCache        # as frames
 

@@ -12,18 +12,17 @@
         def make_freshness(self): return BusinessHours(ttl=timedelta(minutes=5))
 
 Context: a `Cache` trusts its strategies blindly — a codec that does not round-trip serves a
-different value than it kept, an eviction that does not hold its bound leaks memory, a freshness
-that answers a `stale_until` before `fresh_until` serves nothing it computed. Each suite is the
-contract of its port (PRD_13 §7, §8) written as tests: inherit one, answer its factory, and run it
-with pytest. Pytest-free, like `KeyValueStoreContract`: a failure is an `AssertionError`.
+different value than it cached, an eviction that does not hold its bound leaks memory, a
+freshness that answers a `stale_until` before `fresh_until` serves nothing it computed. Each
+suite is the contract of its port (PRD_13 §7, §8) written as tests: inherit one, answer its
+factory, and run it with pytest. Pytest-free, like `KeyValueStoreContract`: a failure is an
+`AssertionError`.
 """
 
 import threading
 from typing import Any
 
-from sincpro_framework.data_layer.caching.domain.codec import Codec
-from sincpro_framework.data_layer.caching.domain.eviction import Eviction
-from sincpro_framework.data_layer.caching.domain.freshness import NEVER, Freshness
+from sincpro_framework.data_layer.caching import NEVER, Codec, Eviction, Freshness
 
 MOMENTS = (0.0, 1_000.0, 1_790_000_000.5)
 ROLLS = (0.0, 0.25, 0.5, 0.999999)
@@ -51,7 +50,7 @@ class CodecContract:
 
     def test_what_it_encodes_it_decodes_back(self) -> None:
         """Every sample decodes back equal to what was encoded — the cache serves what it
-        kept."""
+        cached."""
         codec = self.make_codec()
         for value in self.samples():
             if codec.decode(codec.encode(value)) != value:
@@ -90,7 +89,7 @@ class CodecContract:
             )
 
     def test_another_shape_has_another_schema(self) -> None:
-        """A codec of another shape has another `schema`, so values kept by a deploy of the
+        """A codec of another shape has another `schema`, so values cached by a deploy of the
         old shape are never decoded as the new one — skipped when `make_other_codec` is
         `None`.
 
@@ -204,7 +203,7 @@ class FreshnessContract:
             recompute_early(fresh_until, 0.1, 0.0, 0.5) -> False   ->  passes
             ... -> 0.0, or 1                                      ->  AssertionError
 
-        Asked once, at moment 0 with roll 0.5, of a value just kept.
+        Asked once, at moment 0 with roll 0.5, of a value just cached.
         """
         freshness = self.make_freshness()
         fresh_until = freshness.fresh_until(0.0, 0.5)
@@ -223,35 +222,35 @@ class EvictionContract:
         """Answer a new, empty eviction bounded by `bound` — each test starts from its own."""
         raise NotImplementedError("answer a new eviction, bounded by `bound`")
 
-    def _admitted(self, eviction: Eviction, kept: set[str], key: str) -> list[str]:
-        """What the process tier does: keep `key`, drop what the eviction names."""
-        kept.add(key)
+    def _admitted(self, eviction: Eviction, held: set[str], key: str) -> list[str]:
+        """What the process tier does: hold `key`, drop what the eviction names."""
+        held.add(key)
         victims = eviction.admitted(key)
-        kept.difference_update(victims)
+        held.difference_update(victims)
         return victims
 
     def test_the_tier_holds_no_more_than_its_bound(self) -> None:
-        """Admitting three times the bound in keys never leaves more than `bound` kept once
+        """Admitting three times the bound in keys never leaves more than `bound` held once
         its victims are dropped.
 
             bound = 500: keys k0 … k1499 admitted, victims dropped after each
-                ->  passes while at most 500 are kept after every admission
+                ->  passes while at most 500 are held after every admission
             an unbounded eviction (bound None): 150 keys admitted, nothing checked
 
         Checked after every admission, not only at the end.
         """
-        eviction, kept = self.make_eviction(), set[str]()
+        eviction, held = self.make_eviction(), set[str]()
         for n in range(3 * (self.bound or 50)):
-            self._admitted(eviction, kept, f"k{n}")
-            if self.bound is not None and len(kept) > self.bound:
-                raise AssertionError(f"{len(kept)} kept past a bound of {self.bound}")
+            self._admitted(eviction, held, f"k{n}")
+            if self.bound is not None and len(held) > self.bound:
+                raise AssertionError(f"{len(held)} held past a bound of {self.bound}")
 
     def test_the_key_just_admitted_is_never_its_victim(self) -> None:
         """`admitted(key)` never names `key` itself among its victims."""
-        eviction, kept = self.make_eviction(), set[str]()
+        eviction, held = self.make_eviction(), set[str]()
         for n in range(3 * (self.bound or 50)):
-            if f"k{n}" in self._admitted(eviction, kept, f"k{n}"):
-                raise AssertionError("the key just kept was named a victim")
+            if f"k{n}" in self._admitted(eviction, held, f"k{n}"):
+                raise AssertionError("the key just admitted was named a victim")
 
     def test_victims_are_only_keys_it_was_given(self) -> None:
         """Every victim is a key admitted before — the eviction never invents one.
@@ -261,11 +260,11 @@ class EvictionContract:
 
         The key being admitted counts as given, so naming it is left to its own test.
         """
-        eviction, kept = self.make_eviction(), set[str]()
+        eviction, held = self.make_eviction(), set[str]()
         given: set[str] = set()
         for n in range(3 * (self.bound or 50)):
             given.add(f"k{n}")
-            if not set(self._admitted(eviction, kept, f"k{n}")) <= given:
+            if not set(self._admitted(eviction, held, f"k{n}")) <= given:
                 raise AssertionError("a victim was a key never admitted")
 
     def test_a_forgotten_key_is_never_a_victim_afterwards(self) -> None:
@@ -277,12 +276,12 @@ class EvictionContract:
 
         Three times the bound is enough admissions to evict anything still tracked.
         """
-        eviction, kept = self.make_eviction(), set[str]()
-        self._admitted(eviction, kept, "forgotten")
+        eviction, held = self.make_eviction(), set[str]()
+        self._admitted(eviction, held, "forgotten")
         eviction.forgotten("forgotten")
-        kept.discard("forgotten")
+        held.discard("forgotten")
         for n in range(3 * (self.bound or 50)):
-            if "forgotten" in self._admitted(eviction, kept, f"k{n}"):
+            if "forgotten" in self._admitted(eviction, held, f"k{n}"):
                 raise AssertionError("a forgotten key was named a victim")
 
     def test_touching_a_key_it_does_not_track_tracks_nothing(self) -> None:
@@ -294,10 +293,10 @@ class EvictionContract:
 
         A hit on a key another tier holds must not make this tier start tracking it.
         """
-        eviction, kept = self.make_eviction(), set[str]()
+        eviction, held = self.make_eviction(), set[str]()
         eviction.touched("never-admitted")
         for n in range(3 * (self.bound or 50)):
-            if "never-admitted" in self._admitted(eviction, kept, f"k{n}"):
+            if "never-admitted" in self._admitted(eviction, held, f"k{n}"):
                 raise AssertionError("a key only touched was named a victim")
 
     def test_racing_callers_keep_the_bound_and_evict_each_key_once(self) -> None:
@@ -338,4 +337,4 @@ class EvictionContract:
         if len(victims) != len(set(victims)):
             raise AssertionError("a key was named a victim twice")
         if self.bound is not None and len(set(admitted) - set(victims)) > self.bound:
-            raise AssertionError("racing callers left more than the bound kept")
+            raise AssertionError("racing callers left more than the bound held")

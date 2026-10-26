@@ -13,7 +13,9 @@ from datetime import date, datetime
 import pytest
 
 from sincpro_framework.ddd import exceptions
-from sincpro_framework.ddd.criteria import CursorKeys
+from sincpro_framework.ddd.criteria.domain.pagination import (
+    CursorKeys,
+)
 
 
 def round_trip(keys: tuple, ordering: str = "-id") -> tuple:
@@ -65,14 +67,16 @@ def test_the_token_carries_no_padding():
 def test_a_cursor_reads_its_keys_off_the_last_row():
     from dataclasses import dataclass
 
-    from sincpro_framework.ddd.criteria import parse_order
+    from sincpro_framework.ddd.criteria import (
+        Sort,
+    )
 
     @dataclass
     class Row:
         row_id: str
         size: int
 
-    cursor = CursorKeys.of(Row(row_id="r_9", size=3), parse_order("size,-row_id"))
+    cursor = CursorKeys.of(Row(row_id="r_9", size=3), Sort.parse("size,-row_id"))
 
     assert cursor.keys == (3, "r_9")
     assert cursor.ordering == "size,-row_id"

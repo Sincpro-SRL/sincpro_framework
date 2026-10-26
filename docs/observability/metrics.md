@@ -9,7 +9,7 @@ they are written.
 
 The core records nothing and needs no extra. `[prometheus]` (Sincpro's reference stack) or
 `[opentelemetry]` bring a backend; OpenTelemetry's own `OTEL_METRICS_EXPORTER` picks it, as it does
-for the traces (`SINCPRO_METRICS_BACKEND` is kept as an alias). The design and the why are
+for the traces. The design and the why are
 [PRD 03 §4](../prd/PRD_03_observability-tracing.md#4-metrics).
 
 Every block on this page runs, in order, in `tests/docs/test_persistence_guide.py`.
@@ -321,14 +321,15 @@ series is wanted; Sincpro's pipeline leaves it off.
 The process has one recorder; every bus records into it, told apart by `sincpro.context` and by
 the context in each declared name.
 
-| `OTEL_METRICS_EXPORTER` | `SINCPRO_METRICS_BACKEND` (alias) | Recorder | Needs |
-|---|---|---|---|
-| not set (default) | `auto` | OpenTelemetry when a meter provider or `OTEL_EXPORTER_OTLP_ENDPOINT` is there; otherwise nothing | — |
-| `otlp` | `otel` | `OtelRecorder`: the host's meter provider, or one exporting to the OTLP endpoint | `[opentelemetry]` |
-| `prometheus` | `prometheus` | `PrometheusRecorder`, scraped at `/metrics` | `[prometheus]` |
-| `none` (or `OTEL_SDK_DISABLED=true`) | `off` | nothing | — |
+| `OTEL_METRICS_EXPORTER` | Recorder | Needs |
+|---|---|---|
+| not set (default) | OpenTelemetry when a meter provider or `OTEL_EXPORTER_OTLP_ENDPOINT` is there; otherwise nothing | — |
+| `otlp` | `OtelRecorder`: the host's meter provider, or one exporting to the OTLP endpoint | `[opentelemetry]` |
+| `prometheus` | `PrometheusRecorder`, scraped at `/metrics` | `[prometheus]` |
+| `none` (or `OTEL_SDK_DISABLED=true`) | nothing | — |
 
-`SINCPRO_METRICS_BACKEND` set to anything but `auto` wins. An exporter the framework does not build
+`SINCPRO_METRICS_BACKEND` (`auto` · `otel` · `prometheus` · `off`) is the framework's own name for
+the same switch: set to anything but `auto`, it wins. An exporter the framework does not build
 (`console`) records nothing. With a collector that does not take metrics, `none` also silences the
 exporter's warning every 60 s.
 
@@ -406,8 +407,9 @@ once per instrument and skipped — measuring never fails the use case it measur
 | `metrics.counter()` / `.up_down()` / `.histogram()` / `.timer()` | declared on the use case's class, recorded by hand |
 | `of(Dto).field` | a field reference: a value or a label, checked where written |
 | `metrics.use(recorder)` / `metrics.using(recorder)` / `metrics.recorder` | the process's recorder |
-| `declares_metrics(cls)` | whether a use case declared a metric with a decorator |
+| `metrics.emit(instrument, value, labels)` | one measurement of an instrument described outside a use case (the cache's outcomes, a queue's deliveries), through the same shield |
+| `metrics.declared_on(cls)` | whether a use case declared a metric with a decorator |
 | `InMemoryRecorder`, `PrometheusRecorder`, `OtelRecorder`, `Recorder` | the recorders; `Recorder` is the port |
 | `RecorderContract` (`sincpro_framework.observability.metrics.testing`) | the contract a recorder passes |
 | `sincpro.context.info` | which library, version and tenant run each bounded context |
-| `OTEL_METRICS_EXPORTER`, `OTEL_SDK_DISABLED` | `otlp` · `prometheus` · `none`; `true` — alias `SINCPRO_METRICS_BACKEND`: `auto` · `otel` · `prometheus` · `off` |
+| `OTEL_METRICS_EXPORTER`, `OTEL_SDK_DISABLED` | `otlp` · `prometheus` · `none`; `true` — and `SINCPRO_METRICS_BACKEND`: `auto` · `otel` · `prometheus` · `off`, winning when set |

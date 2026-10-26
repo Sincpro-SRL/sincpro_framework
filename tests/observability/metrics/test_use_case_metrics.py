@@ -26,7 +26,6 @@ from sincpro_framework.ddd import exceptions as ddd_exceptions
 from sincpro_framework.observability.metrics import (
     InMemoryRecorder,
     Recorder,
-    declares_metrics,
     metrics,
     of,
 )
@@ -213,8 +212,8 @@ def test_a_use_case_says_what_it_measures(recorder):
     bus = _billing()
     handler = bus.handler_of(CommandIssueInvoice)
 
-    assert handler is not None and declares_metrics(handler)
-    assert not declares_metrics(Feature)
+    assert handler is not None and metrics.declared_on(handler)
+    assert not metrics.declared_on(Feature)
 
 
 # --- what a declaration refuses, at import time -----------------------------------------------

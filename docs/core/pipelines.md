@@ -3,7 +3,7 @@
 A job that takes several steps — collect, bill, notify; prepare a workspace, run an agent, verify,
 deliver — is an ApplicationService whose `execute` is always the same: run these Commands in this
 order, stop when one fails, close either way, and leave a record of how far it got. A `Pipeline` is
-that, declared as data, with the record kept in the context. See also
+that, declared as data, with the record stored in the context. See also
 [the execution path](execution-path.md).
 
 Everything on this page is a default. A project may leave any of it: the framework asks for no tenant,
@@ -15,8 +15,8 @@ Every block on this page runs, in order, in `tests/docs/test_persistence_guide.p
 
 ```python
 from sincpro_framework import ApplicationService, DataTransferObject, Feature, UseFramework
-from sincpro_framework.context import InMemoryContexts, use_context
-from sincpro_framework.pipelines import Pipeline, PipelineState, Resume, StepStatus
+from sincpro_framework.context import InMemoryContexts
+from sincpro_framework.pipelines import Pipeline, PipelineRuns, PipelineState, Resume, StepStatus
 
 
 class CommandRunNightly(DataTransferObject):
@@ -45,7 +45,7 @@ class StepAnswer(DataTransferObject):
 
 
 billing = UseFramework("billing-pipelines", log_after_execution=False)
-billing.store_context_in(InMemoryContexts())                  # where the runs are kept
+billing.store_context_in(InMemoryContexts())                  # where the runs are stored
 credit = {"enough": False}
 did: list[str] = []
 
@@ -90,7 +90,7 @@ assert [(one.command.split(".")[-1], one.status) for one in run.steps] == [
 
 - **The order is data.** `steps` is a list of Commands, each a Feature of the same bus.
 - **A step is filled by the names of its fields**, from the input — `run_id`, `day` — so it needs
-  nothing from the step before. What a step hands on is kept where the project keeps its data.
+  nothing from the step before. What a step hands on is stored where the project stores its data.
 - **A step that answers `ok=False` ends the run as failed**; one that raises ends it with the
   exception. Either way `always` runs, and may take `ok` and `failure`.
 - **No `ok` is an `ok`**: any Feature is a step, answering anything or nothing.
@@ -109,13 +109,13 @@ assert again.state is PipelineState.SUCCEEDED
 
 `resume` says what the same `run_id` does: `Resume.RESTART` (the default) runs every step again;
 `Resume.CONTINUE` goes on from the first step that did not succeed, when the recipe is the one it
-ran — a run kept under another recipe starts over, and says so in the logs. A call with no `run_id`
+ran — a run stored under another recipe starts over, and says so in the logs. A call with no `run_id`
 is a run of its own.
 
-## Where the run is kept
+## Where the run is stored
 
 A run is a `PipelineRun` — the pipeline, the `run_id`, the input, how each step ended with its error
-and its kind of failure, and when — kept in the context's store, beside the [drafts](drafts.md): the
+and its kind of failure, and when — stored in the context's store, beside the [drafts](drafts.md): the
 one store the context has. It holds the progress of a run and nothing of what the steps did. Each run
 is an entry of its own:
 
@@ -128,9 +128,9 @@ so N runs — on N replicas, at the same instant — never write the same one.
 
 ```python
 with billing.context({}):
-    kept = use_context().pipelines().find("billing-pipelines.CommandRunNightly")
+    runs = PipelineRuns.of().find("billing-pipelines.CommandRunNightly")
 
-assert [(one.run_id, one.state) for one in kept] == [("2026-10-23", PipelineState.SUCCEEDED)]
+assert [(one.run_id, one.state) for one in runs] == [("2026-10-23", PipelineState.SUCCEEDED)]
 ```
 
 | Where | How |
@@ -139,22 +139,22 @@ assert [(one.run_id, one.state) for one in kept] == [("2026-10-23", PipelineStat
 | Redis, Valkey, Memcached | `bus.store_context_in(KeyValueContexts(RedisKeyValue(redis)))` |
 | A project's own storage | its own `ContextStore`, with its entries — `save_entry`, `get_entry`, `delete_entry`, `list_entries` |
 
-There is no store of pipelines: whatever keeps the context keeps the runs. A run lasts the store's
+There is no store of pipelines: whatever stores the context stores the runs. A run lasts the store's
 `entry_ttl` from its last write. Every write names the version it read, and a second writer of the
 same run — another replica — loses with `EntryConflict` instead of overwriting it in silence; the
-run that lost fails, out loud. The run being driven is kept on its own execution, so each change of
+run that lost fails, out loud. The run being driven is held on its own execution, so each change of
 a step is one write to the store and no read.
 
 ## Whose a run is
 
-The context says, by exactly the keys `owned_by` names — `BY_TENANT` by default — and it serves
+The context says, by exactly the keys `owned_by` names — `Owner.BY_TENANT` by default — and it serves
 every shape a system has:
 
 | The context says | The owner of a run |
 |---|---|
 | nothing: no tenant, no user | `tenant_id=,tenant_ids=` |
 | a tenant | `tenant_id=acme,tenant_ids=` |
-| a user — with `owned_by = BY_TENANT_AND_USER` | `tenant_id=acme,tenant_ids=,user_id=ana` |
+| a user — with `owned_by = Owner.BY_TENANT_AND_USER` | `tenant_id=acme,tenant_ids=,user_id=ana` |
 | nobody — with `owned_by = ()` | (empty): one run of a `run_id` for everybody |
 | a user across several tenants | `tenant_id=,tenant_ids=acme\|globex,user_id=ana` |
 
@@ -316,7 +316,7 @@ assert billed == ["collect", "bill"]                # collect was not run again
 ```
 
 The run stops at the `Await` as `WAITING` — `always` waits too: the run has not ended — and is
-kept as any run. The decision comes in through the pipeline's own Command, the same `run_id` with
+stored as any run. The decision comes in through the pipeline's own Command, the same `run_id` with
 the field of the await's name filled, so whatever already publishes that Command — a REST route,
 an MCP tool, a queue — decides; and every later step with a field of that name is given it. A run
 called again without it still waits. An `Await` the input has no field for cannot be decided, and
@@ -349,8 +349,8 @@ assert reading(QueryApprovedRun(run_id="2026-10-25")).waiting_for == "approval"
 ```
 
 Each read names its pipeline by its Command; one `PipelineReads` answers the reads of every pipeline
-of its bus. Whose runs are read is the context's, as when they were kept — set `owned_by` on the
-Feature as on the pipeline. A run that is not kept is `RunNotFound` (`not_found`, 404 on REST).
+of its bus. Whose runs are read is the context's, as when they were stored — set `owned_by` on the
+Feature as on the pipeline. A run that is not stored is `RunNotFound` (`not_found`, 404 on REST).
 
 ## What is left to the project
 

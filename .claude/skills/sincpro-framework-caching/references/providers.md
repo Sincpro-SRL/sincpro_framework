@@ -12,17 +12,17 @@ it is not abstract, so a store of yours without it is still a store until a leas
 
 | Provider | Import | Install |
 |---|---|---|
-| `InMemoryKeyValue(now=)` | `sincpro_framework.data_layer.caching` | none (standard library); one process only |
-| `RedisKeyValue(client, prefix=)` | `sincpro_framework.store.adapters.redis` | `sincpro-framework[redis]` (Valkey too; `take` needs Redis 6.2+) |
-| `MemcachedKeyValue(client, prefix=)` | `sincpro_framework.store.adapters.memcached` | `sincpro-framework[memcached]` (ttl in whole seconds) |
+| `InMemoryKeyValue(now=)` | `sincpro_framework.data_layer.store` | none (standard library); one process only |
+| `RedisKeyValue(client, prefix=)` | `sincpro_framework.data_layer.store` | `sincpro-framework[redis]` (Valkey too; `take` needs Redis 6.2+) |
+| `MemcachedKeyValue(client, prefix=)` | `sincpro_framework.data_layer.store` | `sincpro-framework[memcached]` (ttl in whole seconds) |
 
-`RedisKeyValue`/`MemcachedKeyValue` are not exported from `sincpro_framework.data_layer.caching`: the extra
-is loaded only by the module that names it. The client is yours (pool, TLS, timeouts); `prefix`
+Every engine is exported from `sincpro_framework.data_layer.store` only, and none loads its
+library until it is used: the extra is needed only by the project that builds one. The client is yours (pool, TLS, timeouts); `prefix`
 lets several services share one server.
 
 ```python
 import redis
-from sincpro_framework.store.adapters.redis import RedisKeyValue
+from sincpro_framework.data_layer.store import RedisKeyValue
 
 STORE = RedisKeyValue(redis.Redis.from_url("redis://cache:6379/0"), prefix="billing:")
 ```
@@ -34,7 +34,7 @@ A store of yours proves itself with the contract the built-ins pass:
 
 ```python
 from sincpro_framework.runtime.testing import KeyValueStoreContract
-from sincpro_framework.store import KeyValueStore
+from sincpro_framework.data_layer.store import KeyValueStore
 
 
 class TestDictStore(KeyValueStoreContract):
@@ -67,7 +67,7 @@ within that database.
 The record several cron replicas share: one of them runs each tick.
 
 ```python
-from sincpro_framework.store import InMemoryKeyValue
+from sincpro_framework.data_layer.store import InMemoryKeyValue
 from sincpro_framework.entrypoints.adapters.cron import KeyValueRuns
 
 shared = InMemoryKeyValue()                   # RedisKeyValue(...) on real replicas
@@ -79,7 +79,7 @@ assert one.claim("close-books", tick) and not other.claim("close-books", tick)
 ## Not to be confused with
 
 - `QueryCache` (`sincpro_framework.data_layer.data_analysis`) — the rows of a read held **in one process** for
-  analysis (pandas/polars/DuckDB). `QueryCaching` is a Query's answer kept for its bus across
+  analysis (pandas/polars/DuckDB). `QueryCaching` is a Query's answer cached for its bus across
   replicas. Different things.
 - `ManualClock` (`sincpro_framework.runtime.testing`) — a clock for tests: `InMemoryKeyValue(now=clock.now)`,
   `Cache(now=clock.now)`, `QueryCaching(store, now=clock.now)`.

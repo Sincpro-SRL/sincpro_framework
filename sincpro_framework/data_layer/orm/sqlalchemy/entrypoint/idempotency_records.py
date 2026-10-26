@@ -35,7 +35,7 @@ from sqlalchemy import Table, delete, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from sincpro_framework.data_layer.caching.domain.idempotency_records import (
+from sincpro_framework.data_layer.caching import (
     IdempotencyRecord,
     IdempotencyRecords,
     RecordState,
@@ -44,11 +44,6 @@ from sincpro_framework.data_layer.orm.sqlalchemy.entrypoint.repository import Re
 from sincpro_framework.data_layer.orm.sqlalchemy.infrastructure.database import Database
 from sincpro_framework.data_layer.orm.sqlalchemy.infrastructure.unit_in_play import in_play
 from sincpro_framework.sincpro_logger import logger
-
-
-def _utc(now: datetime) -> datetime:
-    """The moment as the table keeps it: UTC, with no zone, alike on every engine."""
-    return now.astimezone(UTC).replace(tzinfo=None)
 
 
 class DatabaseIdempotencyRecords(IdempotencyRecords):
@@ -67,8 +62,9 @@ class DatabaseIdempotencyRecords(IdempotencyRecords):
         self._said = False
 
     def _moment(self) -> datetime:
-        """Now, by the injected clock, as the table keeps it."""
-        return _utc(self.now())
+        """Now, by the injected clock, as the table stores it: UTC, with no zone, alike on every
+        engine."""
+        return self.now().astimezone(UTC).replace(tzinfo=None)
 
     def _row(
         self, key: str, record: IdempotencyRecord, lasting: timedelta

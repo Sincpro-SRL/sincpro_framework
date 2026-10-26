@@ -23,6 +23,7 @@ from sincpro_framework import (
 )
 from sincpro_framework.data_layer.caching import QueryCachePolicy, QueryCaching
 from sincpro_framework.data_layer.repositories import MemoryRepository
+from sincpro_framework.data_layer.store import InMemoryKeyValue, KeyValueStore, RedisKeyValue
 from sincpro_framework.ddd import Criteria, Entity
 from sincpro_framework.ddd.events import DomainEvent
 from sincpro_framework.event_driven import (
@@ -31,8 +32,6 @@ from sincpro_framework.event_driven import (
     SyncQueue,
 )
 from sincpro_framework.runtime.testing import ManualClock
-from sincpro_framework.store import InMemoryKeyValue, KeyValueStore
-from sincpro_framework.store.adapters.redis import RedisKeyValue
 
 
 @dataclass

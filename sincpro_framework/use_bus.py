@@ -11,7 +11,7 @@ wires its dependencies into, and calls.
     with billing.context({"tenant_id": "acme"}):                  a scope for the block
         billing(CommandIssueInvoice(total=100), ResponseInvoice)
 
-**Registrations are kept, the bus is built from them.** Every registration is kept as a call
+**Registrations are stored, the bus is built from them.** Every registration is stored as a call
 that repeats it, so a registration after the build asks for a new *generation* — new buses,
 new handler instances — built on the next call; a request already running finishes on the
 generation it started on. `fresh()` replays them all on a new, unbuilt bus.
@@ -44,18 +44,18 @@ from .bus_pipeline.incomes.mixins.bus_incomes import BusIncomesMixin
 from .bus_pipeline.interceptors.mixins.bus_interceptors import BusInterceptorsMixin
 from .bus_pipeline.outcomes.mixins.bus_outcomes import BusOutcomesMixin
 from .common.serialization import read_values, rebuilt
-from .context.infrastructure.tree import current_execution
-from .context.mixins.bus_context import BusContextMixin
-from .data_layer.mixins.bus_caching import BusCachingMixin
+from .context import context_executions
+from .context.entrypoint.bus_context import BusContextMixin
+from .context.entrypoint.bus_store import BusStoreMixin
+from .data_layer.caching.entrypoint.bus_caching import BusCachingMixin
 from .dependencies import DependencyLocator, TDeps
 from .error_handler import BusErrorHandlersMixin
 from .observability import Observability
 from .observability.correlation import declare_metric_labels
 from .observability.mixins.bus_observability import BusObservabilityMixin
-from .pipelines.mixins.bus_pipelines import BusPipelinesMixin
-from .remote_execution.mixins.hosted_context import HostedContextMixin
+from .pipelines.entrypoint.bus_pipelines import BusPipelinesMixin
+from .remote_execution.entrypoint.hosted_context import HostedContextMixin
 from .sincpro_abstractions import TypeDTO, TypeDTOResponse
-from .store.mixins.bus_store import BusStoreMixin
 
 
 class UseFramework(
@@ -85,7 +85,7 @@ class UseFramework(
     (`BusContextMixin`), interceptors (`BusInterceptorsMixin`), incomes (`BusIncomesMixin`),
     outcomes (`BusOutcomesMixin`), pipelines (`BusPipelinesMixin`), error handlers
     (`BusErrorHandlersMixin`), traces (`BusObservabilityMixin`), where the context is hosted
-    (`HostedContextMixin`) where it keeps what it keeps (`BusStoreMixin`) and its cache and idempotency (`BusCachingMixin`). What stays here is
+    (`HostedContextMixin`) where it saves what it saves (`BusStoreMixin`) and its cache and idempotency (`BusCachingMixin`). What stays here is
     the bus itself: registering, building and executing.
     """
 
@@ -112,14 +112,14 @@ class UseFramework(
           and `log_features` silence one kind only.
         - `package` is the Poetry distribution named in the Sentry release and the OTel
           `service.name` — detected from the caller outside `sincpro_framework` when omitted.
-        - `hide_in_logs` keeps context keys off every signal — log lines, spans, metrics and
+        - `hide_in_logs` removes context keys from every signal — log lines, spans, metrics and
           GlitchTip events; everything else the context says goes on all of them.
         - `metric_labels` puts context keys on every metric series, beside the release,
           service, version and tenant every series carries — a key (`"company"`) or a field
           reference (`of(BillingContext).company`). Declared here, before the build, because a
           backend fixes a series' labels when it creates it.
 
-        1. The settings kept as given, so `fresh()` builds a bus with the same ones.
+        1. The settings stored as given, so `fresh()` builds a bus with the same ones.
         2. Logger, observability, context, incomes and outcomes, each component's own state.
         3. The container the buses and handlers come from, the dependency registry, error
            handlers and interceptors.
@@ -151,7 +151,7 @@ class UseFramework(
         self._init_context_storage()
         self._init_incomes()
         self._init_outcomes()
-        self._hidden_in_logs: frozenset[str] = frozenset(hide_in_logs)
+        self.hidden_in_logs: frozenset[str] = frozenset(hide_in_logs)
         declare_metric_labels(metric_labels)
         # Who the lines come from first, the execution's context after: a key the application
         # sets itself (its own `tenant`) wins over the deployment's.
@@ -195,7 +195,7 @@ class UseFramework(
 
     @property
     def revision(self) -> int:
-        """How many registrations reached this bus after it was built. What keeps a snapshot of
+        """How many registrations reached this bus after it was built. Whatever holds a snapshot of
         the bus — a catalog of its use cases — compares it to know the snapshot is still true.
         """
         return self._revision
@@ -209,7 +209,7 @@ class UseFramework(
         return self._logger  # type: ignore[return-value]
 
     def _registered(self, replay: Callable[["UseFramework[TDeps]"], Any], what: str) -> None:
-        """Keep `replay` to repeat this registration on a generation `fresh()` makes; and when the
+        """Store `replay` to repeat this registration on a generation `fresh()` makes; and when the
         bus is already built, ask for a new generation — the next execution builds it.
 
         Context: called under `_build_lock`, with the registration already made, so a build never
@@ -240,7 +240,7 @@ class UseFramework(
         register = ioc.inject_feature_to_bus(self._sp_container, dto, replaces, self.name)
 
         def registered(handler: ioc.T) -> ioc.T:
-            """Register `handler` under the build lock, keep how to repeat it, and answer it
+            """Register `handler` under the build lock, store how to repeat it, and answer it
             unchanged."""
             with self._build_lock:
                 answer = register(handler)
@@ -265,12 +265,12 @@ class UseFramework(
             @billing.app_service(CommandCheckout, replaces=Checkout)
             class CheckoutWithFraudCheck(ApplicationService): ...
 
-        The registration is kept (`_registered`), so a generation `fresh()` makes repeats it.
+        The registration is stored (`_registered`), so a generation `fresh()` makes repeats it.
         """
         register = ioc.inject_app_service_to_bus(self._sp_container, dto, replaces, self.name)
 
         def registered(handler: ioc.T) -> ioc.T:
-            """Register `handler` under the build lock, keep how to repeat it, and answer it
+            """Register `handler` under the build lock, store how to repeat it, and answer it
             unchanged."""
             with self._build_lock:
                 answer = register(handler)
@@ -319,20 +319,20 @@ class UseFramework(
 
             billing.extend(access_control.attach)
 
-        Context: what `extension` registers is not kept one by one; the extension is, so a
+        Context: what `extension` registers is not stored one by one; the extension is, so a
         `fresh()` bus runs it again against itself, and a component bound to the bus it was
         wired into — an interceptor that reads its bus — is bound to that one. After the bus was
         built, the extension answers from the next execution, whole: it runs under the build
         lock, so no execution builds a generation with half of it.
         """
         with self._build_lock:
-            kept = len(self._registrations)
+            registered_before = len(self._registrations)
             outer, self._extending = self._extending, True
             try:
                 extension(self)
             finally:
                 self._extending = outer
-                del self._registrations[kept:]
+                del self._registrations[registered_before:]
             self._registered(
                 lambda bus: bus.extend(extension),
                 f"extension {getattr(extension, '__qualname__', extension)}",
@@ -366,7 +366,7 @@ class UseFramework(
     def _context_for_logs(self) -> Dict[str, Any]:
         """The execution's context, as fields on every log line this bus writes — its identity
         included, the execution's own over what the context was handed."""
-        running = current_execution()
+        running = context_executions.current()
         context = {
             **self._get_context().copy(),
             **(running.chain() if running is not None else {}),
@@ -374,7 +374,7 @@ class UseFramework(
         return {
             key: value
             for key, value in context.items()
-            if isinstance(key, str) and key not in self._hidden_in_logs
+            if isinstance(key, str) and key not in self.hidden_in_logs
         }
 
     def _add_dependencies_provided_by_user(self):
@@ -438,9 +438,9 @@ class UseFramework(
     def _build_root_bus(self):
         """A generation of this bus: new buses and new handler instances, built from every
         registration in now. It takes the place of the one answering; a request already running
-        keeps the generation it started on, to the end.
+        stays on the generation it started on, to the end.
 
-        1. The two buses the container keeps once are dropped, so this generation creates its
+        1. The two buses the container holds once are dropped, so this generation creates its
            own — and its own handlers — and nothing the running one holds is touched.
         2. Dependencies, error chains and the settings each bus is created with.
         3. The handlers wrapped by their interceptors and bound to this bus's context.
@@ -459,7 +459,7 @@ class UseFramework(
         self._assemble_handlers(bus)
         self._bind_context_to_handlers(bus)
 
-        # The container already injects this into the three buses; kept as a guard so
+        # The container already injects this into the three buses; retained as a guard so
         # the guarantee does not depend on the provider still being the one the
         # framework_bus Factory captured.
         bus.observability = self.observability
@@ -529,7 +529,7 @@ class UseFramework(
     def deps(self) -> TDeps:
         """Read-only locator of dependencies registered with ``add_dependency``.
 
-        Inside a Feature / ApplicationService keep using ``self.<name>``.
+        Inside a Feature / ApplicationService still use ``self.<name>``.
         Use this from the bounded-context root (SDK caller, test, entrypoint)::
 
             adapter = framework.deps.my_adapter

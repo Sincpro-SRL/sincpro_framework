@@ -22,11 +22,13 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session, aliased
 
 from sincpro_framework.data_layer import exceptions
-from sincpro_framework.data_layer.orm.sqlalchemy.domain.registry import relations_of
-from sincpro_framework.data_layer.orm.sqlalchemy.domain.relations import Held, hold
+from sincpro_framework.data_layer.orm.sqlalchemy.domain.relations import Held, HeldRelations
+from sincpro_framework.data_layer.orm.sqlalchemy.infrastructure.mapping_registry import (
+    mapping_registry,
+)
 from sincpro_framework.data_layer.orm.sqlalchemy.services import sql_translator
 from sincpro_framework.data_layer.orm.sqlalchemy.services.model_introspection import (
-    describe,
+    ModelIntrospection,
     is_mapped,
 )
 from sincpro_framework.ddd.criteria import Criteria, Specification
@@ -55,7 +57,7 @@ POSITION, TOTAL = sql_translator.POSITION, sql_translator.TOTAL
 """What every kind answers: the related records per parent identity."""
 
 if TYPE_CHECKING:
-    from sincpro_framework.data_layer.orm.sqlalchemy.domain.relations import Relation
+    from sincpro_framework.data_layer.orm.sqlalchemy.domain.relations import TableRelation
 
 
 def _partitioned(
@@ -217,7 +219,7 @@ def _through_table(prepare, session, meta, parents, relation, node, limit, dropp
 
     1. The parents' identities; none answers no groups.
     2. Refused when the relation has no table in between or no key on it for the related side.
-    3. The related aggregate joined to the pairs, kept for these parents, read windowed per
+    3. The related aggregate joined to the pairs, filtered to these parents, read windowed per
        parent (`_partitioned`).
     Final: one collection per parent, and the node's own relations over all the rows.
     """
@@ -300,8 +302,10 @@ def _scoped(declared: relations.Relation, node: Criteria) -> Criteria:
     if declared.scope is None:
         return node
     if declared.scope.expression is not None and is_mapped(declared.related):
-        kept, unknown = describe(declared.related).accept(declared.scope.expression)
-        if unknown or kept is None:
+        accepted, unknown = ModelIntrospection.describe(declared.related).accept(
+            declared.scope.expression
+        )
+        if unknown or accepted is None:
             raise exceptions.ProgrammingError(
                 f"{declared.related.__name__} cannot answer the scope its relation declares "
                 f"({', '.join(one.field for one in unknown) or 'nothing survived'}); "
@@ -327,7 +331,7 @@ def _resolve(
     limit = limit_of(node, whole)
     if declared.kind == "resolver":
         return resolve_elsewhere(meta, parents, declared, node, many, limit)
-    relation = cast("Relation", declared)
+    relation = cast("TableRelation", declared)
     match relation.kind:
         case "foreign_key" if many:
             return _by_foreign_key_on_related(
@@ -395,7 +399,7 @@ def resolve_relations(
             if node.specification is not None:
                 dropped.append(Dropped(field=name, reason="not_expandable"))
             continue
-        declared = relations_of(model).get(name)
+        declared = mapping_registry.relations_of(model).get(name)
         if declared is None:
             dropped.append(Dropped(field=name, reason="not_expandable"))
             continue
@@ -421,7 +425,7 @@ def resolve_relations(
                 value = found.first() if found else None
             cut = not whole and (node.expression is not None or (many and value.is_partial))
             read = frozenset(identity_of(one) for one in value) if many and not cut else None
-            hold(record, name, value, Held.CUT if cut else Held.WHOLE, read)
+            HeldRelations(record).hold(name, value, Held.CUT if cut else Held.WHOLE, read)
         fields[name] = field.model_copy(
             update={
                 "identified_by": declared.identified_by or field.identified_by,
@@ -443,7 +447,7 @@ def resolve_whole(
         model,
         [record],
         Specification({name: Criteria()}),
-        describe(model),
+        ModelIntrospection.describe(model),
         [],
         whole=True,
     )

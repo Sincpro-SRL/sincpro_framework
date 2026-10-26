@@ -135,7 +135,7 @@ class ReadsAggregates(ABC):
         The page is the criteria's `pagination` (fifty rows unless it says otherwise), never
         the whole table: a result whose size nobody bounded is `fetch_all` or `stream`, said
         by name. A collection class as `target` answers that class, so a domain collection
-        keeps its own methods.
+        retains its own methods.
 
             repository.search(Invoice, Criteria(where=Condition(field="total", operator=">",
                                                                  value=100)))
@@ -146,8 +146,8 @@ class ReadsAggregates(ABC):
 
     def fingerprint(self, target: type, criteria: Criteria | None = None) -> str:
         """One key for every read of `target` that answers the same rows, whatever page it asks
-        for — what `QueryCache` keeps a read under. A repository that reads under a scope makes
-        the scope part of it."""
+        for — what `QueryCache` caches a read under. A repository that reads under a scope
+        makes the scope part of it."""
         model, _ = model_and_collection(target)
         return fingerprint_of(model, criteria or Criteria())
 
@@ -317,7 +317,7 @@ class WritesAggregates(ABC):
         are written as one flush, with the same promises paid once instead of once per record.
 
         A store that maps relations writes the children a root holds with it, and settles the
-        ones an assignment dropped; `MemoryRepository` keeps the root as one object, children
+        ones an assignment dropped; `MemoryRepository` holds the root as one object, children
         inside, so a test there sees the aggregate it built rather than rows it wrote.
         """
 
@@ -424,7 +424,7 @@ class Transacts(ABC):
 
 
 class Extends(ABC):
-    """A store that keeps what an extension adds apart from the entity, and can give a stored
+    """A store that holds what an extension adds apart from the entity, and can give a stored
     record the rows of one it does not have yet."""
 
     @abstractmethod
@@ -435,5 +435,5 @@ class Extends(ABC):
 
     @abstractmethod
     def reclassify(self, entity: type) -> int:
-        """Writes the stored type of every row of an entity whose store keeps it, worked out
-        from the extension rows that exist. Answers how many rows it set."""
+        """Writes the stored type of every row of an entity whose store records that type,
+        worked out from the extension rows that exist. Answers how many rows it set."""

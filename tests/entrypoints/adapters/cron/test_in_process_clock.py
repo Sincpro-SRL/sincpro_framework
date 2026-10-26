@@ -10,7 +10,7 @@ from sincpro_framework.entrypoints.adapters.cron import (
     InMemoryRuns,
     Tick,
 )
-from sincpro_framework.entrypoints.adapters.cron.adapters import InProcessClock
+from sincpro_framework.entrypoints.adapters.cron.adapters.clocks import InProcessClock
 
 
 def test_the_clock_ticks_on_its_thread_until_it_is_stopped():

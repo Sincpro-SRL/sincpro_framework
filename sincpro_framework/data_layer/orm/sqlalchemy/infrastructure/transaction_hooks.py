@@ -10,7 +10,7 @@ session the process opens.
     the commit                   →  every after_commit held, in the order registered
     the rollback                 →  every after_rollback held, in the order registered
 
-Kept as a stack of levels on the session: the unit of work at the bottom, one level per
+Held as a stack of levels on the session: the unit of work at the bottom, one level per
 `savepoint()` open above it. The bottom level answers to SQLAlchemy's `after_commit` and to the
 outermost transaction's `after_soft_rollback`; `Repository.savepoint` opens and closes the levels
 above it.
@@ -35,7 +35,7 @@ Callback = Callable[[], Any]
 
 
 @dataclass
-class Level:
+class TransactionLevel:
     """What one level — the unit of work, or a savepoint above it — holds to run at its
     end."""
 
@@ -43,10 +43,10 @@ class Level:
     after_rollback: list[Callback] = field(default_factory=list)
 
 
-def _levels(session: Session) -> list[Level]:
+def _levels(session: Session) -> list[TransactionLevel]:
     """The stack of levels on `session`, the unit of work's at the bottom — made on first
     use."""
-    return session.info.setdefault(LEVELS, [Level()])
+    return session.info.setdefault(LEVELS, [TransactionLevel()])
 
 
 def _run(callbacks: list[Callback], moment: str) -> None:
@@ -61,7 +61,7 @@ def _run(callbacks: list[Callback], moment: str) -> None:
 def _committed(session: Session) -> None:
     """SQLAlchemy's `after_commit`: every level's `after_commit` run, bottom first, and the
     stack let go of — the next transaction starts empty."""
-    held = session.info.pop(LEVELS, [Level()])
+    held = session.info.pop(LEVELS, [TransactionLevel()])
     _run([one for level in held for one in level.after_commit], "after_commit")
 
 
@@ -70,7 +70,7 @@ def _rolled_back(session: Session, previous: SessionTransaction) -> None:
     `Repository.savepoint`'s to close, so only the outermost transaction's is taken."""
     if previous.parent is not None or previous.nested:
         return
-    held = session.info.pop(LEVELS, [Level()])
+    held = session.info.pop(LEVELS, [TransactionLevel()])
     _run([one for level in held for one in level.after_rollback], "after_rollback")
 
 
@@ -89,7 +89,7 @@ def register(session: Session, moment: str, callback: Callback) -> None:
 
 def opened_savepoint(session: Session) -> None:
     """A new level on top, for what the savepoint about to open registers."""
-    _levels(session).append(Level())
+    _levels(session).append(TransactionLevel())
 
 
 def closed_savepoint(session: Session, undone: bool) -> None:
@@ -103,7 +103,7 @@ def closed_savepoint(session: Session, undone: bool) -> None:
     With no savepoint level open, an empty one is closed: nothing moves and nothing runs.
     """
     levels = _levels(session)
-    level = levels.pop() if len(levels) > 1 else Level()
+    level = levels.pop() if len(levels) > 1 else TransactionLevel()
     if undone:
         _run(level.after_rollback, "after_rollback")
         return

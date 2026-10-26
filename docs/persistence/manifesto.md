@@ -17,7 +17,7 @@ narrower class to look portable.
 
 **2. The port is the minimum every store can honour, never less and never more.** The abstract
 `Repository` in `sincpro_framework.ddd` is the contract a relational store, a document store and
-memory all keep with the same meaning. It is not a poor copy of the concrete class: it is the
+memory all honour with the same meaning. It is not a poor copy of the concrete class: it is the
 part of it that is true everywhere.
 
 **3. A word reaches the port only when it passes three questions.**
@@ -28,7 +28,7 @@ part of it that is true everywhere.
 3. Does a Feature written against it behave the same on every store that accepts it?
 
 Three yeses: it goes on the port. Any no: it stays on the concrete class, fully typed there. An
-abstraction that only one store can keep is a second signature that drifts from the first.
+abstraction that only one store can honour is a second signature that drifts from the first.
 
 **4. The concrete class is a subtype of the port.** It inherits it, so the type checker holds
 every override to the port's signature: the concrete class may add parameters with defaults and
@@ -98,7 +98,7 @@ work's job: `for_update` on the row, or `serializable` and `retrying`.
 first result and does not move money again — the idempotency record committed in the same
 transaction as the write ([caching](../caching/README.md)).
 
-**19. What happened is kept.** Who wrote (`AuditedMixin`), what changed (`ChangeTrackingMixin`),
+**19. What happened is stored.** Who wrote (`AuditedMixin`), what changed (`ChangeTrackingMixin`),
 and the facts themselves when the history is the product (event sourcing). A record is archived,
 not deleted, when anything may point at it.
 
@@ -133,12 +133,12 @@ needs — consistency, versions, scope, rules, traces — works by default, with
 hand. What the framework does not orchestrate, or orchestrates differently than a case needs, is
 reachable underneath without asking: the model is a plain SQLAlchemy mapping, `unit.session` is
 SQLAlchemy whole inside the same transaction, `statement()` hands a real `Select` out. A door
-underneath that keeps the transaction is part of every feature, not an afterthought.
+underneath that preserves the transaction is part of every feature, not an afterthought.
 
 **25. The framework declares; SQLAlchemy executes.** The framework builds what SQLAlchemy does not
 have — the query language, the page per parent, the scope, the hooks, the named errors, relations
 to other contexts — and maps the rest onto what SQLAlchemy already does well. Mechanics rebuilt
-beside a library that has them are a second implementation to keep in step with the first.
+beside a library that has them are a second implementation to maintain in step with the first.
 
 The use cases, from the simplest to the advanced, and where each is answered:
 [use-cases.md](use-cases.md).

@@ -21,7 +21,7 @@ from sincpro_framework.observability.domain import (
     on,
     otel_sdk_disabled,
 )
-from sincpro_framework.observability.registry import PROCESS, registry
+from sincpro_framework.observability.registry import PROCESS, observability_registry
 from sincpro_framework.sincpro_conf import settings
 
 try:
@@ -104,14 +104,14 @@ def tracer_for(bus: str, instrumentation_name: str = "sincpro_framework") -> Any
     try:
         # The scope's version says which framework release instrumented the span.
         version = framework_version()
-        provider = registry.tracer_provider(bus)
+        provider = observability_registry.tracer_provider(bus)
         if provider is not None:
             return provider.get_tracer(instrumentation_name, version)
 
         from opentelemetry import trace
 
         host = trace.get_tracer_provider()
-        if registry.owns_tracer_provider(host):
+        if observability_registry.owns_tracer_provider(host):
             return None
         return host.get_tracer(instrumentation_name, version)
     except Exception:
@@ -181,12 +181,12 @@ def install_process_provider(identity: ObservabilityIdentity, endpoint: str) -> 
     if type(trace.get_tracer_provider()).__name__ not in PROXY_PROVIDERS:
         return None
 
-    provider = registry.tracer_provider(PROCESS)
+    provider = observability_registry.tracer_provider(PROCESS)
     if provider is None:
         process_identity = identity.model_copy(update={"bus": ""})
         provider = _build_provider(process_identity, endpoint)
-        registry.register_tracer_provider(PROCESS, provider)
-        registry.register_process_identity(process_identity)
+        observability_registry.register_tracer_provider(PROCESS, provider)
+        observability_registry.register_process_identity(process_identity)
     trace.set_tracer_provider(provider)
     return provider
 
@@ -241,13 +241,13 @@ def setup_tracing(
         return off(turned_off or "no_endpoint")
 
     try:
-        provider = registry.tracer_provider(identity.bus)
+        provider = observability_registry.tracer_provider(identity.bus)
         if provider is None:
             try:
                 provider = _build_provider(identity, endpoint)
             except ImportError:
                 return failed("exporter_missing")
-            registry.register_tracer_provider(identity.bus, provider)
+            observability_registry.register_tracer_provider(identity.bus, provider)
 
         install_process_provider(identity, endpoint)
 

@@ -26,17 +26,16 @@ from sincpro_framework.ddd import Criteria, Cursor, Pagination
 from sincpro_framework.ddd import criteria as criteria_package
 from sincpro_framework.ddd.criteria import (
     All,
-    Any_,
+    Any,
     Condition,
     Grouping,
-    Level,
+    GroupingLevel,
     Measure,
+    Node,
     Not,
     Offset,
     Operator,
     Sort,
-    combined,
-    conditions_of,
 )
 from sincpro_framework.ddd.criteria.domain.pagination import DEFAULT_LIMIT
 
@@ -72,7 +71,7 @@ def test_a_group_is_an_object_with_all_any_or_negate():
     negation = Criteria.model_validate({"where": {"negate": OVER_A_THOUSAND}}).expression
 
     assert conjunction == All(all=[OVER_A_THOUSAND, NAMED_LABS])
-    assert disjunction == Any_(any=[OVER_A_THOUSAND, NAMED_LABS])
+    assert disjunction == Any(any=[OVER_A_THOUSAND, NAMED_LABS])
     assert negation == Not(negate=OVER_A_THOUSAND)
 
 
@@ -92,7 +91,7 @@ def test_groups_nest_without_limit():
     ).expression
 
     assert isinstance(tree, All)
-    assert isinstance(tree.all[1], Any_)
+    assert isinstance(tree.all[1], Any)
     assert isinstance(tree.all[1].any[1], Not)
 
 
@@ -167,8 +166,8 @@ def test_the_grouping_declares_its_levels_and_its_folds():
     )
 
     assert asked.grouping.group_by == (
-        Level(field="produced_by"),
-        Level(field="registered_at", grain=Grain.MONTH),
+        GroupingLevel(field="produced_by"),
+        GroupingLevel(field="registered_at", grain=Grain.MONTH),
     )
     assert asked.grouping.measures == {"rows": Measure(function="sum", field="row_count")}
 
@@ -194,7 +193,7 @@ def test_filters_accumulate_with_and():
 def test_merging_does_not_nest_what_is_one_where():
     """Criteria get merged repeatedly — a saved reading, what the user typed, what the
     interface always adds — and wrapping each merge would nest as deep as the merges."""
-    flat = combined(All(all=[OVER_A_THOUSAND]), NAMED_LABS)
+    flat = Node.combined(All(all=[OVER_A_THOUSAND]), NAMED_LABS)
 
     assert flat == All(all=[OVER_A_THOUSAND, NAMED_LABS])
 
@@ -228,10 +227,9 @@ def test_turning_the_definition_off_survives_a_merge():
 
 
 def test_every_leaf_is_reachable_whatever_the_shape():
-    tree = All(all=[Any_(any=[OVER_A_THOUSAND, NAMED_LABS]), Not(negate=OVER_A_THOUSAND)])
+    tree = All(all=[Any(any=[OVER_A_THOUSAND, NAMED_LABS]), Not(negate=OVER_A_THOUSAND)])
 
-    assert conditions_of(tree) == [OVER_A_THOUSAND, NAMED_LABS, OVER_A_THOUSAND]
-    assert conditions_of(None) == []
+    assert tree.conditions() == [OVER_A_THOUSAND, NAMED_LABS, OVER_A_THOUSAND]
 
 
 def test_a_criteria_survives_its_own_json():
@@ -240,7 +238,7 @@ def test_a_criteria_survives_its_own_json():
         where=All(all=[OVER_A_THOUSAND, NAMED_LABS]),
         order=(Sort(field="registered_at", descending=True),),
         pagination=Pagination(limit=80, strategy=Cursor(token="eyJ")),
-        grouping=Grouping(group_by=(Level(field="produced_by"),)),
+        grouping=Grouping(group_by=(GroupingLevel(field="produced_by"),)),
     )
 
     assert Criteria.model_validate_json(asked.model_dump_json()) == asked

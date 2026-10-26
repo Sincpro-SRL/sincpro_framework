@@ -21,7 +21,7 @@ T = TypeVar("T")
 def _build_value_object_type(
     base: type, name: str, validate_fn: Callable[[Any], Any] | None, module: str
 ) -> type:
-    """The class behind `ValueObject` and `new_value_object`: a subclass of `base` whose
+    """The class behind `ValueObject`: a subclass of `base` whose
     construction runs `validate_fn`, named `name` and placed in `module`.
 
     1. `__new__` runs the rule; a result that is not `None` replaces the value — a rule that
@@ -87,44 +87,8 @@ def ValueObject(
         UserId(-5)   ->  UserId(5)
 
     `validate_fn` checks or transforms: it raises to refuse, returns a value to replace the
-    one given, or returns `None` to keep it. Without a `name` the type is called as its base.
+    one given, or returns `None` to leave it as it is. Without a `name` the type is called as
+    its base.
     """
     _name = name or base.__name__
     return cast(type[T], _build_value_object_type(base, _name, validate_fn, base.__module__))
-
-
-def new_value_object(
-    new_type: Any,
-    validate_fn: Callable[[Any], Any] | None,
-) -> Any:
-    """Deprecated — the older spelling of `ValueObject`, kept for the code already written
-    with it; it warns and goes away in the next major release.
-
-        UserIdVO = new_value_object(NewType("UserId", int), lambda v: abs(v))     before
-        UserIdVO = ValueObject(int, lambda v: abs(v), name="UserId")              now
-
-    1. A `DeprecationWarning`, pointing at the caller.
-    2. A `NewType` gives its supertype as the base and its own name and module.
-    3. A plain type is its own base, named as itself.
-    Final: the same class `ValueObject` builds.
-    """
-    import warnings
-
-    warnings.warn(
-        "new_value_object() is deprecated and will be removed in the next major release. "
-        "Use ValueObject() instead.",
-        DeprecationWarning,
-        stacklevel=2,
-    )
-    if hasattr(new_type, "__supertype__"):
-        # Called with NewType("X", int) — legacy API path
-        base = new_type.__supertype__
-        name = new_type.__name__
-        module = new_type.__module__
-    else:
-        # Called with a plain type (int, str, ...) — delegate to ValueObject
-        base = new_type
-        name = new_type.__name__
-        module = new_type.__module__
-
-    return _build_value_object_type(base, name, validate_fn, module)

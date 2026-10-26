@@ -1,6 +1,6 @@
 """What the FastAPI gateway raises."""
 
-from sincpro_framework.auth.domain.exceptions import (
+from sincpro_framework.auth import (
     AuthError,
     PermissionDenied,
     Unauthenticated,

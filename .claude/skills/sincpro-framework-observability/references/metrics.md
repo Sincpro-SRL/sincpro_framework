@@ -77,15 +77,19 @@ class PriceOrder(Feature):
 
 ## Backend
 
-| `OTEL_METRICS_EXPORTER` | alias `SINCPRO_METRICS_BACKEND` | Recorder |
-|---|---|---|
-| not set | `auto` | OpenTelemetry when a meter provider/OTLP endpoint exists, else nothing |
-| `otlp` | `otel` | `OtelRecorder` (`[opentelemetry]`) |
-| `prometheus` | `prometheus` | `PrometheusRecorder`, scraped at `/metrics` (`[prometheus]`) |
-| `none` / `OTEL_SDK_DISABLED=true` | `off` | nothing |
+| `OTEL_METRICS_EXPORTER` | Recorder |
+|---|---|
+| not set | OpenTelemetry when a meter provider/OTLP endpoint exists, else nothing |
+| `otlp` | `OtelRecorder` (`[opentelemetry]`) |
+| `prometheus` | `PrometheusRecorder`, scraped at `/metrics` (`[prometheus]`) |
+| `none` / `OTEL_SDK_DISABLED=true` | nothing |
 
-`SINCPRO_METRICS_BACKEND` set to anything but `auto` wins. `metrics.use(recorder)` in code;
+`SINCPRO_METRICS_BACKEND` (`auto`/`otel`/`prometheus`/`off`) set to anything but `auto` wins.
+`metrics.use(recorder)` in code;
 `metrics.using(recorder)` for a block (tests use `InMemoryRecorder`).
+An instrument described outside a use case (the cache's outcomes, a queue's deliveries) is
+measured with `metrics.emit(instrument, value, labels)`, through the same shield.
+`metrics.declared_on(cls)` answers whether a use case declared a metric with a decorator.
 
 Prometheus: names become `context_use_case_field`, a counter ends `_total`; `FastApiGateway.app()`
 serves `/metrics` by itself when the process records to Prometheus. With several worker processes

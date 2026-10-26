@@ -14,8 +14,8 @@ from structlog.testing import capture_logs
 from sincpro_framework import UseFramework, exceptions
 from sincpro_framework.context import Drafts, InMemoryContexts
 from sincpro_framework.data_layer.orm import map_aggregates
+from sincpro_framework.data_layer.orm.sqlalchemy.adapters.numbering import DatabaseNumbering
 from sincpro_framework.data_layer.orm.sqlalchemy.domain.transaction import Writes
-from sincpro_framework.data_layer.orm.sqlalchemy.entrypoint.numbering import DatabaseNumbering
 from sincpro_framework.data_layer.orm.sqlalchemy.entrypoint.repository import Repository
 from sincpro_framework.data_layer.orm.sqlalchemy.entrypoint.template_table import entity_table
 from sincpro_framework.data_layer.orm.sqlalchemy.entrypoint.template_table.numbering import (

@@ -42,7 +42,7 @@ The columns:
 | Combine | `all` / `any` / `negate` | AND / OR / NOT | `and_`, `or_`, `not_` | ✅ |
 | Text search, case-insensitive | `contains` on text | `lower(col) LIKE '%…%'` | `ilike` | ✅ |
 | Full-text search, ranked | — | — | `func.to_tsvector`, `@@` (Postgres) | ⬜ |
-| Order | `order=[Sort]`, `parse_order("-total")` | ORDER BY + identity tiebreaker | `order_by` | ✅ |
+| Order | `order=[Sort]`, `Sort.parse("-total")` | ORDER BY + identity tiebreaker | `order_by` | ✅ |
 | Page | `pagination` keyset (cursor) or offset | keyset by `(sort, id) < (…)` | `limit`/`offset` | ✅ |
 | Count | `count` (`CAPPED` / `EXACT` / `NONE`) | capped at 10 000 unless asked | `func.count` | ✅ |
 | Short questions | `exists`, `first`, `one`, `pluck`, `distinct`, `browse(ids)` | one statement each | — | ✅ |
@@ -56,7 +56,7 @@ The columns:
 | Use case | Vocabulary | Framework · SQLAlchemy | SQLAlchemy directly | Status |
 |---|---|---|---|---|
 | Totals over the whole set | `measures(sum/avg/min/max/count/percentile)` | one statement, in the database | `func.*` | ✅ |
-| Group by, several levels, date grains | `Grouping(group_by=[Level(field, grain)])` | GROUP BY, buckets with ids and a page each | `group_by` | ✅ |
+| Group by, several levels, date grains | `Grouping(group_by=[GroupingLevel(field, grain)])` | GROUP BY, buckets with ids and a page each | `group_by` | ✅ |
 | Filter on a measure | `where_measures` | HAVING | `having` | ✅ |
 | Pivot with margins | `pivot(rows, columns, measures)` | four statements whatever the volume | — | ✅ |
 | Export | `export` (page by page as dicts) | streaming | — | ✅ |
@@ -64,7 +64,7 @@ The columns:
 | DataFrames | `data_analysis`: a `Criteria` into pandas / polars / DuckDB / Arrow | read once, page by page | — | ✅ |
 | Window functions | — | through `statement()` → `run()` | `func.row_number().over()` | 🟡 escape hatch only |
 | A view, a materialized view | — | an aggregate can be mapped on a view's `Table`, read-only by convention | `CREATE MATERIALIZED VIEW`, `REFRESH` | ⬜ no declared read-only aggregate |
-| A report joining several aggregates | — | a field kept current by an event (`Line.entry_state`), or `statement()` | joins | 🟡 pattern + escape hatch |
+| A report joining several aggregates | — | a field maintained by an event (`Line.entry_state`), or `statement()` | joins | 🟡 pattern + escape hatch |
 
 ## 4. Relations — reading
 
@@ -72,8 +72,8 @@ The columns:
 |---|---|---|---|---|
 | many2one / one2many by a foreign key | `list[T]` / `T \| None` annotations, inferred | resolved once per page, never per row | `relationship` + `selectinload` | ✅ |
 | By a business key (FK to a unique column) | inferred from the FK | `parent_field` / `related_field` | `primaryjoin` | ✅ |
-| many2many | `Relation.many_to_many(through=…)` | one statement per node | `secondary=` | ✅ |
-| Ids held in a JSON column | `Relation.id_list` | one statement per node | — | ✅ |
+| many2many | `TableRelation.many_to_many(through=…)` | one statement per node | `secondary=` | ✅ |
+| Ids held in a JSON column | `TableRelation.id_list` | one statement per node | — | ✅ |
 | From another bounded context | `Relation.bus(...)`, `Relation.resolved_by(...)` | one call per node, the criteria reflected | — | ✅ framework-only |
 | What to bring, at any depth, per parent paged | `specification` | window function: N per parent | — | ✅ framework-only |
 | A relation's own filter | `scope=Criteria(...)` | AND-ed into every reading of it | `with_loader_criteria` | ✅ |
@@ -151,7 +151,7 @@ The columns:
 | Use case | Vocabulary | Framework · SQLAlchemy | SQLAlchemy directly | Status |
 |---|---|---|---|---|
 | Record a fact on the aggregate | `DomainEvent`, `record` / `pull_events` | — | — | ✅ |
-| Keep the context's events, with the change | `DomainEvent` is an `Entity`; `save(aggregate)` keeps what it recorded; `MemoryRepository` keeps them the same way in a test | `event_table` + `map_events(registry, ContextDomainEvent, table)`: one table, single-table inheritance by `name`, subclass fields in `payload` | — | ✅ |
+| Store the context's events, with the change | `DomainEvent` is an `Entity`; `save(aggregate)` stores what it recorded; `MemoryRepository` stores them the same way in a test | `event_table` + `map_events(registry, ContextDomainEvent, table)`: one table, single-table inheritance by `name`, subclass fields in `payload` | — | ✅ |
 | Find events by class, and by entity | `search(InvoicePaid, criteria)`, `search(ContextDomainEvent, criteria)` | envelope columns filtered like any column | `statement()` | ✅ — by their own fields: filters inside JSON (gap) |
 | One entity's history | `Criteria` on `entity_type` / `entity_id`, ordered by `id` | indexed `(entity_type, entity_id, id)` | — | ✅ |
 | An event about no entity | `save([DayClosed()])`, `Publisher(RepositoryQueue(repository))` | `entity_type` / `entity_id` empty | — | ✅ |
@@ -159,7 +159,7 @@ The columns:
 | Mark what leaves, and where its delivery stands | `DeliverableEventMixin`: `delivered_at`, `next_delivery_at`, `delivery` | `is_deliverable` column; a partial index on what is still to deliver | — | ✅ |
 | Publish only what committed | `EventRelay(repository, source, publisher)` over any repository | `FOR UPDATE SKIP LOCKED` inside a unit of work; `Crons.run_relay`, `relay_deliverable_events` | — | ✅ at least once, in order per entity |
 | Decide what a failure does | `RetryInPlace`, `RetryLater`, `ParkAndContinue`, `SkipAndContinue`; `ExponentialBackoff`, `FixedBackoff` | — | — | ✅ |
-| Projections kept from events | a Feature subscribed to the event saves a read model | — | — | 🟡 no rebuild helper |
+| Projections maintained from events | a Feature subscribed to the event saves a read model | — | — | 🟡 no rebuild helper |
 | Old events read by new code | — | — | — | ⬜ upcasters |
 | Deliver across services | `Publisher`, brokers (FastStream), inbox | at least once + idempotent handler | — | ✅ |
 | A process across contexts that compensates | — | — | — | ⬜ sagas |
@@ -201,7 +201,7 @@ The columns:
 | Use case | Vocabulary | Framework · SQLAlchemy | SQLAlchemy directly | Status |
 |---|---|---|---|---|
 | Write a condition briefly | `Criteria` | — | `where()` | 🟡 correct and verbose: no `where(("state", "=", "posted"))` triple |
-| Named scopes that compose | `combined()` | — | — | 🟡 no `&` / `\|` / `~` |
+| Named scopes that compose | `Node.combined()` | — | — | 🟡 no `&` / `\|` / `~` |
 | Gapless numbering per company, series and year | `INumbering.take(series, count, scope)`, `MemoryNumbering` | `orm.DatabaseNumbering` over `numbering_table`: one `ON CONFLICT … RETURNING`, given back by a rollback | a locked counter row | ✅ |
 | Rules bound to the request (tenant, company) on every read and write | `narrowed` | — | — | 🟡 applied by hand; no `check_company` |
 | Money: amount, currency, rounding | — | — | — | 🟡 a rule, no type |
@@ -234,5 +234,5 @@ reasoning behind each, front by front, is in [landscape.md](landscape.md).
 | — | Window functions | rankings, running totals | stay on `statement()` → `run()` until a case repeats |
 | — | `MemoryRepository` without relations or isolation | a Feature tested on the double can behave differently where a relation is read or two blocks race without claiming | persistence is tested on SQLite; the double is for Features' logic, units of work included |
 
-Each gap keeps the two promises: orchestrated by default when it lands, and reachable today
+Each gap honours the two promises: orchestrated by default when it lands, and reachable today
 through the door underneath.

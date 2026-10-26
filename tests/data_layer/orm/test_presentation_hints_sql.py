@@ -14,7 +14,9 @@ from sincpro_framework.data_layer.orm import map_aggregates
 from sincpro_framework.data_layer.orm.sqlalchemy.entrypoint.repository import Repository
 from sincpro_framework.data_layer.orm.sqlalchemy.entrypoint.template_table import entity_table
 from sincpro_framework.data_layer.orm.sqlalchemy.infrastructure.database import Database
-from sincpro_framework.data_layer.orm.sqlalchemy.services.model_introspection import describe
+from sincpro_framework.data_layer.orm.sqlalchemy.services.model_introspection import (
+    ModelIntrospection,
+)
 from sincpro_framework.ddd import (
     Condition,
     EntityReads,
@@ -74,7 +76,7 @@ HINTS = ("readonly", "required", "default", "readonly_when", "required_when", "v
 
 def test_the_mapped_class_publishes_the_hints_its_declaration_says():
     on_the_class = describe_class(Sale, "id").model_dump(mode="json")["fields"]
-    on_the_table = describe(Sale).model_dump(mode="json")["fields"]
+    on_the_table = ModelIntrospection.describe(Sale).model_dump(mode="json")["fields"]
 
     for name in on_the_class:
         assert {hint: on_the_table[name][hint] for hint in HINTS} == {

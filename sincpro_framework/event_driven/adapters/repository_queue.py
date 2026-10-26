@@ -1,4 +1,4 @@
-"""`RepositoryQueue`: `publish(event)` keeps the event through the repository, in the unit of
+"""`RepositoryQueue`: `publish(event)` saves the event through the repository, in the unit of
 work in play, instead of sending it — the relay sends it once the transaction committed.
 
     publisher = Publisher(RepositoryQueue(repository))
@@ -6,7 +6,7 @@ work in play, instead of sending it — the relay sends it once the transaction 
         repository.save(invoice)
         publisher.publish(InvoicePaid(invoice_id=invoice.id))    committed with the invoice
 
-The Feature keeps its one verb; whether `publish` sends now or keeps the event for the relay is
+The Feature has one verb; whether `publish` sends now or saves the event for the relay is
 the wiring's choice.
 """
 
@@ -17,10 +17,10 @@ from sincpro_framework.ddd.repositories import IRepository
 
 
 class RepositoryQueue:
-    """A `Queue` keeping events through a repository — an outbox — instead of sending them."""
+    """A `Queue` saving events through a repository — an outbox — instead of sending them."""
 
     def __init__(self, repository: IRepository) -> None:
-        """Keep events through `repository` — the one the Feature saves its aggregate with,
+        """Save events through `repository` — the one the Feature saves its aggregate with,
         so both share the unit of work."""
         self.repository = repository
 

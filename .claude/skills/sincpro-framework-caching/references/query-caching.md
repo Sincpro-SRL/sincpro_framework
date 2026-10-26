@@ -7,7 +7,7 @@ from datetime import timedelta
 
 from sincpro_framework.data_layer.caching import QueryCachePolicy, QueryCaching
 
-from sincpro_framework.store import InMemoryKeyValue
+from sincpro_framework.data_layer.store import InMemoryKeyValue
 
 caching = QueryCaching(InMemoryKeyValue(), sensitive=("user_id",))
 caching.on(billing, QueryBalance, QueryCachePolicy(ttl=timedelta(minutes=5), vary_by="tenant_id"))
@@ -33,11 +33,11 @@ varies by — **context keys only**. The authenticated identity is not in the co
 puts it there, so a cache that must not cross tenants gets the key from a context provider:
 
 ```python
-from sincpro_framework.auth.infrastructure.security_context import current_identity
+from sincpro_framework.auth import security
 
 @billing.context_provider(gives=["tenant_id"])
 def tenant_of_the_caller(context):
-    return {"tenant_id": current_identity().tenant}
+    return {"tenant_id": security.identity.tenant}
 ```
 
 A context key named in `sensitive` that the policy does not vary by makes that call **refused**
@@ -62,7 +62,7 @@ their domain events: `caching.invalidated_by({InvoiceIssued: [Invoice]})` is a b
 `Subscriber` beside the others.
 
 An answer that read nothing a repository noted, and declares no `depends_on`, is answered and never
-kept — there would be nothing to let it go by (a warning on the `sincpro_framework.data_layer.caching`
+cached — there would be nothing to let it go by (a warning on the `sincpro_framework.data_layer.caching`
 logger on every such call). A Query that reads through an HTTP adapter or a raw connection declares what it depends on:
 
 ```python
@@ -88,7 +88,7 @@ policy = QueryCachePolicy(
 
 One caller recomputes a missing or expiring answer — whoever wins the store's atomic `add` on its
 lock; the others serve the stale answer or wait a moment. `QueryCaching(store,
-near=timedelta(seconds=5))` also keeps answers in-process and still checks tag versions in the store,
+near=timedelta(seconds=5))` also caches answers in-process and still checks tag versions in the store,
 so an invalidation from another replica is seen at once.
 
 ## The bounded context's own: `bus.cache.queries`
@@ -99,7 +99,7 @@ billing.cache.queries(QueryStatement, QueryCachePolicy(ttl=timedelta(minutes=5),
 invalidate_on_commit(database, billing.cache.queries())               # the same QueryCaching
 ```
 
-One `QueryCaching` per bus, namespaced by its name and bound to the store its context is kept in —
+One `QueryCaching` per bus, namespaced by its name and bound to the store its context is stored in —
 so a write made from any context invalidates on that store. Build one by hand (below) for a store
 or options of its own (`sensitive`, `near`).
 
@@ -110,7 +110,7 @@ shared = InMemoryKeyValue()
 billing_cache = QueryCaching(shared, namespace="billing")
 catalog_cache = QueryCaching(shared, namespace="catalog")
 billing_cache.invalidate()        # billing's answers only
-billing_cache.enabled = False     # every billing query runs its use case, nothing kept
+billing_cache.enabled = False     # every billing query runs its use case, nothing cached
 billing_cache.policies()          # what is cached and how
 ```
 

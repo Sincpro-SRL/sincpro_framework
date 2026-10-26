@@ -23,17 +23,13 @@ from sincpro_framework import (
 )
 from sincpro_framework.auth import AccessControl, Identity, Permission, StaticProvider
 from sincpro_framework.data_layer.caching import Idempotency
+from sincpro_framework.data_layer.store import InMemoryKeyValue
 from sincpro_framework.ddd import Query
-from sincpro_framework.entrypoints.adapters.mcp import (
-    McpGateway,
-    McpWire,
-    build_mcp_server,
-    tool_name_of,
-)
+from sincpro_framework.entrypoints import Entrypoint, McpGateway
+from sincpro_framework.entrypoints.adapters.mcp import McpWire, tool_name_of
 from sincpro_framework.entrypoints.domain.bindings import Deprecation, McpBinding
 from sincpro_framework.entrypoints.domain.surface import Exposure
 from sincpro_framework.entrypoints.entrypoint.decorators import mcp
-from sincpro_framework.store import InMemoryKeyValue
 
 fastmcp = pytest.importorskip("fastmcp")
 
@@ -417,14 +413,14 @@ def test_a_guarded_use_case_bound_for_mcp_must_say_who_may_call_it() -> None:
 # The conveniences stay the catalog, and a project may bring its own wire
 
 
-def test_build_mcp_server_over_one_bus_keeps_the_catalog_and_its_names() -> None:
-    tools = _tools(build_mcp_server(_billing()))
+def test_the_catalog_of_one_bus_names_tools_by_their_dto() -> None:
+    tools = _tools(Entrypoint(_billing()).server())
     assert set(tools) == {"CommandIssueInvoice", "QueryInvoice", "CommandReconcile"}
     assert tools["QueryInvoice"].annotations.readOnlyHint is True
     assert tools["CommandIssueInvoice"].annotations.idempotentHint is True
 
 
-def test_build_mcp_server_over_several_buses_is_the_catalog_of_the_gateway() -> None:
+def test_the_catalog_over_several_buses_is_the_gateway_in_catalog_exposure() -> None:
     sales = UseFramework("ventas", log_after_execution=False)
 
     @sales.app_service(CommandReconcile)
@@ -432,7 +428,8 @@ def test_build_mcp_server_over_several_buses_is_the_catalog_of_the_gateway() -> 
         def execute(self, dto: CommandReconcile) -> None:
             return None
 
-    tools = _tools(build_mcp_server([_billing(), sales]))
+    gateway = McpGateway([_billing(), sales], exposure=Exposure.CATALOG, unguarded=True)
+    tools = _tools(gateway.server())
     assert set(tools) == {"issue_invoice", "invoice", "billing_reconcile", "ventas_reconcile"}
 
 

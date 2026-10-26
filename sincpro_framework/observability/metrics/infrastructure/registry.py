@@ -2,21 +2,21 @@
 
 from weakref import WeakKeyDictionary
 
-from sincpro_framework.observability.metrics.domain.declarations import Declaration
+from sincpro_framework.observability.metrics.domain.declarations import MetricDeclaration
 
-_by_class: "WeakKeyDictionary[type, tuple[Declaration, ...]]" = WeakKeyDictionary()
+_by_class: "WeakKeyDictionary[type, tuple[MetricDeclaration, ...]]" = WeakKeyDictionary()
 
 
-def declare(cls: type, declaration: Declaration) -> None:
-    """Add `declaration` to what `cls` declares, after the ones before it — kept off the
+def declare(cls: type, declaration: MetricDeclaration) -> None:
+    """Add `declaration` to what `cls` declares, after the ones before it — stored off the
     class, so a DTO or a use case is never touched and a class that goes away takes them
     with it."""
     _by_class[cls] = (*_by_class.get(cls, ()), declaration)
 
 
-def declarations_of(cls: type) -> tuple[Declaration, ...]:
+def declarations_of(cls: type) -> tuple[MetricDeclaration, ...]:
     """What `cls` declares, and what the classes it inherits from declared."""
-    found: list[Declaration] = []
+    found: list[MetricDeclaration] = []
     for one in reversed(cls.__mro__):
         found.extend(_by_class.get(one, ()))
     return tuple(found)

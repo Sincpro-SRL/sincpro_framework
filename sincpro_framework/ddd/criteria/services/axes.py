@@ -1,6 +1,11 @@
-"""The pieces of an axis: the text a database writes for a grain, and the range a filter holds a
-date field to. Pure: the dates come in as arguments."""
+"""What a grouping needs to list its groups: the range a filter holds a date field to, and every
+value of an axis that `fill` completes.
 
+`GroupingLevel(fill=True)` lists every value a level can take so a group with no rows is still a
+group. Pure: the dates and the choices come in as arguments, the groups come out as values.
+"""
+
+from collections.abc import Sequence
 from datetime import date, datetime, time, timedelta
 from typing import Any
 
@@ -11,40 +16,8 @@ from sincpro_framework.ddd.criteria.domain.expression import (
     Expression,
     Operator,
 )
-from sincpro_framework.ddd.criteria.domain.values import Grain, Span
-
-ONE: dict[Grain, Span] = {
-    Grain.DAY: Span(days=1),
-    Grain.WEEK: Span(weeks=1),
-    Grain.MONTH: Span(months=1),
-    Grain.QUARTER: Span(months=3),
-    Grain.YEAR: Span(years=1),
-}
-
-
-def label_of(start: date, grain: Grain) -> str:
-    """The text a database writes for the grain a date falls in; `bucket_range` reads it back.
-
-        label_of(date(2026, 3, 14), Grain.WEEK)       ->  '2026-W11'    # ISO year and week
-        label_of(date(2026, 8, 2), Grain.QUARTER)     ->  '2026-Q3'
-        label_of(date(2026, 10, 24), Grain.MONTH)     ->  '2026-10'
-        label_of(date(2026, 10, 24), Grain.YEAR)      ->  '2026'
-        label_of(date(2026, 10, 24), Grain.DAY)       ->  '2026-10-24'
-
-    Context: the date is labelled as it is — snapping it to its grain is the caller's.
-    """
-    match grain:
-        case Grain.YEAR:
-            return f"{start.year}"
-        case Grain.QUARTER:
-            return f"{start.year}-Q{(start.month - 1) // 3 + 1}"
-        case Grain.MONTH:
-            return f"{start.year}-{start.month:02d}"
-        case Grain.WEEK:
-            year, week, _ = start.isocalendar()
-            return f"{year}-W{week:02d}"
-        case Grain.DAY:
-            return start.isoformat()
+from sincpro_framework.ddd.criteria.domain.grouping import GroupingLevel
+from sincpro_framework.ddd.criteria.domain.values import PART_VALUES
 
 
 def _as_datetime(value: Any) -> datetime:
@@ -101,3 +74,65 @@ def bounds_of(expression: Expression | None, field: str) -> tuple[datetime, date
                 _as_datetime(part.value[1]) + timedelta(microseconds=1),
             )
     return (low, high) if low is not None and high is not None else None
+
+
+def axis_values(
+    level: GroupingLevel,
+    choices: Sequence[Any],
+    boolean: bool,
+    where: Expression | None,
+) -> list[Any]:
+    """Every value a level can take, in ascending order.
+
+        in      GroupingLevel(status, fill), choices ['open', 'paid', 'overdue']      →  all three
+        in      GroupingLevel(made_at, part=month, fill)                              →  1 … 12
+        in      GroupingLevel(made_at, grain=month, fill), where made_at in Q1        →  '2026-01' … '2026-03'
+
+    A date grain needs the filter to bound the field at both ends — an axis with no ends has no
+    «every» — and a year part needs it as well. Anything else with no known set of values is
+    refused, naming what to do.
+
+    1. A part:
+       1.1 one with a fixed range (`PART_VALUES`) — every number of it, first to last;
+       1.2 a year — every year the filter's bounds on the field cover, the upper bound
+           exclusive; no bounds is `InvalidCriteria`.
+    2. A grain — no bounds is `InvalidCriteria`; else from the lower bound snapped to its
+       grain, one label per grain up to the last instant before the upper bound.
+    3. A boolean: `[False, True]`.
+    4. Choices: the choices, in the order given.
+    Final: anything else has nothing to list — `InvalidCriteria`, naming what can be filled.
+    """
+    if level.part is not None:
+        known = PART_VALUES[level.part]
+        if known is not None:
+            return list(range(known[0], known[1] + 1))
+        span = bounds_of(where, level.field)
+        if span is None:
+            raise exceptions.InvalidCriteria(
+                f"'{level.field}' filled by year needs the filter to bound it at both ends"
+            )
+        return list(range(span[0].year, (span[1] - timedelta(microseconds=1)).year + 1))
+
+    if level.grain is not None:
+        span = bounds_of(where, level.field)
+        if span is None:
+            raise exceptions.InvalidCriteria(
+                f"'{level.field}' filled by {level.grain.value} needs the filter to bound it at "
+                "both ends: the groups of an axis with no ends cannot be listed"
+            )
+        labels: list[str] = []
+        cursor = level.grain.snap(span[0].date())
+        last = (span[1] - timedelta(microseconds=1)).date()
+        while cursor <= last:
+            labels.append(level.grain.label(cursor))
+            cursor = level.grain.span.shift_on_calendar(cursor)
+        return labels
+
+    if boolean:
+        return [False, True]
+    if choices:
+        return list(choices)
+    raise exceptions.InvalidCriteria(
+        f"'{level.field}' cannot be filled: it has no choices to list. Fill an enum, a boolean, "
+        "a date part, or a date grain that the filter bounds"
+    )

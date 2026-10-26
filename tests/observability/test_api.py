@@ -9,15 +9,15 @@ import pytest
 from opentelemetry import trace
 
 from sincpro_framework.observability import Observability
-from sincpro_framework.observability.registry import registry
+from sincpro_framework.observability.registry import observability_registry
 from sincpro_framework.sincpro_conf import settings
 
 
 @pytest.fixture(autouse=True)
 def clean_registry():
-    registry.reset()
+    observability_registry.reset()
     yield
-    registry.reset()
+    observability_registry.reset()
 
 
 @pytest.fixture(autouse=True)

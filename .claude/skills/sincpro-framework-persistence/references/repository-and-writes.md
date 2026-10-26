@@ -145,7 +145,7 @@ return self.repository.retrying(post)
 
 ```python
 repository.remove(temporary)                # DELETE; takes records, never ids
-repository.archive(luis)                    # ArchivableMixin only: stamps archived_at, keeps the row
+repository.archive(luis)                    # ArchivableMixin only: stamps archived_at, leaves the row in place
 ```
 
 `archive` on an aggregate without `ArchivableMixin` raises `ProgrammingError`. Reads skip
@@ -214,7 +214,7 @@ events with `event_table` / `map_events`, mark deliverable events, and use `Even
 ## Writes past the aggregate
 
 Two doors skip the aggregate's machinery on purpose — use them only where there is no rule to
-keep:
+enforce:
 
 ```python
 repository.upsert(rates, on=("currency",))                       # insert or overwrite by a unique key

@@ -8,17 +8,19 @@ from every comparison, and a Python evaluator that answered `None != 'x'` as tru
 
 import pytest
 
-from sincpro_framework.data_layer.orm.sqlalchemy.services.model_introspection import describe
+from sincpro_framework.data_layer.orm.sqlalchemy.services.model_introspection import (
+    ModelIntrospection,
+)
 from sincpro_framework.ddd import exceptions
 from sincpro_framework.ddd.criteria import (
     All,
-    Any_,
+    Any,
     Condition,
     Criteria,
+    Evaluation,
     Not,
     Operator,
     Pagination,
-    matches,
 )
 from sincpro_framework.ddd.entity.entity_collection import Count
 
@@ -38,9 +40,9 @@ def in_sql(store, expression) -> set[str]:
 def in_memory(things: list[Thing], expression) -> set[str]:
     """Through `Meta.accept` first, the way the engine does: that is what reads a date
     written as text into a date, so both evaluators compare the same values."""
-    accepted, dropped = describe(Thing).accept(expression)
+    accepted, dropped = ModelIntrospection.describe(Thing).accept(expression)
     assert dropped == []
-    return {thing.thing_id for thing in things if matches(thing, accepted)}
+    return {thing.thing_id for thing in things if Evaluation.matches(thing, accepted)}
 
 
 @pytest.mark.parametrize(
@@ -81,7 +83,7 @@ def in_memory(things: list[Thing], expression) -> set[str]:
                 Not(negate=Condition(field="owner", operator=Operator.IS_NULL, value=True)),
             ]
         ),
-        Any_(
+        Any(
             any=[
                 Condition(field="size", operator=Operator.EQ, value=4),
                 Condition(field="tags", operator=Operator.CONTAINS, value="n3"),
@@ -99,16 +101,22 @@ def test_a_null_answers_nothing_but_the_null_question():
     orphan = a_thing(3)
     assert orphan.owner is None
 
-    assert not matches(orphan, Condition(field="owner", operator=Operator.NE, value="x"))
-    assert not matches(orphan, Condition(field="owner", operator=Operator.LIKE, value=""))
-    assert matches(orphan, Condition(field="owner", operator=Operator.IS_NULL, value=True))
+    assert not Evaluation.matches(
+        orphan, Condition(field="owner", operator=Operator.NE, value="x")
+    )
+    assert not Evaluation.matches(
+        orphan, Condition(field="owner", operator=Operator.LIKE, value="")
+    )
+    assert Evaluation.matches(
+        orphan, Condition(field="owner", operator=Operator.IS_NULL, value=True)
+    )
 
 
 def test_an_operator_nobody_translated_is_refused():
     condition = Condition.model_construct(field="size", value=1, operator="nope")
 
     with pytest.raises(exceptions.InvalidCriteria, match="no in-memory evaluation"):
-        matches(a_thing(1), condition)
+        Evaluation.matches(a_thing(1), condition)
 
 
 def test_a_page_narrows_itself_by_the_same_filter_a_caller_would_send(store):

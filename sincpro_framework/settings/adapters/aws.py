@@ -7,12 +7,12 @@
     build_config_obj(Billing, "conf/billing.yml", "billing",
                      sources={"SSM": ParameterStore(), "SECRET": SecretsManager()})
 
-Context: each value is asked once per source object and kept — settings are built when the
+Context: each value is asked once per source object and stored — settings are built when the
 process starts, and a value that changes is read by building again. The client is made at the
 first read, so a source handed in where there is no boto3 or no credentials costs nothing until
 it is asked. A name the service does not hold answers `None`: the field falls back to its
 default, as an unset variable does. Any other error — no boto3, no permission, no network — is
-raised to the build, which says it in a warning and keeps the value as written: settings never
+raised to the build, which says it in a warning and leaves the value as written: settings never
 stop a process from starting.
 """
 
@@ -32,7 +32,7 @@ def _missing(error: Exception) -> bool:
 
 
 class ParameterStore:
-    """A `SettingSource` over Systems Manager Parameter Store — each name read once and kept.
+    """A `SettingSource` over Systems Manager Parameter Store — each name read once and stored.
 
     ParameterStore(prefix="/billing/prod")("token")   ->  "s3cr3t"   # /billing/prod/token
     ParameterStore()("/not/there")                    ->  None
@@ -70,7 +70,7 @@ class ParameterStore:
 
 
 class SecretsManager:
-    """A `SettingSource` over Secrets Manager — each secret read once and kept, whole or one
+    """A `SettingSource` over Secrets Manager — each secret read once and stored, whole or one
     key of its JSON.
 
         SecretsManager()("billing/db")            ->  '{"user": "app", "password": "…"}'

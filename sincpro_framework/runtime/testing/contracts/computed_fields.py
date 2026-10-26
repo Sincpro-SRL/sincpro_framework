@@ -18,7 +18,7 @@ inherited `test_*` methods; nothing here imports pytest.
 from collections import Counter
 from typing import Any
 
-from sincpro_framework.ddd.criteria import Criteria, Grouping, Level, Pagination
+from sincpro_framework.ddd.criteria import Criteria, Grouping, GroupingLevel, Pagination
 from sincpro_framework.ddd.entity.computed import computations_of
 
 EVERY_RECORD = 100_000
@@ -93,7 +93,7 @@ class ComputedFieldsContract:
             expected = Counter(computation.python(record) for record in found)
             buckets = store.group_by_levels(
                 self.entity,
-                Criteria(grouping=Grouping(group_by=(Level(field=name),))),
+                Criteria(grouping=Grouping(group_by=(GroupingLevel(field=name),))),
             )
 
             assert {bucket.value: bucket.count for bucket in buckets} == dict(expected), name

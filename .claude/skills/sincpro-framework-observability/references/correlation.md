@@ -8,7 +8,7 @@ and a `trace_id` opens the span, its lines and its issue. The long form, in the 
 **The context is the source.** Whatever the entrypoint, `bus.context({...})`, an interceptor, a
 hook or `self.context` puts in the execution context goes on the log line, the span and the
 GlitchTip event — nothing to declare, nothing refused for its name. `hide_in_logs` is the only
-filter, and it keeps a key off all four signals. A value counts from the moment it is set: the
+filter, and it excludes a key from all four signals. A value counts from the moment it is set: the
 span, the metric and the event are recorded at the end of the use case.
 
 | Concept | Value | Comes from — nothing new to configure |
@@ -26,7 +26,7 @@ span, the metric and the event are recorded at the end of the use case.
 | error | `ConnectionError` | the exception's class |
 | trace id | 32 hex | the active span |
 
-A library inside a host keeps its own name and version even when the host sets `APP_RELEASE` /
+A library inside a host still reports its own name and version even when the host sets `APP_RELEASE` /
 `OTEL_SERVICE_NAME`: the library that built the bus wins. There is no environment key — each
 environment has its own monitoring stack.
 
@@ -78,6 +78,6 @@ Questions the keys answer: *bump or bug?* (error rate by `service.version`); *on
 ## With nowhere to send
 
 The same code runs everywhere; only the destination changes. With no OpenTelemetry installed, no
-endpoint or no DSN, spans, metrics and GlitchTip are no-ops and the log lines keep every key. A
+endpoint or no DSN, spans, metrics and GlitchTip are no-ops and the log lines still carry every key. A
 measurement or a report never fails the use case, and the business error reaches the caller
 unchanged.

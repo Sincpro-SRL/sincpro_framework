@@ -1,8 +1,8 @@
 """Auth on the MCP wire: each tool call acts as whoever called it, and — when asked — FastMCP
 verifies bearer tokens with the bus's `AccessControl`.
 
-    build_mcp_server(billing)                                  # a guarded bus: each call authenticated
-    build_mcp_server(billing, auth=auth, base_url="https://…")  # plus FastMCP's own bearer check
+    Entrypoint(billing).server()            # a guarded bus: each call authenticated
+    Entrypoint(billing).server(auth=auth, base_url="https://…")   # plus FastMCP's bearer check
 
 Context: FastMCP is imported only inside these functions, so the module loads without the
 `[mcp]` extra. A tool call reads, in order: the identity a `token_verifier` already put in the
@@ -16,20 +16,10 @@ from collections.abc import Generator
 from contextlib import contextmanager, nullcontext
 from typing import TYPE_CHECKING, Any
 
-from sincpro_framework.auth.domain.identity import Credentials, Identity
-from sincpro_framework.auth.entrypoint.transports import (
-    authenticated_as,
-    credentials_from_asgi,
-)
-from sincpro_framework.auth.infrastructure.security_context import (
-    as_identity,
-    current_identity,
-)
+from sincpro_framework.auth import AccessControl, Credentials, Identity, security
 from sincpro_framework.entrypoints.adapters.mcp import exceptions
-from sincpro_framework.entrypoints.adapters.mcp.mcp import FASTMCP_MISSING
 
 if TYPE_CHECKING:
-    from sincpro_framework.auth.entrypoint.access_control import AccessControl
     from sincpro_framework.use_bus import UseFramework
 
 IDENTITY_CLAIM = "sincpro_identity"
@@ -64,7 +54,7 @@ def _call_state() -> tuple[Identity | None, Credentials | None]:
         request = get_http_request()
     except RuntimeError:
         return None, None
-    return None, credentials_from_asgi(request.scope, "mcp")
+    return None, Credentials.from_asgi(request.scope, "mcp")
 
 
 @contextmanager
@@ -79,18 +69,18 @@ def acting_for_tool_call(bus: "UseFramework | None") -> Generator[Identity, None
     1. No bus: the identity already current, unchanged.
     2. An identity FastMCP's verifier put in the access token: acted as directly.
     Final: otherwise the call's credentials — `None` over stdio — authenticated by the bus's
-    `AccessControl` (`authenticated_as`), for the duration of the call.
+    `AccessControl` (`security.authenticated_as`), for the duration of the call.
     """
     if bus is None:
-        with nullcontext(current_identity()) as unchanged:
+        with nullcontext(security.identity) as unchanged:
             yield unchanged
         return
     verified, credentials = _call_state()
     if verified is not None:
-        with as_identity(verified) as identity:
+        with security.as_identity(verified) as identity:
             yield identity
         return
-    with authenticated_as(bus, credentials) as identity:
+    with security.authenticated_as(bus, credentials) as identity:
         yield identity
 
 
@@ -123,7 +113,7 @@ def token_verifier(
             TokenVerifier,
         )
     except ImportError as error:
-        raise ImportError(FASTMCP_MISSING) from error
+        raise ImportError(exceptions.FASTMCP_MISSING) from error
 
     class AccessControlTokenVerifier(TokenVerifier):
         """FastMCP's bearer check, answered by the bus's `AccessControl` providers."""

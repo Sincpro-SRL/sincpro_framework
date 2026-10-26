@@ -12,7 +12,6 @@ from sincpro_framework.data_layer.caching import (
     Cache,
     CachePolicy,
     JsonCodec,
-    Lifetime,
     Lru,
     Sliding,
     TimeToLive,
@@ -21,13 +20,13 @@ from sincpro_framework.data_layer.caching import (
 from sincpro_framework.data_layer.caching.domain.codec import Codec
 from sincpro_framework.data_layer.caching.domain.eviction import Eviction
 from sincpro_framework.data_layer.caching.domain.freshness import Freshness
+from sincpro_framework.data_layer.store import InMemoryKeyValue
 from sincpro_framework.runtime.testing import (
     CodecContract,
     EvictionContract,
     FreshnessContract,
     ManualClock,
 )
-from sincpro_framework.store import InMemoryKeyValue
 
 
 class Tenant(DataTransferObject):
@@ -140,16 +139,6 @@ def test_a_sliding_value_asked_for_is_served_until_at_most_and_one_left_idle_goe
     assert computed == ["active", "idle", "active", "idle"]
 
 
-def test_lifetime_is_still_the_time_to_live_and_keep_policy_still_takes_it():
-    """Code written against phase 1 keeps running."""
-    ttl = Lifetime(ttl=timedelta(minutes=5))
-    policy = CachePolicy[Tenant](lifetime=ttl)  # pyright: ignore[reportCallIssue]
-
-    assert Lifetime is TimeToLive
-    assert policy.freshness == ttl
-    assert policy.lifetime == ttl
-
-
 # Eviction: the process tier is bounded
 
 
@@ -177,7 +166,7 @@ def test_the_process_tier_holds_no_more_than_its_bound_and_lets_go_of_the_least_
         ask(key)
     ask(1)  # 1 is used again: 2 is now the least recently used
     ask(4)
-    assert len(cache._process._kept) == 3
+    assert len(cache._process._cached) == 3
 
     ask(1)
     ask(3)
@@ -198,7 +187,7 @@ def test_the_bound_holds_under_callers_racing_on_many_keys():
     for thread in threads:
         thread.join()
 
-    assert len(cache._process._kept) <= 20
+    assert len(cache._process._cached) <= 20
     assert len(cache._process.flight._locks) <= 20 + 8  # an evicted key's lock goes with it
 
 
@@ -207,7 +196,7 @@ def test_an_unbounded_tier_keeps_every_key():
     for key in range(100):
         cache.get_or_compute(key, lambda: key)
 
-    assert len(cache._process._kept) == 100
+    assert len(cache._process._cached) == 100
 
 
 def test_an_lru_of_nothing_is_refused():

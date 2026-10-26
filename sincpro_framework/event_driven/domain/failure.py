@@ -17,7 +17,7 @@ dead-letters) — goes to `then` on the first failure, and so does any error `ne
 (Spring's not-retryable exceptions, NServiceBus's unrecoverable exceptions). An error that says
 how long to wait (`retry_after`: a quota, a service down for now) is not tried before that.
 
-**What a waiting retry holds.** Across passes, an event waiting for its retry keeps what it held
+**What a waiting retry holds.** Across passes, an event waiting for its retry holds what it held
 when it failed (`holds`): everything after it (`RetryInPlace`), the later events of its entity
 (`RetryLater`, as it comes), or nothing (`RetryLater(holds_stream=False)`). A parked or skipped
 event holds nothing — like a dead-letter queue, it lets its entity's later events go.
@@ -53,9 +53,9 @@ class FailureOutcome(StrEnum):
     """Try it again at `retry_at`; nothing after it is handed on until then."""
     RETRY_LATER = "retry_later"
     """Try it again at `retry_at`; the events after it go on — those of its entity wait behind it
-    when the policy keeps a stream's order."""
+    when the policy holds a stream's order."""
     PARK = "park"
-    """Keep it aside with its reason, where a person sees it and can replay it; go on."""
+    """Set it aside with its reason, where a person sees it and can replay it; go on."""
     SKIP = "skip"
     """Leave it, with a log line; go on."""
 
@@ -166,7 +166,7 @@ class DeliveryFailurePolicy(ABC):
 
 
 class ParkAndContinue(DeliveryFailurePolicy):
-    """Keeps the event aside, with its reason, and goes on — a dead-letter queue."""
+    """Sets the event aside, with its reason, and goes on — a dead-letter queue."""
 
     def decide(self, failure: HandlingFailure) -> FailureDecision:
         """Park, whatever the failure."""
