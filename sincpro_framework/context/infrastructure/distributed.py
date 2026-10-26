@@ -26,6 +26,11 @@ level never reach the receiver.
 nodes, the bounded context's level, the process and the global are refreshed by their version at
 most once per `every`.
 
+**A store that does not answer fails no call** (`outage`): a node whose place cannot be saved
+stays in this process — nothing points at it, so a context handed on from it carries the nearest
+saved node, and its values in the headers; a write through that is not answered stays local; a
+sender's chain that cannot be read leaves the entrance with what the headers carried.
+
 Only the standard library and the domain: the buses import this, nothing here imports a bus.
 """
 
@@ -38,6 +43,7 @@ from sincpro_framework.context.domain.execution import CHAIN_KEYS
 from sincpro_framework.context.domain.level import ContextLevel
 from sincpro_framework.context.domain.node import ContextNode, ContextSharing, Values
 from sincpro_framework.context.domain.store import ContextStore
+from sincpro_framework.context.infrastructure.outage import UNREACHED, outage_of
 from sincpro_framework.context.infrastructure.shared import SharedValues
 
 GLOBAL_KEY = "global"
@@ -75,8 +81,14 @@ class WrittenThrough(Values):
             self._saved()
 
     def _saved(self) -> None:
-        """Save what this node says now under its key — the whole mapping, its TTL renewed."""
-        self._store.save(self._key, self.named(), self._ttl)
+        """Save what this node says now under its key — the whole mapping, its TTL renewed. A
+        store that does not answer leaves it here: the next write saves the whole mapping again.
+        """
+        values = self.named()
+        outage_of(self._store).attempt(
+            lambda: self._store.save(self._key, values, self._ttl),
+            "save a node of an execution",
+        )
 
     def set(self, key: Any, value: Any) -> None:
         """Written locally, then saved in the store."""
@@ -153,14 +165,18 @@ class SharedContext:
                     and `feature_node.key == "01J9"`
 
         The same node object is answered, now saved: its `key` set, its values replaced by a
-        `WrittenThrough` seeded with what it said."""
+        `WrittenThrough` seeded with what it said. A store that does not answer leaves it as it
+        was, in this process only — no key, so nothing hands on an id the store does not hold.
+        """
         above = node.parent
         parent = next((one.key for one in above.chain() if one.key), None) if above else None
-        self.store.save(
-            f"{self.node_key(node_id)}:meta",
-            {"parent": parent or "", "level": node.level.value, "label": node.label},
-            self.ttl,
+        meta = {"parent": parent or "", "level": node.level.value, "label": node.label}
+        placed = outage_of(self.store).attempt(
+            lambda: self.store.save(f"{self.node_key(node_id)}:meta", meta, self.ttl),
+            "save a node of an execution",
         )
+        if placed is UNREACHED:
+            return node
         node.key = node_id
         node.values = WrittenThrough(
             self.store, self.node_key(node_id), self.ttl, node.values.current
@@ -179,13 +195,17 @@ class SharedContext:
             sharing.chain_from("gone", root)     ->  root
 
         At most `CHAIN_LIMIT` (64) nodes are read; a level the meta lacks is `ContextLevel.SCOPE`.
+        A store that does not answer ends the chain where it stopped: the entrance reads the rest
+        from what the headers carried.
         """
         found: list[tuple[str, Mapping[str, Any]]] = []
         seen: set[str] = set()
         following = node_id
+        outage = outage_of(self.store)
         while following and following not in seen and len(found) < CHAIN_LIMIT:
-            meta = self.store.load(f"{self.node_key(following)}:meta")
-            if meta is None:
+            key = f"{self.node_key(following)}:meta"
+            meta = outage.attempt(lambda: self.store.load(key), "read a sender's chain")
+            if meta is UNREACHED or meta is None:
                 break
             found.append((following, meta))
             seen.add(following)

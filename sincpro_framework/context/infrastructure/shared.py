@@ -13,6 +13,11 @@ reaches every replica; a value a replica saved wins over any default.
 
 A value that does not travel — under a key that is not text, or an object, a store, a settings
 object under one that is — stays in this process, and a refresh never drops it.
+
+**A store that does not answer never fails a read or a write** (`outage`): a read serves what was
+read last; a write lands here at once and waits, in order, with every write after it, until the
+store answers — then each is sent on the latest values, so what another replica wrote meanwhile
+is kept, the same key going to whoever wrote last.
 """
 
 import time
@@ -24,12 +29,16 @@ from typing import Any
 from sincpro_framework.context.domain.node import Values
 from sincpro_framework.context.domain.store import ContextStore
 from sincpro_framework.context.domain.travel import Travel
+from sincpro_framework.context.infrastructure.outage import UNREACHED, outage_of
+
+type Changing = Callable[[dict[str, Any]], dict[str, Any]]
+"""A change of the shared values: what the store held in, what it should hold out."""
 
 
 class SharedValues(Values):
     """`Values` a store shares across processes — `store` is the one they are shared through."""
 
-    __slots__ = ("store", "_key", "_every", "_checked", "_version")
+    __slots__ = ("store", "_key", "_every", "_checked", "_version", "_pending", "_outage")
 
     def __init__(
         self,
@@ -51,7 +60,9 @@ class SharedValues(Values):
                 ->  a later one, the store holding {"lang": "en"}: {"lang": "en"}
                 ->  a release seeding {"lang": "es", "beta": True}: {"lang": "en", "beta": True}
 
-        Nothing is refreshed after this until `every` has passed since the last check.
+        Nothing is refreshed after this until `every` has passed since the last check. A store
+        that does not answer leaves the seed as the values and the defaults waiting to be sent:
+        joining a store never fails, whatever state it is in.
         """
         super().__init__()
         self.store = store
@@ -59,10 +70,12 @@ class SharedValues(Values):
         self._every = every.total_seconds()
         self._checked = 0.0
         self._version = -1
+        self._pending: list[Changing] = []
+        self._outage = outage_of(store)
         self._current = MappingProxyType(dict(seed or {}))
         defaults = self.named()
         if defaults:
-            store.change(key, lambda held: {**defaults, **held})
+            self._pending.append(lambda held: {**defaults, **held})
         self._refreshed()
 
     def _held_here(self) -> dict[Any, Any]:
@@ -76,20 +89,49 @@ class SharedValues(Values):
             if not isinstance(key, str) or key in stays
         }
 
+    def _sent(self) -> Mapping[str, Any] | None:
+        """Send what waits, in order, each change on the latest values — called holding the
+        lock. Answers what the store holds after the last one; `None` when nothing waited or the
+        store did not answer, what was not sent waiting still."""
+        changed: Mapping[str, Any] | None = None
+        while self._pending:
+            changing = self._pending[0]
+            answer = self._outage.attempt(
+                lambda: self.store.change(self._key, changing), f"save {self._key}"
+            )
+            if answer is UNREACHED:
+                return None
+            changed = answer
+            self._pending.pop(0)
+        return changed
+
     def _refreshed(self) -> None:
-        """Ask the store's version and read the values again only when it moved.
+        """Send what waits, then ask the store's version and read the values again only when it
+        moved.
 
         1. Note the time of this check.
-        2. The same version as last read: nothing to read.
-        3. Otherwise the store's values, with what only this process holds left in place.
-        Final: the version read remembered.
+        2. What was written while the store did not answer is sent first; still unanswered,
+           nothing else is asked — the local values stand.
+        3. The same version as last read: nothing to read.
+        4. Otherwise the store's values, with what only this process holds left in place.
+        Final: the version read remembered. A store that does not answer at any step leaves the
+        values as they were, asked again at the next check.
         """
         self._checked = time.monotonic()
-        version = self.store.version(self._key)
-        if version == self._version:
+        if self._pending:
+            with self._writing:
+                self._sent()
+                if self._pending:
+                    return
+        version = self._outage.attempt(
+            lambda: self.store.version(self._key), f"read {self._key}"
+        )
+        if version is UNREACHED or version == self._version:
             return
-        stored = self.store.load(self._key) or {}
-        self._current = MappingProxyType({**self._held_here(), **stored})
+        stored = self._outage.attempt(lambda: self.store.load(self._key), f"read {self._key}")
+        if stored is UNREACHED:
+            return
+        self._current = MappingProxyType({**self._held_here(), **(stored or {})})
         self._version = version
 
     @property
@@ -100,16 +142,23 @@ class SharedValues(Values):
             self._refreshed()
         return self._current
 
-    def _saved(self, changing: Callable[[dict[str, Any]], dict[str, Any]]) -> None:
+    def _saved(self, changing: Changing) -> None:
         """Save `changing` on the latest values in the store, and hold what it answered beside
         what only this process holds — another replica's write since the last refresh is read
         in, never overwritten.
 
+        1. Queued after whatever still waits, so the store receives the writes in order.
+        2. Sent with them; the store answering, the local values are what it holds now.
+        Final: unanswered, the write stays local — already applied here by the caller — and
+        waits for the next check.
+
         Context: the version stays as last read — this write moved it, so the next check reads
         the values once more, with whatever another replica wrote right after."""
         with self._writing:
-            changed = self.store.change(self._key, changing)
-            self._current = MappingProxyType({**self._held_here(), **changed})
+            self._pending.append(changing)
+            changed = self._sent()
+            if changed is not None and not self._pending:
+                self._current = MappingProxyType({**self._held_here(), **changed})
 
     def set(self, key: Any, value: Any) -> None:
         """Written locally at once, then saved for the other replicas — only that key."""

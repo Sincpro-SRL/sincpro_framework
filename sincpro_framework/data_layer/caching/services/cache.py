@@ -276,7 +276,101 @@ class _StoreTier:
         return awaited(lambda: self.read(key), policy.wait_for_others)
 
 
-type _Tier = _ProcessTier | _StoreTier
+class _NearRecords:
+    """Records a shared store holds, decoded in this process, each until its moment — bounded
+    by the eviction."""
+
+    def __init__(self, eviction: Eviction) -> None:
+        """Nothing held; `eviction` bounds how many."""
+        self.eviction = eviction
+        self._held: dict[str, tuple[_Cached, float]] = {}
+        self._lock = threading.Lock()
+
+    def read(self, key: str, now: float) -> _Cached | None:
+        """The record held under `key` while its moment has not come — `None` otherwise, a
+        lapsed one let go."""
+        with self._lock:
+            held = self._held.get(key)
+            if held is not None and now >= held[1]:
+                del self._held[key]
+                held = None
+        if held is None:
+            return None
+        self.eviction.touched(key)
+        return held[0]
+
+    def write(self, key: str, cached: _Cached, until: float) -> None:
+        """`cached` held until `until`, the eviction's victims let go."""
+        with self._lock:
+            self._held[key] = (cached, until)
+            for victim in self.eviction.admitted(key):
+                self._held.pop(victim, None)
+
+    def forget(self, key: str) -> None:
+        """Let go of the record under `key`."""
+        with self._lock:
+            self._held.pop(key, None)
+        self.eviction.forgotten(key)
+
+
+class _NearTier:
+    """A store tier whose records are also held in this process for `near`: a read finds them
+    here first, decoded, without asking the store; every write and forget goes to both.
+
+    Context: the record keeps its own timeline, so a value held here is judged — fresh, stale,
+    still valid — exactly as one read from the store; only the round trip and the decoding are
+    saved. A value the store would not take (past `max_bytes`) is still held here."""
+
+    def __init__(
+        self, store: _StoreTier, near: _NearRecords, near_for: float, now: float
+    ) -> None:
+        """`near_for` seconds, from `now` on each write — the call's clock."""
+        self.store = store
+        self.near = near
+        self.near_for = near_for
+        self.now = now
+
+    def read(self, key: str) -> _Cached | None:
+        """Held here, else read from the store and held."""
+        held = self.near.read(key, self.now)
+        if held is not None:
+            return held
+        cached = self.store.read(key)
+        if cached is not None:
+            self.near.write(key, cached, self.now + self.near_for)
+        return cached
+
+    def write(self, key: str, cached: _Cached, policy: CachePolicy[Any], now: float) -> None:
+        """Written to the store — as far as it takes it — and held here."""
+        self.store.write(key, cached, policy, now)
+        self.near.write(key, cached, now + self.near_for)
+
+    def renews(self, cached: _Cached, fresh_until: float, now: float) -> bool:
+        """As the store does: renewing is a write to it."""
+        return self.store.renews(cached, fresh_until, now)
+
+    def forget(self, key: str) -> None:
+        """Let go of here and on the store."""
+        self.near.forget(key)
+        self.store.forget(key)
+
+    def lead(self, key: str, policy: CachePolicy[Any]) -> bool:
+        """The store's lock: one leader across replicas."""
+        return self.store.lead(key, policy)
+
+    def release(self, key: str) -> None:
+        """The store's lock released."""
+        self.store.release(key)
+
+    def awaited(self, key: str, policy: CachePolicy[Any]) -> _Cached | None:
+        """What the leader stored, held here once it arrives."""
+        cached = self.store.awaited(key, policy)
+        if cached is not None:
+            self.near.write(key, cached, self.now + self.near_for)
+        return cached
+
+
+type _Tier = _ProcessTier | _StoreTier | _NearTier
 
 
 class Cache:
@@ -316,6 +410,8 @@ class Cache:
             CACHE_OUTCOMES
         )
         self._process = _ProcessTier(eviction or Lru())
+        self._near = _NearRecords(Lru())
+        """The records of a shared store held decoded here, for a policy that says `near`."""
         self._breaker = StoreBypass(bypass_for, self._clock)
 
     def _key(self, key: Any, codec: Codec[Any] | None = None) -> str:
@@ -334,15 +430,21 @@ class Cache:
             )
         return codec
 
-    def _tier(self, codec: Codec[Any] | None) -> _Tier:
-        """The process tier with no store; else a store tier bound to `codec` and breaker."""
-        if self.store is None:
-            return self._process
-        return _StoreTier(self.store, self._codec_required(codec), self._breaker)
-
     def _clock(self) -> float:
         """`now()` in epoch seconds — the unit every moment of a record is in."""
         return self.now().timestamp()
+
+    def _tier(
+        self, codec: Codec[Any] | None, policy: CachePolicy[Any] | None = None
+    ) -> _Tier:
+        """The process tier with no store; else a store tier bound to `codec` and breaker —
+        its records held here too when `policy` says `near`."""
+        if self.store is None:
+            return self._process
+        tier = _StoreTier(self.store, self._codec_required(codec), self._breaker)
+        if policy is None or not policy.near:
+            return tier
+        return _NearTier(tier, self._near, policy.near.total_seconds(), self._clock())
 
     def _observe(self, outcome: CacheOutcome) -> None:
         """Tells the observer, under this cache's namespace — one that raises is ignored."""
@@ -553,7 +655,8 @@ class Cache:
 
         1. Switched off: `compute()`, nothing cached or reported.
         2. No store: answered on the process tier.
-        3. A store whose breaker is closed: answered on the store tier.
+        3. A store whose breaker is closed: answered on the store tier — through the records
+           held here first when the policy says `near`.
            3.1 It failed on a read or a lock (`_StoreFailed`): on to step 4.
         4. `BYPASSED` reported, then answered on the process tier under the same hashed key.
         Final: the value; the outcome of the tier that answered is reported.
@@ -566,7 +669,7 @@ class Cache:
             value, outcome = self._answered(self._process, self._key(key), compute, policy)
             self._observe(outcome)
             return value
-        tier = self._tier(codec)
+        tier = self._tier(codec, policy)
         hashed = self._key(key, codec)
         if not self._breaker.is_open():
             try:
@@ -599,4 +702,5 @@ class Cache:
         hashed = self._key(key, codec)
         store_tier = self._tier(codec)
         self._process.forget(hashed)
+        self._near.forget(hashed)
         store_tier.forget(hashed)

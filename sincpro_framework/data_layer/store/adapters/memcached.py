@@ -79,6 +79,11 @@ class MemcachedKeyValue(ClientKeyValue):
                 ):
                     return 1
 
+    def touch(self, key: str, ttl: timedelta | None) -> bool:
+        """`touch` — `True` when the key is there; no ttl is `0`, never expiring."""
+        with self._reaching():
+            return bool(self.client.touch(self.prefix + key, _seconds(ttl), noreply=False))
+
     def delete(self, key: str) -> None:
         """Memcached's `delete` — a missing key answers false, never raises."""
         with self._reaching():

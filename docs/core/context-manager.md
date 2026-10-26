@@ -402,7 +402,8 @@ What a `KeyValueContexts` writes on Redis, under its prefix (`sincpro:context` b
 | `lease:…` | leases: a name held by one owner at a time | the lease's own time |
 
 Beside them, on the same `KeyValueStore`, in sections of their own: `bus.cache`, `bus.idempotency`,
-the query cache and the circuit breakers (`sincpro:circuit_breaker:<name>:…`). **None of it is ever
+the query cache, the circuit breakers (`sincpro:circuit_breaker:<name>:…`) and the
+[sessions](sessions.md) (`session:<namespace>:<id>`). **None of it is ever
 a value of the context**: the context holds the keys that address it — a tenant, a user, a node's
 id — and the data stays in the store. A cache is keyed by its owner (`tenant_id`, `user_id`, the
 keys of `vary_by`) read from the context of the call; a draft by the keys `by=` names.
@@ -441,6 +442,53 @@ writing `plan` never erases the `maintenance` another wrote. A default the code 
 the store lacks it, so one a later release brings reaches every replica, and a value a replica saved
 wins. A value that does not travel — an object, a settings instance — stays in its process and is
 never dropped by a refresh. The same holds for `ContextLevel.GLOBAL`.
+
+**A store of its own per test.** The process level and everything stored on it — `bus.cache`,
+`bus.idempotency`, drafts, sessions, leases — belong to the interpreter, so a test suite shares them
+unless each test opens its own:
+
+```python
+from sincpro_framework.runtime.testing import fresh_context
+
+with fresh_context() as kept:                                 # a new memory, its own caches
+    assert use_context().root.get(ContextStore) is kept
+assert use_context().root.get(ContextStore) is not kept     # the process as it was
+```
+
+As a fixture: `@pytest.fixture(autouse=True)` yielding inside `with fresh_context():`.
+
+## When the store is down
+
+**The store is how replicas keep each other informed, never what a call waits on.** Every read of
+the context is this process's memory; the store carries what one replica wrote to the others.
+When Redis or Valkey stops answering, every call goes on — each pod works with what it holds, as if
+it were alone — and the replicas catch up when it answers again.
+
+| While the store does not answer | What happens |
+|---|---|
+| Joining it (`store_context_in`, `bus.store_context_in`) | Never fails: the service starts; the seeds wait to be sent |
+| The process, the global, a bounded context's level | Read as last read. A write lands here at once and waits, in order, with every write after it |
+| An execution's nodes | Stay in this process. A context handed on carries the flow in its headers, and no `x-context-node` the store does not hold |
+| An entrance handed a sender's chain | Opens with what the headers carried — the snapshot |
+| `bus.cache` | Bypasses the store, computing the value (its own `StoreBypass`) |
+| Drafts, pipeline runs, idempotency, leases | **Fail** (`StoreUnavailable`): they promise to persist or to run once, and cannot pretend to |
+
+**When it answers again**, each replica sends what waited, each change on the latest values: two
+replicas that wrote `plan` and `maintenance` keep both; the same key goes to whoever sent last. Then
+every replica reads what the others wrote.
+
+**One failure stops the asking for a while.** After a failure the store is not asked again for 5
+seconds (`OUTAGE_BYPASS`): one call pays the client's timeout, the rest go straight to memory. The
+breaker is the process's own — never the [circuit breaker](circuit-breaker.md), whose state lives
+in the very store it would guard. The outage is said once, as a warning, and its end once.
+
+Keep the client's own timeouts short, so the call that finds the store down does not wait long —
+the client is the project's, and so is its configuration:
+
+```python
+# redis.Redis.from_url(url, socket_connect_timeout=0.5, socket_timeout=0.5,
+#                      retry=Retry(NoBackoff(), 0))  — fail fast, the context falls back by itself
+```
 
 ## What crosses a process — and what stays
 

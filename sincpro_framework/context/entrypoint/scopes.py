@@ -6,6 +6,7 @@ said.
     context_scopes.live()                  what the node in play sees, now
     context_scopes.flow()                  what of it crosses a process: the flow
     context_scopes.hidden_keys()           what its bus hides from every signal
+    with context_scopes.fresh_process():   the process level as a new interpreter has it
     with context_scopes.collecting():      the scopes closing inside the block are remembered
         context_scopes.closed()            what they said, for the signals that close the execution
 
@@ -13,14 +14,14 @@ Context: a guard, a hook, a signal or an envelope of another package never reach
 of nodes — it asks here.
 """
 
-from collections.abc import Mapping
-from contextlib import AbstractContextManager
+from collections.abc import Generator, Mapping
+from contextlib import AbstractContextManager, contextmanager
 from typing import Any
 
 from sincpro_framework.context.domain.level import ContextLevel, EntrypointKind
-from sincpro_framework.context.domain.node import ContextBus, ContextNode
+from sincpro_framework.context.domain.node import ContextBus, ContextNode, Values
 from sincpro_framework.context.infrastructure.closed_scopes import CLOSED_SCOPES
-from sincpro_framework.context.infrastructure.tree import current
+from sincpro_framework.context.infrastructure.tree import ROOT, current
 from sincpro_framework.context.services.nodes import entered_child, hidden_keys, live_context
 
 
@@ -71,6 +72,25 @@ class ContextScopes:
             context_scopes.hidden_keys()   ->  frozenset({"password", "card_number"})
         """
         return hidden_keys()
+
+    @contextmanager
+    def fresh_process(self) -> Generator[None, None, None]:
+        """The process level as a new interpreter has it, for the block — its values a copy of
+        what it says now, no store joined, no global above it — and the process as it was put
+        back when the block ends, raised or not.
+
+            with context_scopes.fresh_process():
+                store_context_in(InMemoryKeyValue())     only this block's
+            use_context().root.get(ContextStore)    ->  what it was before
+
+        What a test suite isolates each test with (`runtime.testing.fresh_context`)."""
+        values, parent = ROOT.values, ROOT.parent
+        ROOT.values = Values(values.current)
+        ROOT.parent = None
+        try:
+            yield
+        finally:
+            ROOT.values, ROOT.parent = values, parent
 
     def collecting(self) -> AbstractContextManager[None]:
         """Remember, for the block, what every `bus.context(...)` scope closing inside it said —

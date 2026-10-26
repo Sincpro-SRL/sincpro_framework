@@ -1,6 +1,7 @@
 """`RedisKeyValue`: the store on Redis or Valkey — the same protocol, one adapter.
 
-    RedisKeyValue(redis.Redis.from_url("redis://cache:6379/0"), prefix="billing:")
+    RedisKeyValue.from_url("redis://cache:6379/0", prefix="billing:")      a client that fails fast
+    RedisKeyValue(redis.Redis.from_url("redis://cache:6379/0"), prefix="billing:")   yours, as built
 
 The client is yours — its pool, its TLS, its cluster mode — so this is the operations of the port and
 nothing else. `prefix` lets several services share one server without sharing keys.
@@ -24,6 +25,41 @@ class RedisKeyValue(ClientKeyValue):
         """`client` is a `redis.Redis` — or anything with its `mget/set/incr/delete/getdel`."""
         self.client = client
         self.prefix = prefix
+
+    @classmethod
+    def from_url(
+        cls,
+        url: str,
+        prefix: str = "",
+        timeout: timedelta = timedelta(milliseconds=500),
+        retries: int = 0,
+        **options: Any,
+    ) -> "RedisKeyValue":
+        """A store on the Redis or Valkey at `url`, with a client that fails fast.
+
+            RedisKeyValue.from_url("redis://cache:6379/0")
+            RedisKeyValue.from_url(settings.billing.redis_url, prefix="billing:")
+            RedisKeyValue.from_url(url, timeout=timedelta(seconds=2), ssl_cert_reqs="required")
+
+        Context: redis-py waits forever by default on a server that stops answering — no socket
+        timeout — and retries on top: one request can hang, or try a hundred times. Here both
+        the connection and each command give up after `timeout` (half a second), `retries`
+        times more at most (none). The framework falls back on its own when the store fails
+        (the context goes on in memory, the cache bypasses it), so failing fast is what keeps a
+        call fast. Every other option goes to `redis.Redis.from_url` as given, and one of the
+        three above given there wins."""
+        import redis
+        from redis.backoff import NoBackoff
+        from redis.retry import Retry
+
+        seconds = timeout.total_seconds()
+        settings: dict[str, Any] = {
+            "socket_connect_timeout": seconds,
+            "socket_timeout": seconds,
+            "retry": Retry(NoBackoff(), retries),
+            **options,
+        }
+        return cls(redis.Redis.from_url(url, **settings), prefix)
 
     def get_many(self, keys: list[str]) -> list[bytes | None]:
         """One `MGET` — skipped for no keys, which Redis refuses."""
@@ -54,6 +90,18 @@ class RedisKeyValue(ClientKeyValue):
             both.incr(self.prefix + key)
             both.pexpire(self.prefix + key, _milliseconds(ttl))
             return int(both.execute()[0])
+
+    def touch(self, key: str, ttl: timedelta | None) -> bool:
+        """`PEXPIRE` — `True` when the key is there; with no ttl, `PERSIST`, the key checked
+        with `EXISTS` in the same `MULTI` (`PERSIST` alone answers `False` for a key that had
+        no expiry)."""
+        with self._reaching():
+            if ttl is not None:
+                return bool(self.client.pexpire(self.prefix + key, _milliseconds(ttl)))
+            both = self.client.pipeline(transaction=True)
+            both.exists(self.prefix + key)
+            both.persist(self.prefix + key)
+            return bool(both.execute()[0])
 
     def delete(self, key: str) -> None:
         """`DEL`."""

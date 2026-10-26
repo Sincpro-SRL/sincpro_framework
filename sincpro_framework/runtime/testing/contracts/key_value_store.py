@@ -113,6 +113,20 @@ class KeyValueStoreContract:
         if store.increment("kept") != 2:
             raise AssertionError("a counter without a ttl expired")
 
+    def test_touch_gives_a_live_key_a_new_expiry_and_its_value_stays(self) -> None:
+        """`touch` renews a live key's expiry — or takes it away — without changing its value,
+        and answers `False` for a key that is not there. Uses `expire`."""
+        store = self.make_store()
+        store.set("session", b"ana", ttl=timedelta(seconds=1))
+        store.set("kept", b"beta", ttl=timedelta(seconds=1))
+        if not store.touch("session", timedelta(seconds=30)) or not store.touch("kept", None):
+            raise AssertionError("touch did not answer True for a live key")
+        if store.touch("missing", timedelta(seconds=30)):
+            raise AssertionError("touch answered True for a missing key")
+        self.expire(store, 1.5)
+        if store.get("session") != b"ana" or store.get("kept") != b"beta":
+            raise AssertionError("a touched key expired, or its value changed")
+
     def test_delete_removes_and_tolerates_a_missing_key(self) -> None:
         """`delete` removes a key, and deleting a key that is not there does not raise."""
         store = self.make_store()
