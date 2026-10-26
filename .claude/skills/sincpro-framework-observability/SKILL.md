@@ -43,7 +43,7 @@ span-attributes) and PRD_03 in the framework repo.
 | `bus.ignore_sentry_exceptions(*types)` | these are answers, not faults: no GlitchTip, an `info` line, `sincpro.fault="false"` (a `ClientError` / `DomainError` already is) — the kind stays in `sincpro.outcome` | setting | `UseFramework` method |
 | `bus.report_sentry_exceptions(*types)` | these are faults even if they are a `ClientError` / `DomainError`: GlitchTip, an `error` line, `sincpro.fault="true"` | setting | `UseFramework` method |
 | `traces` → `@traces.attributes(..., namespace=)` / `traces.annotate({...})` | business fields on the use case's span | decorator / function | `sincpro_framework.observability` |
-| `of(X).field` / `of(Ctx)["key"]` | a checked reference to a Command/Response field or a context key | function | `sincpro_framework.observability.metrics` |
+| `field_path(X).field` / `field_path(Ctx)["key"]` | a checked reference to a Command/Response field or a context key | function | `sincpro_framework.observability.metrics` |
 | `metrics` (`Metrics`) | the process's metrics: decorators, instruments, recorder choice | registry | `sincpro_framework.observability.metrics` |
 | `@metrics.counts` / `.sums` / `.measures` | declared metrics, recorded on success | decorator | same |
 | `metrics.counter` / `.up_down` / `.histogram` / `.timer` | instruments declared on the class, recorded in `execute` | function | same |
@@ -146,16 +146,16 @@ case, layer, outcome (`ok` or the failure's kind) and fault (`true` / `false`). 
 — **names come from the context, the use case and the field, never a string**:
 
 ```python
-from sincpro_framework.observability.metrics import metrics, of
+from sincpro_framework.observability.metrics import field_path, metrics
 
 @billing.feature(CommandIssueInvoice)
-@metrics.counts(by=of(CommandIssueInvoice).currency)                 # billing.issue_invoice.runs
-@metrics.sums(of(ResponseIssueInvoice).total, by=of(CommandIssueInvoice).currency, unit="BOB")
-@metrics.measures(of(ResponseIssueInvoice).lines, buckets=(1, 5, 10, 50))
+@metrics.counts(by=field_path(CommandIssueInvoice).currency)                 # billing.issue_invoice.runs
+@metrics.sums(field_path(ResponseIssueInvoice).total, by=field_path(CommandIssueInvoice).currency, unit="BOB")
+@metrics.measures(field_path(ResponseIssueInvoice).lines, buckets=(1, 5, 10, 50))
 class IssueInvoice(Feature): ...
 ```
 
-`of(Command).field` is checked where written; `of(BillingContext)["channel"]` reads the typed
+`field_path(Command).field` is checked where written; `field_path(BillingContext)["channel"]` reads the typed
 execution context. Every series also carries release, service, version and the execution's tenant.
 Instruments by hand, backends and Prometheus: [references/metrics.md](references/metrics.md).
 
@@ -173,11 +173,11 @@ an `info` line and nothing more. `bus.ignore_sentry_exceptions(...)` and
 
 ```python
 from sincpro_framework.observability import traces
-from sincpro_framework.observability.metrics import of
+from sincpro_framework.observability import field_path
 
 @billing.feature(CommandIssueInvoice)
-@traces.attributes(of(CommandIssueInvoice).customer_nit, namespace="billing",
-                   channel=of(BillingContext)["channel"])        # billing.customer_nit, billing.channel
+@traces.attributes(field_path(CommandIssueInvoice).customer_nit, namespace="billing",
+                   channel=field_path(BillingContext)["channel"])        # billing.customer_nit, billing.channel
 class IssueInvoice(Feature):
     def execute(self, dto: CommandIssueInvoice) -> ResponseIssueInvoice:
         traces.annotate({"billing.document": "F-1"})              # known only midway

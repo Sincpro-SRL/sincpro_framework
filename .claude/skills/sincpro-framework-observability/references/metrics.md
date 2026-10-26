@@ -19,22 +19,22 @@ Framework pieces that count themselves: `sincpro.cache.outcomes`, `sincpro.idemp
 ## Declared: decorate
 
 ```python
-from sincpro_framework.observability.metrics import metrics, of
+from sincpro_framework.observability.metrics import field_path, metrics
 
 @billing.feature(CommandIssueInvoice)
-@metrics.counts(by=of(CommandIssueInvoice).currency)
-@metrics.sums(of(ResponseIssueInvoice).total, by=of(CommandIssueInvoice).currency, unit="BOB")
-@metrics.measures(of(ResponseIssueInvoice).lines, buckets=(1, 5, 10, 50))
+@metrics.counts(by=field_path(CommandIssueInvoice).currency)
+@metrics.sums(field_path(ResponseIssueInvoice).total, by=field_path(CommandIssueInvoice).currency, unit="BOB")
+@metrics.measures(field_path(ResponseIssueInvoice).lines, buckets=(1, 5, 10, 50))
 class IssueInvoice(Feature): ...
 ```
 
 | Decorator | Records on each **successful** run | Named |
 |---|---|---|
 | `@metrics.counts(by=)` | one more | `{context}.{use_case}.runs` |
-| `@metrics.sums(of(X).field, by=, unit=)` | the field's value, added (a counter; a negative is dropped) | `{context}.{use_case}.{field}` |
-| `@metrics.measures(of(X).field, by=, unit=, buckets=)` | the field's value, as a distribution | `{context}.{use_case}.{field}` |
+| `@metrics.sums(field_path(X).field, by=, unit=)` | the field's value, added (a counter; a negative is dropped) | `{context}.{use_case}.{field}` |
+| `@metrics.measures(field_path(X).field, by=, unit=, buckets=)` | the field's value, as a distribution | `{context}.{use_case}.{field}` |
 
-`X` is the use case's Command, its Response, or its context type (`of(BillingContext)["channel"]`,
+`X` is the use case's Command, its Response, or its context type (`field_path(BillingContext)["channel"]`,
 read off the execution context) — a path into any other DTO or context is refused at import. A
 failed run is not counted here (it is in `sincpro.use_case.duration`, by kind).
 
@@ -50,7 +50,7 @@ with one warning where declared (`customer_id is str`): each distinct value is o
 ```python
 @pricing.feature(CommandPriceOrder)
 class PriceOrder(Feature):
-    lookups = metrics.counter(by=of(CommandPriceOrder).channel)   # pricing.price_order.lookups
+    lookups = metrics.counter(by=field_path(CommandPriceOrder).channel)   # pricing.price_order.lookups
     pricing = metrics.timer()
     discount = metrics.histogram(unit="BOB", buckets=(0, 10, 100))
     in_flight = metrics.up_down()

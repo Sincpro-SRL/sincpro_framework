@@ -12,7 +12,7 @@ import pytest
 from prometheus_client import CollectorRegistry
 
 from sincpro_framework import Feature, UseFramework
-from sincpro_framework.observability.metrics import InMemoryRecorder, metrics, of
+from sincpro_framework.observability.metrics import InMemoryRecorder, field_path, metrics
 from sincpro_framework.observability.metrics.adapters.otel import OtelRecorder
 from sincpro_framework.observability.metrics.adapters.prometheus import (
     PrometheusRecorder,
@@ -307,7 +307,9 @@ def test_labels_read_by_field_reference_travel_to_every_backend(prometheus):
     bus = UseFramework("crm", log_after_execution=False)
 
     @bus.feature(CommandIssueInvoice)
-    @metrics.counts(by=(of(CommandIssueInvoice).currency, of(CommandIssueInvoice).channel))
+    @metrics.counts(
+        by=(field_path(CommandIssueInvoice).currency, field_path(CommandIssueInvoice).channel)
+    )
     class Register(Feature):
         def execute(self, dto: CommandIssueInvoice) -> None:
             return None

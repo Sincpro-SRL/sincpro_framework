@@ -1,17 +1,20 @@
-"""`of(Command).field`: a reference to a field, written as code, never as a string.
+"""`field_path(Command).field`: a reference to a field, written as code, never as a string.
 
-    of(CommandIssueInvoice).currency        # type-checks as the field's type; renaming the field
-                                            # renames this; a field it lacks raises right here
-    of(ResponseIssueInvoice).customer.segment   # nested DTOs too
-    of(BillingContext)["company"]           # a key of the execution context, typed as a TypedDict:
-                                            # read as the context is, and checked as its keys are
+    field_path(CommandIssueInvoice).currency
+        type-checks as the field's type; renaming the field renames this; a field it lacks
+        raises right here
+    field_path(ResponseIssueInvoice).customer.segment      nested DTOs too
+    field_path(BillingContext)["company"]
+        a key of the execution context, typed as a TypedDict: read as the context is, and
+        checked as its keys are
 
-Context: a metric labelled `"currency"` drifts from the DTO the first time somebody renames the
-field — the dashboard goes silently empty. `of()` hands back a stand-in typed as an instance of
-the class, so the type checker and the editor see an ordinary attribute access; at run time the
-stand-in records the path and checks every step against the class's declared fields. The DTO is
-never touched: no metaclass, no descriptor, nothing on the class. A path reads whatever it is
-handed — the execution context is handed in by whoever reads it, never fetched from here.
+Context: a metric labelled — or a span attribute named — `"currency"` drifts from the DTO
+the first time somebody renames the field — the dashboard goes silently empty.
+`field_path()` hands back a stand-in typed as an instance of the class, so the type checker
+and the editor see an ordinary attribute access; at run time the stand-in records the path and
+checks every step against the class's declared fields. The DTO is never touched: no metaclass,
+no descriptor, nothing on the class. A path reads whatever it is handed — the execution
+context is handed in by whoever reads it, never fetched from here.
 """
 
 import dataclasses
@@ -156,7 +159,8 @@ class FieldPath:
         return self._names[-1] if self._names else ""
 
     def __getattr__(self, name: str) -> "FieldPath":
-        """One step further — `of(Command).customer` → `of(Command).customer.segment`.
+        """One step further — `field_path(Command).customer` →
+        `field_path(Command).customer.segment`.
 
         Context: this is where a renamed or mistyped field fails, at import, instead of a
         dashboard going silently empty.
@@ -183,8 +187,9 @@ class FieldPath:
         return FieldPath(self._root, (*self._names, name), fields[name])
 
     def __getitem__(self, name: str) -> "FieldPath":
-        """`of(BillingContext)["company"]` — a context type is a TypedDict, read by key; the type
-        checker knows its keys, so a key it lacks is flagged where it is written."""
+        """`field_path(BillingContext)["company"]` — a context type is a TypedDict, read by
+        key; the type checker knows its keys, so a key it lacks is flagged where it is
+        written."""
         if not isinstance(name, str):
             raise exceptions.ProgrammingError(
                 f"{self!r}[{name!r}]: a key of the context is some text"
@@ -198,12 +203,14 @@ class FieldPath:
     def __repr__(self) -> str:
         """The path as it was written — what a warning or a refusal quotes.
 
-        of(CommandIssueInvoice).customer.segment
-        of(BillingContext)['company']
+        field_path(CommandIssueInvoice).customer.segment
+        field_path(BillingContext)['company']
         """
         if is_context_type(self._root):
-            return f"of({self._root.__name__})" + "".join(f"[{one!r}]" for one in self._names)
-        return f"of({self._root.__name__}).{'.'.join(self._names)}"
+            return f"field_path({self._root.__name__})" + "".join(
+                f"[{one!r}]" for one in self._names
+            )
+        return f"field_path({self._root.__name__}).{'.'.join(self._names)}"
 
     @property
     def reads_context(self) -> bool:
@@ -214,10 +221,10 @@ class FieldPath:
         """The value on `source`, walking the path — `None` where a step is `None`. A mapping
         (the execution context) is read by key.
 
-            of(CommandIssueInvoice).customer.segment.read(command)    ->  "retail"
-            of(CommandIssueInvoice).customer.segment.read(no_customer)  ->  None
-            of(BillingContext)["company"].read({"company": 3})        ->  3
-            of(BillingContext)["company"].read({})                    ->  None
+            field_path(CommandIssueInvoice).customer.segment.read(command)    ->  "retail"
+            field_path(CommandIssueInvoice).customer.segment.read(no_customer)  ->  None
+            field_path(BillingContext)["company"].read({"company": 3})        ->  3
+            field_path(BillingContext)["company"].read({})                    ->  None
 
         An attribute the object lacks raises `AttributeError`: the path was checked against
         the class, so that is an object of another class."""
@@ -232,10 +239,10 @@ class FieldPath:
         """This path, when what it reads is a number — what is summed or measured; refused
         otherwise.
 
-            of(ResponseIssueInvoice).total.numeric()      ->  the path      # a Decimal
-            of(CommandIssueInvoice).currency.numeric()
-                ->  ProgrammingError("of(CommandIssueInvoice).currency: currency is not a
-                    number — only a number is summed or measured")
+            field_path(ResponseIssueInvoice).total.numeric()  ->  the path   # a Decimal
+            field_path(CommandIssueInvoice).currency.numeric()
+                ->  ProgrammingError("field_path(CommandIssueInvoice).currency: currency is
+                    not a number — only a number is summed or measured")
 
         A `bool` is an `int` to Python, never a number here."""
         annotation = without_none(self._annotation)
@@ -253,14 +260,15 @@ class FieldPath:
     def required(cls, reference: Any, role: str) -> "FieldPath":
         """`reference` as the path it must be — refused when a value was handed instead.
 
-        FieldPath.required(of(CommandIssueInvoice).currency, "a label")   ->  the path
+        FieldPath.required(field_path(CommandIssueInvoice).currency, "a label")
+            ->  the path
         FieldPath.required("currency", "a label")
-            ->  ProgrammingError("a label is a field reference — of(Command).field — never
-                a value ('currency' given)")
+            ->  ProgrammingError("a label is a field reference —
+                field_path(Command).field — never a value ('currency' given)")
         """
         if not isinstance(reference, cls) or not reference.names:
             raise exceptions.ProgrammingError(
-                f"{role} is a field reference — of(Command).field — never a value "
+                f"{role} is a field reference — field_path(Command).field — never a value "
                 f"({reference!r} given)"
             )
         return reference
@@ -272,12 +280,13 @@ class FieldPath:
         it has none. Shared by everything that reads a run off a declaration: the metrics and
         the span attributes.
 
-            FieldPath.refuse_foreign(IssueInvoice, (of(CommandIssueInvoice).currency,))
+            FieldPath.refuse_foreign(IssueInvoice,
+                                     (field_path(CommandIssueInvoice).currency,))
                 ->  None
-            FieldPath.refuse_foreign(IssueInvoice, (of(CommandRefund).amount,))
-                ->  ProgrammingError("IssueInvoice: of(CommandRefund).amount — CommandRefund is
-                    neither the Command nor the Response of IssueInvoice (CommandIssueInvoice,
-                    ResponseIssueInvoice)")
+            FieldPath.refuse_foreign(IssueInvoice, (field_path(CommandRefund).amount,))
+                ->  ProgrammingError("IssueInvoice: field_path(CommandRefund).amount —
+                    CommandRefund is neither the Command nor the Response of IssueInvoice
+                    (CommandIssueInvoice, ResponseIssueInvoice)")
 
         1. A context path must start at a context type the handler declares
            (`_context_types_of`); unchecked when it declares none.
@@ -313,26 +322,26 @@ class FieldPath:
 
 
 type ContextKeys = Mapping[str, Any]
-"""What `of(ContextType)` is typed as: a mapping read by key. A context type is a `TypedDict`,
-usually `total=False`, whose keys a type checker would call possibly absent; the key is checked
-where it is written, at import, instead."""
+"""What `field_path(ContextType)` is typed as: a mapping read by key. A context type is a
+`TypedDict`, usually `total=False`, whose keys a type checker would call possibly absent; the
+key is checked where it is written, at import, instead."""
 
 
 @overload
-def of(cls: type[Mapping[str, Any]]) -> ContextKeys: ...
+def field_path(cls: type[Mapping[str, Any]]) -> ContextKeys: ...
 
 
 @overload
-def of[T](cls: type[T]) -> T: ...
+def field_path[T](cls: type[T]) -> T: ...
 
 
-def of(cls: Any) -> Any:
+def field_path(cls: Any) -> Any:
     """A reference to `cls`'s fields — see the module. Typed as `T` on purpose: that is what
-    lets the type checker and a rename follow `of(Command).field`. A context type is read by
-    key, `of(BillingContext)["company"]`, as the context itself is."""
+    lets the type checker and a rename follow `field_path(Command).field`. A context type is
+    read by key, `field_path(BillingContext)["company"]`, as the context itself is."""
     if _declared_fields(cls) is None:
         raise exceptions.ProgrammingError(
-            f"of({getattr(cls, '__name__', cls)!r}): a field reference starts at a "
+            f"field_path({getattr(cls, '__name__', cls)!r}): a field reference starts at a "
             "DataTransferObject, a dataclass or a context TypedDict"
         )
     return FieldPath(cls, (), cls)

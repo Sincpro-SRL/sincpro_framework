@@ -1,7 +1,9 @@
 """What a use case declares it measures — checked where it is written (PRD_03 §4.2, §4.3).
 
-    @metrics.counts(by=of(CommandIssueInvoice).currency)        ->  declaring(...) on the class
-    retries = metrics.counter(by=of(CommandIssueInvoice).channel)   ->  a DeclaredInstrument
+    @metrics.counts(by=field_path(CommandIssueInvoice).currency)
+        ->  declaring(...) on the class
+    retries = metrics.counter(by=field_path(CommandIssueInvoice).channel)
+        ->  a DeclaredInstrument
 
 Context: nothing is named by a string. A decorated metric is named after its bounded context,
 its use case and the field it reads (`billing.issue_invoice.total`) — or `runs` for `counts`;
@@ -17,6 +19,7 @@ from contextlib import contextmanager
 from typing import Any
 
 from sincpro_framework.observability.domain import FAULT, OUTCOME
+from sincpro_framework.observability.field_paths import FieldPath
 from sincpro_framework.observability.metrics.domain.bus_observability import BusObservability
 from sincpro_framework.observability.metrics.domain.declarations import MetricDeclaration
 from sincpro_framework.observability.metrics.domain.instruments import (
@@ -24,7 +27,6 @@ from sincpro_framework.observability.metrics.domain.instruments import (
     InstrumentKind,
 )
 from sincpro_framework.observability.metrics.domain.naming import metric_name
-from sincpro_framework.observability.metrics.domain.paths import FieldPath
 from sincpro_framework.observability.metrics.infrastructure.registry import (
     declarations_of,
     declare,
@@ -41,16 +43,18 @@ from sincpro_framework.observability.metrics.services.outcomes import (
 from sincpro_framework.observability.metrics.services.recording import active_recorder
 
 type Labels = Any | tuple[Any, ...]
-"""One field reference, or several — `by=(of(Command).currency, of(Command).channel)`."""
+"""One field reference, or several —
+`by=(field_path(Command).currency, field_path(Command).channel)`."""
 
 
 def label_paths(by: Labels) -> tuple[FieldPath, ...]:
     """The `by=` of a declaration as field paths — a value handed instead is refused, a label
     that is not bounded (an Enum, a Literal, a bool) warned about once.
 
-        label_paths(None)                                ->  ()
-        label_paths(of(Command).currency)                ->  (of(Command).currency,)
-        label_paths((of(Command).currency, of(Command).channel))  ->  both, in that order
+        label_paths(None)                          ->  ()
+        label_paths(field_path(Command).currency)  ->  (field_path(Command).currency,)
+        label_paths((field_path(Command).currency, field_path(Command).channel))
+            ->  both, in that order
     """
     references = by if isinstance(by, tuple) else (() if by is None else (by,))
     return tuple(bounded_label(FieldPath.required(one, "a label")) for one in references)
@@ -153,9 +157,10 @@ class DeclaredInstrument:
         """Store what the instrument will be; its name waits for `__set_name__` and its
         bounded context for the first `bound_to`. `timed` adds the outcome labels.
 
-            DeclaredInstrument(InstrumentKind.COUNTER, of(CommandIssueInvoice).channel, "",
-                               "", None)
-                ->  labels (of(CommandIssueInvoice).channel,), owner None, attribute ""
+            DeclaredInstrument(InstrumentKind.COUNTER,
+                               field_path(CommandIssueInvoice).channel, "", "", None)
+                ->  labels (field_path(CommandIssueInvoice).channel,), owner None,
+                    attribute ""
 
         The labels are checked here, as written (`label_paths`): a value instead of a field
         reference is refused, an unbounded one warned about."""

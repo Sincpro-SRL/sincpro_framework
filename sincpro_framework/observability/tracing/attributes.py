@@ -2,10 +2,11 @@
 
     @siat.app_service(CommandSendDocument)
     @traces.attributes(
-        of(CommandSendDocument).nit,                  # siat.nit, set before execute runs
-        of(ResponseSendDocument).reception_code,      # siat.reception_code, on success
+        field_path(CommandSendDocument).nit,              # siat.nit, set before execute runs
+        field_path(ResponseSendDocument).reception_code,  # siat.reception_code, on success
         namespace="siat",
-        branch=of(CommandSendDocument).branch_office,  # siat.branch — named, not derived
+        # siat.branch — named, not derived
+        branch=field_path(CommandSendDocument).branch_office,
     )
     class SendDocument(ApplicationService):
         def execute(self, dto: CommandSendDocument) -> ResponseSendDocument:
@@ -15,9 +16,10 @@
 Context: a NIT, a merchant, a bank's transaction id are exactly what a trace is filtered and
 grouped by ("the rejected invoices of NIT X", TraceQL `count_over_time() by (span.siat.nit)`).
 Both doors write on the span the bus opened for the use case (`context/Command`), never on a
-child an adapter opened: the declared one reads the Command before `execute` runs, so a failed run
-carries it too, and the Response after a successful one. A reference into the context type
-(`of(BillingContext).channel`) reads the execution context, at the start and again at the end.
+child an adapter opened: the declared one reads the Command before `execute` runs, so a failed
+run carries it too, and the Response after a successful one. A reference into the context type
+(`field_path(BillingContext).channel`) reads the execution context, at the start and again at
+the end.
 
 Nothing here can fail a use case, and nothing is refused for its name or its content (PRD_03
 §4.10): what a service shows is its decision. A declaration is checked where it is written for
@@ -39,7 +41,7 @@ from pydantic import ConfigDict
 
 from sincpro_framework import exceptions
 from sincpro_framework.observability import correlation
-from sincpro_framework.observability.metrics import FieldPath
+from sincpro_framework.observability.field_paths import FieldPath
 from sincpro_framework.observability.tracing.span_execution import use_case_span
 from sincpro_framework.sincpro_abstractions import DataTransferObject
 from sincpro_framework.sincpro_logger import logger
@@ -219,8 +221,8 @@ def _declared(reference: Any, key: str) -> SpanAttribute:
     """One declared attribute, checked where it is written: `reference` must be a field path,
     `key` some text, and the field a value a span can hold — refused at import otherwise.
 
-        _declared(of(CommandSendDocument).nit, "siat.nit")
-            ->  SpanAttribute(key="siat.nit", path=of(CommandSendDocument).nit)
+        _declared(field_path(CommandSendDocument).nit, "siat.nit")
+            ->  SpanAttribute(key="siat.nit", path=field_path(CommandSendDocument).nit)
     """
     path = FieldPath.required(reference, f"span attribute '{key}'")
     problem = key_problem(key)
@@ -321,14 +323,16 @@ class Traces:
         self, *references: Any, namespace: str, **named: Any
     ):
         """Attributes of the use case's span, read off its Command (before `execute`, so a
-        failed run has them) and its Response (after a success). A reference `of(X).a.b` is
-        `{namespace}.a.b`; a named one, `{namespace}.{name}`.
+        failed run has them) and its Response (after a success). A reference
+        `field_path(X).a.b` is `{namespace}.a.b`; a named one, `{namespace}.{name}`.
 
-            traces.attributes(of(CommandSendDocument).nit, namespace="siat",
-                              branch=of(CommandSendDocument).branch_office)
+            traces.attributes(field_path(CommandSendDocument).nit, namespace="siat",
+                              branch=field_path(CommandSendDocument).branch_office)
                 ->  a class decorator declaring "siat.nit" and "siat.branch"
-            traces.attributes(namespace="siat")          ->  ProgrammingError, none declared
-            traces.attributes(of(X).nit, namespace="")   ->  ProgrammingError, no namespace
+            traces.attributes(namespace="siat")
+                ->  ProgrammingError, none declared
+            traces.attributes(field_path(X).nit, namespace="")
+                ->  ProgrammingError, no namespace
 
         Each attribute is checked as it is written (`_declared`); the decorator then checks
         them against the use case it decorates (`_declaring`)."""
@@ -347,7 +351,7 @@ class Traces:
         declared += [_declared(one, f"{namespace}.{name}") for name, one in named.items()]
         if not declared:
             raise exceptions.ProgrammingError(
-                "span attributes: nothing declared — hand at least one of(X).field"
+                "span attributes: nothing declared — hand at least one field_path(X).field"
             )
         return _declaring(tuple(declared))
 

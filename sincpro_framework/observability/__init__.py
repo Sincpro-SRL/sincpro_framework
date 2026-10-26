@@ -6,7 +6,9 @@
 GlitchTip, trace ids on its logs. ``process`` is for a service that also has to
 instrument the transport around its buses — HTTP, httpx, the server's loggers —
 without borrowing a bus's identity. ``traces`` is for a use case: what it puts on the
-span the bus opened for it — a NIT, a merchant — declared with ``of()`` or by hand.
+span the bus opened for it — a NIT, a merchant — declared with ``field_path()`` or by
+hand. ``field_path(Command).field`` names a field the same way for a span attribute and a
+metric label (``field_paths``); ``observability.metrics`` offers it too, beside ``metrics``.
 
 Everything else in this package is an implementation detail of those. The
 framework never imports opentelemetry or sentry_sdk outside them, and works
@@ -19,6 +21,7 @@ from sincpro_framework.observability.domain import (
     ObservabilityIdentity,
     ObservabilityStatus,
 )
+from sincpro_framework.observability.field_paths import field_path
 from sincpro_framework.observability.tracing.attributes import SpanValue, Traces, traces
 from sincpro_framework.observability.tracing.propagation import (
     TRACE_HEADERS,
@@ -36,6 +39,7 @@ __all__ = [
     "SpanValue",
     "TRACE_HEADERS",
     "Traces",
+    "field_path",
     "process",
     "trace_carrier",
     "trace_id_of",

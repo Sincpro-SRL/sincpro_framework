@@ -77,10 +77,10 @@ Prometheus reads as absent.
 
 A backend fixes a series' labels when it creates the instrument, so the context keys that go on
 every series are named before the bus is built: `UseFramework("billing",
-metric_labels=["company"])`, a field reference `metric_labels=(of(BillingContext)["company"],)`,
+metric_labels=["company"])`, a field reference `metric_labels=(field_path(BillingContext)["company"],)`,
 or `metric_labels: [company]` in the settings. They are the process's: every series of every bus
 carries them. A use case can also label one of its own metrics by the context:
-`@metrics.counts(by=of(BillingContext)["channel"])`.
+`@metrics.counts(by=field_path(BillingContext)["channel"])`.
 
 ### A value counts from the moment it is set
 
@@ -144,6 +144,6 @@ log line, the span, the metric and the GlitchTip event; an SDK inside Odoo keeps
 `tests/observability/test_execution_correlation.py` holds the execution context to it: the release
 and the tenant on every series, two tenants in one process, every context key on the span and the
 event, `hide_in_logs` on all four, a key set midway, the metric labels a bus declares and
-`of(ContextType)["key"]`. The
+`field_path(ContextType)["key"]`. The
 shapes of `APP_RELEASE` are in `tests/observability/tracing/test_service_name.py`; what the
 deployment declares winning, in `tests/observability/tracing/test_provider_contract.py`.

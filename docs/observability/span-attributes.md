@@ -4,7 +4,7 @@ The bus opens a span for every use case, named `context/Command`, and fills in w
 knows: the context, the use case, the layer, the outcome. What only the use case knows — the NIT
 that issued an invoice, the branch and point of sale, the code SIAT answered, the merchant, the
 QR, the bank's transaction id — it puts on that same span with `traces`: **declared** on the
-class with `of()`, as a metric is, or **by hand** inside `execute` for a value known only midway.
+class with `field_path()`, as a metric is, or **by hand** inside `execute` for a value known only midway.
 
 The design and the why are [PRD 03 §3.1](../prd/PRD_03_observability-tracing.md#31-what-a-use-case-says-about-itself).
 
@@ -37,7 +37,7 @@ from enum import StrEnum
 
 from sincpro_framework import ApplicationService, DataTransferObject, Feature, UseFramework
 from sincpro_framework.observability import traces
-from sincpro_framework.observability.metrics import of
+from sincpro_framework.observability import field_path
 
 
 class Environment(StrEnum):
@@ -66,12 +66,12 @@ siat = UseFramework("siat", log_after_execution=False)
 ```python
 @siat.feature(CommandSendInvoice)
 @traces.attributes(
-    of(CommandSendInvoice).nit,  # siat.nit
-    of(CommandSendInvoice).environment,  # siat.environment
-    of(ResponseSendInvoice).reception_code,  # siat.reception_code
+    field_path(CommandSendInvoice).nit,  # siat.nit
+    field_path(CommandSendInvoice).environment,  # siat.environment
+    field_path(ResponseSendInvoice).reception_code,  # siat.reception_code
     namespace="siat",
-    branch=of(CommandSendInvoice).branch_office,  # siat.branch — named, not derived
-    pos=of(CommandSendInvoice).point_of_sale,  # siat.pos
+    branch=field_path(CommandSendInvoice).branch_office,  # siat.branch — named, not derived
+    pos=field_path(CommandSendInvoice).point_of_sale,  # siat.pos
 )
 class SendInvoice(Feature):
     def execute(self, dto: CommandSendInvoice) -> ResponseSendInvoice:
@@ -87,7 +87,7 @@ answer = siat(
 assert answer is not None and answer.reception_code == "R-77"
 ```
 
-- **The key** is `{namespace}.{path}` for a reference (`of(X).a.b` → `siat.a.b`) and
+- **The key** is `{namespace}.{path}` for a reference (`field_path(X).a.b` → `siat.a.b`) and
   `{namespace}.{name}` for a named one. `namespace` is required.
 - **When**: what starts at the **Command** is set before `execute` runs — a run that fails still
   carries it, and the failed runs are the ones someone will look for. What starts at the
@@ -114,7 +114,7 @@ payments = UseFramework("payments-qr", log_after_execution=False)
 
 
 @payments.feature(CommandCreateQR)
-@traces.attributes(namespace="payment", merchant_id=of(CommandCreateQR).merchant_id)
+@traces.attributes(namespace="payment", merchant_id=field_path(CommandCreateQR).merchant_id)
 class CreateQR(Feature):
     def execute(self, dto: CommandCreateQR) -> ResponseCreateQR:
         bank_reference = "BNB-000981"  # what the bank answered
@@ -152,7 +152,7 @@ class Send(Feature):
 
 
 @issuing.app_service(CommandIssue)
-@traces.attributes(of(CommandIssue).nit, of(ResponseIssue).cuf, namespace="siat")
+@traces.attributes(field_path(CommandIssue).nit, field_path(ResponseIssue).cuf, namespace="siat")
 class Issue(ApplicationService):
     def execute(self, dto: CommandIssue) -> ResponseIssue:
         sent = self.feature_bus.execute(
@@ -184,7 +184,7 @@ class CommandLogin(DataTransferObject):
     access_token: str
 
 
-assert callable(traces.attributes(of(CommandLogin).access_token, namespace="auth"))
+assert callable(traces.attributes(field_path(CommandLogin).access_token, namespace="auth"))
 ```
 
 A declaration is refused only for what could never work: a field that does not exist, a value a
@@ -194,7 +194,7 @@ span cannot hold, a key declared twice, nothing declared.
 an interceptor, a hook or `execute` wrote to it — is an attribute of the use case's span when it
 closes, with `tenant` and `user_id` (from the authenticated identity when the context has none).
 See [correlation](correlation.md). A reference into the context type reads it too:
-`@traces.attributes(of(BillingContext)["user_id"], namespace="billing")`.
+`@traces.attributes(field_path(BillingContext)["user_id"], namespace="billing")`.
 
 **Values** are what OpenTelemetry holds: `str`, `bool`, `int`, `float`, and homogeneous sequences
 of them. The framework also takes an `Enum` (as its value), a `Decimal` (as a float), a `UUID` (as
@@ -219,7 +219,7 @@ traces.annotate({"payment.order": "O-1", "payment.payload": {"not": "a span valu
 
 | | |
 |---|---|
-| `@traces.attributes(*of(X).field, namespace=, **name=of(X).field)` | declared on a use case: the Command's before it runs, the Response's after a success |
+| `@traces.attributes(*field_path(X).field, namespace=, **name=field_path(X).field)` | declared on a use case: the Command's before it runs, the Response's after a success |
 | `traces.annotate({key: value})` | by hand, on the span of the use case running now |
-| `of(Dto).field`, `of(ContextType)["key"]` | the field reference `metrics` uses — imported from `sincpro_framework.observability.metrics` |
+| `field_path(Dto).field`, `field_path(ContextType)["key"]` | the field reference `metrics` uses — imported from `sincpro_framework.observability.metrics` |
 | `SpanValue` | what a value may be |

@@ -26,8 +26,8 @@ from sincpro_framework.ddd import exceptions as ddd_exceptions
 from sincpro_framework.observability.metrics import (
     InMemoryRecorder,
     Recorder,
+    field_path,
     metrics,
-    of,
 )
 
 USE_CASE_DURATION = "sincpro.use_case.duration"
@@ -71,9 +71,11 @@ def _billing() -> UseFramework:
     bus = UseFramework("billing", log_after_execution=False)
 
     @bus.feature(CommandIssueInvoice)
-    @metrics.counts(by=of(CommandIssueInvoice).currency)
-    @metrics.sums(of(ResponseIssueInvoice).total, by=of(CommandIssueInvoice).currency)
-    @metrics.measures(of(ResponseIssueInvoice).lines, buckets=(1, 5, 10))
+    @metrics.counts(by=field_path(CommandIssueInvoice).currency)
+    @metrics.sums(
+        field_path(ResponseIssueInvoice).total, by=field_path(CommandIssueInvoice).currency
+    )
+    @metrics.measures(field_path(ResponseIssueInvoice).lines, buckets=(1, 5, 10))
     class IssueInvoice(Feature):
         def execute(self, dto: CommandIssueInvoice) -> ResponseIssueInvoice:
             if dto.total < 0:
@@ -225,7 +227,7 @@ def test_an_attribute_the_dto_does_not_have_is_refused_where_it_is_written():
     with pytest.raises(
         exceptions.ProgrammingError, match="CommandIssueInvoice has no field 'curency'"
     ):
-        of(CommandIssueInvoice).curency  # type: ignore[attr-defined]
+        field_path(CommandIssueInvoice).curency  # type: ignore[attr-defined]
 
 
 def test_an_unbounded_label_is_accepted_with_a_warning():
@@ -236,14 +238,14 @@ def test_an_unbounded_label_is_accepted_with_a_warning():
         visitor_id: str
 
     with capture_logs() as logs:
-        metrics.counts(by=of(CommandVisit).visitor_id)
+        metrics.counts(by=field_path(CommandVisit).visitor_id)
 
     assert any("visitor_id is str" in entry["event"] for entry in logs)
 
 
 def test_only_a_number_is_summed_or_measured():
     with pytest.raises(exceptions.ProgrammingError, match="currency is not a number"):
-        metrics.sums(of(CommandIssueInvoice).currency)
+        metrics.sums(field_path(CommandIssueInvoice).currency)
 
 
 def test_a_path_of_another_dto_than_the_use_cases_is_refused():
@@ -252,13 +254,13 @@ def test_a_path_of_another_dto_than_the_use_cases_is_refused():
 
     with pytest.raises(exceptions.ProgrammingError, match="CommandOther is neither"):
 
-        @metrics.sums(of(CommandOther).amount)
+        @metrics.sums(field_path(CommandOther).amount)
         class IssueInvoice(Feature):
             def execute(self, dto: CommandIssueInvoice) -> ResponseIssueInvoice: ...
 
 
 def test_a_label_is_a_field_reference_never_a_value():
-    with pytest.raises(exceptions.ProgrammingError, match="of\\(Command\\)"):
+    with pytest.raises(exceptions.ProgrammingError, match="field_path\\(Command\\)"):
         metrics.counts(by=Currency.BOB)  # type: ignore[arg-type]
 
 
@@ -270,7 +272,7 @@ def test_instruments_declared_on_the_use_case_are_named_by_their_attribute(recor
 
     @bus.feature(CommandIssueInvoice)
     class IssueInvoice(Feature):
-        rejected_lines = metrics.counter(by=of(CommandIssueInvoice).channel)
+        rejected_lines = metrics.counter(by=field_path(CommandIssueInvoice).channel)
         pricing = metrics.timer()
         discount = metrics.histogram(unit="BOB", buckets=(0, 10, 100))
         pending = metrics.up_down()
@@ -397,7 +399,7 @@ def test_a_counter_never_goes_down(recorder):
     refunds = UseFramework("billing", log_after_execution=False)
 
     @refunds.feature(CommandRefund)
-    @metrics.sums(of(ResponseRefund).amount)
+    @metrics.sums(field_path(ResponseRefund).amount)
     class Refund(Feature):
         def execute(self, dto: CommandRefund) -> ResponseRefund:
             return ResponseRefund(amount=dto.amount)

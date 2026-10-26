@@ -3,7 +3,7 @@
     release · service · version · tenant     on the log line, the span, every series, GlitchTip
     every context key                        on the log line, the span and GlitchTip
     a context key declared as a metric label on every series
-    of(ContextType)["field"]                 read off the context by the decorators
+    field_path(ContextType)["field"]                 read off the context by the decorators
 
 Each test drives the public doors only: `UseFramework`, `bus.context`, the decorators, an
 in-memory recorder, a captured log line, a fake GlitchTip and the in-memory span exporter.
@@ -28,7 +28,7 @@ from sincpro_framework.auth import (
     security,
 )
 from sincpro_framework.context import ContextKey
-from sincpro_framework.observability.metrics import InMemoryRecorder, metrics, of
+from sincpro_framework.observability.metrics import InMemoryRecorder, field_path, metrics
 from sincpro_framework.observability.tracing.attributes import traces
 from sincpro_framework.sincpro_conf import settings
 
@@ -350,7 +350,7 @@ def test_a_nested_bus_and_a_thread_inherit_the_tenant(deployed, otel_setup):
 
 
 def test_a_declared_metric_label_is_on_every_series_of_the_bus(deployed, recorder):
-    framework = _bus(metric_labels=(of(BillingContext)["company"],))
+    framework = _bus(metric_labels=(field_path(BillingContext)["company"],))
 
     @framework.feature(CommandCharge)
     @metrics.counts()
@@ -433,7 +433,7 @@ def test_the_correlation_labels_reach_prometheus(deployed):
     )
 
 
-# --- rule 6: of(ContextType)["field"] ---------------------------------------------------------------
+# --- rule 6: field_path(ContextType)["field"] -----------------------------------------------
 
 
 def test_the_decorators_read_the_typed_context(deployed, recorder, otel_setup):
@@ -443,8 +443,8 @@ def test_the_decorators_read_the_typed_context(deployed, recorder, otel_setup):
         pass
 
     @framework.feature(CommandCharge)
-    @metrics.counts(by=of(BillingContext)["company"])
-    @traces.attributes(of(BillingContext)["user_id"], namespace="billing")
+    @metrics.counts(by=field_path(BillingContext)["company"])
+    @traces.attributes(field_path(BillingContext)["user_id"], namespace="billing")
     class Charge(BillingFeature):
         def execute(self, dto: CommandCharge) -> ResponseCharge:
             return ResponseCharge()
@@ -460,7 +460,7 @@ def test_the_decorators_read_the_typed_context(deployed, recorder, otel_setup):
 
 def test_a_context_field_that_does_not_exist_or_another_context_is_refused_at_import():
     with pytest.raises(exceptions.ProgrammingError, match="has no field 'compny'"):
-        of(BillingContext)["compny"]
+        field_path(BillingContext)["compny"]
 
     class OtherContext(TypedDict, total=False):
         region: str
@@ -470,7 +470,7 @@ def test_a_context_field_that_does_not_exist_or_another_context_is_refused_at_im
 
     with pytest.raises(exceptions.ProgrammingError, match="not the context"):
 
-        @metrics.counts(by=of(OtherContext)["region"])
+        @metrics.counts(by=field_path(OtherContext)["region"])
         class Charge(BillingFeature):
             def execute(self, dto: CommandCharge) -> ResponseCharge:
                 return ResponseCharge()

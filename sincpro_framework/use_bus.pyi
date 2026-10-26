@@ -88,7 +88,7 @@ class UseFramework(BusContextMixin, Generic[TDeps]):
         `log_*` silence execution logs (all, or one kind); `package` is the distribution named
         in the Sentry release and OTel `service.name`; `hide_in_logs` removes context keys from
         every signal; `metric_labels` puts context keys on every metric series — a key
-        (`"company"`) or `of(BillingContext).company` — declared before the build.
+        (`"company"`) or `field_path(BillingContext).company` — declared before the build.
         """
         ...
     # Improved overloads for framework execution
