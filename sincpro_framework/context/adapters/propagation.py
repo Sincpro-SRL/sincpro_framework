@@ -14,8 +14,8 @@ What is written, and read back in this order — the later wins:
 `headers` writes a context already handed on — the execution in play as its cause
 (`services.propagation.inject` hands it on first). Only what travels is written: text, numbers,
 booleans and lists of them, a `Secret` as its value — never an object or a connection.
-`remote_execution` carries the whole context its own way (one packed header): both ends are this
-codebase.
+`remote_execution` carries the flow its own way (one packed header, with its types): both ends are
+this codebase.
 """
 
 import json

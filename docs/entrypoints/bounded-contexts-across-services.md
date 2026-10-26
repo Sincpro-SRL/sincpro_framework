@@ -74,9 +74,12 @@ transparency make the same promise: the bus is the API, where it runs is configu
 7. **The error comes back as itself** — its class, its `args` and its attributes:
    `except OverCredit as refused: refused.limit`, `ContextRequired.missing`, an exception whose
    constructor takes more than a message.
-8. **The request context and the trace cross over, whole.** Every value of `bus.context({...})`
-   travels with its type — a `Secret`, an enum, a `Decimal`, a DTO; the framework filters nothing,
-   what a project puts in its context is its decision. The host's spans land in the caller's trace.
+8. **The flow and the trace cross over, whole.** Every value of the request's flow — what
+   `bus.context({...})` opened and what the use cases wrote — travels with its type: a `Secret`, an
+   enum, a `Decimal`, a DTO; the framework filters nothing, what a project puts in its context is
+   its decision. The caller's process, global and bounded context's level stay: the host reads its
+   own ([what crosses a process](../core/context-manager.md#what-crosses-a-process--and-what-stays)).
+   The host's spans land in the caller's trace.
 9. **Bounded in time.** Each call has a deadline — the address's `timeout`, 30 seconds when not said.
    **And, when asked, not called while it does not answer:** `?circuit_breaker=on` on the address — or
    `hosted_by(address, circuit_breaker=True)`, or a `CircuitBreaker` of the project's — gives it a circuit: after

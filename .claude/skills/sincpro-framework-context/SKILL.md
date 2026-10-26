@@ -58,7 +58,7 @@ can be persisted in a store for whoever resumes the flow.
 Look-alikes: `context[key] = v` (the scope of the call — siblings see it) ≠ `context.set(key, v)` (this
 node — only what it runs). `bus.context(...)` **opens** a scope; `use_context()` / `self.context`
 **read** it. A store (`ContextStore`) ≠ a cache (`caching`). `inject`/`extract` (text headers) ≠
-`remote_execution` (the whole context packed, same codebase). A thread-pool slot and
+`remote_execution` (the flow packed with its types, same codebase). A thread-pool slot and
 `BackgroundQueue`'s child are not `sincpro_framework.entrypoints.entrypoint.workers.Process` (the program that stays
 up and runs loops — `sincpro-framework-operations`).
 

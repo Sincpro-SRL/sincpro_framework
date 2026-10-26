@@ -104,8 +104,9 @@ and `host.stop()` after.
 6. **No version validation** — each team deploys at its own pace; a DTO that fits is answered
    (unknown fields ignored, defaults filled). Only a DTO that does not fit fails.
 7. **The error comes back as itself** — its class, `args` and attributes (`ContextRequired.missing`).
-8. **The whole context and the trace cross over**, with their types, `Secret` included — the
-   framework filters nothing; what goes in the context is the project's call.
+8. **The flow and the trace cross over**, with their types, `Secret` included — the framework
+   filters nothing; what goes in the context is the project's call. The caller's process, global
+   and bounded context's level stay: the host reads its own.
 9. **Bounded in time** — each call has a deadline (address's `timeout`, default 30 s).
 
 ## Transports
