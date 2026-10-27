@@ -209,7 +209,7 @@ Anything that fits none of these: stop and ask. Do not invent a fourth kind of s
 | Decide a cross-context import, `common/`, domain vs adapters | [references/context-boundaries.md](references/context-boundaries.md) |
 | The context: `use_context()`, levels, threads, providers, required keys, stores, propagation | `sincpro-framework-context` |
 | Interceptors, `replaces=`, error handlers, opening `bus.context` | `sincpro-framework-core` |
-| A job of steps (`Pipeline`, `Await`); a write a person approves first (`approval = Approval()`, `Approve`) | `sincpro-framework-core` |
+| Show what a write would do before it runs (`DryRunnable`, `preview`, `Preview`) | `sincpro-framework-core` |
 | Aggregate, table, repository, unit of work, hooks, mixins | `sincpro-framework-persistence` |
 | Filter, order, page, count, aggregate, relations | `sincpro-framework-criteria` |
 | Domain events, outbox, event sourcing, brokers | `sincpro-framework-domain-events` |

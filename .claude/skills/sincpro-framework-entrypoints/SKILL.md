@@ -275,12 +275,6 @@ handler inherits, wire by wire, the binding of the one it replaces.
   `unauthenticated` / `permission_denied` / `conflict` / `domain` / `internal`; every wire maps it
   (REST status, JSON-RPC code, gRPC status). A project's own `Wire` calls the same function. A `DomainError`'s message reaches the caller;
   an internal failure says nothing.
-- **A write a person must approve is a result, not an error.** A use case with
-  `approval = Approval()` answers `ApprovalRequired` (`status="approval_required"`, `approval_id`,
-  `preview`) on every wire as a normal result; publish `Approve` / `Reject` as tools or routes like
-  any Command — the model names the approval, never re-sends the arguments. No `confirmed` flag on
-  the Command, no exception mapped to a result by hand (`sincpro-framework-core`,
-  `docs/core/approvals.md`).
 
 ## References
 

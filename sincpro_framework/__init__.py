@@ -20,6 +20,7 @@ The top level holds what nearly every project imports; each component has its ow
 
 from .bus_pipeline.interceptors import CallNext
 from .data_layer.caching.entrypoint.facades import cache, idempotency
+from .dry_run import DryRunnable, Preview
 from .exceptions import (
     ClientError,
     ExternalServiceError,
@@ -44,10 +45,12 @@ __all__ = [
     "ClientError",
     "CallNext",
     "DataTransferObject",
+    "DryRunnable",
     "ExternalServiceError",
     "FailureKind",
     "FrameworkError",
     "OutcomeUnknownError",
+    "Preview",
     "ProgrammingError",
     "ServiceUnavailableError",
     "Feature",

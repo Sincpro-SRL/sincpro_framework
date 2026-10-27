@@ -37,4 +37,4 @@ class BusPipelinesMixin:
         Context: read at every build and never registered, so each generation of the bus wraps
         its handlers with recorders of its own."""
         pipelines = self.app_service_handlers()
-        return recorders(pipelines, {**self.feature_handlers(), **pipelines}, self.name)
+        return recorders(pipelines, {*self.feature_handlers(), *pipelines}, self.name)

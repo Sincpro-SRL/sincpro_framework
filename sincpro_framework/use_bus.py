@@ -16,8 +16,8 @@ that repeats it, so a registration after the build asks for a new *generation* �
 new handler instances — built on the next call; a request already running finishes on the
 generation it started on. `fresh()` replays them all on a new, unbuilt bus.
 
-The other worlds a bus offers — context, interceptors, incomes, outcomes, pipelines, approvals,
-error handlers, observability, hosting, cache and idempotency — are mixins, each in its own package.
+The other worlds a bus offers — context, interceptors, incomes, outcomes, pipelines, error
+handlers, observability, hosting, cache and idempotency — are mixins, each in its own package.
 """
 
 import threading
@@ -39,7 +39,6 @@ from sincpro_framework import exceptions
 
 from . import ioc
 from .aio import AsyncBus
-from .approvals.entrypoint.bus_approvals import BusApprovalsMixin
 from .bus import FrameworkBus
 from .bus_pipeline.incomes.mixins.bus_incomes import BusIncomesMixin
 from .bus_pipeline.interceptors.mixins.bus_interceptors import BusInterceptorsMixin
@@ -65,7 +64,6 @@ class UseFramework(
     BusIncomesMixin,
     BusOutcomesMixin,
     BusPipelinesMixin,
-    BusApprovalsMixin,
     BusErrorHandlersMixin,
     BusObservabilityMixin,
     HostedContextMixin,
@@ -85,8 +83,7 @@ class UseFramework(
 
     Each world it offers lives in its own component and is mixed in here: the context
     (`BusContextMixin`), interceptors (`BusInterceptorsMixin`), incomes (`BusIncomesMixin`),
-    outcomes (`BusOutcomesMixin`), pipelines (`BusPipelinesMixin`), approvals
-    (`BusApprovalsMixin`), error handlers
+    outcomes (`BusOutcomesMixin`), pipelines (`BusPipelinesMixin`), error handlers
     (`BusErrorHandlersMixin`), traces (`BusObservabilityMixin`), where the context is hosted
     (`HostedContextMixin`) where it saves what it saves (`BusStoreMixin`) and its cache and idempotency (`BusCachingMixin`). What stays here is
     the bus itself: registering, building and executing.
@@ -421,9 +418,9 @@ class UseFramework(
         )
 
     def _assemble_handlers(self, bus: FrameworkBus) -> None:
-        """Each handler wrapped by its interceptors, the recorders of the pipelines and the gates
-        of the approvals, and who replaced whom — said once, in the build log."""
-        self._wrap_handlers(bus, [*self._pipeline_recorders(), *self._approval_gates(bus)])
+        """Each handler wrapped by its interceptors and the recorders of the pipelines, and who
+        replaced whom — said once, in the build log."""
+        self._wrap_handlers(bus, self._pipeline_recorders())
         feature_bus, app_service_bus = bus.feature_bus, bus.app_service_bus
         replacements = self._sp_container.replacements()
         for command, replaced in replacements.items():

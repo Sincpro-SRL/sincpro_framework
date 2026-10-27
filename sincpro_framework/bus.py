@@ -22,6 +22,7 @@ from sincpro_framework.bus_pipeline.outcomes.outcomes import Outcomes
 from sincpro_framework.common.ids import new_entity_id
 from sincpro_framework.common.naming import registered_name
 from sincpro_framework.context import ContextLevel, ContextProvider, context_executions
+from sincpro_framework.dry_run import answering
 from sincpro_framework.observability import Observability
 from sincpro_framework.sincpro_abstractions import (
     ApplicationService,
@@ -119,7 +120,8 @@ class FeatureBus(Bus):
            4.1 the context providers fill the node; `requires_context` refuses what is
                missing;
            4.2 the incomes are told it began;
-           4.3 the interceptors registered for the type run around `feature.execute`.
+           4.3 the interceptors registered for the type run around `feature.execute` — its
+               `preview`, for a dry run (`sincpro_framework.dry_run`).
         5. A failure: outcomes, metric and span/GlitchTip told; with no feature error handler
            it is raised, else what the handler answers is the answer — logged as handled.
         Final: the response, measured, told to the outcomes, described on the span.
@@ -159,7 +161,7 @@ class FeatureBus(Bus):
                     context_executions.prepare(node, feature, self.context_providers)
                     self.incomes.began(dto, "feature", node)
                     chain = self.interceptors.get(dto_type, ())
-                    response = run_around(chain, feature.execute, dto)
+                    response = run_around(chain, answering(feature, dto), dto)
                 except Exception as error:
                     self.outcomes.failed_in(error, dto, "feature", node)
                     measured.failed(error)
@@ -271,7 +273,8 @@ class ApplicationServiceBus(Bus):
 
         1. The application service for `type(dto)`, else `UnknownDTOToExecute`.
         2. Node, span and measurement opened; the span described.
-        3. Providers and `requires_context`, incomes, interceptors around `execute`.
+        3. Providers and `requires_context`, incomes, interceptors around `execute` — around
+           `preview`, for a dry run.
         4. A failure: told everywhere; raised, or answered by the error handler.
         Final: the response, measured, told to the outcomes, described on the span.
         """
@@ -312,7 +315,7 @@ class ApplicationServiceBus(Bus):
                     context_executions.prepare(node, app_service, self.context_providers)
                     self.incomes.began(dto, "application_service", node)
                     chain = self.interceptors.get(dto_type, ())
-                    response = run_around(chain, app_service.execute, dto)
+                    response = run_around(chain, answering(app_service, dto), dto)
                 except Exception as error:
                     self.outcomes.failed_in(error, dto, "application_service", node)
                     measured.failed(error)
