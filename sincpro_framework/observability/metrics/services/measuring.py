@@ -1,7 +1,8 @@
 """The metrics of one run of a use case — what every bus records, declared or not (PRD_03 §4.2).
 
     sincpro.use_case.duration   histogram, seconds — sincpro.context, sincpro.use_case,
-                                sincpro.layer, sincpro.outcome, sincpro.fault, error.type
+                                sincpro.layer, sincpro.outcome, sincpro.fault, error.type,
+                                sincpro.run
     sincpro.context.info        1 per bounded context — sincpro.context, sincpro.artifact,
                                 sincpro.version, sincpro.tenant
 
@@ -10,7 +11,9 @@ its errors (the outcome) and its latency (the buckets) — for every use case of
 context, without a line in any of them. A failure is recorded as its kind (`domain`, `invalid`,
 `internal`, …, the classification every wire already shares), never as `ok`, even when an error
 handler answered for it — and `sincpro.fault` says whether it is a problem of the service, what
-an error-rate alert reads. Declared metrics are read off a successful run.
+an error-rate alert reads. Declared metrics are read off a successful run that did something:
+a dry run (`DryRunnable`, `dry_run=True`) and an answer the idempotency replayed without running
+are timed — `sincpro.run` says `dry_run` or `replayed` — and count, sum and measure nothing.
 
 Who a metric comes from has three levels (PRD_03 §4.9): the service is the resource (a stable
 `service.name`, its version and tenant beside it); the context is `sincpro.context` on every
@@ -23,6 +26,7 @@ import threading
 import time
 from collections.abc import Iterator, Mapping
 from contextlib import contextmanager
+from contextvars import ContextVar
 from typing import Any
 from weakref import WeakKeyDictionary
 
@@ -50,7 +54,12 @@ from sincpro_framework.observability.metrics.services.outcomes import (
     outcome_of,
 )
 from sincpro_framework.observability.metrics.services.recording import active_recorder
+from sincpro_framework.sincpro_abstractions import DryRunnable
 from sincpro_framework.sincpro_logger import logger
+
+RUN = "sincpro.run"
+"""How a run went: `executed`, `dry_run` — it only said what it would do — or `replayed` — the
+idempotency answered what it stored, without running it."""
 
 RUNS = "runs"
 """What `counts` is named after: `billing.issue_invoice.runs`, never the bare use case — a field
@@ -69,6 +78,7 @@ USE_CASE_DURATION = Instrument(
         OUTCOME,
         FAULT,
         ERROR_TYPE,
+        RUN,
     ),
     buckets=DURATION_BUCKETS,
 )
@@ -186,10 +196,12 @@ class MeasuredExecution:
     """A run in progress: when it started, how it ended."""
 
     def __init__(self) -> None:
-        """Start the clock — no error, no response yet."""
+        """Start the clock — no error, no response yet, nothing replayed."""
         self.started = time.perf_counter()
         self.error: BaseException | None = None
         self.response: Any = None
+        self.replayed = False
+        """Whether the idempotency answered what it stored instead of running it."""
 
     def failed(self, error: BaseException) -> None:
         """The run failed with `error` — it is measured as the failure's kind, even when an
@@ -199,6 +211,21 @@ class MeasuredExecution:
     def answered(self, response: Any) -> None:
         """The run answered `response` — what declared metrics read their values off."""
         self.response = response
+
+
+_running: ContextVar[MeasuredExecution | None] = ContextVar(
+    "sincpro_measured_execution", default=None
+)
+"""The run being measured in this thread or task — what `replayed()` marks."""
+
+
+def replayed() -> None:
+    """The run being measured was answered with what the idempotency stored, without running —
+    it is timed as `replayed` and its declared metrics are not recorded. Nothing outside a
+    measured run."""
+    running = _running.get()
+    if running is not None:
+        running.replayed = True
 
 
 def _announce(context: str, who: BusObservability | None) -> None:
@@ -221,24 +248,32 @@ def _finish(
     layer: str,
     who: BusObservability | None,
 ) -> None:
-    """Record a finished run: its duration, then — on success only — what it declared.
+    """Record a finished run: its duration, then — when it did something — what it declared.
 
     1. The context is announced to the recorder (once per recorder — `announce`).
-    2. `sincpro.use_case.duration` with the service, context, use case, layer and the outcome
-       as the bus judges it.
-    Final: no error — the declared metrics, read off the Command and the response.
+    2. How it ran: a dry run, an answer replayed, or executed.
+    3. `sincpro.use_case.duration` with the service, context, use case, layer, the outcome as
+       the bus judges it, and how it ran.
+    Final: executed, with no error — the declared metrics, read off the Command and the
+    response.
     """
     _announce(context, who)
     identity = getattr(who, "identity", None)
+    ran = (
+        "dry_run"
+        if isinstance(dto, DryRunnable) and dto.dry_run
+        else "replayed" if execution.replayed else "executed"
+    )
     labels: Mapping[str, str] = {
         correlation.SERVICE_NAME: identity.service_name if identity is not None else "",
         "sincpro.context": context,
         "sincpro.use_case": registered_name(type(dto), context),
         "sincpro.layer": layer,
         **outcome_of(execution.error, faulted(who, execution.error)),
+        RUN: ran,
     }
     active_recorder.emit(USE_CASE_DURATION, time.perf_counter() - execution.started, labels)
-    if execution.error is None:
+    if execution.error is None and ran == "executed":
         _record_declared(context, type(handler), dto, execution.response)
 
 
@@ -267,12 +302,14 @@ def measured(
     if active_recorder.get() is None:
         yield execution
         return
+    token = _running.set(execution)
     try:
         yield execution
     except BaseException as error:
         execution.failed(error)
         raise
     finally:
+        _running.reset(token)
         try:
             _finish(execution, context, dto, handler, layer, who)
         except Exception as error:

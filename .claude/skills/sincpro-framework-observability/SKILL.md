@@ -45,7 +45,7 @@ span-attributes) and PRD_03 in the framework repo.
 | `traces` → `@traces.attributes(..., namespace=)` / `traces.annotate({...})` | business fields on the use case's span | decorator / function | `sincpro_framework.observability` |
 | `field_path(X).field` / `field_path(Ctx)["key"]` | a checked reference to a Command/Response field or a context key | function | `sincpro_framework.observability.metrics` |
 | `metrics` (`Metrics`) | the process's metrics: decorators, instruments, recorder choice | registry | `sincpro_framework.observability.metrics` |
-| `@metrics.counts` / `.sums` / `.measures` | declared metrics, recorded on success | decorator | same |
+| `@metrics.counts` / `.sums` / `.measures` | declared metrics, recorded on a successful run that did something — never for a dry run or an answer the idempotency replayed (`sincpro.run` on the duration says `dry_run` / `replayed`) | decorator | same |
 | `metrics.counter` / `.up_down` / `.histogram` / `.timer` | instruments declared on the class, recorded in `execute` | function | same |
 | `Recorder` | where measurements go | port | same |
 | `InMemoryRecorder` | stdlib recorder for tests | adapter | same |

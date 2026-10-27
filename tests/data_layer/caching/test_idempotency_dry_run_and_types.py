@@ -2,6 +2,7 @@
 nothing to run once — and idempotency declared once, for a type of Command, reaches every
 handler of it."""
 
+import time
 from datetime import timedelta
 from typing import Any
 
@@ -20,6 +21,8 @@ from sincpro_framework.context import KeyValueContexts
 from sincpro_framework.data_layer.caching import (
     Idempotency,
     IdempotencyOutcome,
+    IdempotencyPolicy,
+    JsonCodec,
     KeyValueRecords,
 )
 from sincpro_framework.data_layer.store import (
@@ -299,3 +302,30 @@ def test_the_service_declaration_reaches_every_bus(monkeypatch: pytest.MonkeyPat
         bus(CommandUpdateOpportunity(opportunity_id=7, stage="won", dry_run=False))
 
     assert written == ["7 won"]
+
+
+# --- completed_key: a key run by hand --------------------------------------------------------------
+
+
+def test_a_key_run_by_hand_says_whether_it_completed():
+    bus = UseFramework("crm-by-hand", log_after_execution=False)
+    bus.store_context_in(KeyValueContexts(InMemoryKeyValue()))
+    policy = IdempotencyPolicy(expires_after=timedelta(milliseconds=50))
+    codec = JsonCodec(ResponseUpdated)
+
+    bus.idempotency.run(
+        ("update", 7), lambda: ResponseUpdated(opportunity_id=7), policy, codec
+    )
+
+    assert bus.idempotency.completed_key(("update", 7)) is True
+    assert bus.idempotency.completed_key(("update", 8)) is False
+    time.sleep(0.1)
+    assert bus.idempotency.completed_key(("update", 7)) is False  # expired
+
+
+def test_the_service_facade_answers_it_too():
+    policy = IdempotencyPolicy(expires_after=TWO_MINUTES)
+    idempotency.run(("by-hand", "x-1"), lambda: 1, policy, JsonCodec(int))
+
+    assert idempotency.completed_key(("by-hand", "x-1")) is True
+    assert idempotency.completed_key(("by-hand", "x-2")) is False

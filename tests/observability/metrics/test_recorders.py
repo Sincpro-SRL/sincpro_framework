@@ -216,6 +216,7 @@ def test_what_the_bus_measured_reaches_the_otel_meter(otel_reader):
             "sincpro.outcome": "ok",
             "sincpro.fault": "false",
             "error.type": "",
+            "sincpro.run": "executed",
         },
     )
     assert [point.count for point in durations] == [1]

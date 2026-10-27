@@ -91,6 +91,7 @@ from sincpro_framework.data_layer.caching.domain.observer import (
 from sincpro_framework.data_layer.caching.domain.policies import IdempotencyPolicy
 from sincpro_framework.data_layer.caching.infrastructure.flight import POLL_SECONDS
 from sincpro_framework.data_layer.store import KeyValueStore
+from sincpro_framework.observability.metrics import metrics
 from sincpro_framework.sincpro_abstractions import DryRunnable
 from sincpro_framework.sincpro_logger import logger
 
@@ -257,11 +258,14 @@ class Idempotency:
         return prefix + KeyEncoder.key_of(key)
 
     def _observe(self, outcome: IdempotencyOutcome) -> None:
-        """Tell the `outcomes()` block in play and the observer how a run went — an observer
-        that fails never fails the write."""
+        """Tell the `outcomes()` block in play, the run being measured — a replay records no
+        business metric — and the observer how a run went; an observer that fails never fails
+        the write."""
         watched = self._watched.get()
         if watched is not None:
             watched.append(outcome)
+        if outcome is IdempotencyOutcome.REPLAYED:
+            metrics.replayed()
         try:
             self.observer.observed(outcome, self.namespace)
         except Exception:
@@ -406,6 +410,17 @@ class Idempotency:
                     "a run with this idempotency key is still in progress"
                 )
             time.sleep(POLL_SECONDS)
+
+    def completed_key(self, key: Any) -> bool:
+        """Whether `key`, as `run(key, ...)` was given it, holds a completed answer that has not
+        expired — running it again would replay that answer.
+
+            idempotency.run(("charge", "r-1"), charge, policy, codec)
+            idempotency.completed_key(("charge", "r-1"))   ->  True
+            idempotency.completed_key(("charge", "r-2"))   ->  False      never run, or expired
+        """
+        held = self.records.read(self._key(key))
+        return held is not None and held.state == RecordState.COMPLETED
 
     # Declaring
 
