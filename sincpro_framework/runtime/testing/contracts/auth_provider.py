@@ -12,7 +12,8 @@ Nothing here imports pytest.
 from collections.abc import Sequence
 from typing import Any
 
-from sincpro_framework.auth import AuthProvider, Credentials, Identity
+from sincpro_framework.auth import AuthProvider, Credentials, Identity, Unauthenticated
+from sincpro_framework.exceptions import ServiceUnavailableError
 from sincpro_framework.runtime.testing import exceptions
 
 
@@ -42,6 +43,29 @@ class AuthProviderContract:
     def granted_permission(self) -> str | None:
         """A permission the accepted identity holds — `None` skips that check."""
         return None
+
+    def make_provider_whose_backend_is_down(self) -> AuthProvider | None:
+        """The provider with the backend it asks not answering — `None` skips that check, for a
+        provider that asks nothing."""
+        return None
+
+    def test_a_backend_that_does_not_answer_is_unavailable_never_unauthenticated(
+        self,
+    ) -> None:
+        """A provider whose backend is down raises `ServiceUnavailableError` — the caller is
+        told to retry, never that its credentials failed."""
+        provider = self.make_provider_whose_backend_is_down()
+        if provider is None:
+            return
+        try:
+            provider.authenticate(self.accepted())
+        except ServiceUnavailableError:
+            return
+        except Unauthenticated as error:
+            raise AssertionError(
+                f"a backend that does not answer was told as failed credentials: {error}"
+            ) from error
+        raise AssertionError("a backend that does not answer authenticated someone")
 
     def test_accepted_credentials_are_someone(self) -> None:
         """Accepted credentials answer an identity, and not the anonymous one."""

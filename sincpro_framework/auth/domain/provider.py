@@ -39,7 +39,12 @@ class AuthProvider(ABC):
     @abstractmethod
     def authenticate(self, credentials: Credentials) -> Identity | None:
         """Who the credentials say is calling. `None` when they are not this provider's kind —
-        the next provider is tried; raise `Unauthenticated` when they are, and fail."""
+        the next provider is tried; raise `Unauthenticated` when they are, and fail.
+
+        A backend the provider asks that does not answer — a registry, a key store, an identity
+        server down — is never the caller's credentials failing: raise `ServiceUnavailableError`
+        (`sincpro_framework.exceptions`), and every entrypoint answers 503 to retry, never 401.
+        """
 
     def has_permission(
         self,

@@ -53,6 +53,10 @@ A provider turns `Credentials` into an `Identity`, and answers whether an identi
 something. One method is required; the rest have defaults and are overridden when the protocol
 needs them.
 
+A backend the provider asks that does not answer — a registry, a key store, an identity server
+down — is never the caller's credentials failing: the provider raises `ServiceUnavailableError`,
+and the caller is told to retry — 503 with `Retry-After` — never 401 nor 500.
+
 ```python
 class TenantKeys(AuthProvider):
     """A project's own: an API key header, the permissions asked of an API."""
@@ -248,6 +252,7 @@ unchecked = AccessControl[BillingPermission](enabled=False)
 | a `replaces=` handler or hook that declares nothing | inherits the declaration of the one it replaces |
 | one bus that must not be guarded | no `auth.on(bus)` for it |
 | a new generation of the bus — `fresh()`, the runtime registry | guarded as the bus it came from, resolving its own handlers |
+| a `fresh()` bus checked by other providers — a test's | `auth.using(providers=[...]).on(fresh, replaces=auth)`: the same declarations, `strict` and `enabled`; its guard and its `auth` in the place of the original's, on every bus made of it too |
 
 ## Hooks
 
@@ -330,7 +335,8 @@ class TestTenantKeys(AuthProviderContract):
 | an entrypoint with fake tokens | `StaticProvider({"token-a": identity_a})` |
 | no access control at all | `AccessControl(enabled=False)`, or no `auth.on(bus)` |
 | what the provider was asked | `RecordingProvider(real_or_none)` → `.asked` |
-| a provider of mine to behave | inherit `AuthProviderContract` |
+| a provider of mine to behave | inherit `AuthProviderContract`; `make_provider_whose_backend_is_down()` checks it says so as `ServiceUnavailableError` |
+| production's rules on a `fresh()` bus, with fake tokens | `auth.using(providers=[StaticProvider({...})]).on(test, replaces=auth)` |
 | what a use case requires | `auth.requirements_of(CommandIssueInvoice)` |
 | a declaration that never runs, or what strict refuses | `assert auth.verify() == []` — it builds no bus and closes no collection |
 
