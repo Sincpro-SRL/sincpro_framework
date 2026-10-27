@@ -11,7 +11,7 @@ def test_a_signed_id_is_unsigned_back_to_what_it_was_made_from():
 
     raw, id = ids.new()
 
-    assert len(raw) == 32 and id.startswith(f"{raw}.")
+    assert len(raw) == 32 and id.startswith(f"{raw}.") and len(id) == 55
     assert ids.unsigned(id) == raw
 
 

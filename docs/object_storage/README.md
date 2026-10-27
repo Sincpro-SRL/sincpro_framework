@@ -17,6 +17,8 @@ Every block on this page runs, in order, in `tests/docs/test_persistence_guide.p
 ## Objects by key
 
 ```python
+from datetime import timedelta
+
 from sincpro_framework.data_layer.object_storage import InMemoryObjectStore, ObjectAlreadyExists, ObjectStorage
 
 storage = ObjectStorage(InMemoryObjectStore(), "the-service-secret")
@@ -25,7 +27,8 @@ stored = storage.put("exports/invoices.csv", b"number,total\nF-1,100\n", "text/c
 assert (stored.size, stored.metadata) == (21, {"filename": "facturas.csv"})
 
 assert storage.get("exports/invoices.csv").startswith(b"number")
-assert storage.find("exports/invoices.csv").content_type == "text/csv"
+opened = storage.open("exports/invoices.csv")                # the bytes and what they are, in one read
+assert (opened.ref.content_type, opened.ref.metadata["filename"]) == ("text/csv", "facturas.csv")
 assert storage.exists("exports/invoices.csv")
 assert list(storage.keys("exports/")) == ["exports/invoices.csv"]
 
@@ -34,18 +37,35 @@ try:
     storage.put("claims/upload-7", b"", if_absent=True)
 except ObjectAlreadyExists:
     pass                                                    # another writer came first
+
+storage.put("inbox/scan.pdf", b"%PDF-1.7", metadata={"filename": "scan.pdf"}, expires_in=timedelta(hours=1))
+taken = storage.take("inbox/scan.pdf")                      # read and deleted, once on any replica
+assert taken.data == b"%PDF-1.7" and not storage.exists("inbox/scan.pdf")
 ```
 
-- **`put` / `get` / `find` / `exists` / `delete` / `keys(prefix)`**. A key with nothing under it is
-  `ObjectNotFound` (`not_found`) from `get`, `None` from `find`.
+- **`put` / `open` / `get` / `find` / `exists` / `take` / `delete` / `keys(prefix)`**. A key with
+  nothing under it is `ObjectNotFound` (`not_found`) from `open`, `get` and `take`, `None` from
+  `find`.
+- **`open`** answers a `StoredObject` — `data` and its `ref` — in one read of the store: a bucket's
+  `get_object` already says what the object is.
+- **`take`** reads and deletes, once: it claims the key in the `KeyValueStore` the context stands on
+  (`add`, a `SET NX` on Redis or Valkey) before it reads, so of two replicas taking the same object
+  one gets it and the other `ObjectNotFound` — on any storage, whatever it offers. A claim lasts a
+  minute at most: a process that dies while taking never locks the object for good.
+- **`expires_in`** makes an object gone after its time: `find`, `open`, `get`, `take` and `exists`
+  answer it as not there, and delete it. Memory and disk drop what expired as they list; a bucket's
+  listing does not read the expiry, so `keys` may name one until a lifecycle rule cleans it.
 - **`data` is bytes or a file-like** — a request body spooled to disk — streamed to the store,
   never all in memory where the store streams (a bucket does).
-- **Metadata is any text**: a bucket carries it as headers, so the adapter encodes what is not
-  ASCII and reads it back as written.
+- **Metadata values are any text**: a bucket carries them as headers, so the adapter encodes what
+  is not ASCII and reads it back as written. **Metadata names** are lowercase letters, digits and
+  `-` — anything else is a `ProgrammingError` on every store, memory included: AWS lowercases
+  names and Ceph RGW (DigitalOcean Spaces) answers a `_` as `-`, so a name like `file_name` would
+  come back as another one in production while every test passed.
 - **A content type not given** is the one the key's extension says (`.csv` → `text/csv`), else
   `application/octet-stream`.
 - **`ObjectRef`** is an object without its bytes: key, size, content type, the `metadata` stored
-  beside it, and when it was last put (`modified_at`).
+  beside it, when it was last put (`modified_at`) and when it expires (`expires_at`).
 - **`if_absent=True`** writes only under a free key, atomically — `ObjectAlreadyExists`
   (`conflict`) otherwise. What a claim needs: of two writers at once, one stores.
 - A failure of the storage — a bucket down, credentials refused — is an `ExternalServiceError`.
@@ -76,11 +96,12 @@ except PublicationRefused as refused:
     assert refused.publication.key == "exports/invoices.csv"
 ```
 
-`Publication` — `id`, `key`, `access`, `expires_at`, `max_uses`, `uses`, `metadata` — is what the
-publisher hands on and what `check` and `redeem` answer. When an id does not open,
-`PublicationRefused` (`permission_denied`) says why in `reason`, and which one in `publication`
-when it is known (`EXPIRED`, `USED_UP`, `WRONG_ACCESS`) — its key and metadata, to answer "already
-uploaded: scan.pdf" or to go on with its object:
+`Publication` — `id`, `key`, `access`, `expires_at`, `max_uses`, `uses`, `metadata`, `then` — is
+what the publisher hands on and what `check` and `redeem` answer. When an id does not open,
+`PublicationRefused` says why in `reason`, and which one in `publication` when it is known
+(`EXPIRED`, `USED_UP`, `WRONG_ACCESS`) — its key and metadata, to answer "already uploaded:
+scan.pdf" or to go on with its object. Every wire of the framework answers `UNKNOWN` as
+`not_found` and the rest as `permission_denied`:
 
 | `Refusal` | When |
 |---|---|
@@ -90,15 +111,52 @@ uploaded: scan.pdf" or to go on with its object:
 | `USED_UP` | it was redeemed `max_uses` times |
 | `WRONG_ACCESS` | published to read and asked to write, or the other way |
 
-**The id.** With a secret, the id is 128 random bits and their HMAC-SHA256: an id not signed here is
-refused before any store is asked. Without one, the random bits alone, refused when no publication
-has them.
+**The id.** With a secret, the id is 128 random bits and their HMAC-SHA256 cut to 128 bits — 55
+characters, short enough to copy: an id not signed here is refused before any store is asked.
+Without one, the random bits alone, refused when no publication has them.
 
-**Where a publication lives.** In the store the context saves in, as an entry — the bus in play's,
+**Where a publication lives.** On the `KeyValueStore` the context stands on — the bus in play's,
 else the process's (`store_context_in(...)`), else this process's memory. A service whose context is
-stored in Redis shares its publications across every replica with nothing else to set; a use is
-spent comparing the entry's version, so two replicas never spend the same one. A publication lives
-as long as that store keeps an entry (`entry_ttl`, 7 days by default).
+stored in Redis or Valkey shares its publications across every replica with nothing else to set. It
+is written once and lasts its own time and a day more — to answer a late caller `EXPIRED` or
+`USED_UP`, never `UNKNOWN`. Its uses are a counter (`increment`): a use is spent in one atomic step,
+with nothing read to compare and nothing retried, so of two replicas redeeming the last use one
+opens it, and a download used without end counts every use without a conflict.
+
+**Publish after the context is stored.** A publication goes to the store in play *when it is
+published*: one published before `store_context_in(...)` runs stays in this process's memory, and a
+route on another replica — or after the store is set — answers `UNKNOWN`.
+
+## Two accesses, one id: upload, then claim
+
+An upload the client sends now and a use case claims later — once a person approves a preview — is
+one publication: its first access spent, it opens to `then`, with the same id, for its own time from
+that moment and its own uses.
+
+```python
+from sincpro_framework.data_layer.object_storage import Grant
+
+ticket = storage.publish(
+    "inbox/contract.pdf",
+    Access.WRITE,
+    timedelta(minutes=5),                                     # the link to upload: short
+    max_uses=1,
+    metadata={"filename": "contract.pdf"},
+    then=Grant(access=Access.READ, expires_in=timedelta(hours=1), max_uses=1),   # the upload waits
+)
+
+storage.redeem(ticket.id, Access.WRITE)                       # the route of the upload
+storage.put(ticket.key, b"%PDF-1.7", expires_in=timedelta(hours=1))
+
+preview = storage.check(ticket.id, Access.READ)               # a preview: nothing spent
+assert preview.metadata["filename"] == "contract.pdf"
+
+claimed = storage.redeem(ticket.id, Access.READ)              # the confirmation: once
+assert storage.take(claimed.key).data == b"%PDF-1.7"
+```
+
+Asking the first access again once it is spent is `USED_UP`; the `then` is `None` once it opened. A
+`then` needs `max_uses` on the first access — without an end it would never open.
 
 ## The entrypoint's side
 
@@ -179,27 +237,37 @@ assert s3_store.presign("a.pdf", Access.READ, timedelta(minutes=5)).startswith(
 
 ```python
 from collections.abc import Iterator, Mapping
+from datetime import datetime
 
-from sincpro_framework.data_layer.object_storage import ObjectRef, ObjectStore
+from sincpro_framework.data_layer.object_storage import ObjectRef, ObjectStore, StoredObject
 
 
 class TableObjectStore(ObjectStore):
     """A project's own: objects in a table."""
 
     def __init__(self) -> None:
-        self.rows: dict[str, tuple[bytes, ObjectRef]] = {}
+        self.rows: dict[str, StoredObject] = {}
 
-    def put(self, key: str, data: bytes, content_type: str, metadata: Mapping[str, str], if_absent: bool) -> bool:
+    def put(
+        self,
+        key: str,
+        data: bytes,
+        content_type: str,
+        metadata: Mapping[str, str],
+        if_absent: bool,
+        expires_at: datetime | None,
+    ) -> bool:
         if if_absent and key in self.rows:
             return False
-        self.rows[key] = (data, ObjectRef(key=key, size=len(data), content_type=content_type, metadata=dict(metadata)))
+        said = ObjectRef(key=key, size=len(data), content_type=content_type, metadata=dict(metadata), expires_at=expires_at)
+        self.rows[key] = StoredObject(data=data, ref=said)
         return True
 
-    def get(self, key: str) -> bytes | None:
-        return self.rows[key][0] if key in self.rows else None
+    def get(self, key: str) -> StoredObject | None:
+        return self.rows.get(key)
 
     def info(self, key: str) -> ObjectRef | None:
-        return self.rows[key][1] if key in self.rows else None
+        return self.rows[key].ref if key in self.rows else None
 
     def delete(self, key: str) -> None:
         self.rows.pop(key, None)
@@ -222,7 +290,7 @@ What `ObjectStorage` does is the recommended default, never the only way:
 | What the storage is told — headers, an ACL, a cache control, an encryption key, a version, a range | pass it on any call: `storage.put(key, data, type, CacheControl="max-age=3600")`, `storage.get(key, SSECustomerAlgorithm="AES256", SSECustomerKey=k)`, `storage.get(key, VersionId=v)`, `storage.delete(key, VersionId=v)` — options go to the storage as they are |
 | The bucket serving the bytes itself | type the adapter: `s3_store.presign(key, Access.READ, ttl, ResponseContentDisposition="attachment")` — a presigned URL, the technology's own |
 | Rules of its own — who may redeem, what happens after | put them in `metadata` at `publish`, read them from what `check` / `redeem` answer |
-| Where publications are saved | `ObjectStorage(store, secret, publication_store=a_context_store)` |
+| Where publications and claims are saved | `ObjectStorage(store, secret, context_store=a_context_store)` |
 | How ids are signed | a `PublicationIds` of its own (`signed` / `unsigned`) in `storage.ids` and `storage.publications.ids` |
 | How a publication opens | a `Publications` of its own in `storage.publications` |
 | Where the bytes live | an `ObjectStore` of its own, proven with `ObjectStoreContract` |
@@ -232,15 +300,15 @@ each is an attribute a project reads or replaces.
 
 | Attribute | Service | Use case |
 |---|---|---|
-| `storage.objects` | `Objects` | put, get, find, exists, delete, keys — the rules over the store |
+| `storage.objects` | `Objects` | put, open, get, find, exists, take, delete, keys — the rules over the store |
 | `storage.ids` | `PublicationIds` | the id, signed with the secret |
-| `storage.publications` | `Publications` | publish, check, redeem, revoke — in the context's store |
+| `storage.publications` | `Publications` | publish, check, redeem, revoke — on the context's `KeyValueStore` |
 | `storage.store` | the `ObjectStore` | what only its technology offers — a bucket's `presign` |
 
 ```python
 from sincpro_framework.context import InMemoryContexts
 
-audited = ObjectStorage(InMemoryObjectStore(), "the-service-secret", publication_store=InMemoryContexts())
+audited = ObjectStorage(InMemoryObjectStore(), "the-service-secret", context_store=InMemoryContexts())
 share = audited.publish("contracts/7.pdf", metadata={"for_user": "ana"})
 
 opened = audited.check(share.id, Access.READ)

@@ -10,14 +10,18 @@ case.
     published.id                                                      what an entrypoint puts in its URL
 
     self.storage.check(id, Access.READ)     ->  Publication, nothing spent: a preview, a HEAD
-    self.storage.redeem(id, Access.READ)    ->  Publication, one use spent — then get(published.key)
+    self.storage.redeem(id, Access.READ)    ->  Publication, one use spent — then open(published.key)
     self.storage.revoke(id)                     closed before its time
+
+    ticket = self.storage.publish(key, Access.WRITE, timedelta(minutes=5), max_uses=1,
+                                  then=Grant(access=Access.READ, expires_in=timedelta(hours=1), max_uses=1))
+        one id: the client uploads with it once, then a use case claims the object with it once
 
 Context: a publication is the mechanism, never a URL — how long, how many uses, to read or to
 write, and what the publisher said of it (`metadata`). The entrypoint that exposes it builds its
 URL from the id, and asks `redeem` when the id comes back.
 
-    objects        Objects          put, get, find, exists, delete, keys
+    objects        Objects          put, open, get, find, exists, take, delete, keys
     ids            PublicationIds   the id, signed with the secret
     publications   Publications     publish, check, redeem, revoke — in the context's store
 
@@ -36,8 +40,12 @@ from sincpro_framework.data_layer.object_storage.domain.object_store import (
     Access,
     ObjectRef,
     ObjectStore,
+    StoredObject,
 )
-from sincpro_framework.data_layer.object_storage.domain.publication import Publication
+from sincpro_framework.data_layer.object_storage.domain.publication import (
+    Grant,
+    Publication,
+)
 from sincpro_framework.data_layer.object_storage.services.ids import PublicationIds
 from sincpro_framework.data_layer.object_storage.services.objects import Objects
 from sincpro_framework.data_layer.object_storage.services.publications import (
@@ -52,16 +60,17 @@ class ObjectStorage:
         self,
         store: ObjectStore,
         secret: str | bytes | None = None,
-        publication_store: ContextStore | None = None,
+        context_store: ContextStore | None = None,
         now: Callable[[], datetime] = partial(datetime.now, UTC),
     ) -> None:
         """`store` holds the bytes; `secret` signs every publication's id — the same on every
-        replica; `publication_store` is where publications are saved, else the context's
-        store; `now` the clock they expire by."""
+        replica; `context_store` is where publications and claims are saved, else the
+        context's store in play when each call runs; `now` the clock objects and publications
+        expire by."""
         self.store = store
-        self.objects = Objects(store)
+        self.objects = Objects(store, context_store, now)
         self.ids = PublicationIds(secret)
-        self.publications = Publications(self.ids, publication_store, now)
+        self.publications = Publications(self.ids, context_store, now)
 
     def put(
         self,
@@ -70,17 +79,31 @@ class ObjectStorage:
         content_type: str | None = None,
         metadata: Mapping[str, str] | None = None,
         if_absent: bool = False,
+        expires_in: timedelta | None = None,
         **options: Any,
     ) -> ObjectRef:
-        """Store `data` under `key` — see `Objects.put`."""
-        return self.objects.put(key, data, content_type, metadata, if_absent, **options)
+        """Store `data` under `key`, until `expires_in` when given — see `Objects.put`."""
+        return self.objects.put(
+            key, data, content_type, metadata, if_absent, expires_in, **options
+        )
+
+    def open(self, key: str, **options: Any) -> StoredObject:
+        """The bytes under `key` and what they are, in one read — `ObjectNotFound` when there
+        are none, or they expired."""
+        return self.objects.open(key, **options)
 
     def get(self, key: str, **options: Any) -> bytes:
-        """The bytes under `key` — `ObjectNotFound` when there are none."""
+        """The bytes under `key` — `ObjectNotFound` when there are none, or they expired."""
         return self.objects.get(key, **options)
 
+    def take(self, key: str, **options: Any) -> StoredObject:
+        """The object under `key`, deleted as it is read — once, on any replica; the rest
+        `ObjectNotFound`."""
+        return self.objects.take(key, **options)
+
     def find(self, key: str, **options: Any) -> ObjectRef | None:
-        """What is stored under `key`, without its bytes — `None` when nothing is."""
+        """What is stored under `key`, without its bytes — `None` when nothing is, or it
+        expired."""
         return self.objects.find(key, **options)
 
     def exists(self, key: str, **options: Any) -> bool:
@@ -102,15 +125,21 @@ class ObjectStorage:
         expires_in: timedelta = timedelta(hours=1),
         max_uses: int | None = None,
         metadata: Mapping[str, Any] | None = None,
+        then: Grant | None = None,
     ) -> Publication:
         """Make the object under `key` reachable by an id, to `access` it, for `expires_in`,
-        `max_uses` times — every time with `None`, once with `1`. `metadata` travels with it,
-        for whoever checks or redeems it."""
-        return self.publications.publish(key, access, expires_in, max_uses, metadata or {})
+        `max_uses` times — every time with `None`, once with `1` — and, once those are spent,
+        to `then` with the same id. `metadata` travels with it, for whoever checks or redeems
+        it."""
+        return self.publications.publish(
+            key, access, expires_in, max_uses, metadata or {}, then
+        )
 
     def check(self, id: str, access: Access) -> Publication:
         """The publication `id` names, when it opens for `access` — nothing spent: what a
-        preview or a HEAD asks. `PublicationRefused`, with its `reason`, when it does not."""
+        preview or a HEAD asks. `PublicationRefused`, with its `reason`, when it does not — and
+        `check` spends nothing, so it is also how a download used without end is let in
+        without a write."""
         return self.publications.opened(id, access, spend=False)
 
     def redeem(self, id: str, access: Access) -> Publication:

@@ -10,7 +10,7 @@ entrypoint's, and `ObjectStorage` is injected as any adapter.
     published = self.storage.publish("exports/invoices.csv", Access.READ, timedelta(hours=1), max_uses=1)
     self.storage.redeem(published.id, Access.READ)     the entrypoint, when the id comes back
 
-    domain/      ObjectStore (the port), ObjectRef, Access, Publication, Refusal;
+    domain/      ObjectStore (the port), ObjectRef, StoredObject, Access, Publication, Grant, Refusal;
                  ObjectNotFound, ObjectAlreadyExists, PublicationRefused
     adapters/    InMemoryObjectStore, LocalObjectStore, S3CompatibleObjectStore
     entrypoint/  ObjectStorage, the facade a project injects
@@ -30,8 +30,10 @@ from sincpro_framework.data_layer.object_storage.domain.object_store import (
     Access,
     ObjectRef,
     ObjectStore,
+    StoredObject,
 )
 from sincpro_framework.data_layer.object_storage.domain.publication import (
+    Grant,
     Publication,
     Refusal,
 )
@@ -41,6 +43,7 @@ from sincpro_framework.data_layer.object_storage.entrypoint.object_storage impor
 
 __all__ = [
     "Access",
+    "Grant",
     "InMemoryObjectStore",
     "LocalObjectStore",
     "ObjectAlreadyExists",
@@ -52,4 +55,5 @@ __all__ = [
     "PublicationRefused",
     "Refusal",
     "S3CompatibleObjectStore",
+    "StoredObject",
 ]

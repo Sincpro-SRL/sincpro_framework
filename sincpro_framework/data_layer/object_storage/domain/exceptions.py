@@ -37,7 +37,13 @@ class PublicationRefused(ClientError):
     def __init__(
         self, reason: Refusal, message: str, publication: Publication | None = None
     ) -> None:
-        """Say why, in the message and as `reason`, and which one when it is known."""
+        """Say why, in the message and as `reason`, and which one when it is known. Every wire
+        answers an unknown id as not found, and any other refusal as permission denied."""
         super().__init__(message)
         self.reason = reason
         self.publication = publication
+        self.failure_kind = (
+            FailureKind.NOT_FOUND
+            if reason is Refusal.UNKNOWN
+            else FailureKind.PERMISSION_DENIED
+        )
