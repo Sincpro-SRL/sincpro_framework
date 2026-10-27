@@ -219,7 +219,7 @@ What `ObjectStorage` does is the recommended default, never the only way:
 
 | To change | How |
 |---|---|
-| What the storage is told — headers, an ACL, a cache control | pass it: `storage.put(key, data, type, CacheControl="max-age=3600")` — options go to the storage as they are |
+| What the storage is told — headers, an ACL, a cache control, an encryption key, a version, a range | pass it on any call: `storage.put(key, data, type, CacheControl="max-age=3600")`, `storage.get(key, SSECustomerAlgorithm="AES256", SSECustomerKey=k)`, `storage.get(key, VersionId=v)`, `storage.delete(key, VersionId=v)` — options go to the storage as they are |
 | The bucket serving the bytes itself | type the adapter: `s3_store.presign(key, Access.READ, ttl, ResponseContentDisposition="attachment")` — a presigned URL, the technology's own |
 | Rules of its own — who may redeem, what happens after | put them in `metadata` at `publish`, read them from what `check` / `redeem` answer |
 | Where publications are saved | `ObjectStorage(store, secret, publication_store=a_context_store)` |

@@ -52,25 +52,26 @@ class Objects:
         stored = self.store.info(key)
         return stored if stored is not None else ObjectRef(key=key, size=0, metadata=said)
 
-    def get(self, key: str) -> bytes:
-        """The bytes under `key` — `ObjectNotFound` when there are none."""
-        data = self.store.get(key)
+    def get(self, key: str, **options: Any) -> bytes:
+        """The bytes under `key` — `ObjectNotFound` when there are none; `options` the
+        storage's own, as they are."""
+        data = self.store.get(key, **options)
         if data is None:
             raise exceptions.ObjectNotFound(f"no object is stored under {key}")
         return data
 
-    def find(self, key: str) -> ObjectRef | None:
+    def find(self, key: str, **options: Any) -> ObjectRef | None:
         """What is stored under `key`, without its bytes — `None` when nothing is."""
-        return self.store.info(key)
+        return self.store.info(key, **options)
 
-    def exists(self, key: str) -> bool:
+    def exists(self, key: str, **options: Any) -> bool:
         """Whether an object is stored under `key`."""
-        return self.store.info(key) is not None
+        return self.store.info(key, **options) is not None
 
-    def delete(self, key: str) -> None:
+    def delete(self, key: str, **options: Any) -> None:
         """Drop what is under `key`; nothing there is not an error."""
-        self.store.delete(key)
+        self.store.delete(key, **options)
 
-    def keys(self, prefix: str = "") -> Iterator[str]:
+    def keys(self, prefix: str = "", **options: Any) -> Iterator[str]:
         """Every key that starts with `prefix`."""
-        return self.store.keys(prefix)
+        return self.store.keys(prefix, **options)

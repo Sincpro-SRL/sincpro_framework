@@ -70,11 +70,11 @@ class LocalObjectStore(ObjectStore):
         self._meta(path).write_text(json.dumps(said))
         return True
 
-    def get(self, key: str) -> bytes | None:
+    def get(self, key: str, **options: Any) -> bytes | None:
         path = self._path(key)
         return path.read_bytes() if path.is_file() else None
 
-    def info(self, key: str) -> ObjectRef | None:
+    def info(self, key: str, **options: Any) -> ObjectRef | None:
         path = self._path(key)
         if not path.is_file():
             return None
@@ -89,12 +89,12 @@ class LocalObjectStore(ObjectStore):
             modified_at=datetime.fromtimestamp(stat.st_mtime, UTC),
         )
 
-    def delete(self, key: str) -> None:
+    def delete(self, key: str, **options: Any) -> None:
         path = self._path(key)
         path.unlink(missing_ok=True)
         self._meta(path).unlink(missing_ok=True)
 
-    def keys(self, prefix: str) -> Iterator[str]:
+    def keys(self, prefix: str, **options: Any) -> Iterator[str]:
         for path in sorted(self.root.rglob("*")):
             key = path.relative_to(self.root).as_posix()
             if path.is_file() and not key.endswith(META_SUFFIX) and key.startswith(prefix):
