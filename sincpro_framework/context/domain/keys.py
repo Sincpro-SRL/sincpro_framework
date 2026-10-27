@@ -8,7 +8,6 @@
     ContextKey.CORRELATION_ID   "correlation_id"   the flow it belongs to
     ContextKey.PIPELINE_CONTEXT       the pipeline run a step belongs to, and its runs in the store
     ContextKey.ENTITY_DRAFT_CONTEXT   the drafts in the store
-    ContextKey.APPROVAL_CONTEXT       the approvals in the store
     CONTEXT_NODE                      the node in play, handed on when a store shares the context
 
 A member is its text: `context[ContextKey.USER_ID]` and `context["user_id"]` read the same key.
@@ -37,8 +36,6 @@ class ContextKey(StrEnum):
     run."""
     ENTITY_DRAFT_CONTEXT = "SINCPRO_ENTITY_DRAFT_CONTEXT"
     """In the store, the namespace every draft is saved under, apart from everything else."""
-    APPROVAL_CONTEXT = "SINCPRO_APPROVAL_CONTEXT"
-    """In the store, the namespace every approval is saved under, apart from everything else."""
 
 
 PLUMBING = frozenset({"trace_id", "span_id", "carrier"})

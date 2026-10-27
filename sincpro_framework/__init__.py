@@ -32,7 +32,9 @@ from .exceptions import (
 from .sincpro_abstractions import (
     ApplicationService,
     DataTransferObject,
+    DryRunnable,
     Feature,
+    Preview,
     TypeDTO,
     TypeDTOResponse,
 )
@@ -44,10 +46,12 @@ __all__ = [
     "ClientError",
     "CallNext",
     "DataTransferObject",
+    "DryRunnable",
     "ExternalServiceError",
     "FailureKind",
     "FrameworkError",
     "OutcomeUnknownError",
+    "Preview",
     "ProgrammingError",
     "ServiceUnavailableError",
     "Feature",

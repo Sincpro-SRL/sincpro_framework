@@ -1,12 +1,12 @@
 """A run of a pipeline, as the context stores it: what it was given and how far it got.
 
-    PipelineRun(pipeline, run_id, input, state, steps=[StepState(command, status, answer, …)], …)
+    PipelineRun(pipeline, run_id, input, state, steps=[StepState(command, status, …)], …)
 
-It holds the progress of a run and what each step that succeeded answered, as JSON values — what
-fills the steps after it, also when the run goes on in another request.
+It holds the progress of a run and nothing of what the steps did: their answers are the project's
+data, and the project saves them where it saves its data.
 """
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from datetime import datetime
 from enum import StrEnum
 from typing import Any
@@ -53,9 +53,6 @@ class StepState(DataTransferObject):
     retry_after: float | None = None
     attempts: int = 0
     """How many times it was started — more than one when the pipeline retried it."""
-    answer: dict[str, Any] = Field(default_factory=dict)
-    """What it answered when it succeeded, as JSON values — the fields a step after it is filled
-    with; empty for a step that answered nothing."""
 
 
 class PipelineRun(DataTransferObject):
@@ -103,9 +100,3 @@ class RunInProgress:
     """The `Await` the pipeline stopped at — what the recorder closes the run as waiting for."""
     lease: Lease | None = None
     """The lease the run is driven under, when the pipeline holds one."""
-    resumed_from: str | None = None
-    """The `Await` the run was waiting at when this execution took it up — the only one whose
-    decision this call's input may give."""
-    decided: dict[str, Any] = field(default_factory=dict)
-    """What each `Await` this run passed was answered with — the earlier ones and the one
-    decided now — what the recorder saves as the run's `decisions`."""

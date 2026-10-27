@@ -1,5 +1,6 @@
-"""The pieces a bounded context is written with: `DataTransferObject`, `Feature`,
-`ApplicationService` — and `Bus`, what every bus that runs them answers to.
+"""The pieces a bounded context is written with: `DataTransferObject` — `DryRunnable`, a Command
+that may be run dry, and `Preview`, what a dry run answers —, `Feature`, `ApplicationService` —
+and `Bus`, what every bus that runs them answers to.
 
     class CommandIssueInvoice(DataTransferObject):
         amount: Decimal
@@ -22,7 +23,7 @@ from contextvars import copy_context
 from functools import partial
 from typing import TYPE_CHECKING, Any, Generic, Type
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 from typing_extensions import TypeVar
 
 from .aio import AsyncBus
@@ -48,6 +49,32 @@ class DataTransferObject(BaseModel):
         arbitrary_types_allowed=True,
         use_attribute_docstrings=True,
     )
+
+
+class DryRunnable(DataTransferObject):
+    """A Command that may be run dry: `dry_run=True` answers what it would do, and does nothing.
+
+        class CommandCreateQuotation(DryRunnable): ...       dry_run: bool = False, inherited
+        bus(CommandCreateQuotation(..., dry_run=True))     ->  the handler's preview: Preview
+        bus(CommandCreateQuotation(...))                   ->  the handler's execute
+
+    The bus runs a dry run as any call — its context, its guards, its interceptors, its span —
+    and answers it with the handler's `preview(dto)`, so `execute` never sees one; a handler with
+    no `preview` gets the dry run in `execute`, and decides. A project whose writes are previewed
+    by default says so on its own base: `class WriteCommand(DryRunnable): dry_run: bool = True`.
+    """
+
+    dry_run: bool = False
+    """Only say what would be done — the handler's `preview` answers, `execute` never runs."""
+
+
+class Preview(DataTransferObject):
+    """What a dry run answers: what would be done, as a person reads it, and whatever a screen
+    shows beside it."""
+
+    text: str
+    data: dict[str, Any] = Field(default_factory=dict)
+    """Structured values for a screen of the project's own; nothing reads them here."""
 
 
 class Bus(ABC):

@@ -2,8 +2,7 @@
 
 How a Sincpro service talks to the world beyond its buses: what an execution announces and who
 hears it, how events leave the process and how messages come in through any broker, the cloud
-services it speaks, where settings come from, the jobs of several steps it runs, and the use cases
-a person approves first. Updated in
+services it speaks, where settings come from, and the jobs of several steps it runs. Updated in
 place with every change (see [how a specification is kept](README.md)).
 
 **Status:** ✅ built and held by a test · 🟡 partly · ⬜ not built.
@@ -21,7 +20,6 @@ another API to learn; the last is a port of the project's own.
 | Consuming a queue | `QueueGateway(SqsBroker(), [bus])` | `QueueOptions(max_attempts=…)` | `SqsBroker(queues=…, wait=…)` | a `Broker` with its `flavour` |
 | Settings | `$ENV:NAME` | `sources={"SSM": ParameterStore()}` | `ParameterStore(prefix=…, client=…)` | a function `name → value` |
 | A job of steps | `steps = [...]` | `retry = Retry()` | `Await("approval")`, `by`, `resume` | `answer()`, `records = False` |
-| A person approving | `approval = Approval()` and `def preview` | `Approval(expires_in=…)` | `Approvals.owned_by`, one approval for an ApplicationService | a guard of its own around `Approve` |
 | A shared store | `InMemoryContexts()` | `KeyValueContexts(RedisKeyValue(...))` | `DynamoKeyValue(table, client=…)` | a `KeyValueStore` with its contract |
 
 **Why.** An API that asks every option before the first call is learned by nobody: the defaults are
@@ -86,11 +84,10 @@ Page: [pipelines](../core/pipelines.md).
 | Capability | Status | What it is | Held by |
 |---|---|---|---|
 | A recipe as data | ✅ | `steps`, picked by a field (`by`), `always` last, each step filled by the names of its fields | `tests/pipelines/test_pipelines.py` |
-| **Handing an answer on** | ✅ | what a step answered is stored on the run and fills the steps after it by field name, the latest first — also when the run goes on in another request | `tests/pipelines/test_pipeline_retry_await_reads.py` |
 | The run kept in the context | ✅ | per owner (tenant, `owned_by`), one entry per run, a second writer loses with `EntryConflict` | `tests/pipelines/test_pipelines.py`, `tests/context/test_owners.py` |
 | Continuing a run | ✅ | the same `run_id` restarts, or continues after the last step that succeeded (`Resume.CONTINUE`) | `tests/pipelines/test_pipelines.py` |
 | **Retrying a step** | ✅ | `retry = Retry()`: only what is worth it by its kind, waiting what the error says, growing, bounded; every attempt counted | `tests/pipelines/test_pipeline_retry_await_reads.py` |
-| **Waiting for a decision** | ✅ | `Await("approval")`: the run waits; the same run with the field filled goes on with the input it was given, and later steps are given it; only a run that waited takes a decision; a field that decides by default is a `ProgrammingError` at build | `tests/pipelines/test_pipeline_retry_await_reads.py` |
+| **Waiting for a decision** | ✅ | `Await("approval")`: the run waits; the same run with the field filled goes on, and later steps are given it | `tests/pipelines/test_pipeline_retry_await_reads.py` |
 | **A run under a lease** | ✅ | `lease = timedelta(...)`: one run of a `run_id` at a time across replicas, renewed while steps run, a lost lease stops it before its next step; `abandoned(pipeline)` | `tests/pipelines/test_pipeline_leases.py` |
 | **Reading the runs** | ✅ | `GetRun[P]`, `FindRuns[P]` answered by `PipelineReads`, on any wire; `RunNotFound` is `not_found` | `tests/pipelines/test_pipeline_retry_await_reads.py` |
 | Steps at the same time (`Parallel`, `Map`) | ⬜ | no case asked for it yet | — |
@@ -99,19 +96,3 @@ Page: [pipelines](../core/pipelines.md).
 **Rejected:** replaying a function as Lambda durable functions and Temporal do. It asks the code to be
 deterministic; here each step is a use case with its own checkpoint — the run in the context — which
 the bus already runs, observes and exposes.
-
-## 6. A use case a person approves: approvals
-
-Page: [approvals](../core/approvals.md).
-
-| Capability | Status | What it is | Held by |
-|---|---|---|---|
-| Declared on the use case | ✅ | `approval = Approval()` and `def preview` on a Feature or an ApplicationService; the bus attaches the gate; no preview, or no response type, is a `ProgrammingError` at build | `tests/approvals/test_approvals.py` |
-| The input approved, run once | ✅ | `ApprovalRequired` answered and the input stored; `Approve(approval_id)` runs it, never another; one run across replicas, the answer replayed after | `tests/approvals/test_approvals.py` |
-| Decided and read | ✅ | `Reject` with a reason, `GetApproval`, `FindApprovals`; rejected or expired never approved, approved never rejected; a failed run leaves it pending | `tests/approvals/test_approvals.py` |
-| Whose it is | ✅ | the tenant's and the user's (`Approvals.owned_by`): someone else's is not found | `tests/approvals/test_approvals.py` |
-| One approval for several use cases | ✅ | an ApplicationService's preview collects the previews of what it runs; once approved, they never ask again | `tests/approvals/test_approvals.py` |
-| The store down | ✅ | nothing asked, nothing run: `StoreUnavailable` | `tests/approvals/test_approvals.py` |
-| Who else decides (a permission, four eyes) | ⬜ | the guard of the project around `Approve`; no case asked for more | — |
-| Revalidating what the preview read | ⬜ | `execute` checks against the system it writes when it runs | — |
-| MCP elicitation | ⬜ | the client asking the person itself; the result `approval_required` works on every client | — |

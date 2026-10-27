@@ -28,7 +28,7 @@ INCOMES = ROOT / "docs" / "core" / "incomes.md"
 PIPELINES = ROOT / "docs" / "core" / "pipelines.md"
 LEASES = ROOT / "docs" / "core" / "leases.md"
 SESSIONS = ROOT / "docs" / "core" / "sessions.md"
-APPROVALS = ROOT / "docs" / "core" / "approvals.md"
+DRY_RUN = ROOT / "docs" / "core" / "dry-run.md"
 CIRCUIT_BREAKER = ROOT / "docs" / "core" / "circuit-breaker.md"
 CRON = ROOT / "docs" / "cron" / "README.md"
 MIGRATIONS = ROOT / "docs" / "migrations" / "README.md"
@@ -81,7 +81,7 @@ def _failing_line(error: Exception, path: Path) -> int:
         PIPELINES,
         LEASES,
         SESSIONS,
-        APPROVALS,
+        DRY_RUN,
         CIRCUIT_BREAKER,
         CRON,
         MIGRATIONS,

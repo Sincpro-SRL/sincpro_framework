@@ -11,6 +11,13 @@ from .bus import FeatureBus
 
 class DataTransferObject(BaseModel): ...
 
+class DryRunnable(DataTransferObject):
+    dry_run: bool = ...
+
+class Preview(DataTransferObject):
+    text: str
+    data: dict[str, Any] = ...
+
 TypeDTO = TypeVar("TypeDTO", bound="DataTransferObject | DataclassInstance")
 TypeDTOResponse = TypeVar(
     "TypeDTOResponse", bound="DataTransferObject | DataclassInstance | list | dict"
