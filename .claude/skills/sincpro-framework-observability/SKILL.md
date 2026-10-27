@@ -45,6 +45,7 @@ span-attributes) and PRD_03 in the framework repo.
 | `traces` → `@traces.attributes(..., namespace=)` / `traces.annotate({...})` | business fields on the use case's span | decorator / function | `sincpro_framework.observability` |
 | `field_path(X).field` / `field_path(Ctx)["key"]` | a checked reference to a Command/Response field or a context key | function | `sincpro_framework.observability.metrics` |
 | `metrics` (`Metrics`) | the process's metrics: decorators, instruments, recorder choice | registry | `sincpro_framework.observability.metrics` |
+| `http_middleware(app)`, `configure_process_logging(level)` (`sincpro_framework.observability.http`) | an HTTP host's line and server span per request (never the query string; level by status; `/health` only when failing; `trust_incoming_trace=False` behind a gateway) and the libraries' logging in the framework's format, on the same trace — the root left to the host with the `stdlib` backend | middleware / function | `sincpro_framework.observability.http` |
 | `@metrics.counts` / `.sums` / `.measures` | declared metrics, recorded on a successful run that did something — never for a dry run or an answer the idempotency replayed (`sincpro.run` on the duration says `dry_run` / `replayed`) | decorator | same |
 | `metrics.counter` / `.up_down` / `.histogram` / `.timer` | instruments declared on the class, recorded in `execute` | function | same |
 | `Recorder` | where measurements go | port | same |
