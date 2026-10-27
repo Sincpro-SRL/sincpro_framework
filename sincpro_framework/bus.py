@@ -13,7 +13,7 @@ outermost call can do: report the error that leaves the whole call, once.
 """
 
 from logging import Logger
-from typing import Callable, Dict, Optional, Type
+from typing import Any, Callable, Dict, Optional, Type
 
 from sincpro_framework import exceptions
 from sincpro_framework.bus_pipeline.incomes.incomes import Incomes
@@ -22,18 +22,33 @@ from sincpro_framework.bus_pipeline.outcomes.outcomes import Outcomes
 from sincpro_framework.common.ids import new_entity_id
 from sincpro_framework.common.naming import registered_name
 from sincpro_framework.context import ContextLevel, ContextProvider, context_executions
-from sincpro_framework.dry_run import answering
 from sincpro_framework.observability import Observability
 from sincpro_framework.sincpro_abstractions import (
     ApplicationService,
     Bus,
     DataTransferObject,
+    DryRunnable,
     Feature,
     TypeDTO,
     TypeDTOResponse,
 )
 
 from .sincpro_logger import is_logger_in_debug, logger
+
+
+def answering(handler: Any, dto: Any) -> Callable[[Any], Any]:
+    """What answers `dto` on `handler`: its `preview` when `dto` asks for a dry run and the
+    handler has one, its `execute` otherwise.
+
+        answering(CreateQuotation(), CommandCreateQuotation(..., dry_run=True))  ->  .preview
+        answering(CreateQuotation(), CommandCreateQuotation(...))                ->  .execute
+        answering(<no preview>, CommandCreateQuotation(..., dry_run=True))       ->  .execute
+    """
+    if isinstance(dto, DryRunnable) and dto.dry_run:
+        preview = getattr(handler, "preview", None)
+        if callable(preview):
+            return preview
+    return handler.execute
 
 
 class FeatureBus(Bus):
@@ -121,7 +136,7 @@ class FeatureBus(Bus):
                missing;
            4.2 the incomes are told it began;
            4.3 the interceptors registered for the type run around `feature.execute` — its
-               `preview`, for a dry run (`sincpro_framework.dry_run`).
+               `preview`, for a dry run (`DryRunnable`).
         5. A failure: outcomes, metric and span/GlitchTip told; with no feature error handler
            it is raised, else what the handler answers is the answer — logged as handled.
         Final: the response, measured, told to the outcomes, described on the span.

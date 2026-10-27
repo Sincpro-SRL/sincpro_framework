@@ -234,7 +234,7 @@ and a `fresh()` generation hears it too.
   path — `kind`, `dto.amount`, `response.total`; a list must all hold; also as JSON), and the
   decorator takes them (`@bus.on_failure(use_cases=[...])`). Depth: `docs/core/outcomes.md`.
 
-**Saying what a write would do** (`sincpro_framework.dry_run`). A Command that inherits
+**Saying what a write would do** (`from sincpro_framework import DryRunnable, Preview`). A Command that inherits
 `DryRunnable` carries `dry_run: bool = False`; its handler adds `def preview(self, dto) -> Preview`
 (`text`, `data`) that validates and reads, never writes. `bus(CommandX(..., dry_run=True))` runs as
 any call — context, guards, interceptors, span — and is answered by `preview`; `execute` never sees

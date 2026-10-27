@@ -18,7 +18,7 @@ so read it only when the framework repo is at hand.
 | Interceptors + `replaces=` | `bus_pipeline/interceptors/` | `sincpro-framework-core` | `docs/core/interceptors.md` |
 | CircuitBreaker breaker for an adapter or a bus hosted elsewhere (`CircuitBreaker`, `CircuitOpen`) | `circuit_breaker/` | `sincpro-framework-core` | `docs/core/circuit-breaker.md` |
 | Error handlers | `error_handler.py` | `sincpro-framework-core` | README "Error Handling" |
-| Dry run: a Command that says what it would do (`DryRunnable`, `preview`, `Preview`) | `dry_run.py` | `sincpro-framework-core` | `docs/core/dry-run.md` |
+| Dry run: a Command that says what it would do (`DryRunnable`, `preview`, `Preview`) | `sincpro_abstractions.py`, `bus.py` | `sincpro-framework-core` | `docs/core/dry-run.md` |
 | Failure classification (`DomainError`, `failure_kind`) | `ddd/exceptions.py`, `common/failures/` | `sincpro-framework-entrypoints` | `docs/entrypoints/README.md` |
 | Settings / configuration per context | `settings/`, `conf/` | `sincpro-framework-settings` | `docs/core/settings.md` |
 | Aggregates, tables, repository, UoW | `ddd/`, `data_layer/orm/` | `sincpro-framework-persistence` | `docs/persistence/guide.md` |
