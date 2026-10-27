@@ -13,12 +13,16 @@ around it: context, persistence, events, caching, observability and transports.
 
     @cache.ttl(timedelta(minutes=5))           the service's cache, beside every bus's own
 
+    problem_of(error)                          a failure as every wire tells it — kind, reason,
+                                               status, what to do next — for a route of one's own
+
 The top level holds what nearly every project imports; each component has its own package
 (`sincpro_framework.context` — where `store_context_in` lives —, `.ddd`, `.pipelines`,
 `.data_layer.store`, `.data_layer.caching`, …).
 """
 
 from .bus_pipeline.interceptors import CallNext, Interceptor
+from .common.failures import NextStep, Problem, problem_of
 from .data_layer.caching.entrypoint.facades import cache, idempotency
 from .exceptions import (
     ClientError,
@@ -51,8 +55,10 @@ __all__ = [
     "FailureKind",
     "FrameworkError",
     "Interceptor",
+    "NextStep",
     "OutcomeUnknownError",
     "Preview",
+    "Problem",
     "ProgrammingError",
     "ServiceUnavailableError",
     "Feature",
@@ -60,6 +66,7 @@ __all__ = [
     "cache",
     "idempotency",
     "logger",
+    "problem_of",
     "TypeDTO",
     "TypeDTOResponse",
 ]

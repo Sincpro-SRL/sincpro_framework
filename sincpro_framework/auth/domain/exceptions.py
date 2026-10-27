@@ -10,6 +10,7 @@ each — authenticate again. `PermissionDenied`, not `PermissionError`: Python's
 
 from typing import Any
 
+from sincpro_framework.common.failures.problem import Problem
 from sincpro_framework.exceptions import ClientError, FailureKind, ProgrammingError
 
 
@@ -38,6 +39,18 @@ class AuthError(ClientError):
         `step_up` only when one was named, `requirement` only for a denied permission.
         """
         return {"kind": self.failure_kind.value, "reason": self.reason}
+
+    def refine_problem(self, problem: Problem) -> Problem:
+        """The problem of a refusal: its reason as what the caller reads, its own HTTP status, and
+        what else the refusal says — a `step_up`, a missing `requirement` — as extensions."""
+        said = {
+            name: value
+            for name, value in self.refusal_body().items()
+            if name not in ("kind", "reason")
+        }
+        return problem.model_copy(
+            update={"detail": self.reason, "status": self.http_status, "extensions": said}
+        )
 
 
 class Unauthenticated(AuthError):

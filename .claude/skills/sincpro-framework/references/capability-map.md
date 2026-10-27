@@ -20,7 +20,7 @@ so read it only when the framework repo is at hand.
 | Error handlers | `error_handler.py` | `sincpro-framework-core` | README "Error Handling" |
 | Object storage: objects by key on any store, and publications of them by id — time, uses, read or write; no URL — open, take once, expiring objects, upload-then-claim with one id (`ObjectStorage`, `ObjectStore`, `S3CompatibleObjectStore`, `LocalObjectStore`, `ObjectRef`, `StoredObject`, `Publication`, `Grant`, `Access`, `Refusal`) — not filesystems (NFS, SMB) | `data_layer/object_storage/` | [capability-map.md](capability-map.md) | `docs/object_storage/README.md` |
 | Dry run: a Command that says what it would do (`DryRunnable`, `preview`, `Preview`) | `sincpro_abstractions.py`, `bus.py` | `sincpro-framework-core` | `docs/core/dry-run.md` |
-| Failure classification (`DomainError`, `failure_kind`) | `ddd/exceptions.py`, `common/failures/` | `sincpro-framework-entrypoints` | `docs/entrypoints/README.md` |
+| Failure classification and the problem every wire draws (`DomainError`, `failure_kind`, `Problem`, `NextStep`, `problem_of`, `refine_problem`) | `ddd/exceptions.py`, `common/failures/` | `sincpro-framework-entrypoints` | `docs/core/exceptions.md` |
 | Settings / configuration per context | `settings/`, `conf/` | `sincpro-framework-settings` | `docs/core/settings.md` |
 | Aggregates, tables, repository, UoW | `ddd/`, `data_layer/orm/` | `sincpro-framework-persistence` | `docs/persistence/guide.md` |
 | Repository capabilities, aggregate views, shared UoW | `ddd/repositories/`, `data_layer/orm/sqlalchemy/` | `sincpro-framework-persistence` | `docs/persistence/reference.md`, `docs/persistence/transactions.md` |

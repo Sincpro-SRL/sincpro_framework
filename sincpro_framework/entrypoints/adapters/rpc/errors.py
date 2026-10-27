@@ -1,10 +1,11 @@
 """The JSON-RPC error catalogue: one code per kind of failure, and what its `data` carries.
 
 Context: a number alone is not a contract — the codes above -32000 mean other things in other
-APIs — so every error's `data` carries the `kind` (`common.failures`, the same on every wire),
-a stable `reason` (`failure_reason`'s, as on every wire: what a client switches on) and whether the
-same request may succeed if sent again (`retryable`). The codes are PRD_15 §1.3's JSON-RPC
-column, published once in the OpenRPC document's `components.errors`.
+APIs — so every error's `data` carries the `Problem` every wire tells (`common.failures.problem_of`):
+the `kind`, a stable `reason` a client switches on, whether the same request may succeed if sent
+again (`retryable`), and what to do next (`next_step`, `guidance`, `retry_after` in seconds). The
+codes are PRD_15 §1.3's JSON-RPC column, published once in the OpenRPC document's
+`components.errors`.
 """
 
 from collections.abc import Mapping
@@ -12,12 +13,7 @@ from typing import Any, NamedTuple
 
 from pydantic import ValidationError
 
-from sincpro_framework.common.failures import (
-    failure_reason,
-    json_safe_validation_errors,
-    refined_failure_kind,
-    said_to_the_caller,
-)
+from sincpro_framework.common import failures
 from sincpro_framework.entrypoints.adapters.rpc import exceptions
 
 PARSE_ERROR = -32700
@@ -94,25 +90,30 @@ BY_KIND = {kind: one for one in METHOD_ERRORS for kind in one.kinds}
 """Looked up by the kind's value, so a kind `common.failures` learns later (`not_found`,
 `unavailable`, `exhausted`) is answered with its code without a change here."""
 
-RETRYABLE_BY_KIND = {kind: one.retryable for kind, one in BY_KIND.items()}
-NOT_RETRYABLE = (exceptions.DuplicateAggregate,)
-"""A duplicate stays a duplicate: sending the same write again collides again — unlike a stale
-write, which a fresh run re-reads."""
-
 
 type Answer = tuple[int, str, dict[str, Any]]
 """The code, message and `data` one error is answered with."""
 
 
 def error_data(kind: str, reason: str, retryable: bool, **disclosed: Any) -> dict[str, Any]:
-    """An error's `data`: the three members every error carries, then what it discloses.
+    """An error's `data`: the members every error carries, then what it discloses — the next step
+    and its guidance are the kind's (`common.failures.NEXT_STEP_OF`) unless given.
 
         error_data("invalid", "BATCH_TOO_LARGE", False, limit=50)
-        ->  {"kind": "invalid", "reason": "BATCH_TOO_LARGE", "retryable": False, "limit": 50}
+        ->  {"kind": "invalid", "reason": "BATCH_TOO_LARGE", "retryable": False,
+             "next_step": "fix_request", "guidance": "…", "limit": 50}
 
     The extra keywords are what the error chose to disclose.
     """
-    return {"kind": kind, "reason": reason, "retryable": retryable, **disclosed}
+    step, guidance = failures.NEXT_STEP_OF[exceptions.FailureKind(kind)]
+    return {
+        "kind": kind,
+        "reason": reason,
+        "retryable": retryable,
+        "next_step": step.value,
+        "guidance": guidance,
+        **disclosed,
+    }
 
 
 def protocol_error(code: ErrorCode, reason: str, **disclosed: Any) -> Answer:
@@ -129,20 +130,18 @@ def answer_for(error: Exception) -> Answer:
 
         answer_for(InvoiceNotFound("F-9 does not exist"))
         ->  (-32004, "Not found", {"kind": "not_found", "reason": "INVOICE_NOT_FOUND",
-                                   "retryable": False, "message": "F-9 does not exist"})
+                                   "retryable": False, "next_step": "do_not_retry",
+                                   "guidance": "…", "message": "F-9 does not exist"})
         answer_for(RuntimeError("postgres://admin:pw@db"))
         ->  (-32603, "Internal error", {"kind": "internal", "reason": "INTERNAL_ERROR",
-                                        "retryable": True})
+                                        "retryable": True, "next_step": "retry_later", …})
 
     1. A `ValidationError` is invalid params, with the validation errors.
-    2. An auth refusal carries what the caller comes back with (`step_up`, `requirement`), its
-       text as `message`.
-    3. Any other failure is answered by its kind; a kind with no code here is internal.
-    4. Final: the reason is `failure_reason`'s, the one every wire answers with — the error's
-       class only when the caller may read the error (a `DomainError`), the kind otherwise,
-       so an `HsmDown` that is `unavailable` says `UNAVAILABLE` here as on REST, gRPC and a
-       queue. The message of a `DomainError` is disclosed; nothing of any other failure is,
-       and an internal one's reason is `INTERNAL_ERROR`.
+    2. Any other failure is its `Problem` (`common.failures.problem_of`): its kind picks the
+       code — a kind with no code here is internal — and `data` carries what the problem says:
+       the next step, the guidance, how long to wait, what the caller reads (`message`) and what
+       the error disclosed (an auth refusal's `step_up` or `requirement`).
+    Final: an internal failure's reason is `INTERNAL_ERROR`, and nothing of it is told.
     """
     if isinstance(error, ValidationError):
         code = BY_KIND[exceptions.FailureKind.INVALID.value]
@@ -150,21 +149,26 @@ def answer_for(error: Exception) -> Answer:
             "invalid",
             "VALIDATION_ERROR",
             False,
-            errors=json_safe_validation_errors(error),
+            errors=failures.json_safe_validation_errors(error),
         )
         return code.code, code.message, data
-    kind = refined_failure_kind(error).value
-    code = BY_KIND.get(kind, BY_KIND[exceptions.FailureKind.INTERNAL.value])
+    problem = failures.problem_of(error)
+    code = BY_KIND.get(problem.kind.value, BY_KIND[exceptions.FailureKind.INTERNAL.value])
+    told = problem.model_dump(
+        mode="json", include={"next_step", "guidance", "retry_after"}, exclude_none=True
+    )
     if code.code == INTERNAL_ERROR:
-        return code.code, code.message, error_data("internal", "INTERNAL_ERROR", True)
-    retryable = RETRYABLE_BY_KIND[kind] and not isinstance(error, NOT_RETRYABLE)
-    reason = failure_reason(error, exceptions.FailureKind(kind))
-    if isinstance(error, exceptions.AuthError):
-        refusal = {**error.refusal_body(), "message": error.reason}
-        return code.code, code.message, {**refusal, **error_data(kind, reason, retryable)}
-    disclosed = said_to_the_caller(error)
-    extra = {"message": disclosed} if disclosed is not None else {}
-    return code.code, code.message, error_data(kind, reason, retryable, **extra)
+        return (
+            code.code,
+            code.message,
+            error_data("internal", "INTERNAL_ERROR", problem.retryable, **told),
+        )
+    if problem.detail is not None:
+        told["message"] = problem.detail
+    data = error_data(
+        problem.kind.value, problem.reason, problem.retryable, **told, **problem.extensions
+    )
+    return code.code, code.message, data
 
 
 def error_components() -> dict[str, dict[str, Any]]:
@@ -191,8 +195,8 @@ def method_error_refs() -> list[dict[str, str]]:
 ERROR_DATA_SCHEMA: Mapping[str, Any] = {
     "type": "object",
     "description": "What every error's `data` carries, whatever else it adds "
-    "(`message`, `errors`, `method`, `requirement`, `step_up`, `limit`).",
-    "required": ["kind", "reason", "retryable"],
+    "(`retry_after`, `message`, `errors`, `method`, `requirement`, `step_up`, `limit`).",
+    "required": ["kind", "reason", "retryable", "next_step", "guidance"],
     "properties": {
         "kind": {
             "type": "string",
@@ -202,5 +206,8 @@ ERROR_DATA_SCHEMA: Mapping[str, Any] = {
         },
         "reason": {"type": "string", "pattern": "^[A-Z][A-Z0-9_]*$"},
         "retryable": {"type": "boolean"},
+        "next_step": {"type": "string", "enum": [one.value for one in failures.NextStep]},
+        "guidance": {"type": "string"},
+        "retry_after": {"type": "number", "description": "Seconds to wait first."},
     },
 }

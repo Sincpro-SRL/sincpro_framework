@@ -20,10 +20,8 @@ from pydantic import ValidationError
 
 from sincpro_framework.auth import security
 from sincpro_framework.common.failures import (
-    failure_reason,
     json_safe_validation_errors,
-    refined_failure_kind,
-    retry_after,
+    problem_of,
     said_to_the_caller,
 )
 from sincpro_framework.common.transport.grpc import (
@@ -198,16 +196,18 @@ def status_for(
                        domain="billing.v1", metadata={"kind": "not_found"}))
         status_for(<DuplicateAggregate>, ...)       ->  RichStatus(ALREADY_EXISTS, ...)
 
-    1. The kind (`common.failures.refined_failure_kind`) picks the code — a duplicate is
+    1. The kind (`common.failures.problem_of`) picks the code — a duplicate is
        ALREADY_EXISTS, the conflict it refines.
     2. `ErrorInfo` always: `reason` the stable UPPER_SNAKE a client switches on, `domain` the
-       served package, `metadata.kind` the kind, and an auth refusal's fields.
+       served package, `metadata` the kind, the next step and its guidance — the `Problem` every
+       wire tells (`common.failures.problem_of`) — and an auth refusal's fields.
     3. Per kind: `BadRequest` per invalid field, `PreconditionFailure` for a rule the domain
        refused (its subject the Command), `RetryInfo` when retrying as it is will work.
     4. Final: the status, carried in `grpc-status-details-bin`; an auth refusal also answers
        `sp-auth-refusal` and, for nobody known, `www-authenticate`.
     """
-    kind = refined_failure_kind(error)
+    problem = problem_of(error)
+    kind = problem.kind
     code = (
         grpc.StatusCode.ALREADY_EXISTS
         if kind == exceptions.FailureKind.CONFLICT
@@ -215,9 +215,11 @@ def status_for(
         else CODE_OF[kind]
     )
     message = _told(error, kind, code)
-    reason = failure_reason(error, kind)
+    reason = problem.reason
     info = error_details_pb2.ErrorInfo(reason=reason, domain=domain)
     info.metadata["kind"] = kind.value
+    info.metadata["next_step"] = problem.next_step.value
+    info.metadata["guidance"] = problem.guidance
     if isinstance(error, exceptions.AuthError):
         for key, value in error.refusal_body().items():
             info.metadata[key] = str(value)
@@ -228,7 +230,7 @@ def status_for(
         failure = error_details_pb2.PreconditionFailure()
         failure.violations.add(type=reason, subject=subject, description=message)
         details.append(failure)
-    delay = retry_after(error, kind)
+    delay = problem.retry_after
     if delay is not None:
         retry = error_details_pb2.RetryInfo()
         retry.retry_delay.FromTimedelta(delay)

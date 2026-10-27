@@ -14,6 +14,7 @@ import pytest
 
 from sincpro_framework import DataTransferObject, Feature, UseFramework, exceptions
 from sincpro_framework.auth.domain import exceptions as auth_exceptions
+from sincpro_framework.common.failures import NEXT_STEP_OF
 from sincpro_framework.common.naming import upper_snake
 from sincpro_framework.data_layer.caching.domain import exceptions as caching_exceptions
 from sincpro_framework.ddd import exceptions as ddd_exceptions
@@ -171,7 +172,13 @@ def test_an_internal_failure_says_it_may_be_retried_and_nothing_of_the_inside(
     assert error == {
         "code": -32603,
         "message": "Internal error",
-        "data": {"kind": "internal", "reason": "INTERNAL_ERROR", "retryable": True},
+        "data": {
+            "kind": "internal",
+            "reason": "INTERNAL_ERROR",
+            "retryable": True,
+            "next_step": "retry_later",
+            "guidance": NEXT_STEP_OF[exceptions.FailureKind.INTERNAL][1],
+        },
     }
 
 
