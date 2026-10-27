@@ -16,13 +16,17 @@ boto3); nothing is imported here. What the industry sets once per bucket is the 
 class, ACL, cache control, tagging — each call's options over them. Every option the API takes
 passes as it is: `put` hands them to `put_object`, `presign` to the presigned call's parameters.
 `presign` is this technology's own, not the port's: a Feature that wants the bucket to serve the
-bytes types this adapter. A put `if_absent` is a conditional write (`IfNoneMatch="*"`). A
+bytes types this adapter. A file-like is the `Body` as it is, streamed by the client. Metadata
+travels as HTTP headers, so each value is percent-encoded beyond printable ASCII and decoded back
+(`"facturación.pdf"` reads as written). A put `if_absent` is a conditional write
+(`IfNoneMatch="*"`). A
 failure of the storage — not a key with nothing under it — is an `ExternalServiceError`.
 """
 
 from collections.abc import Iterator, Mapping
 from datetime import timedelta
-from typing import Any
+from typing import Any, BinaryIO
+from urllib.parse import quote, unquote
 
 from sincpro_framework.data_layer.object_storage.domain import exceptions
 from sincpro_framework.data_layer.object_storage.domain.object_store import (
@@ -33,6 +37,10 @@ from sincpro_framework.data_layer.object_storage.domain.object_store import (
 
 MISSING = frozenset({"NoSuchKey", "404", "NotFound"})
 """The error codes an object storage answers for a key with nothing under it."""
+
+HEADER_SAFE = "".join(chr(code) for code in range(0x20, 0x7F) if chr(code) != "%")
+"""What a metadata value keeps as it is: printable ASCII but `%` — everything else, an accent or
+an emoji, is percent-encoded, since the storage carries metadata as HTTP headers."""
 
 TAKEN = frozenset({"PreconditionFailed", "412", "ConditionalRequestConflict", "409"})
 """The error codes a conditional write answers when another object is, or is being, written."""
@@ -72,7 +80,7 @@ class S3CompatibleObjectStore(ObjectStore):
     def put(
         self,
         key: str,
-        data: bytes,
+        data: bytes | BinaryIO,
         content_type: str,
         metadata: Mapping[str, str],
         if_absent: bool,
@@ -85,7 +93,15 @@ class S3CompatibleObjectStore(ObjectStore):
                 Key=self.prefix + key,
                 Body=data,
                 ContentType=content_type,
-                **{"Metadata": dict(metadata), **self.put_options, **conditions, **options},
+                **{
+                    "Metadata": {
+                        name: quote(value, safe=HEADER_SAFE)
+                        for name, value in metadata.items()
+                    },
+                    **self.put_options,
+                    **conditions,
+                    **options,
+                },
             )
         except Exception as error:
             if if_absent and _code(error) in TAKEN:
@@ -113,7 +129,9 @@ class S3CompatibleObjectStore(ObjectStore):
             key=key,
             size=int(answer.get("ContentLength", 0)),
             content_type=answer.get("ContentType") or "application/octet-stream",
-            metadata=answer.get("Metadata") or {},
+            metadata={
+                name: unquote(value) for name, value in (answer.get("Metadata") or {}).items()
+            },
             modified_at=answer.get("LastModified"),
         )
 

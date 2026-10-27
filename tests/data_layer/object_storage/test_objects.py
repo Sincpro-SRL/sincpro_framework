@@ -1,5 +1,7 @@
 """`Objects`: the rules over a store — a missing key, a taken one, a content type not given."""
 
+import io
+
 import pytest
 
 from sincpro_framework.data_layer.object_storage import (
@@ -36,6 +38,14 @@ def test_a_content_type_not_given_is_the_one_its_key_says():
 
     assert objects.put("scan.pdf", b"%PDF").content_type == "application/pdf"
     assert objects.put("blob", b"x").content_type == "application/octet-stream"
+
+
+def test_a_file_like_is_streamed_and_answered_with_its_stored_size():
+    objects = Objects(InMemoryObjectStore())
+
+    stored = objects.put("scan.pdf", io.BytesIO(b"%PDF-1.7"))
+
+    assert (stored.size, stored.content_type) == (8, "application/pdf")
 
 
 def test_a_put_if_absent_under_a_taken_key_is_already_exists():

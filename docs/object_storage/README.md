@@ -38,6 +38,10 @@ except ObjectAlreadyExists:
 
 - **`put` / `get` / `find` / `exists` / `delete` / `keys(prefix)`**. A key with nothing under it is
   `ObjectNotFound` (`not_found`) from `get`, `None` from `find`.
+- **`data` is bytes or a file-like** — a request body spooled to disk — streamed to the store,
+  never all in memory where the store streams (a bucket does).
+- **Metadata is any text**: a bucket carries it as headers, so the adapter encodes what is not
+  ASCII and reads it back as written.
 - **A content type not given** is the one the key's extension says (`.csv` → `text/csv`), else
   `application/octet-stream`.
 - **`ObjectRef`** is an object without its bytes: key, size, content type, the `metadata` stored
@@ -69,11 +73,14 @@ try:
     storage.redeem(published.id, Access.READ)
 except PublicationRefused as refused:
     assert refused.reason is Refusal.USED_UP
+    assert refused.publication.key == "exports/invoices.csv"
 ```
 
 `Publication` — `id`, `key`, `access`, `expires_at`, `max_uses`, `uses`, `metadata` — is what the
 publisher hands on and what `check` and `redeem` answer. When an id does not open,
-`PublicationRefused` (`permission_denied`) says why in `reason`:
+`PublicationRefused` (`permission_denied`) says why in `reason`, and which one in `publication`
+when it is known (`EXPIRED`, `USED_UP`, `WRONG_ACCESS`) — its key and metadata, to answer "already
+uploaded: scan.pdf" or to go on with its object:
 
 | `Refusal` | When |
 |---|---|

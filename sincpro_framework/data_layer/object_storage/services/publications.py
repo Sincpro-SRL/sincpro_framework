@@ -90,15 +90,19 @@ class Publications:
             published = Publication.model_validate({**entry.values, "id": id})
             if published.access is not access:
                 raise exceptions.PublicationRefused(
-                    Refusal.WRONG_ACCESS, f"the publication is not to {access.value}"
+                    Refusal.WRONG_ACCESS,
+                    f"the publication is not to {access.value}",
+                    published,
                 )
             if self.now() >= published.expires_at:
                 raise exceptions.PublicationRefused(
-                    Refusal.EXPIRED, "the publication expired: ask for a new one"
+                    Refusal.EXPIRED, "the publication expired: ask for a new one", published
                 )
             if published.max_uses is not None and published.uses >= published.max_uses:
                 raise exceptions.PublicationRefused(
-                    Refusal.USED_UP, "the publication was used as many times as it allowed"
+                    Refusal.USED_UP,
+                    "the publication was used as many times as it allowed",
+                    published,
                 )
             if not spend:
                 return published

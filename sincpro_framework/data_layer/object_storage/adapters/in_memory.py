@@ -3,7 +3,7 @@
 import threading
 from collections.abc import Iterator, Mapping
 from datetime import UTC, datetime
-from typing import Any
+from typing import Any, BinaryIO
 
 from sincpro_framework.data_layer.object_storage.domain.object_store import (
     ObjectRef,
@@ -22,12 +22,13 @@ class InMemoryObjectStore(ObjectStore):
     def put(
         self,
         key: str,
-        data: bytes,
+        data: bytes | BinaryIO,
         content_type: str,
         metadata: Mapping[str, str],
         if_absent: bool,
         **options: Any,
     ) -> bool:
+        data = data if isinstance(data, bytes) else data.read()
         stored = ObjectRef(
             key=key,
             size=len(data),
@@ -38,7 +39,7 @@ class InMemoryObjectStore(ObjectStore):
         with self._lock:
             if if_absent and key in self._held:
                 return False
-            self._held[key] = (bytes(data), stored)
+            self._held[key] = (data, stored)
         return True
 
     def get(self, key: str) -> bytes | None:

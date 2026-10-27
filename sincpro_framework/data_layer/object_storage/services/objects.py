@@ -9,7 +9,7 @@ is guessed from the key.
 
 import mimetypes
 from collections.abc import Iterator, Mapping
-from typing import Any
+from typing import Any, BinaryIO
 
 from sincpro_framework.data_layer.object_storage.domain import exceptions
 from sincpro_framework.data_layer.object_storage.domain.object_store import (
@@ -31,21 +31,26 @@ class Objects:
     def put(
         self,
         key: str,
-        data: bytes,
+        data: bytes | BinaryIO,
         content_type: str | None = None,
         metadata: Mapping[str, str] | None = None,
         if_absent: bool = False,
         **options: Any,
     ) -> ObjectRef:
-        """Store `data` under `key` with `metadata` — its content type the one given, else the
-        one its key's extension says, else `application/octet-stream`. In the place of what was
-        there, or, `if_absent`, only when nothing is: `ObjectAlreadyExists` then. `options` the
-        storage's own, as they are."""
+        """Store `data` — bytes, or a file-like streamed to the store — under `key` with
+        `metadata`; its content type the one given, else the one its key's extension says, else
+        `application/octet-stream`. In the place of what was there, or, `if_absent`, only when
+        nothing is: `ObjectAlreadyExists` then. `options` the storage's own, as they are."""
         said = dict(metadata or {})
         content_type = content_type or mimetypes.guess_type(key)[0] or DEFAULT_CONTENT_TYPE
         if not self.store.put(key, data, content_type, said, if_absent, **options):
             raise exceptions.ObjectAlreadyExists(f"an object is already stored under {key}")
-        return ObjectRef(key=key, size=len(data), content_type=content_type, metadata=said)
+        if isinstance(data, bytes):
+            return ObjectRef(
+                key=key, size=len(data), content_type=content_type, metadata=said
+            )
+        stored = self.store.info(key)
+        return stored if stored is not None else ObjectRef(key=key, size=0, metadata=said)
 
     def get(self, key: str) -> bytes:
         """The bytes under `key` — `ObjectNotFound` when there are none."""

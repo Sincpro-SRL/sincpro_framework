@@ -8,6 +8,8 @@ A store of yours — another bucket, a database, a service — passes the same c
 `ObjectStorage` works on it. Nothing here imports pytest.
 """
 
+import io
+
 from sincpro_framework.data_layer.object_storage import ObjectStore
 
 
@@ -24,6 +26,23 @@ class ObjectStoreContract:
         store.put("docs/a.pdf", b"%PDF-1.7", "application/pdf", {}, False)
         if store.get("docs/a.pdf") != b"%PDF-1.7":
             raise AssertionError("an object put was not got back")
+
+    def test_a_file_like_put_is_got_back(self) -> None:
+        """A file-like is read to its end and stored as its bytes."""
+        store = self.make_store()
+        store.put("big.bin", io.BytesIO(b"x" * 70_000), "application/octet-stream", {}, False)
+        found = store.info("big.bin")
+        if store.get("big.bin") != b"x" * 70_000 or found is None or found.size != 70_000:
+            raise AssertionError("a file-like put was not got back")
+
+    def test_metadata_of_any_text_is_read_as_written(self) -> None:
+        """A value with accents, spaces and signs comes back as it went in."""
+        store = self.make_store()
+        said = {"filename": "facturación 2026 (copia) 100%.pdf"}
+        store.put("a.pdf", b"%PDF", "application/pdf", said, False)
+        found = store.info("a.pdf")
+        if found is None or found.metadata != said:
+            raise AssertionError(f"metadata came back as {found and found.metadata!r}")
 
     def test_a_missing_key_is_none(self) -> None:
         """Nothing under a key: `get` and `info` answer `None`."""

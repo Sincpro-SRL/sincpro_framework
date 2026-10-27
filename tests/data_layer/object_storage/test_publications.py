@@ -95,6 +95,22 @@ def test_one_published_to_read_does_not_open_to_write():
     )
 
 
+def test_a_refusal_says_which_publication_it_refused_when_it_knows():
+    publications = publications_at(ManualClock(NOON))
+    published = publish(publications, Access.WRITE, max_uses=1)
+    publications.opened(published.id, Access.WRITE, spend=True)
+
+    with pytest.raises(PublicationRefused) as refused:
+        publications.opened(published.id, Access.WRITE, spend=True)
+
+    assert refused.value.reason is Refusal.USED_UP
+    assert refused.value.publication is not None
+    assert (refused.value.publication.key, refused.value.publication.metadata) == (
+        "report.pdf",
+        {"filename": "r.pdf"},
+    )
+
+
 def test_a_revoked_publication_is_unknown():
     publications = publications_at(ManualClock(NOON))
     published = publish(publications)

@@ -18,7 +18,7 @@ from abc import ABC, abstractmethod
 from collections.abc import Iterator, Mapping
 from datetime import datetime
 from enum import StrEnum
-from typing import Any
+from typing import Any, BinaryIO
 
 from sincpro_framework.sincpro_abstractions import DataTransferObject
 
@@ -51,15 +51,17 @@ class ObjectStore(ABC):
     def put(
         self,
         key: str,
-        data: bytes,
+        data: bytes | BinaryIO,
         content_type: str,
         metadata: Mapping[str, str],
         if_absent: bool,
         **options: Any,
     ) -> bool:
-        """Store `data` under `key` with `metadata` — `options` the storage's own. In the place
-        of what was there, or, `if_absent`, only when nothing is: `False` then, and nothing
-        written. Atomic: of two puts `if_absent` at once, one stores."""
+        """Store `data` under `key` with `metadata` — bytes, or a file-like read to its end (a
+        body spooled to disk: never all in memory where the store streams) — `options` the
+        storage's own. In the place of what was there, or, `if_absent`, only when nothing is:
+        `False` then, and nothing written. Atomic: of two puts `if_absent` at once, one
+        stores."""
 
     @abstractmethod
     def get(self, key: str) -> bytes | None:

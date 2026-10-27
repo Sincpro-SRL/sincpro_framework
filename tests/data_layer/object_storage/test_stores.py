@@ -36,7 +36,9 @@ class FakeS3:
         self.objects: dict[tuple[str, str], dict[str, Any]] = {}
         self.down = False
 
-    def put_object(self, Bucket: str, Key: str, Body: bytes, **extra: Any) -> None:
+    def put_object(self, Bucket: str, Key: str, Body: Any, **extra: Any) -> None:
+        """A file-like `Body` is read to its end, as the client streams it."""
+        Body = Body if isinstance(Body, bytes) else Body.read()
         if self.down:
             raise S3Error("ServiceUnavailable")
         if extra.pop("IfNoneMatch", None) == "*" and (Bucket, Key) in self.objects:
@@ -127,6 +129,17 @@ def test_the_options_of_every_put_go_with_each_and_a_call_s_own_win():
         "Metadata": {"by": "ana"},
         "ServerSideEncryption": "AES256",
         "ACL": "public-read",
+    }
+
+
+def test_a_bucket_carries_metadata_as_ascii_headers():
+    client = FakeS3()
+    store = S3CompatibleObjectStore("documents", client)
+
+    store.put("a.pdf", b"%PDF", "application/pdf", {"filename": "facturación.pdf"}, False)
+
+    assert client.objects["documents", "a.pdf"]["Metadata"] == {
+        "filename": "facturaci%C3%B3n.pdf"
     }
 
 

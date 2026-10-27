@@ -2,7 +2,10 @@
 does not open, and a storage that failed."""
 
 from sincpro_framework.context import EntryConflict
-from sincpro_framework.data_layer.object_storage.domain.publication import Refusal
+from sincpro_framework.data_layer.object_storage.domain.publication import (
+    Publication,
+    Refusal,
+)
 from sincpro_framework.exceptions import (
     ClientError,
     ExternalServiceError,
@@ -25,11 +28,16 @@ class ObjectAlreadyExists(ClientError):
 
 class PublicationRefused(ClientError):
     """A publication's id that does not open its object, and why (`reason`) — the entrypoint
-    answers it as it likes: a 403, a 404, a 410."""
+    answers it as it likes: a 403, a 404, a 410. `publication` is the one refused when it is
+    known (`EXPIRED`, `USED_UP`, `WRONG_ACCESS`): its key and metadata, to say what it was —
+    "already uploaded: invoice.pdf" — or to go on with its object."""
 
     failure_kind = FailureKind.PERMISSION_DENIED
 
-    def __init__(self, reason: Refusal, message: str) -> None:
-        """Say why, in the message and as `reason`."""
+    def __init__(
+        self, reason: Refusal, message: str, publication: Publication | None = None
+    ) -> None:
+        """Say why, in the message and as `reason`, and which one when it is known."""
         super().__init__(message)
         self.reason = reason
+        self.publication = publication

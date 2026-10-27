@@ -12,10 +12,11 @@ holds atomic across processes.
 """
 
 import json
+import shutil
 from collections.abc import Iterator, Mapping
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, BinaryIO
 
 from sincpro_framework.data_layer.object_storage.domain import exceptions
 from sincpro_framework.data_layer.object_storage.domain.object_store import (
@@ -49,7 +50,7 @@ class LocalObjectStore(ObjectStore):
     def put(
         self,
         key: str,
-        data: bytes,
+        data: bytes | BinaryIO,
         content_type: str,
         metadata: Mapping[str, str],
         if_absent: bool,
@@ -59,7 +60,10 @@ class LocalObjectStore(ObjectStore):
         path.parent.mkdir(parents=True, exist_ok=True)
         try:
             with path.open("xb" if if_absent else "wb") as written:
-                written.write(data)
+                if isinstance(data, bytes):
+                    written.write(data)
+                else:
+                    shutil.copyfileobj(data, written)
         except FileExistsError:
             return False
         said = {"content_type": content_type, "metadata": dict(metadata)}

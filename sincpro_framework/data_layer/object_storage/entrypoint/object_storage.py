@@ -29,7 +29,7 @@ and `store` is the `ObjectStore` itself, for what only its technology offers (a 
 from collections.abc import Callable, Iterator, Mapping
 from datetime import UTC, datetime, timedelta
 from functools import partial
-from typing import Any
+from typing import Any, BinaryIO
 
 from sincpro_framework.context import ContextStore
 from sincpro_framework.data_layer.object_storage.domain.object_store import (
@@ -66,7 +66,7 @@ class ObjectStorage:
     def put(
         self,
         key: str,
-        data: bytes,
+        data: bytes | BinaryIO,
         content_type: str | None = None,
         metadata: Mapping[str, str] | None = None,
         if_absent: bool = False,
