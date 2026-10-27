@@ -1,4 +1,4 @@
-"""FastMCP binding: a use case → typed function FastMCP 3 can register as a tool, and the
+"""FastMCP binding: a use case → typed function FastMCP can register as a tool, and the
 servers that register them — FastMCP is imported only when a server is built (`[mcp]` extra).
 """
 
@@ -104,7 +104,7 @@ def tool_function(
     bus: "UseFramework | None" = None,
     on_failure: Callable[[Exception], Any] = tool_error,
 ) -> Callable[..., Any]:
-    """Build a typed function FastMCP 3 inspects to generate the MCP schema.
+    """Build a typed function FastMCP inspects to generate the MCP schema.
 
         fn = tool_function(CommandIssueInvoice, "issue_invoice", "Issue an invoice.",
                            operation.run, billing)
@@ -177,7 +177,7 @@ def catalog_server(
     auth: "AccessControl[Any] | None" = None,
     base_url: str | None = None,
 ) -> Any:
-    """A FastMCP 3 server with every catalog entry of `operations` a tool named by its DTO.
+    """A FastMCP server with every catalog entry of `operations` a tool named by its DTO.
 
         catalog_server("billing", catalog.get_scalar_use_cases(filter_binaries_schema=True),
                        billing)
@@ -214,7 +214,7 @@ def surface_server(
     auth: "AccessControl[Any] | None" = None,
     base_url: str | None = None,
 ) -> Any:
-    """A FastMCP 3 server with every tool of a validated surface — returned, not run.
+    """A FastMCP server with every tool of a validated surface — returned, not run.
 
         surface_server("sincpro-mcp", gateway.tools())
         ->  FastMCP("sincpro-mcp"), tool "issue_invoice"

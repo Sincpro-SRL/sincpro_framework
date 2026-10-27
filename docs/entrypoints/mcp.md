@@ -320,11 +320,12 @@ If a Feature is safe to call from Python, it is the same operation over MCP. Aut
 
 ---
 
-## FastMCP 3 binding
+## FastMCP binding
 
-The extra is `fastmcp >= 3.0,<4` (lock: 3.4.7). FastMCP 4 is prerelease; do not float onto it.
+The extra is `fastmcp >=3.4.10,<5`; the lock, and every test, runs FastMCP 4 (MCP SDK 2). A
+project on FastMCP 3 keeps working, speaking only the handshake era (below).
 
-After `@framework.feature` / `@framework.app_service`, the bus already has the catalog. `entrypoint_mcp` does **not** invent a second schema. It builds a typed function whose signature is the DTO fields, then registers it with the FastMCP 3 public API:
+After `@framework.feature` / `@framework.app_service`, the bus already has the catalog. `entrypoint_mcp` does **not** invent a second schema. It builds a typed function whose signature is the DTO fields, then registers it with FastMCP's public API:
 
 ```python
 mcp.tool(fn, name=dto_name, description=instruction, tags={layer})
@@ -354,11 +355,37 @@ That URL speaks **Streamable HTTP MCP** (`tools/list`, `tools/call`). It is not 
 
 SSE (`transport="sse"`) exists for old clients. Do not use it for new work.
 
+### Both protocol eras, one endpoint
+
+MCP has two eras. The **handshake** era (2025-11-25 and before) opens with `initialize` and
+negotiates once. The **modern** era (2026-07-28) has no handshake: each request carries its
+version, identity and capabilities (`_meta`, the `MCP-Protocol-Version` header), and
+`server/discover` answers what the server supports. A server on FastMCP 4 is **dual-era**: it
+answers each request in the era the client opened with, on the same URL — nothing to declare.
+
+| Client | Against this server |
+|---|---|
+| handshake era (`initialize`) | negotiates 2025-11-25, lists and calls tools |
+| modern era (2026-07-28) | `server/discover`, lists and calls tools — never a 400, never a fallback |
+| either, with a bearer the bus refuses | 401 on the wire; a permission it lacks is a tool error carrying its `Problem` |
+
+The caller is the same in both eras: `auth=` verifies the bearer, and `acting_for_tool_call`
+runs the tool as whoever it names. For replicas behind a balancer with no affinity, serve the
+app stateless — the modern era is stateless by itself, and this makes the handshake era so too:
+
+```python
+app = McpGateway([billing]).server(auth=billing_access).http_app(stateless_http=True)
+```
+
+On FastMCP 4 `stateless_http` is an argument of `http_app()` / `run()`, not of `FastMCP(...)`.
+On FastMCP 3 the same server speaks only the handshake era, and a modern client is refused.
+
 ---
 
 ## Verification
 
 - Declared surface: `tests/entrypoints/adapters/mcp/test_entrypoint_mcp.py` — DECLARED vs CATALOG, names and clashes, hints on `tools/list`, parity with the bus, hints never authorize.
+- Protocol eras: `tests/entrypoints/adapters/mcp/test_protocol_eras.py` — a handshake client and a modern one on the same server, through two stateless replicas behind a balancer with no affinity: same tools, same caller, the same refusal, no 400 for a modern client.
 - Unit: `tests/entrypoints/test_entrypoints.py` — catalog (Feature + ApplicationService), own docstring (not base class), VO roundtrip + `validate_fn`, `Field` / attribute descriptions in schema, include/exclude/wrap, binary skip, extra import contract.
 - Manual: `pip install sincpro-framework[mcp]`, `Entrypoint(your_sdk).run()`, point Cursor / Claude Desktop at stdio, call one Feature and one ApplicationService.
 - Failure mode: a new DTO with `bytes` silently missing from MCP is expected (warning log). A Feature whose docstring is only inherited from `Feature` will publish a useless description — add a class or `execute` docstring.

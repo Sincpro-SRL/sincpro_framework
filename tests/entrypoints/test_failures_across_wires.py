@@ -237,17 +237,20 @@ def _said(problem: dict[str, Any]) -> tuple[Any, ...]:
     )
 
 
+SAID_WHEN_DOWN = (
+    "unavailable",
+    "retry_later",
+    "The tax authority is down: the invoice is kept, send it again in 30 seconds.",
+    30.0,
+)
+
+
 def test_one_failure_says_the_same_kind_next_step_guidance_and_wait_on_every_wire(
     grpc_call: Any,
 ) -> None:
-    """The issue's acceptance: REST, JSON-RPC, gRPC and MCP each in its own encoding, the same
+    """The issue's acceptance: REST, JSON-RPC and gRPC each in its own encoding, the same
     problem — what happened, what to do next, how long to wait."""
-    expected = (
-        "unavailable",
-        "retry_later",
-        "The tax authority is down: the invoice is kept, send it again in 30 seconds.",
-        30.0,
-    )
+    expected = SAID_WHEN_DOWN
 
     rest = TestClient(RestGateway({"billing": _billing()}).app()).post(
         "/billing/command-fail", json={"how": "down"}
@@ -288,11 +291,14 @@ def test_one_failure_says_the_same_kind_next_step_guidance_and_wait_on_every_wir
         retry.retry_delay.seconds,
     ) == (*expected[:3], 30)
 
+
+def test_an_mcp_tool_says_the_same_problem_as_every_other_wire() -> None:
+    pytest.importorskip("fastmcp")
     billing = _billing()
     tool = tool_function(
         CommandFail, "fail", "Fail.", lambda payload: billing(CommandFail(**payload)), billing
     )
     answered = tool(how="down")
     assert answered.is_error
-    assert _said(answered.structured_content) == expected
+    assert _said(answered.structured_content) == SAID_WHEN_DOWN
     assert "Next step: retry_later" in answered.content[0].text
