@@ -14,7 +14,7 @@ from collections.abc import Collection, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import timedelta
 from enum import StrEnum
-from typing import Any, ClassVar
+from typing import Any, ClassVar, get_type_hints
 
 from sincpro_framework.common.failures import RETRYABLE
 from sincpro_framework.context import Owner
@@ -33,10 +33,19 @@ class Resume(StrEnum):
     """From the first step that did not succeed — when the recipe is the one it ran."""
 
 
+UNDECIDED = (None, "")
+"""What an `Await`'s field holds while nothing was decided — the only defaults it may have."""
+
+
 @dataclass(frozen=True)
 class Await:
-    """A step that waits: the run stops here until it is run again with the input's field of
-    this name filled — what was decided, by a person or another system."""
+    """A step that waits: the run stops here, and only the same run, run again with the input's
+    field of this name filled, goes on — what was decided, by a person or another system.
+
+    The decision is taken only by a run that waited here: a first call that already carries it
+    stops here all the same, so nothing passes an `Await` without having waited at it. The field
+    defaults to `None` or `""` — a default that decides (`confirmed: bool = False`) would pass
+    every run undecided, and is a `ProgrammingError` when the bus is built."""
 
     name: str
 
@@ -68,6 +77,19 @@ class Retry:
         nothing — grown by `backoff` each attempt, never above `max_wait`."""
         first = declared if declared is not None else timedelta(seconds=1)
         return min(first * self.backoff ** (attempt - 1), self.max_wait)
+
+
+def _answer_fields(answered: Collection[type], step: type) -> set[str]:
+    """The fields of what `step`'s handler declares it answers — what a step after it is filled
+    with; none when `answered` does not map it to a handler, or the handler declares nothing.
+    """
+    handler = answered.get(step) if isinstance(answered, Mapping) else None
+    execute = getattr(handler, "execute", None)
+    try:
+        response = get_type_hints(execute).get("return") if execute is not None else None
+    except Exception:
+        return set()
+    return set(getattr(response, "model_fields", {}))
 
 
 class PipelineDeclaration:
@@ -153,17 +175,67 @@ class PipelineDeclaration:
         return tuple(wrapped)
 
     @classmethod
+    def refused(cls, command: type) -> list[str]:
+        """What no run of this pipeline could ever do right, by `command` — each `Await` whose
+        field decides by default, or must always be given: every run would pass it undecided.
+
+            refused(CommandRun)   confirmed: bool = False
+            ->  ["pipeline Run waits for 'confirmed', and CommandRun.confirmed defaults to
+                 False: …"]
+        """
+        given = getattr(command, "model_fields", {})
+        found: list[str] = []
+        for recipe in cls.recipes():
+            for waits in recipe:
+                field = given.get(waits.name) if isinstance(waits, Await) else None
+                if field is None:
+                    continue
+                if field.is_required() or field.default not in UNDECIDED:
+                    said = (
+                        "is always given"
+                        if field.is_required()
+                        else (f"defaults to {field.default!r}")
+                    )
+                    found.append(
+                        f"pipeline {cls.__name__} waits for '{waits.name}', and "
+                        f"{command.__name__}.{waits.name} {said}: every run would pass it "
+                        f"undecided — declare `{waits.name}: <type> | None = None`"
+                    )
+        return found
+
+    @classmethod
+    def _missed(
+        cls, step: type, command: type, answered: Collection[type], bus: str, taken: set[str]
+    ) -> list[str]:
+        """What `step` would miss: the bus not answering it, and each required field of it not
+        in `taken`."""
+        found = []
+        if step not in answered:
+            found.append(
+                f"pipeline {cls.__name__}: step {step.__name__} is not answered by "
+                f"'{bus}': it fails when the run reaches it"
+            )
+        found.extend(
+            f"pipeline {cls.__name__}: step {step.__name__} needs '{field}', which "
+            f"{command.__name__} does not have and no step before it answers"
+            for field, info in getattr(step, "model_fields", {}).items()
+            if info.is_required() and field not in taken
+        )
+        return found
+
+    @classmethod
     def problems(cls, command: type, answered: Collection[type], bus: str) -> list[str]:
         """What a bus named `bus`, answering `answered`, would miss when it runs this pipeline
         for `command` — said, never refused.
 
-            problems(CommandRunNightly, {CommandCollect}, "billing")
+            problems(CommandRunNightly, {CommandCollect: Collect}, "billing")
             ->  ["pipeline RunNightly: step CommandBill is not answered by 'billing': …"]
 
         1. An `Await` whose field `command` lacks: the run could never be run again with it.
         2. Each step the bus does not answer: the run fails when it reaches it.
-        3. Each required field of a step that `command` does not carry — `ok` and `failure`
-           are given to `always`.
+        3. Each required field of a step that neither `command` carries nor a step before it
+           answers — read from the response its handler declares, when `answered` maps each
+           Command to its handler; `ok` and `failure` are given to `always`.
         Final: the messages, in the order the recipes declare what they are about."""
         given = getattr(command, "model_fields", {})
         found = [
@@ -173,17 +245,14 @@ class PipelineDeclaration:
             for waits in recipe
             if isinstance(waits, Await) and waits.name not in given
         ]
-        for step in cls.commands():
-            if step not in answered:
-                found.append(
-                    f"pipeline {cls.__name__}: step {step.__name__} is not answered by "
-                    f"'{bus}': it fails when the run reaches it"
-                )
-            taken = {*given, *(ENDING if step is cls.always else ())}
-            found.extend(
-                f"pipeline {cls.__name__}: step {step.__name__} needs '{field}', "
-                f"which {command.__name__} does not have"
-                for field, info in getattr(step, "model_fields", {}).items()
-                if info.is_required() and field not in taken
-            )
+        handed: set[str] = set()
+        for recipe in cls.recipes():
+            handed = set()
+            for step in recipe:
+                if isinstance(step, type):
+                    found.extend(cls._missed(step, command, answered, bus, {*given, *handed}))
+                    handed |= _answer_fields(answered, step)
+        if cls.always is not None:
+            taken = {*given, *handed, *ENDING}
+            found.extend(cls._missed(cls.always, command, answered, bus, taken))
         return found

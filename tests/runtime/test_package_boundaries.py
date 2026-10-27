@@ -23,6 +23,7 @@ import pytest
 FRAMEWORK = Path(__file__).parents[2] / "sincpro_framework"
 
 LAYERED = {
+    "approvals": "approvals",
     "auth": "auth",
     "context": "context",
     "data_layer.caching": "data_layer.caching",

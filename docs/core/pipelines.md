@@ -89,8 +89,8 @@ assert [(one.command.split(".")[-1], one.status) for one in run.steps] == [
 ```
 
 - **The order is data.** `steps` is a list of Commands, each a Feature of the same bus.
-- **A step is filled by the names of its fields**, from the input — `run_id`, `day` — so it needs
-  nothing from the step before. What a step hands on is stored where the project stores its data.
+- **A step is filled by the names of its fields** — from the input (`run_id`, `day`) and from what
+  the steps before it answered, the latest first: see [handing an answer on](#handing-an-answer-on).
 - **A step that answers `ok=False` ends the run as failed**; one that raises ends it with the
   exception. Either way `always` runs, and may take `ok` and `failure`.
 - **No `ok` is an `ok`**: any Feature is a step, answering anything or nothing.
@@ -115,9 +115,9 @@ is a run of its own.
 ## Where the run is stored
 
 A run is a `PipelineRun` — the pipeline, the `run_id`, the input, how each step ended with its error
-and its kind of failure, and when — stored in the context's store, beside the [drafts](drafts.md): the
-one store the context has. It holds the progress of a run and nothing of what the steps did. Each run
-is an entry of its own:
+and its kind of failure, what each one that succeeded answered, and when — stored in the context's
+store, beside the [drafts](drafts.md): the one store the context has. Each run is an entry of its
+own:
 
 ```text
 SINCPRO_PIPELINE_CONTEXT : tenant_id=acme,tenant_ids= : billing.CommandRunNightly : 2026-10-23
@@ -222,6 +222,7 @@ A pipeline grows with what it needs, never before — each step one line:
 |---|---|
 | `steps = [...]` | the order; everything below is a default |
 | `retry = Retry()` | a step that failed in a way worth it runs again |
+| a step that answers what the next needs | the next is filled with it — see [handing an answer on](#handing-an-answer-on) |
 | `Await("approval")` in the steps | the run waits for a decision, and goes on with it |
 | `PipelineReads` | the runs read through the bus, on any wire |
 | `lease = timedelta(minutes=2)` | one run of a `run_id` at a time across replicas; a worker that died leaves its run `abandoned` — see [leases](leases.md) |
@@ -319,8 +320,74 @@ The run stops at the `Await` as `WAITING` — `always` waits too: the run has no
 stored as any run. The decision comes in through the pipeline's own Command, the same `run_id` with
 the field of the await's name filled, so whatever already publishes that Command — a REST route,
 an MCP tool, a queue — decides; and every later step with a field of that name is given it. A run
-called again without it still waits. An `Await` the input has no field for cannot be decided, and
-is a `ProgrammingError` when the run reaches it.
+called again without it still waits.
+
+- **It goes on with the input it was given**, never this call's: the decision is the one field a
+  call adds, and any other it sends otherwise is said in the logs and left.
+- **Only a run that waited takes a decision.** A first call that already carries one waits all
+  the same: nothing passes an `Await` without having waited at it.
+- **The field defaults to `None` or `""`.** A default that decides — `confirmed: bool = False` —
+  would pass every run undecided, and is a `ProgrammingError` when the bus is built; so is a field
+  that is always given. An `Await` the input has no field for cannot be decided, and is a
+  `ProgrammingError` when the run reaches it.
+
+One Command a person approves, with no sequence around it, is an [approval](approvals.md): the
+preview stored, the input approved by its id, run once.
+
+### Handing an answer on
+
+```python
+class CommandRunInvoice(DataTransferObject):
+    run_id: str
+    customer: str = ""
+    approval: str = ""
+
+
+class CommandOpenInvoice(DataTransferObject):
+    customer: str
+
+
+class ResponseOpened(DataTransferObject):
+    invoice_id: str
+
+
+class CommandSendInvoice(DataTransferObject):
+    invoice_id: str                                 # what the step before it answered
+
+
+handing = UseFramework("billing-handing", log_after_execution=False)
+handing.store_context_in(InMemoryContexts())
+sent: list[str] = []
+
+
+@handing.feature(CommandOpenInvoice)
+class OpenInvoice(Feature):
+    def execute(self, dto: CommandOpenInvoice) -> ResponseOpened:
+        return ResponseOpened(invoice_id=f"F-{dto.customer}")
+
+
+@handing.feature(CommandSendInvoice)
+class SendInvoice(Feature):
+    def execute(self, dto: CommandSendInvoice) -> None:
+        sent.append(dto.invoice_id)
+
+
+@handing.app_service(CommandRunInvoice)
+class RunInvoice(Pipeline, ApplicationService):
+    steps = [CommandOpenInvoice, Await("approval"), CommandSendInvoice]
+
+
+handing(CommandRunInvoice(run_id="i-1", customer="acme"))           # opened, then waits
+handing(CommandRunInvoice(run_id="i-1", approval="ana"))            # another request
+
+assert sent == ["F-acme"]
+```
+
+Each step that succeeds stores what it answered on the run, and every step after it is filled
+with it by the names of its fields — the latest answer first, then the input — also when the run
+goes on in another request, on another replica. A step that needs a field no step before it
+answers and the input lacks is said in the logs when the bus is built, read from the response each
+handler declares.
 
 ### Reading the runs
 

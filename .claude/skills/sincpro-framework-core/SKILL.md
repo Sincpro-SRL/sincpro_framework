@@ -1,6 +1,6 @@
 ---
 name: sincpro-framework-core
-description: Work the cross-cutting parts of a sincpro_framework bus — opening a context with bus.context (the component itself is sincpro-framework-context), interceptors (veto, adjust, audit, cache, retry; replaces=) and error handlers (global/feature/app_service). Use whenever a task passes metadata through a call, wraps a use case from outside, replaces a use case, or maps exceptions to answers.
+description: Work the cross-cutting parts of a sincpro_framework bus — opening a context with bus.context (the component itself is sincpro-framework-context), interceptors (veto, adjust, audit, cache, retry; replaces=), error handlers (global/feature/app_service), pipelines (steps, Await) and approvals (a use case that runs only once a person approved its preview). Use whenever a task passes metadata through a call, wraps a use case from outside, replaces a use case, maps exceptions to answers, runs a job of steps, or must not write until a person confirms (a confirmation gate, human-in-the-loop, an MCP write tool).
 ---
 
 # sincpro-framework-core
@@ -237,8 +237,10 @@ and a `fresh()` generation hears it too.
 **Running a job of steps** (`sincpro_framework.pipelines`). A `Pipeline` is an ApplicationService that is
 the order of its steps, declared as data — `class RunNightly(Pipeline, ApplicationService): steps =
 [CommandCollect, CommandBill]; always = CommandClose` — registered with `@bus.app_service(Command)`.
-Each step is a Feature of the same bus, filled from the input by the names of its fields; `ok=False`
-or an exception ends the run, `always` runs last with `ok` and `failure`. The bus attaches an
+Each step is a Feature of the same bus, filled by the names of its fields from the input and from
+what the steps before it answered (stored on the run, the latest first — the `invoice_id` step 1
+creates reaches step 2, also in another request); `ok=False` or an exception ends the run, `always`
+runs last with `ok` and `failure`. The bus attaches an
 interceptor (`PipelineRecorder`) that stores the run — a `PipelineRun` — in the context
 (`PipelineRuns.of()`), beside the drafts; the same `run_id` again starts over, or goes on
 with `resume = Resume.CONTINUE`. `by = "<field>"` picks one of several recipes; `records = False`
@@ -246,10 +248,27 @@ leaves the recorder out. Nothing is refused: no tenant, no store or a step the b
 is said in the logs. When it needs more, one line each: `retry = Retry()` runs again a step whose
 failure is worth it by its kind (unavailable, conflict, in progress — never `ok=False` nor a domain
 refusal); `Await("approval")` in the steps makes the run wait (`PipelineState.WAITING`) until the same
-`run_id` is run with the input's `approval` filled; `GetRun[Command]` / `FindRuns[Command]` answered
+`run_id` is run with the input's `approval` filled — it goes on with the input it was first given,
+only a run that waited takes a decision, and the field defaults to `None` or `""` (`bool = False`
+is a `ProgrammingError` at build); `GetRun[Command]` / `FindRuns[Command]` answered
 by a `PipelineReads` Feature read the runs on any wire; `lease = timedelta(minutes=2)` makes it one run
 of a `run_id` at a time across replicas, renewed while it runs, and `PipelineRuns.of().abandoned(…)`
 lists the runs whose worker died. Depth: `docs/core/pipelines.md`, `docs/core/leases.md`.
+
+**Asking a person first** (`sincpro_framework.approvals`). A Feature or ApplicationService that must
+not write until a person approved what it will do declares `approval = Approval()` (15 minutes by
+default, `Approval(expires_in=…)`) and a `def preview(self, dto) -> str | Preview` with no effects —
+it validates everything there. The bus attaches a gate: the call answers `ApprovalRequired`
+(`status="approval_required"`, `approval_id`, `preview`, `expires_at`) — a result, not an error —
+and stores the exact input in the context's store, the tenant's and user's. One line registers the
+decisions: `@bus.feature([Approve, Reject, GetApproval, FindApprovals]) class X(Approvals): ...`.
+`Approve(approval_id)` runs the stored input, never one sent again, once across replicas (keyed in
+`bus.idempotency`; a second approval answers the same, `outcomes()` says `REPLAYED`); a failed run
+leaves it pending; rejected or expired is `ApprovalClosed`, someone else's `ApprovalNotFound`; the
+store down is `StoreUnavailable`. An ApplicationService with an approval asks one for everything it
+runs: its `preview` calls the use cases it will run (`self.feature_bus(cmd, ApprovalRequired)`
+answers their preview, runs nothing), and once approved they never ask again. Never build a
+`confirmed: bool` flag by hand. Depth: `docs/core/approvals.md`.
 
 **Guarding a call out of the process** (`sincpro_framework.circuit_breaker`). An adapter that reaches
 SIAT, a gateway or another API takes a `CircuitBreaker("siat")` in its constructor (registered once in

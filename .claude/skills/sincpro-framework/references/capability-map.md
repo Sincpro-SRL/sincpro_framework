@@ -18,6 +18,8 @@ so read it only when the framework repo is at hand.
 | Interceptors + `replaces=` | `bus_pipeline/interceptors/` | `sincpro-framework-core` | `docs/core/interceptors.md` |
 | CircuitBreaker breaker for an adapter or a bus hosted elsewhere (`CircuitBreaker`, `CircuitOpen`) | `circuit_breaker/` | `sincpro-framework-core` | `docs/core/circuit-breaker.md` |
 | Error handlers | `error_handler.py` | `sincpro-framework-core` | README "Error Handling" |
+| A job of steps, waiting for a decision, answers handed between steps (`Pipeline`, `Await`, `Retry`) | `pipelines/` | `sincpro-framework-core` | `docs/core/pipelines.md` |
+| A write a person approves first (`Approval`, `preview`, `Approve`, `Approvals`) | `approvals/` | `sincpro-framework-core` | `docs/core/approvals.md` |
 | Failure classification (`DomainError`, `failure_kind`) | `ddd/exceptions.py`, `common/failures/` | `sincpro-framework-entrypoints` | `docs/entrypoints/README.md` |
 | Settings / configuration per context | `settings/`, `conf/` | `sincpro-framework-settings` | `docs/core/settings.md` |
 | Aggregates, tables, repository, UoW | `ddd/`, `data_layer/orm/` | `sincpro-framework-persistence` | `docs/persistence/guide.md` |

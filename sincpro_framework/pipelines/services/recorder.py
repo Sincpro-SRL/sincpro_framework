@@ -15,7 +15,7 @@ of another pipeline's run — it acts only where `SINCPRO_PIPELINE_CONTEXT` name
 """
 
 import hashlib
-from collections.abc import Callable, Collection, Mapping
+from collections.abc import Callable, Mapping
 from datetime import UTC, datetime
 from typing import Any
 
@@ -25,6 +25,7 @@ from sincpro_framework.common.ids import new_entity_id
 from sincpro_framework.common.naming import registered_name
 from sincpro_framework.context import ContextKey, context_executions, use_context
 from sincpro_framework.data_layer.store import Lease
+from sincpro_framework.pipelines.domain import exceptions
 from sincpro_framework.pipelines.domain.recipe import Await, PipelineDeclaration, Resume
 from sincpro_framework.pipelines.domain.run import (
     PipelineRun,
@@ -56,13 +57,11 @@ class PipelineRecorder:
         )
         return holder.run
 
-    def _decisions(self, dto: Any, holder: RunInProgress) -> tuple[dict[str, Any], list[Any]]:
-        """What the input decided for each `Await` of its recipe, and the steps with each await
-        marked: passed when decided, waiting where the run stopped."""
-        decided = dict(holder.run.decisions)
-        for waits in self.pipeline.recipe_of(dto):
-            if isinstance(waits, Await) and getattr(dto, waits.name, None) not in (None, ""):
-                decided[waits.name] = getattr(dto, waits.name)
+    def _decisions(self, holder: RunInProgress) -> tuple[dict[str, Any], list[Any]]:
+        """What each `Await` the run passed was decided with — the pipeline says, as it passes
+        one — and the steps with each await marked: passed when decided, waiting where the run
+        stopped."""
+        decided = {**holder.run.decisions, **holder.decided}
         steps = [one.model_copy() for one in holder.run.steps]
         for one in steps:
             name = one.command.removeprefix("await:")
@@ -74,10 +73,10 @@ class PipelineRecorder:
                 one.status = StepStatus.WAITING
         return decided, steps
 
-    def _close(self, dto: Any, holder: RunInProgress, error: str) -> PipelineRun:
+    def _close(self, holder: RunInProgress, error: str) -> PipelineRun:
         """The run finished — failed by what escaped, or by a step that failed; else succeeded —
         or stopped, waiting at an `Await`."""
-        decided, steps = self._decisions(dto, holder)
+        decided, steps = self._decisions(holder)
         if holder.waiting_for and not error:
             return self._save(
                 holder,
@@ -106,14 +105,50 @@ class PipelineRecorder:
             },
         )
 
-    def _opened(self, dto: Any, name: str, bus: str, run_id: str) -> PipelineRun:
-        """The run this execution drives, opened and saved.
+    def _resumed(self, dto: Any, before: PipelineRun) -> Any:
+        """The input a continued run is driven with: the one it was given — never this call's —
+        with the decision of the `Await` it waited at taken from this call. A field this call
+        sets to another value is said in the logs, and left.
 
-        1. The recipe this input runs, and its version — a hash of its steps' names, `always`
-           included.
-        2. The run: continued when the pipeline says so and it ran this recipe, else new.
+            before.input = {"run_id": "I-7", "amount": 10}, waiting for "approval"
+            _resumed(CommandRun(run_id="I-7", amount=99, approval="ana"), before)
+            ->  CommandRun(run_id="I-7", amount=10, approval="ana")     amount=99 said, left
+        """
+        if not before.input or not hasattr(dto, "model_dump"):
+            return dto
+        waited = before.waiting_for if before.state is PipelineState.WAITING else None
+        sent = dto.model_dump(mode="json")
+        decision = {waited: sent[waited]} if waited is not None and waited in sent else {}
+        other = sorted(
+            name
+            for name in dto.model_fields_set
+            if name not in ("run_id", waited) and sent.get(name) != before.input.get(name)
+        )
+        if other:
+            logger.warning(
+                f"pipeline run {before.run_id} of {before.pipeline} goes on with the input it "
+                f"was given: {', '.join(other)} of this call left"
+            )
+        return type(dto).model_validate({**before.input, **decision})
+
+    def _opened(
+        self, dto: Any, name: str, bus: str, run_id: str
+    ) -> tuple[PipelineRun, Any, str | None]:
+        """The run this execution drives, opened and saved — the input it is driven with, and
+        the `Await` it was waiting at when it was taken up again.
+
+        1. The run before, and whether this call continues it: the pipeline says so, or it
+           waits. A continued run is driven with its own input (`_resumed`).
+        2. The recipe that input runs, and its version — a hash of its steps' names, `always`
+           included. A run saved under another recipe starts over, with this call's input.
         Final: saved over what was there."""
-        recipe = [*self.pipeline.recipe_of(dto)]
+        runs = self._runs()
+        before = runs.read(name, run_id)
+        continuing = before is not None and (
+            self.pipeline.resume is Resume.CONTINUE or before.state is PipelineState.WAITING
+        )
+        source = self._resumed(dto, before) if continuing and before is not None else dto
+        recipe = [*self.pipeline.recipe_of(source)]
         if self.pipeline.always is not None:
             recipe.append(self.pipeline.always)
         names = [
@@ -121,16 +156,11 @@ class PipelineRecorder:
             for step in recipe
         ]
         version = hashlib.sha256("|".join(names).encode()).hexdigest()[:12]
-        runs = self._runs()
-        before = runs.read(name, run_id)
-        continuing = before is not None and (
-            self.pipeline.resume is Resume.CONTINUE or before.state is PipelineState.WAITING
-        )
         if continuing and before is not None and before.version != version:
             logger.warning(
                 f"pipeline run {run_id} of {name} was saved under another recipe: it starts over"
             )
-            continuing = False
+            continuing, source = False, dto
         execution = context_executions.current()
         correlation = execution.correlation_id if execution is not None else None
         if continuing and before is not None:
@@ -163,7 +193,13 @@ class PipelineRecorder:
                 correlation_id=correlation,
                 started_at=datetime.now(UTC),
             )
-        return runs.save(run, 0 if before is None else before.store_version)
+        saved = runs.save(run, 0 if before is None else before.store_version)
+        waited = (
+            before.waiting_for
+            if continuing and before is not None and before.state is PipelineState.WAITING
+            else None
+        )
+        return saved, source, waited
 
     def _driven(
         self,
@@ -180,21 +216,22 @@ class PipelineRecorder:
         Final: the run closed — failed with the exception that escaped, or by its steps — and
         what the caller gets is the run as saved. A run whose lease was lost is not closed: it
         is no longer this execution's to write."""
-        holder = RunInProgress(self._opened(dto, name, bus, run_id), lease=lease)
+        run, source, waited = self._opened(dto, name, bus, run_id)
+        holder = RunInProgress(run, lease=lease, resumed_from=waited)
         context = use_context()
         context.set(RunInProgress, holder)
         context.set(
             ContextKey.PIPELINE_CONTEXT, {"pipeline": name, "run_id": holder.run.run_id}
         )
         try:
-            response = call_next(dto)
+            response = call_next(source)
         except Exception as error:
             if lease is None or not lease.lost.is_set():
-                self._close(dto, holder, str(error) or type(error).__name__)
+                self._close(holder, str(error) or type(error).__name__)
             raise
         if lease is not None:
             lease.check()
-        closed = self._close(dto, holder, "")
+        closed = self._close(holder, "")
         return closed if isinstance(response, PipelineRun) else response
 
     def _run(self, dto: Any, call_next: Callable[[Any], Any], name: str, bus: str) -> Any:
@@ -220,10 +257,11 @@ class PipelineRecorder:
         error: str = "",
         kind: Any = None,
         wait: float | None = None,
+        answer: dict[str, Any] | None = None,
     ) -> None:
         """The first step of that name that is waiting (to start) or running (to end) takes
-        `status` — to start again, the one that just failed, when the pipeline retries it; one
-        the recipe never named is added."""
+        `status` — and, when it succeeded, what it answered; to start again, the one that just
+        failed, when the pipeline retries it; one the recipe never named is added."""
         waiting = StepStatus.PENDING if status is StepStatus.RUNNING else StepStatus.RUNNING
         now = datetime.now(UTC)
         steps = [one.model_copy() for one in holder.run.steps]
@@ -252,6 +290,8 @@ class PipelineRecorder:
         else:
             found.finished_at = now
         found.status, found.error, found.kind, found.retry_after = status, error, kind, wait
+        if answer is not None:
+            found.answer = answer
         current = step if status is StepStatus.RUNNING else holder.run.current
         self._save(holder, {"steps": steps, "current": current})
 
@@ -282,7 +322,10 @@ class PipelineRecorder:
             summary = getattr(response, "summary", "") or f"{step} failed"
             self._mark(holder, step, StepStatus.FAILED, error=summary)
         else:
-            self._mark(holder, step, StepStatus.SUCCEEDED)
+            answer = (
+                response.model_dump(mode="json") if hasattr(response, "model_dump") else {}
+            )
+            self._mark(holder, step, StepStatus.SUCCEEDED, answer=answer)
         return response
 
     def __call__(self, dto: Any, call_next: Callable[[Any], Any]) -> Any:
@@ -310,16 +353,18 @@ class PipelineRecorder:
 
 
 def recorders(
-    pipelines: Mapping[type, type], answered: Collection[type], bus: str
+    pipelines: Mapping[type, type], answered: Mapping[type, type], bus: str
 ) -> list[InterceptorRegistration]:
-    """The recorders the pipelines among `pipelines` bring — one interceptor per pipeline.
+    """The recorders the pipelines among `pipelines` bring — one interceptor per pipeline;
+    `answered` is every Command the bus answers, with its handler.
 
         recorders({CommandRunNightly: RunNightly, CommandRefund: Refund}, answered, "billing")
         ->  [InterceptorRegistration(PipelineRecorder(RunNightly, CommandRunNightly),
                                      (CommandRunNightly, CommandCollect, CommandBill))]
 
     1. Each handler that is a pipeline and records.
-    2. What its recipes ask that the bus would miss is said in the logs, never refused.
+    2. An `Await` every run would pass undecided is refused (`ProgrammingError`); whatever
+       else its recipes ask that the bus would miss is said in the logs, never refused.
     Final: one recorder per pipeline, wrapping its Command and the steps the bus answers."""
     found: list[InterceptorRegistration] = []
     for command, handler in pipelines.items():
@@ -329,6 +374,9 @@ def recorders(
             and handler.records
         ):
             continue
+        refused = handler.refused(command)
+        if refused:
+            raise exceptions.ProgrammingError("; ".join(refused))
         for problem in handler.problems(command, answered, bus):
             logger.warning(problem)
         found.append(

@@ -8,10 +8,10 @@
     billing(CommandRunNightly(run_id="2026-10-23"))   the steps, in order; the run saved in the context
 
 A recipe is data: Commands in the order they run, each a Feature of the same bus. Each Command is
-filled with the fields of the input that carry its names — `run_id`, `stage`, `timeout_seconds` —
-so a step needs nothing from the one before it: what a step hands the next is saved where the
-project saves its data. A step that answers `ok=False` ends the run as failed, and one that raises
-ends it with the exception, after `always`.
+filled by the names of its fields — from the input (`run_id`, `stage`, `timeout_seconds`) and from
+what the steps before it answered, the latest first: the `invoice_id` step 1 creates is the
+`invoice_id` of step 2, also when the run goes on in another request. A step that answers
+`ok=False` ends the run as failed, and one that raises ends it with the exception, after `always`.
 
 **One recipe or several.** A mapping picks the recipe by a field of the input:
 
@@ -36,11 +36,17 @@ answers `ok=False`, or a rule of the business that refused it, is never retried.
 
 **Waiting for a decision** is a step of the recipe: `Await("approval")` stops the run there, as
 `WAITING`, without running `always`. The same run, run again with the input's `approval` field
-filled, goes on after it — and every later step that has a field `approval` is given it:
+filled, goes on after it — with the input it was first given, never this call's — and every later
+step that has a field `approval` is given it:
 
     steps = [CommandRefine, Await("approval"), CommandImplement]
     billing(CommandRunIssue(run_id="I-7"))                       →  WAITING for approval
     billing(CommandRunIssue(run_id="I-7", approval="approved"))  →  refine is not run again
+
+Only a run that waited takes a decision: a first call that carries one waits all the same. The
+field defaults to `None` or `""` — `confirmed: bool = False` would pass every run undecided, and is
+a `ProgrammingError` when the bus is built. A single Command a person approves, with no sequence
+around it, is an approval (`sincpro_framework.approvals`).
 
 Everything here is a default a project may leave. The recorder that writes the run is an interceptor
 the bus attaches; `records = False` leaves it out, and the pipeline is then only the order of its
@@ -56,13 +62,14 @@ from sincpro_framework.common.failures import refined_failure_kind, retry_after
 from sincpro_framework.common.naming import registered_name
 from sincpro_framework.context import context_executions, use_context
 from sincpro_framework.pipelines.domain import exceptions
-from sincpro_framework.pipelines.domain.recipe import Await, PipelineDeclaration
+from sincpro_framework.pipelines.domain.recipe import UNDECIDED, Await, PipelineDeclaration
 from sincpro_framework.pipelines.domain.run import (
     PipelineRun,
     PipelineState,
     RunInProgress,
     StepStatus,
 )
+from sincpro_framework.sincpro_logger import logger
 
 
 class Pipeline(PipelineDeclaration):
@@ -79,7 +86,8 @@ class Pipeline(PipelineDeclaration):
         feature_bus: Any
 
     def command_of(self, step: type, dto: Any, **extras: Any) -> Any:
-        """`step` filled with the fields of `dto` — and of `extras` — that carry its names."""
+        """`step` filled with the fields of `dto` — and of `extras`, first: what the steps
+        before it answered — that carry its names."""
         fields = getattr(step, "model_fields", None)
         if fields is None:
             raise exceptions.ProgrammingError(
@@ -126,13 +134,14 @@ class Pipeline(PipelineDeclaration):
             update={"state": state, "error": failure, "waiting_for": waiting}
         )
 
-    def _executed(self, step: type, dto: Any) -> Any:
-        """`step` run on the feature bus — again while its failure is one `retry` runs again,
-        after the wait it asks."""
+    def _executed(self, step: type, dto: Any, handed: dict[str, Any]) -> Any:
+        """`step`, filled from `dto` and what the steps before it answered (`handed`), run on
+        the feature bus — again while its failure is one `retry` runs again, after the wait it
+        asks."""
         attempt = 1
         while True:
             try:
-                return self.feature_bus.execute(self.command_of(step, dto))
+                return self.feature_bus.execute(self.command_of(step, dto, **handed))
             except Exception as error:
                 kind = refined_failure_kind(error)
                 if (
@@ -147,19 +156,29 @@ class Pipeline(PipelineDeclaration):
                 attempt += 1
 
     def _decided(self, waits: Await, dto: Any, holder: RunInProgress | None) -> bool:
-        """Whether the run goes on past `waits`: its field of the input is filled. When it is
-        not, the run waits there — which only a run that is saved can do."""
+        """Whether the run goes on past `waits`: it waited here, and this call's input fills
+        its field. Otherwise the run waits there — which only a run that is saved can do — even
+        when a first call already carries the decision: nothing passes an `Await` without
+        having waited at it."""
         if not hasattr(dto, waits.name):
             raise exceptions.ProgrammingError(
                 f"{type(self).__name__} waits for '{waits.name}', and {type(dto).__name__} has no "
                 f"field '{waits.name}' to be run again with"
             )
-        if getattr(dto, waits.name) not in (None, ""):
-            return True
         if holder is None:
             raise exceptions.ProgrammingError(
                 f"{type(self).__name__} waits for '{waits.name}' and saves no run to wait in: "
                 "a pipeline that awaits records its runs (records = True)"
+            )
+        decision = getattr(dto, waits.name)
+        if holder.resumed_from == waits.name and decision not in UNDECIDED:
+            holder.decided[waits.name] = decision
+            return True
+        if decision not in UNDECIDED:
+            logger.warning(
+                f"pipeline run {holder.run.run_id} of {holder.run.pipeline} was not waiting "
+                f"for '{waits.name}': the decision this call carries is not taken, the run "
+                "waits for it first"
             )
         holder.waiting_for = waits.name
         return False
@@ -175,9 +194,12 @@ class Pipeline(PipelineDeclaration):
 
         1. The steps of the recipe, in order; the ones an earlier run of this `run_id` already
            did are left, when it continues.
-        2. Each step is filled from the input and run on the feature bus — again, while `retry`
-           says so; one that answers `ok=False` ends the run as failed.
-        3. An `Await` whose field the input leaves empty stops the run there, waiting.
+        2. Each step is filled from the input and from what the steps before it answered — the
+           latest answer first, also those of a run continued in another request — and run on
+           the feature bus — again, while `retry` says so; one that answers `ok=False` ends the
+           run as failed.
+        3. An `Await` stops the run there, waiting — unless the run waited at it and this
+           call's input fills its field.
         4. The `always` Command last, whatever happened — given `ok` and `failure` — unless
            the run waits (it has not ended) or its lease was lost (it is no longer this
            execution's).
@@ -188,6 +210,9 @@ class Pipeline(PipelineDeclaration):
             for index, step in enumerate(holder.run.steps if holder is not None else [])
             if step.status is StepStatus.SUCCEEDED
         }
+        handed: dict[str, Any] = {}
+        for index in sorted(done):
+            handed.update(holder.run.steps[index].answer if holder is not None else {})
         failure = ""
         waiting = False
         try:
@@ -199,7 +224,9 @@ class Pipeline(PipelineDeclaration):
                         continue
                     waiting = True
                     break
-                response = self._executed(step, dto)
+                response = self._executed(step, dto, handed)
+                if hasattr(response, "model_dump"):
+                    handed.update(response.model_dump())
                 if getattr(response, "ok", True) is False:
                     failure = getattr(response, "summary", "") or f"{step.__name__} failed"
                     break
@@ -212,6 +239,10 @@ class Pipeline(PipelineDeclaration):
             )
             if self.always is not None and not waiting and not lost:
                 self.feature_bus.execute(
-                    self.command_of(self.always, dto, ok=failure == "", failure=failure)
+                    self.command_of(
+                        self.always,
+                        dto,
+                        **{**handed, "ok": failure == "", "failure": failure},
+                    )
                 )
         return self.answer(dto, failure)
