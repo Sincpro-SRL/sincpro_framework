@@ -42,21 +42,21 @@ class InMemoryObjectStore(ObjectStore):
             self._held[key] = (data, stored)
         return True
 
-    def get(self, key: str) -> bytes | None:
+    def get(self, key: str, **options: Any) -> bytes | None:
         with self._lock:
             found = self._held.get(key)
         return None if found is None else found[0]
 
-    def info(self, key: str) -> ObjectRef | None:
+    def info(self, key: str, **options: Any) -> ObjectRef | None:
         with self._lock:
             found = self._held.get(key)
         return None if found is None else found[1]
 
-    def delete(self, key: str) -> None:
+    def delete(self, key: str, **options: Any) -> None:
         with self._lock:
             self._held.pop(key, None)
 
-    def keys(self, prefix: str) -> Iterator[str]:
+    def keys(self, prefix: str, **options: Any) -> Iterator[str]:
         with self._lock:
             held = sorted(self._held)
         return (key for key in held if key.startswith(prefix))

@@ -14,7 +14,9 @@ signature version, timeouts, retries (`botocore.config.Config`) — handed in bu
 boto3); nothing is imported here. What the industry sets once per bucket is the adapter's: the
 `prefix` every key lives under, and the `put_options` every put carries — encryption, storage
 class, ACL, cache control, tagging — each call's options over them. Every option the API takes
-passes as it is: `put` hands them to `put_object`, `presign` to the presigned call's parameters.
+passes as it is: `put`, `get`, `info`, `delete` and `keys` hand them to `put_object`,
+`get_object`, `head_object`, `delete_object` and `list_objects_v2`, `presign` to the presigned
+call's parameters — an SSE-C key, a `VersionId`, a `Range`.
 `presign` is this technology's own, not the port's: a Feature that wants the bucket to serve the
 bytes types this adapter. A file-like is the `Body` as it is, streamed by the client. Metadata
 travels as HTTP headers, so each value is percent-encoded beyond printable ASCII and decoded back
@@ -109,18 +111,22 @@ class S3CompatibleObjectStore(ObjectStore):
             raise self._failed("put", key, error) from error
         return True
 
-    def get(self, key: str) -> bytes | None:
+    def get(self, key: str, **options: Any) -> bytes | None:
         try:
-            answer = self.client.get_object(Bucket=self.bucket, Key=self.prefix + key)
+            answer = self.client.get_object(
+                Bucket=self.bucket, Key=self.prefix + key, **options
+            )
         except Exception as error:
             if _code(error) in MISSING:
                 return None
             raise self._failed("get", key, error) from error
         return answer["Body"].read()
 
-    def info(self, key: str) -> ObjectRef | None:
+    def info(self, key: str, **options: Any) -> ObjectRef | None:
         try:
-            answer = self.client.head_object(Bucket=self.bucket, Key=self.prefix + key)
+            answer = self.client.head_object(
+                Bucket=self.bucket, Key=self.prefix + key, **options
+            )
         except Exception as error:
             if _code(error) in MISSING:
                 return None
@@ -135,15 +141,15 @@ class S3CompatibleObjectStore(ObjectStore):
             modified_at=answer.get("LastModified"),
         )
 
-    def delete(self, key: str) -> None:
+    def delete(self, key: str, **options: Any) -> None:
         try:
-            self.client.delete_object(Bucket=self.bucket, Key=self.prefix + key)
+            self.client.delete_object(Bucket=self.bucket, Key=self.prefix + key, **options)
         except Exception as error:
             if _code(error) not in MISSING:
                 raise self._failed("delete", key, error) from error
 
-    def keys(self, prefix: str) -> Iterator[str]:
-        asked = {"Bucket": self.bucket, "Prefix": self.prefix + prefix}
+    def keys(self, prefix: str, **options: Any) -> Iterator[str]:
+        asked = {"Bucket": self.bucket, "Prefix": self.prefix + prefix, **options}
         while True:
             try:
                 page = self.client.list_objects_v2(**asked)

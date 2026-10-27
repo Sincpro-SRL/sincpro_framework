@@ -35,6 +35,8 @@ class FakeS3:
     def __init__(self) -> None:
         self.objects: dict[tuple[str, str], dict[str, Any]] = {}
         self.down = False
+        self.asked: dict[str, dict[str, Any]] = {}
+        """What each call was given beyond the bucket and the key."""
 
     def put_object(self, Bucket: str, Key: str, Body: Any, **extra: Any) -> None:
         """A file-like `Body` is read to its end, as the client streams it."""
@@ -45,12 +47,14 @@ class FakeS3:
             raise S3Error("PreconditionFailed")
         self.objects[Bucket, Key] = {"Body": Body, **extra}
 
-    def get_object(self, Bucket: str, Key: str) -> dict[str, Any]:
+    def get_object(self, Bucket: str, Key: str, **extra: Any) -> dict[str, Any]:
+        self.asked["get_object"] = extra
         if (Bucket, Key) not in self.objects:
             raise S3Error("NoSuchKey")
         return {"Body": io.BytesIO(self.objects[Bucket, Key]["Body"])}
 
-    def head_object(self, Bucket: str, Key: str) -> dict[str, Any]:
+    def head_object(self, Bucket: str, Key: str, **extra: Any) -> dict[str, Any]:
+        self.asked["head_object"] = extra
         if (Bucket, Key) not in self.objects:
             raise S3Error("404")
         held = self.objects[Bucket, Key]
@@ -61,11 +65,15 @@ class FakeS3:
             "LastModified": NOON,
         }
 
-    def delete_object(self, Bucket: str, Key: str) -> None:
+    def delete_object(self, Bucket: str, Key: str, **extra: Any) -> None:
+        self.asked["delete_object"] = extra
         self.objects.pop((Bucket, Key), None)
 
     def list_objects_v2(self, Bucket: str, Prefix: str, **page: Any) -> dict[str, Any]:
         """One key per page, so the continuation is walked."""
+        self.asked["list_objects_v2"] = {
+            name: value for name, value in page.items() if name != "ContinuationToken"
+        }
         keys = sorted(
             key for bucket, key in self.objects if bucket == Bucket and key.startswith(Prefix)
         )
@@ -140,6 +148,25 @@ def test_a_bucket_carries_metadata_as_ascii_headers():
 
     assert client.objects["documents", "a.pdf"]["Metadata"] == {
         "filename": "facturaci%C3%B3n.pdf"
+    }
+
+
+def test_every_call_hands_the_storage_its_own_options():
+    client = FakeS3()
+    store = S3CompatibleObjectStore("documents", client)
+    sse_c = {"SSECustomerAlgorithm": "AES256", "SSECustomerKey": "k" * 32}
+    store.put("a.pdf", b"%PDF", "application/pdf", {}, False, **sse_c)
+
+    store.get("a.pdf", **sse_c)
+    store.info("a.pdf", **sse_c)
+    list(store.keys("", RequestPayer="requester"))
+    store.delete("a.pdf", VersionId="v1")
+
+    assert client.asked == {
+        "get_object": sse_c,
+        "head_object": sse_c,
+        "list_objects_v2": {"RequestPayer": "requester"},
+        "delete_object": {"VersionId": "v1"},
     }
 
 

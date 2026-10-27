@@ -75,25 +75,25 @@ class ObjectStorage:
         """Store `data` under `key` — see `Objects.put`."""
         return self.objects.put(key, data, content_type, metadata, if_absent, **options)
 
-    def get(self, key: str) -> bytes:
+    def get(self, key: str, **options: Any) -> bytes:
         """The bytes under `key` — `ObjectNotFound` when there are none."""
-        return self.objects.get(key)
+        return self.objects.get(key, **options)
 
-    def find(self, key: str) -> ObjectRef | None:
+    def find(self, key: str, **options: Any) -> ObjectRef | None:
         """What is stored under `key`, without its bytes — `None` when nothing is."""
-        return self.objects.find(key)
+        return self.objects.find(key, **options)
 
-    def exists(self, key: str) -> bool:
+    def exists(self, key: str, **options: Any) -> bool:
         """Whether an object is stored under `key`."""
-        return self.objects.exists(key)
+        return self.objects.exists(key, **options)
 
-    def delete(self, key: str) -> None:
+    def delete(self, key: str, **options: Any) -> None:
         """Drop what is under `key`; nothing there is not an error."""
-        self.objects.delete(key)
+        self.objects.delete(key, **options)
 
-    def keys(self, prefix: str = "") -> Iterator[str]:
+    def keys(self, prefix: str = "", **options: Any) -> Iterator[str]:
         """Every key that starts with `prefix`."""
-        return self.objects.keys(prefix)
+        return self.objects.keys(prefix, **options)
 
     def publish(
         self,

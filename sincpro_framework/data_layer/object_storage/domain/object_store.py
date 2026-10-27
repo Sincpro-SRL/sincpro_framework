@@ -64,17 +64,21 @@ class ObjectStore(ABC):
         stores."""
 
     @abstractmethod
-    def get(self, key: str) -> bytes | None:
-        """The bytes under `key`, or `None` when there are none."""
+    def get(self, key: str, **options: Any) -> bytes | None:
+        """The bytes under `key`, or `None` when there are none — `options` the storage's own
+        (a version, a range, the customer key it was encrypted with)."""
 
     @abstractmethod
-    def info(self, key: str) -> ObjectRef | None:
-        """What is stored under `key`, without its bytes — `None` when nothing is."""
+    def info(self, key: str, **options: Any) -> ObjectRef | None:
+        """What is stored under `key`, without its bytes — `None` when nothing is; `options` the
+        storage's own."""
 
     @abstractmethod
-    def delete(self, key: str) -> None:
-        """Drop what is under `key`; nothing there is not an error."""
+    def delete(self, key: str, **options: Any) -> None:
+        """Drop what is under `key`; nothing there is not an error. `options` the storage's
+        own (a version, a governance bypass)."""
 
     @abstractmethod
-    def keys(self, prefix: str) -> Iterator[str]:
-        """Every key that starts with `prefix` — `""` for all of them."""
+    def keys(self, prefix: str, **options: Any) -> Iterator[str]:
+        """Every key that starts with `prefix` — `""` for all of them; `options` the storage's
+        own."""
