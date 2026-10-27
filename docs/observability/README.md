@@ -25,7 +25,33 @@ The doors in code:
   GlitchTip, trace ids on its logs, the metrics of each run.
 - `sincpro_framework.observability.process`, the transport around the buses: the ASGI request,
   the httpx call, the server's own loggers, without borrowing a bus's identity.
+- `sincpro_framework.observability.http`, the HTTP host in one line each: `http_middleware(app)`
+  and `configure_process_logging(level)` — below.
 - `sincpro_framework.observability.metrics`: `metrics` (declare, pick the recorder) and `field_path` (field
   references) — the one door of `field_path`, the span attributes take it from there too.
 - `sincpro_framework.observability.traces`: what a use case says on its own span —
   `@traces.attributes(...)` with the same `field_path`, and `traces.annotate({...})` inside `execute`.
+
+## An HTTP host: one line and one span per request
+
+What never reaches a use case — a 401 from the host's own auth, a 413 from a body limit, a route
+that does not exist — is seen only by the host. Two lines give it what the buses already have:
+
+```python
+from sincpro_framework.observability.http import configure_process_logging, http_middleware
+
+configure_process_logging("INFO")   # uvicorn, httpx, starlette: the framework's format, trace ids
+app = http_middleware(app)          # any ASGI app — FastAPI, Starlette, FastMCP's
+```
+
+- **One line per request**: method, path, status and duration, with `trace_id` — never the query
+  string, where a credential may ride. `info`, `warning` from 400, `error` from 500; a path probes
+  hit (`quiet_paths`, `/health` by default) only when it fails.
+- **One server span per request** with `[opentelemetry]`: the child of the request's
+  `traceparent`, or a root of its own behind a gateway that starts traces
+  (`trust_incoming_trace=False`); the buses' spans and every log line of the request land on it.
+- **The libraries' logging** through the root, in the framework's format and where it writes —
+  stdout or its file; with the `stdlib` backend (inside Odoo) the root stays the host's and the
+  libraries only propagate to it. httpx is traced when `opentelemetry-instrumentation-httpx` is
+  installed.
+

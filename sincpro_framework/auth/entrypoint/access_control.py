@@ -21,6 +21,7 @@ use cases among them entered from outside, `enabled=False` checks nothing at all
 identity opened by hand — a test, in-process code — answers with its `permissions`.
 """
 
+import functools
 from collections.abc import Mapping, Sequence
 from typing import TYPE_CHECKING, Any, ClassVar
 from weakref import WeakKeyDictionary, WeakSet
@@ -110,6 +111,8 @@ class AccessControl[P: Permission]:
         self.declarations = Declarations()
         self._buses: WeakSet["UseFramework"] = WeakSet()
         """Every bus guarded — those given to `on` and the generations made of them."""
+        self._guards: "WeakKeyDictionary[UseFramework, BusGuard]" = WeakKeyDictionary()
+        """The guard this object put on each bus — what `on(bus, replaces=this)` replaces."""
         self._roots: list["UseFramework"] = []
         self._hooks: list[Hooks] = []
         self._hook_guard = HookGuard(self)
@@ -414,18 +417,58 @@ class AccessControl[P: Permission]:
     def attach(self, bus: "UseFramework") -> None:
         """What `on(bus)` wires, and what every generation `fresh()` makes of the bus wires
         again against itself: the guard, and this object as the handlers' `auth`."""
-        bus.interceptor(sequence=GUARD_SEQUENCE)(BusGuard(self, bus))
+        guard = BusGuard(self, bus)
+        bus.interceptor(sequence=GUARD_SEQUENCE)(guard)
         bus.add_dependency("auth", self)
+        self._guards[bus] = guard
         self._buses.add(bus)
         AccessControl._guarding[bus] = self
 
-    def on(self, target: "UseFramework | Hooks") -> None:
+    def _replacing(self, replaced: "AccessControl[Any]", bus: "UseFramework") -> None:
+        """What `on(bus, replaces=replaced)` wires, and every generation `fresh()` makes of the
+        bus wires again: this object's guard in the place of `replaced`'s, and this object as
+        the handlers' `auth` — `replaced` guards the bus no more.
+
+        A bus `replaced` does not guard has nothing to replace: `ProgrammingError`."""
+        old = replaced._guards.get(bus)
+        if old is None:
+            raise exceptions.ProgrammingError(
+                f"the AccessControl replaced does not guard '{bus.name}': guard it with on() "
+                "instead"
+            )
+        guard = BusGuard(self, bus)
+        bus.interceptor(sequence=GUARD_SEQUENCE, replaces=old)(guard)
+        bus.add_dependency("auth", self, replaces=replaced)
+        self._guards[bus] = guard
+        self._buses.add(bus)
+        replaced._buses.discard(bus)
+        AccessControl._guarding[bus] = self
+
+    def using(self, providers: AuthProvider | Sequence[AuthProvider]) -> "AccessControl[P]":
+        """This object with other providers — the same declarations, `strict` and `enabled`:
+        what a test puts on a `fresh()` bus, so the rules of production are checked against
+        providers of its own.
+
+            test = billing.fresh()
+            auth.using(providers=[StaticProvider(...)]).on(test, replaces=auth)
+        """
+        other: AccessControl[P] = AccessControl(providers, self.strict, self.enabled)
+        other.declarations = self.declarations
+        return other
+
+    def on(
+        self, target: "UseFramework | Hooks", replaces: "AccessControl[Any] | None" = None
+    ) -> None:
         """Guard every use case of a bus — the bus not built yet — and inject this object in its
         handlers as `auth`; or every hook of a collection, and of every copy made of it.
 
             auth.on(billing)          # billing and each generation `fresh()` makes of it
             auth.on(billing_hooks)    # every hook of the collection is gated
             auth.on(billing)   # again  ->  raises ProgrammingError("... guards 'billing'")
+            auth.using(providers=[fake]).on(test, replaces=auth)   # a fresh() bus, in a test
+
+        `replaces` names the `AccessControl` guarding the bus now — what `fresh()` repeats from
+        the bus it was made of — and this one takes its place there: its guard and its `auth`.
 
         1. Disabled: a warning is logged — the target is wired anyway, and checks nothing.
         2. A `Hooks` collection:
@@ -439,6 +482,14 @@ class AccessControl[P: Permission]:
         """
         if not self.enabled:
             logger.warning("access control is disabled: nothing it guards is checked")
+        if replaces is not None:
+            if isinstance(target, Hooks):
+                raise exceptions.ProgrammingError(
+                    "replaces= is for a bus: a Hooks collection is gated by one AccessControl"
+                )
+            target.extend(functools.partial(self._replacing, replaces))
+            self._roots.append(target)
+            return
         if isinstance(target, Hooks):
             if any(target is one for one in self._hooks):
                 raise exceptions.ProgrammingError("AccessControl already guards this Hooks")

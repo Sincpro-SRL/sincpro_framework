@@ -14,12 +14,16 @@ through untouched.
 
 import asyncio
 import json
+import math
 from collections.abc import Awaitable, Callable, MutableMapping
+from datetime import timedelta
 from typing import TYPE_CHECKING, Any
 
 from sincpro_framework.auth.domain import exceptions
 from sincpro_framework.auth.domain.identity import Credentials
 from sincpro_framework.auth.infrastructure.security_context import as_identity
+from sincpro_framework.common.failures import retry_after
+from sincpro_framework.exceptions import ExternalServiceError, FailureKind
 
 if TYPE_CHECKING:
     from sincpro_framework.auth.entrypoint.access_control import AccessControl
@@ -59,12 +63,37 @@ class IdentityMiddleware:
         body = json.dumps({"error": error.refusal_body()}).encode()
         await send({"type": "http.response.body", "body": body})
 
+    async def _unavailable(self, send: Send, error: ExternalServiceError) -> None:
+        """Answer that who calls could not be checked now — 503, to retry after what the error
+        says (a second when it says nothing); never what the backend said.
+
+            ServiceUnavailableError("registry timed out")  ->  503, retry-after: 1,
+                {"error": {"kind": "unavailable", "reason": "who calls could not be checked…"}}
+        """
+        wait = retry_after(error, FailureKind.UNAVAILABLE) or timedelta(seconds=1)
+        headers = [
+            (b"content-type", b"application/json"),
+            (b"retry-after", str(max(1, math.ceil(wait.total_seconds()))).encode()),
+        ]
+        await send({"type": "http.response.start", "status": 503, "headers": headers})
+        body = json.dumps(
+            {
+                "error": {
+                    "kind": FailureKind.UNAVAILABLE.value,
+                    "reason": "who calls could not be checked now: retry",
+                }
+            }
+        ).encode()
+        await send({"type": "http.response.body", "body": body})
+
     async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
         """Run the app for one connection as the identity its credentials stand for.
 
         1. A scope that is neither HTTP nor WebSocket (lifespan) passes through untouched.
         2. `send` is wrapped to note whether the response has started.
-        3. Credentials are read from the scope and authenticated on a worker thread.
+        3. Credentials are read from the scope and authenticated on a worker thread — a
+           provider whose backend did not answer (`ExternalServiceError`) is a 503 to retry,
+           never a 401 nor a 500; a WebSocket lets it propagate.
         4. The app runs inside `as_identity(identity)`.
         5. An `AuthError` — from authenticating, or raised by a use case on the way:
            5.1 the response already started, or the scope is a WebSocket: it propagates;
@@ -83,7 +112,13 @@ class IdentityMiddleware:
 
         try:
             credentials = Credentials.from_asgi(scope, "http")
-            identity = await asyncio.to_thread(self.access.authenticate, credentials)
+            try:
+                identity = await asyncio.to_thread(self.access.authenticate, credentials)
+            except ExternalServiceError as error:
+                if scope["type"] != "http":
+                    raise
+                await self._unavailable(send, error)
+                return
             with as_identity(identity):
                 await self.app(scope, receive, sending)
         except exceptions.AuthError as error:

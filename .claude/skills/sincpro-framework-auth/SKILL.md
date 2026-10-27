@@ -247,3 +247,11 @@ field masking (`SKIP` leaves out a step, not a field), revocation mid-stream.
 - The bus, interceptors, error handlers, the context manager: `sincpro-framework`, `sincpro-framework-core`
 - Entrypoints and declared exposure: `sincpro-framework-entrypoints`
 - Refusals on metrics and GlitchTip: `sincpro-framework-observability`
+
+**Testing on a `fresh()` bus.** `fresh()` keeps the same `AccessControl` — and its providers, which may
+hold production's bus. A test swaps them, keeping production's declarations:
+`auth.using(providers=[StaticProvider({...})]).on(test, replaces=auth)` — `AccessControl.of(test)` is
+the new one, on every bus made of it too. **A provider whose backend does not answer** raises
+`ServiceUnavailableError` (503 + `Retry-After`, never 401 nor 500); `AuthProviderContract` checks it
+with `make_provider_whose_backend_is_down()`. A provider should depend on an adapter (with its own
+cache), not run a use case on the bus it guards: that call re-enters the guard as anonymous.
