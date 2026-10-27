@@ -329,3 +329,29 @@ def test_the_service_facade_answers_it_too():
 
     assert idempotency.completed_key(("by-hand", "x-1")) is True
     assert idempotency.completed_key(("by-hand", "x-2")) is False
+
+
+def test_a_run_that_answers_a_preview_is_never_kept_as_what_it_wrote():
+    asked: list[str] = []
+    written: list[str] = []
+    bus = UseFramework("crm-asked-again", log_after_execution=False)
+    bus.store_context_in(KeyValueContexts(InMemoryKeyValue()))
+    bus.idempotency.declare_for(WriteCommand, expires_after=TWO_MINUTES)
+
+    @bus.feature(CommandUpdateOpportunity)
+    class UpdateOpportunity(Feature):
+        def execute(self, dto: CommandUpdateOpportunity) -> ResponseUpdated | Preview:
+            if dto.dry_run or not asked:  # the first confirmed call finds the deal changed
+                asked.append(dto.stage)
+                return Preview(text=f"The deal changed: move it to {dto.stage}?")
+            written.append(dto.stage)
+            return ResponseUpdated(opportunity_id=dto.opportunity_id)
+
+    confirmed = CommandUpdateOpportunity(opportunity_id=7, stage="won", dry_run=False)
+    with bus.context(ANA):
+        first = bus(confirmed)
+        with bus.idempotency.outcomes() as seen:
+            second = bus(confirmed)
+
+    assert isinstance(first, Preview) and second == ResponseUpdated(opportunity_id=7)
+    assert written == ["won"] and seen == [IdempotencyOutcome.CLAIMED]

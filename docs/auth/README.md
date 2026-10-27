@@ -252,6 +252,13 @@ assert finance_auth.requirements_of(CommandRegisterPayment, bus=finance) is not 
 `refusal_of(bus, Command, identity)` answers why not — the refusal the guard would raise — and
 `None` when it may; the identity in play is asked when none is given.
 
+Asking is as cheap as the provider makes it: `may_run` asks `has_permission` once per permission.
+A provider whose permissions come from a backend — a tenant's agents, a plan — reads them **once,
+when it authenticates**, into `Identity.permissions` (what ASP.NET calls a claims transformation);
+`has_permission` then answers from the identity, and a catalog of fifty use cases asks nothing
+more. A copy of the decision in the catalog — its own "is this agent in the set" — is what this is
+for: it would drift from the guard the day a declaration changes.
+
 ## Acting as someone
 
 ```python

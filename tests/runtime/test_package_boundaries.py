@@ -26,6 +26,7 @@ LAYERED = {
     "auth": "auth",
     "context": "context",
     "data_layer.caching": "data_layer.caching",
+    "data_layer.object_storage": "data_layer.object_storage",
     "data_layer.migrations": "data_layer.migrations",
     "data_layer.orm.sqlalchemy": "data_layer.orm",
     "data_layer.store": "data_layer.store",

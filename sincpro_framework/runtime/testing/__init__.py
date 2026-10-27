@@ -31,6 +31,7 @@ from .contracts.auth_provider import AuthProviderContract
 from .contracts.caching_strategies import CodecContract, EvictionContract, FreshnessContract
 from .contracts.idempotency_records import IdempotencyRecordsContract
 from .contracts.key_value_store import KeyValueStoreContract
+from .contracts.object_store import ObjectStoreContract
 from .doubles.auth import RecordingProvider, granting
 from .doubles.clock import ManualClock
 from .doubles.context import fresh_context
@@ -39,6 +40,7 @@ from .doubles.events import RecordingQueue
 
 __all__ = [
     "AuthProviderContract",
+    "ObjectStoreContract",
     "CodecContract",
     "EvictionContract",
     "FreshnessContract",
