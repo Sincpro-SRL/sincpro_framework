@@ -31,6 +31,7 @@ from sincpro_framework.auth.domain.identity import Credentials, Identity, Identi
 from sincpro_framework.auth.domain.permissions import (
     AccessDeclaration,
     AnyOf,
+    ByField,
     Permission,
     Requirement,
     WhenDenied,
@@ -150,7 +151,9 @@ class AccessControl[P: Permission]:
 
     # Declaring
 
-    def requires(self, *requirements: P | AnyOf, when_denied: WhenDenied = WhenDenied.RAISE):
+    def requires(
+        self, *requirements: P | AnyOf | ByField, when_denied: WhenDenied = WhenDenied.RAISE
+    ):
         """Every requirement listed, and every other `requires` stacked on the same class, is
         needed — `any_of` for one among several. On a Feature, an ApplicationService or a Hook.
 
@@ -170,6 +173,19 @@ class AccessControl[P: Permission]:
             )
 
         return declared
+
+    def by_field(self, field: str, permissions: Mapping[Any, P | AnyOf]) -> ByField:
+        """A requirement the Command's own `field` chooses — for `requires`: a value it does not
+        name is refused; asked with no Command (`may_run`, a catalog), it is one among them.
+
+            @auth.requires(auth.by_field("direction", {
+                Direction.INBOUND: FinancePermission.RECEIVE,
+                Direction.OUTBOUND: FinancePermission.PAY,
+            }))
+        """
+        if not permissions:
+            raise exceptions.ProgrammingError("by_field() names at least one permission")
+        return ByField(field, tuple(permissions.items()))
 
     def any_of(self, *permissions: P) -> AnyOf:
         """A requirement met by one of `permissions` — for `requires`.
@@ -283,6 +299,7 @@ class AccessControl[P: Permission]:
         requirement: Requirement,
         resource: Any,
         context: Mapping[str, Any] | None,
+        dto: Any = None,
     ) -> exceptions.PermissionDenied | None:
         """The refusal of a requirement — one permission, or an `AnyOf` refused only when
         every member is.
@@ -292,8 +309,19 @@ class AccessControl[P: Permission]:
                 "billing.read or billing.admin", "lacks billing.read and lacks billing.admin")
 
         Context: every member of an `AnyOf` is asked, even after one is granted — the provider
-        may be remote, but the answer, and the reasons joined, stay complete and in order.
+        may be remote, but the answer, and the reasons joined, stay complete and in order; a
+        provider that words the whole refusal (`refusing_any`) is told it instead.
         """
+        if isinstance(requirement, ByField):
+            chosen = requirement.every() if dto is None else requirement.chosen(dto)
+            if chosen is None:
+                value = getattr(dto, requirement.field, None)
+                return exceptions.PermissionDenied(
+                    identity.subject,
+                    str(requirement),
+                    f"{requirement.field}={value!r} names no permission",
+                )
+            return self._denial(identity, chosen, resource, context)
         if not isinstance(requirement, AnyOf):
             return self._has(identity, requirement.value, resource, context)
         denials = [
@@ -302,8 +330,18 @@ class AccessControl[P: Permission]:
         ]
         if any(one is None for one in denials):
             return None
-        reasons = " and ".join(one.reason for one in denials if one is not None)
-        return exceptions.PermissionDenied(identity.subject, str(requirement), reasons)
+        each = [one.reason for one in denials if one is not None]
+        provider = self._provider_of(identity)
+        said = (
+            None
+            if provider is None
+            else provider.refusing_any(
+                identity, [one.value for one in requirement.permissions], each
+            )
+        )
+        return exceptions.PermissionDenied(
+            identity.subject, str(requirement), said or " and ".join(each)
+        )
 
     def refusal(
         self,
@@ -312,6 +350,7 @@ class AccessControl[P: Permission]:
         what: str,
         resource: Any = None,
         context: Mapping[str, Any] | None = None,
+        dto: Any = None,
     ) -> exceptions.AuthError | None:
         """Why `identity` may not run what `declaration` guards — `None` when it may.
 
@@ -322,14 +361,15 @@ class AccessControl[P: Permission]:
                 ->  PermissionDenied("user:42", "billing.invoice.issue")
 
         Context: public and the system pass first; nobody is refused before any provider is
-        asked; then each requirement in order, the first refused answering.
+        asked; then each requirement in order, the first refused answering — a `by_field` one
+        chosen by `dto`, the Command being run, or one among its permissions without it.
         """
         if declaration.kind == "public" or identity.kind == IdentityKind.SYSTEM:
             return None
         if identity.is_anonymous:
             return exceptions.Unauthenticated(f"authenticate to run {what}")
         for requirement in declaration.requirements:
-            denied = self._denial(identity, requirement, resource, context)
+            denied = self._denial(identity, requirement, resource, context, dto)
             if denied is not None:
                 return denied
         return None
@@ -444,6 +484,42 @@ class AccessControl[P: Permission]:
         replaced._buses.discard(bus)
         AccessControl._guarding[bus] = self
 
+    def refusal_of(
+        self,
+        bus: "UseFramework",
+        command: type,
+        identity: Identity | None = None,
+        dto: Any = None,
+    ) -> exceptions.AuthError | None:
+        """Why `identity` — the one in play when none is given — may not run `command` on
+        `bus`, without running it: the very decision the bus's guard takes. `None` when it may.
+
+            auth.refusal_of(billing, CommandIssueInvoice)
+                ->  PermissionDenied("user:42", "billing.invoice.issue")   or None
+
+        A bus this object does not guard: `ProgrammingError`."""
+        guard = self._guards.get(bus)
+        if guard is None:
+            raise exceptions.ProgrammingError(
+                f"this AccessControl does not guard '{bus.name}'"
+            )
+        return guard.refusal_for(command, identity or current_identity(), dto)
+
+    def may_run(
+        self,
+        bus: "UseFramework",
+        command: type,
+        identity: Identity | None = None,
+        dto: Any = None,
+    ) -> bool:
+        """Whether `identity` — the one in play when none is given — may run `command` on
+        `bus`: what a catalog asks to list only what its caller may call, with the same
+        declaration that guards the run.
+
+            [tool for tool in tools if auth.may_run(sales, tool.command)]
+        """
+        return self.refusal_of(bus, command, identity, dto) is None
+
     def using(self, providers: AuthProvider | Sequence[AuthProvider]) -> "AccessControl[P]":
         """This object with other providers — the same declarations, `strict` and `enabled`:
         what a test puts on a `fresh()` bus, so the rules of production are checked against
@@ -516,20 +592,31 @@ class AccessControl[P: Permission]:
                 )
         return declared
 
-    def requirements_of(self, cls: type) -> AccessDeclaration | None:
+    def requirements_of(
+        self, cls: type, bus: "UseFramework | None" = None
+    ) -> AccessDeclaration | None:
         """What a Command's use case, a handler or a hook declared — `None` for nothing.
 
             auth.requirements_of(CommandIssueInvoice)  ->  AccessDeclaration("requires", (ISSUE,))
             auth.requirements_of(IssueInvoice)         ->  the same, asked of the handler
             auth.requirements_of(QueryHealth)          ->  None    # declared nothing
+            auth.requirements_of(CommandIssueInvoice, bus=billing)   on that bus only
 
         Context: a Command a guarded bus runs answers its handler's declaration — its
-        replacement's when replaced; any other class is looked up as it is.
+        replacement's when replaced; with `bus`, the handler that bus answers it with; any other
+        class is looked up as it is.
         """
-        for bus in list(self._buses):
+        if bus is not None:
             handler = bus.handlers().get(cls)
+            return (
+                None
+                if handler is None
+                else self.declarations.of(handler, bus.replaced_for(cls))
+            )
+        for guarded in list(self._buses):
+            handler = guarded.handlers().get(cls)
             if handler is not None:
-                return self.declarations.of(handler, bus.replaced_for(cls))
+                return self.declarations.of(handler, guarded.replaced_for(cls))
         return self.declarations.of(cls)
 
     def verify(self) -> list[str]:

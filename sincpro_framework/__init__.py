@@ -18,7 +18,7 @@ The top level holds what nearly every project imports; each component has its ow
 `.data_layer.store`, `.data_layer.caching`, …).
 """
 
-from .bus_pipeline.interceptors import CallNext
+from .bus_pipeline.interceptors import CallNext, Interceptor
 from .data_layer.caching.entrypoint.facades import cache, idempotency
 from .exceptions import (
     ClientError,
@@ -50,6 +50,7 @@ __all__ = [
     "ExternalServiceError",
     "FailureKind",
     "FrameworkError",
+    "Interceptor",
     "OutcomeUnknownError",
     "Preview",
     "ProgrammingError",

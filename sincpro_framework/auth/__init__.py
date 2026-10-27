@@ -41,6 +41,7 @@ from sincpro_framework.auth.domain.identity import Credentials, Identity, Identi
 from sincpro_framework.auth.domain.permissions import (
     AccessDeclaration,
     AnyOf,
+    ByField,
     Permission,
     WhenDenied,
 )
@@ -56,6 +57,7 @@ __all__ = [
     "ApiKeyProvider",
     "ApiKeyStore",
     "AnyOf",
+    "ByField",
     "AuthError",
     "AuthProvider",
     "Credentials",

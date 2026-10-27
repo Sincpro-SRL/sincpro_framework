@@ -17,7 +17,10 @@ from typing import Any, Callable, Dict, Optional, Type
 
 from sincpro_framework import exceptions
 from sincpro_framework.bus_pipeline.incomes.incomes import Incomes
-from sincpro_framework.bus_pipeline.interceptors.interceptor import Interceptor, run_around
+from sincpro_framework.bus_pipeline.interceptors.interceptor import (
+    InterceptorCall,
+    run_around,
+)
 from sincpro_framework.bus_pipeline.outcomes.outcomes import Outcomes
 from sincpro_framework.common.ids import new_entity_id
 from sincpro_framework.common.naming import registered_name
@@ -82,7 +85,7 @@ class FeatureBus(Bus):
         execution stored as given.
         """
         self.feature_registry: Dict[type, Feature] = dict()
-        self.interceptors: Dict[type, tuple[Interceptor, ...]] = dict()
+        self.interceptors: Dict[type, tuple[InterceptorCall, ...]] = dict()
         self.replacements: Dict[type, tuple[str, ...]] = dict()
         self.handle_error: Optional[Callable] = None
         self.logger: Logger = logger_bus or logger  # type: ignore[assignment]
@@ -237,7 +240,7 @@ class ApplicationServiceBus(Bus):
         execution stored as given.
         """
         self.app_service_registry: Dict[type, ApplicationService] = dict()
-        self.interceptors: Dict[type, tuple[Interceptor, ...]] = dict()
+        self.interceptors: Dict[type, tuple[InterceptorCall, ...]] = dict()
         self.replacements: Dict[type, tuple[str, ...]] = dict()
         self.handle_error: Optional[Callable] = None
         self.logger = logger_bus or logger

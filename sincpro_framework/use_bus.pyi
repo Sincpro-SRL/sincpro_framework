@@ -26,7 +26,7 @@ from sincpro_framework.observability.tracing.span_context import FrameworkSpanCo
 
 from .aio import AsyncBus
 from .bus import FrameworkBus
-from .bus_pipeline.interceptors.interceptor import Interceptor
+from .bus_pipeline.interceptors.interceptor import Intercepting
 from .circuit_breaker import CircuitBreaker
 from .context.domain.level import EntrypointKind
 from .context.domain.providers import ContextProviderFunction
@@ -125,7 +125,7 @@ class UseFramework(BusContextMixin, Generic[TDeps]):
         bus compares to know it is still true."""
         ...
 
-    def add_dependency(self, name: str, dep: Any, replaces: Any = None) -> None:
+    def add_dependency(self, name: str, dep: Any, replaces: Any = ...) -> None:
         """Register `dep` under `name` — every Feature and ApplicationService reads it as
         `self.<name>`. A name already taken is refused (`DependencyAlreadyRegistered`) unless
         `replaces` names what is there; naming something else only warns. Added after the
@@ -261,22 +261,24 @@ class UseFramework(BusContextMixin, Generic[TDeps]):
         in order — the same settings, dependencies and observability."""
         ...
 
-    def interceptor[T: Interceptor](
+    def interceptor[T: Intercepting](
         self,
         *commands: type,
-        replaces: Interceptor | None = None,
-        before: Sequence[Interceptor] = (),
-        after: Sequence[Interceptor] = (),
+        replaces: Intercepting | None = None,
+        before: Sequence[Intercepting] = (),
+        after: Sequence[Intercepting] = (),
         sequence: int = 10,
+        subclasses: bool = False,
     ) -> Callable[[T], T]:
-        """Run the decorated function around every execution of these Commands (all of this
-        bus's when none is named) — outermost first, by before/after, sequence, registration;
+        """Run the decorated function — or class of `Interceptor` — around every execution of
+        these Commands (all of this bus's when none is named; their subclasses too with
+        `subclasses=True`) — outermost first, by before/after, sequence, registration;
         `replaces` runs it in the place of another. Registered after the build, it wraps from
         the next execution.
         """
         ...
 
-    def without_interceptor(self, interceptor: Interceptor) -> None:
+    def without_interceptor(self, interceptor: Intercepting) -> None:
         """Switch off an interceptor registered on this bus; after the build, from the next
         execution."""
         ...

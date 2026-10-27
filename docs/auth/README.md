@@ -195,6 +195,62 @@ auth.on(billing)
   `@auth.authenticated` is anybody authenticated; `@auth.public` is anybody.
 - `self.auth.allows(...)` asks before an optional step; `self.auth.check(permission, resource)`
   decides on the loaded resource, which no interceptor can see — the provider gets it.
+- `auth.by_field("direction", {Direction.INBOUND: P.RECEIVE, Direction.OUTBOUND: P.PAY})` in
+  `requires` is a requirement the Command's own field chooses — a value it names nothing for is
+  refused; asked with no Command (a catalog), it is one among them.
+- A provider words the refusal of a whole `any_of` with `refusing_any(identity, permissions,
+  reasons)`; without it, each reason is joined with "and".
+
+## Asking without running
+
+A catalog lists only what its caller may call — with the same declaration that guards the run,
+the same decision the guard takes:
+
+```python
+from enum import StrEnum
+
+
+class Direction(StrEnum):
+    INBOUND = "inbound"
+    OUTBOUND = "outbound"
+
+
+class FinancePermission(Permission):
+    RECEIVE = "finance.payment.receive"
+    PAY = "finance.payment.pay"
+
+
+class CommandRegisterPayment(DataTransferObject):
+    direction: Direction
+
+
+finance_auth = AccessControl[FinancePermission]()
+finance = UseFramework("finance-asking", log_after_execution=False)
+
+
+@finance.feature(CommandRegisterPayment)
+@finance_auth.requires(
+    finance_auth.by_field(
+        "direction",
+        {Direction.INBOUND: FinancePermission.RECEIVE, Direction.OUTBOUND: FinancePermission.PAY},
+    )
+)
+class RegisterPayment(Feature):
+    def execute(self, dto: CommandRegisterPayment) -> None:
+        return None
+
+
+finance_auth.on(finance)
+cashier = Identity.user("ana", permissions=[FinancePermission.RECEIVE])
+
+assert finance_auth.may_run(finance, CommandRegisterPayment, cashier)        # one among them
+outbound = CommandRegisterPayment(direction=Direction.OUTBOUND)
+assert not finance_auth.may_run(finance, CommandRegisterPayment, cashier, dto=outbound)
+assert finance_auth.requirements_of(CommandRegisterPayment, bus=finance) is not None
+```
+
+`refusal_of(bus, Command, identity)` answers why not — the refusal the guard would raise — and
+`None` when it may; the identity in play is asked when none is given.
 
 ## Acting as someone
 

@@ -21,10 +21,12 @@ handlers, observability, hosting, cache and idempotency — are mixins, each in 
 """
 
 import threading
+from enum import Enum
 from typing import (
     Any,
     Callable,
     Dict,
+    Final,
     Generic,
     Iterable,
     Mapping,
@@ -56,6 +58,16 @@ from .observability.mixins.bus_observability import BusObservabilityMixin
 from .pipelines.entrypoint.bus_pipelines import BusPipelinesMixin
 from .remote_execution.entrypoint.hosted_context import HostedContextMixin
 from .sincpro_abstractions import TypeDTO, TypeDTOResponse
+
+
+class _ReplacesNothing(Enum):
+    """The default of `add_dependency(replaces=...)` — apart from `None`, a dependency that may
+    be registered and replaced like any other."""
+
+    NOTHING = "nothing"
+
+
+REPLACES_NOTHING: Final = _ReplacesNothing.NOTHING
 
 
 class UseFramework(
@@ -492,20 +504,22 @@ class UseFramework(
                 return
             self._build_root_bus()
 
-    def add_dependency(self, name, dep: Any, replaces: Any = None):
+    def add_dependency(self, name, dep: Any, replaces: Any = REPLACES_NOTHING):
         """Register `dep` under `name`: every Feature and ApplicationService reads it as
         `self.<name>`, and the bounded context's root as `bus.deps.<name>`.
 
             billing.add_dependency("cache", RedisCache(...), replaces=memory_cache)
+            billing.add_dependency("language_model", FakeModel(), replaces=None)   # None was there
 
         Context: `replaces` names the object registered under `name` now, and `dep` takes its
-        place; a second one under a name already taken, without it, is refused naming what is
-        there. Replacing something that is not what is registered — or nothing — works, with a
-        warning. Added after the bus was built, it reaches the handlers from the next execution.
+        place — `None` too, when `None` is what was registered; a second one under a name already
+        taken, without it, is refused naming what is there. Replacing something that is not what
+        is registered — or nothing — works, with a warning. Added after the bus was built, it
+        reaches the handlers from the next execution.
         """
         with self._build_lock:
             registered = self.dynamic_dep_registry.get(name)
-            if name in self.dynamic_dep_registry and replaces is None:
+            if name in self.dynamic_dep_registry and replaces is REPLACES_NOTHING:
                 error = exceptions.DependencyAlreadyRegistered(
                     f"The dependency {name} is already injected "
                     f"({type(registered).__module__}.{type(registered).__qualname__}): to put "
@@ -514,7 +528,9 @@ class UseFramework(
                 )
                 self.observability.record_error(error, "", "framework", kind="framework")
                 raise error
-            if replaces is not None and replaces is not registered:
+            if replaces is not REPLACES_NOTHING and (
+                replaces is not registered or name not in self.dynamic_dep_registry
+            ):
                 self.logger.warning(
                     f"dependency {name}: replaces {type(replaces).__qualname__}, but "
                     + (

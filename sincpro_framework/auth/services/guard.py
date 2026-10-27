@@ -122,8 +122,10 @@ class Access(Protocol):
         what: str,
         resource: Any = None,
         context: Mapping[str, Any] | None = None,
+        dto: Any = None,
     ) -> exceptions.AuthError | None:
-        """Why `identity` may not run what `declaration` guards — `None` when it may."""
+        """Why `identity` may not run what `declaration` guards — `None` when it may; `dto`, the
+        Command being run, chooses a `by_field` requirement."""
         ...
 
 
@@ -185,26 +187,42 @@ class BusGuard:
         finally:
             _decided.reset(token)
 
-    def _undeclared(self, command: type, identity: Identity) -> None:
-        """Let a use case that declares nothing run, or refuse it.
+    def _undeclared(self, command: type, identity: Identity) -> exceptions.AuthError | None:
+        """Why a use case that declares nothing may not run — `None` when it may.
 
         Context: refused only when strict and entered from outside — nobody calling is asked
         to authenticate, a known identity is told the use case declares nothing."""
         entered_by = _decided.get()
         if entered_by is not None:
             logger.debug(f"access: {command.__name__} inherits the decision of {entered_by}")
-            return
+            return None
         if not self.access.strict:
-            return
-        refusal: exceptions.AuthError = (
+            return None
+        return (
             exceptions.Unauthenticated(f"authenticate to run {command.__name__}")
             if identity.is_anonymous
             else exceptions.PermissionDenied(
                 identity.subject, command.__name__, f"{command.__name__} declares no access"
             )
         )
-        logger.warning(f"access refused: {identity.subject} → {command.__name__} — {refusal}")
-        raise refusal
+
+    def refusal_for(
+        self, command: type, identity: Identity, dto: Any = None
+    ) -> exceptions.AuthError | None:
+        """Why `identity` may not run `command` on this bus — `None` when it may: the one
+        decision the guard runs on, and what `AccessControl.may_run` asks without running.
+
+        1. Disabled, or the system acting: it may.
+        2. Declared nothing: it may, unless strict and entered from outside.
+        Final: what the declaration requires, asked of the providers."""
+        if not self.access.enabled or identity.kind == IdentityKind.SYSTEM:
+            return None
+        declaration = self.declaration_of(command)
+        if declaration is None:
+            return self._undeclared(command, identity)
+        return self.access.refusal(
+            identity, declaration, command.__name__, None, self.bus.current_context(), dto
+        )
 
     def __call__(self, dto: Any, call_next: Callable[[Any], Any]) -> Any:
         """Decide whether the identity in play may run the use case `dto` enters, and run it.
@@ -218,18 +236,16 @@ class BusGuard:
             return call_next(dto)
         command = type(dto)
         identity = current_identity()
-        declaration = (
-            None if identity.kind == IdentityKind.SYSTEM else self.declaration_of(command)
-        )
-        if identity.kind != IdentityKind.SYSTEM and declaration is None:
-            self._undeclared(command, identity)
-        elif declaration is not None:
-            refusal = self.access.refusal(
-                identity, declaration, command.__name__, None, self.bus.current_context()
-            )
-            if refusal is not None:
-                _refused_or_skipped(refusal, declaration, identity, command.__name__)
-                return None
+        refusal = self.refusal_for(command, identity, dto)
+        if refusal is not None:
+            declaration = self.declaration_of(command)
+            if declaration is None:
+                logger.warning(
+                    f"access refused: {identity.subject} → {command.__name__} — {refusal}"
+                )
+                raise refusal
+            _refused_or_skipped(refusal, declaration, identity, command.__name__)
+            return None
         return self._decided_run(command, call_next, dto)
 
 

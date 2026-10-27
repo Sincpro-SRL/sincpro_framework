@@ -40,7 +40,40 @@ class AnyOf:
         return " or ".join(str(one) for one in self.permissions)
 
 
-type Requirement = Permission | AnyOf
+@dataclass(frozen=True)
+class ByField:
+    """Met as the permission the Command's own `field` names — `auth.by_field(...)`: what a
+    use case needs depends on what it was asked.
+
+        ByField("direction", (("inbound", RECEIVE), ("outbound", PAY)))
+            CommandRegisterPayment(direction="outbound")   ->  needs PAY
+            no Command — a catalog asking                  ->  RECEIVE or PAY
+    """
+
+    field: str
+    permissions: tuple[tuple[object, Permission | AnyOf], ...]
+
+    def chosen(self, dto: object) -> "Permission | AnyOf | None":
+        """The requirement `dto`'s field names — `None` when its value names none."""
+        value = getattr(dto, self.field, None)
+        return next((needed for one, needed in self.permissions if one == value), None)
+
+    def every(self) -> AnyOf:
+        """One among every permission it may name — what is asked with no Command at hand."""
+        found: list[Permission] = []
+        for _, needed in self.permissions:
+            for one in needed.permissions if isinstance(needed, AnyOf) else (needed,):
+                if one not in found:
+                    found.append(one)
+        return AnyOf(tuple(found))
+
+    def __str__(self) -> str:
+        """`direction: inbound → finance.receive, outbound → finance.pay`."""
+        named = ", ".join(f"{value} → {needed}" for value, needed in self.permissions)
+        return f"{self.field}: {named}"
+
+
+type Requirement = Permission | AnyOf | ByField
 
 
 @dataclass(frozen=True)

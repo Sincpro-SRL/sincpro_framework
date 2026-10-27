@@ -30,6 +30,9 @@ class SpyLog:
     def error(self, said: str, **fields: Any) -> None:
         self._line("error", said, **fields)
 
+    def exception(self, said: str, **fields: Any) -> None:
+        self._line("exception", said, **fields)
+
 
 @pytest.fixture
 def lines(monkeypatch: pytest.MonkeyPatch) -> list[dict[str, Any]]:
@@ -98,7 +101,7 @@ def test_a_413_is_a_warning_and_a_500_an_error():
 
     assert [(one["level"], one["http_status"]) for one in seen] == [
         ("warning", 413),
-        ("error", 500),
+        ("exception", 500),
     ]
 
 
@@ -190,3 +193,78 @@ def test_with_a_log_file_the_libraries_write_to_it(root_logging, monkeypatch, tm
         handler.flush()
 
     assert "port in use" in written.read_text()
+
+
+def refusing(status: int, body: bytes):
+    """An ASGI app that answers `status` with `body`, in two chunks."""
+
+    async def app(scope, receive, send):
+        await send({"type": "http.response.start", "status": status, "headers": []})
+        await send({"type": "http.response.body", "body": body[:4], "more_body": True})
+        await send({"type": "http.response.body", "body": body[4:]})
+
+    return app
+
+
+def test_a_refusal_carries_what_the_host_describes_from_the_answer(lines):
+    def describe(scope, status, body):
+        return {
+            "answered": body.decode(),
+            "agent": dict(scope["headers"])[b"user-agent"].decode(),
+        }
+
+    app = http.http_middleware(
+        refusing(400, b"Bad Request: no session"), describe=describe, body_bytes=11
+    )
+    call(app, "/mcp", headers=[(b"user-agent", b"claude-code/2.1")])
+    call(http.http_middleware(answering(200), describe=describe), "/mcp")
+
+    refused, served = lines
+    assert (refused["answered"], refused["agent"]) == ("Bad Request", "claude-code/2.1")
+    assert "answered" not in served
+
+
+def test_a_description_that_fails_never_fails_the_line(lines):
+    def describe(scope, status, body):
+        raise KeyError("x")
+
+    call(http.http_middleware(answering(404), describe=describe), "/missing")
+
+    [line] = lines
+    assert line["http_status"] == 404 and line["describe_failed"] == "KeyError"
+
+
+def test_the_line_says_the_size_the_request_declared(lines):
+    call(
+        http.http_middleware(answering(413)),
+        "/uploads",
+        headers=[(b"content-length", b"9000")],
+    )
+
+    assert lines[0]["request_bytes"] == 9000
+
+
+def test_what_escaped_before_answering_is_reported_with_its_traceback(lines, monkeypatch):
+    reported: list[tuple[str, str]] = []
+    monkeypatch.setattr(
+        http.process,
+        "record_error",
+        lambda error, layer: reported.append((str(error), layer)),
+    )
+
+    with pytest.raises(RuntimeError):
+        call(http.http_middleware(failing), "/boom")
+
+    assert lines[0]["level"] == "exception"
+    assert reported == [("the app broke before answering", "asgi")]
+
+
+def test_a_probe_path_is_never_traced(lines, otel_setup):
+    call(http.http_middleware(answering(200)), "/health")
+    call(http.http_middleware(answering(200)), "/api")
+
+    assert [span.name for span in otel_setup.get_finished_spans()] == ["POST /api"]
+
+
+def test_httpx_is_traced_only_when_its_instrumentation_is_installed():
+    assert http.instrument_httpx() is False  # not installed here: nothing to trace, no error

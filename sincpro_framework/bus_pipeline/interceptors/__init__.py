@@ -5,6 +5,10 @@ def credit_check(dto: CommandCreateInvoice, call_next: CallNext[ResponseCreateIn
     return call_next(dto)
 """
 
-from sincpro_framework.bus_pipeline.interceptors.interceptor import CallNext, Interceptor
+from sincpro_framework.bus_pipeline.interceptors.interceptor import (
+    CallNext,
+    Interceptor,
+    InterceptorCall,
+)
 
-__all__ = ["CallNext", "Interceptor"]
+__all__ = ["CallNext", "Interceptor", "InterceptorCall"]

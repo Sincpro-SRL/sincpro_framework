@@ -11,15 +11,49 @@ but the Command it passes on and the response it hands back preserve their class
 class, so a Command that changed class would be another use case wearing this one's name.
 """
 
-from collections.abc import Callable, Sequence
+from abc import abstractmethod
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any
 
 from sincpro_framework import exceptions
 from sincpro_framework.common.ordering import DEFAULT_SEQUENCE, Placement, name_of
+from sincpro_framework.sincpro_abstractions import ContextConsumer
 
 type CallNext[TResponse] = Callable[[Any], TResponse]
-type Interceptor = Callable[[Any, CallNext[Any]], Any]
+type InterceptorCall = Callable[[Any, CallNext[Any]], Any]
+"""An interceptor as the chain runs it: `(dto, call_next)`."""
+
+
+class Interceptor(ContextConsumer):
+    """An interceptor written as a class — its dependencies injected as a Feature's are,
+    `self.<name>`, and typed by the bounded context's own base:
+
+        class Interceptor(_Interceptor, DependencyContextType): ...      # framework.py, once
+
+        @billing.interceptor(CommandIssueInvoice)
+        class CheckCredit(Interceptor):
+            def intercept(self, dto: CommandIssueInvoice, call_next: CallNext[ResponseInvoice]):
+                self.credit.check(dto.customer_id)      # injected, autocompleted
+                return call_next(dto)
+
+    Context: the bus makes one per generation, with that generation's dependencies and
+    context, so a dependency replaced in a `fresh()` bus reaches it. `replaces=` and
+    `without_interceptor` name the class. A function `(dto, call_next)` stays as it was.
+    """
+
+    def __init__(self) -> None:
+        """No bus bound yet: the bus binds it, and sets its dependencies, when it is built."""
+        self._context_binder = None
+        self._context_fallback: dict = {}
+
+    @abstractmethod
+    def intercept(self, dto: Any, call_next: CallNext[Any]) -> Any:
+        """Look, veto, adjust or answer — and `call_next(dto)` to go on."""
+
+
+type Intercepting = InterceptorCall | type[Interceptor]
+"""What a project registers: a function `(dto, call_next)`, or a class of `Interceptor`."""
 
 
 @dataclass(frozen=True)
@@ -28,13 +62,16 @@ class InterceptorRegistration:
     where it goes in the order — stored as asked, so the order is worked out again at each build
     with every interceptor registered by then."""
 
-    interceptor: Interceptor
+    interceptor: Intercepting
     commands: tuple[type, ...]
     """Empty means every Command of the bus."""
     sequence: int = DEFAULT_SEQUENCE
-    before: tuple[Interceptor, ...] = ()
-    after: tuple[Interceptor, ...] = ()
-    replaces: Interceptor | None = None
+    before: tuple[Intercepting, ...] = ()
+    after: tuple[Intercepting, ...] = ()
+    replaces: Intercepting | None = None
+    subclasses: bool = False
+    """Whether it wraps every subclass of the Commands it names too — a base no handler answers
+    (`WriteCommand`) standing for all of them."""
 
     @property
     def placement(self) -> Placement:
@@ -53,20 +90,27 @@ class InterceptorRegistration:
 
         InterceptorRegistration(audit, ()).wraps(CommandCreateInvoice)          ->  True
         InterceptorRegistration(check, (CommandPay,)).wraps(CommandCreateInvoice) ->  False
+        InterceptorRegistration(check, (WriteCommand,), subclasses=True).wraps(CommandPay)
+            ->  True, when CommandPay is a WriteCommand
         """
-        return not self.commands or command in self.commands
+        if not self.commands or command in self.commands:
+            return True
+        return self.subclasses and issubclass(command, self.commands)
 
 
 def interceptors_for(
-    command: type, registrations: Sequence[InterceptorRegistration]
-) -> tuple:
-    """The interceptors that wrap `command`, in the order of `registrations` — already
-    ordered, outermost first."""
-    return tuple(one.interceptor for one in registrations if one.wraps(command))
+    command: type,
+    registrations: Sequence[InterceptorRegistration],
+    calls: Mapping[Any, InterceptorCall],
+) -> tuple[InterceptorCall, ...]:
+    """The calls of the interceptors that wrap `command`, in the order of `registrations` —
+    already ordered, outermost first; `calls` answers each registered item as the chain runs
+    it (a class of `Interceptor`, its instance's `intercept`)."""
+    return tuple(calls[one.interceptor] for one in registrations if one.wraps(command))
 
 
 def run_around(
-    interceptors: Sequence[Interceptor], handler: Callable[[Any], Any], dto: Any
+    interceptors: Sequence[InterceptorCall], handler: Callable[[Any], Any], dto: Any
 ) -> Any:
     """Run `handler` on `dto` wrapped by `interceptors`, each guarding the type it passes on.
 
