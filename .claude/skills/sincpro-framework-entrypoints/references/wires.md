@@ -66,7 +66,11 @@ dict-in/dict-out Python caller.
 
 Tools named by the DTO without `Command`/`Query`, snake_case. Docstrings are the LLM context.
 `McpGateway([billing]).server()` returns a real FastMCP instance (`[mcp]` extra); `.run()` is stdio,
-`run(transport="http", port=…)` is Streamable HTTP MCP.
+`run(transport="http", port=…)` is Streamable HTTP MCP. On FastMCP 4 (what the lock runs) the server
+is dual-era: a handshake client (`initialize`, 2025-11-25) and a modern one (2026-07-28,
+`server/discover`) both list and call tools on one URL, as the same caller. Behind replicas with no
+affinity: `.server(auth=access).http_app(stateless_http=True)` — `stateless_http` goes on
+`http_app()`/`run()`, not on `FastMCP(...)`.
 
 - Instruction resolution: the class's own docstring, else `execute`'s, else the DTO's, else the DTO
   name. Write it as an instruction — what the tool does, when to use it, what it does not do.

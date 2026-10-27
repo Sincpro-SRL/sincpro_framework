@@ -141,7 +141,7 @@ Many response DTOs hold the Zeep SOAP object. `model_dump(mode="json")` can fail
 
 ### 3. Enums (`SIATEnvironment`, `SIATModality`)
 
-Pydantic + FastMCP 3 already map enums to JSON Schema. Agents must send the **value** (`1`), not the Python name. Document that in the Feature docstring.
+Pydantic + FastMCP already map enums to JSON Schema. Agents must send the **value** (`1`), not the Python name. Document that in the Feature docstring.
 
 ### 4. Side effects and SIAT rate limits
 

@@ -257,7 +257,7 @@ def test_a_name_of_64_allowed_characters_is_accepted() -> None:
 
 
 def _annotations(tools: Mapping[str, Any], name: str) -> dict[str, Any]:
-    return tools[name].annotations.model_dump(exclude_none=True)
+    return tools[name].annotations.model_dump(by_alias=True, exclude_none=True)
 
 
 def test_hints_are_derived_from_the_use_case_and_reach_tools_list() -> None:

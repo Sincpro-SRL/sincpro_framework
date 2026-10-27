@@ -86,7 +86,7 @@ class Entrypoint:
             ->  the same, refusing a missing or failing bearer with 401
 
         Its JSON-safe use cases — catalog.get_scalar_use_cases(filter_binaries_schema=True) —
-        registered as tools (`mcp.catalog_server`): a FastMCP 3 instance ready to run (stdio by
+        registered as tools (`mcp.catalog_server`): a FastMCP instance ready to run (stdio by
         default) — with `auth`, FastMCP verifies bearer tokens itself, and with `base_url`
         publishes the resource metadata.
         """
@@ -167,7 +167,7 @@ class McpGateway(Gateway):
         auth: "AccessControl[Any] | None" = None,
         base_url: str | None = None,
     ) -> Any:
-        """A FastMCP 3 server with every tool of the surface — returned, not run, so the project
+        """A FastMCP server with every tool of the surface — returned, not run, so the project
         adds its middleware, prompts or resources to it.
 
             McpGateway([billing]).server()  ->  FastMCP("sincpro-mcp"), tool "issue_invoice"

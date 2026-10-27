@@ -6,9 +6,12 @@ same kinds on every wire (PRD_15 §1.3), each with its HTTP status.
 
     {"type": "urn:sincpro:problem:not_found", "title": "Not found", "status": 404,
      "detail": "invoice F-9 does not exist", "instance": "/v1/billing/invoices/F-9",
-     "kind": "not_found", "reason": "INVOICE_NOT_FOUND", "trace_id": "4bf9…"}
+     "kind": "not_found", "reason": "INVOICE_NOT_FOUND", "next_step": "do_not_retry",
+     "guidance": "What the request names does not exist: …", "retryable": false,
+     "trace_id": "4bf9…"}
 
-Context: a client switches on `kind` and `reason`, never on the text. A 500 says nothing of the
+Context: the body is the `Problem` every wire tells (`common.failures.problem_of`) with the RFC 9457
+members around it. A client switches on `kind`, `reason` and `next_step`, never on the text. A 500 says nothing of the
 inside of the process — the log has it, once: what a bus already reported is not logged again.
 FastAPI's own 422 (`RequestValidationError`) and Starlette's `HTTPException` (404, 405) answer
 the same shape, and the OpenAPI document says so: FastAPI's `HTTPValidationError` is replaced by
@@ -16,24 +19,19 @@ the same shape, and the OpenAPI document says so: FastAPI's `HTTPValidationError
 """
 
 import math
-from collections.abc import Awaitable, Callable, Iterable, Mapping, MutableMapping, Sequence
+from collections.abc import Awaitable, Callable, Mapping, MutableMapping
 from http import HTTPStatus
 from typing import Any
 
 import starlette.exceptions
 from fastapi import FastAPI
 from fastapi.exceptions import RequestValidationError
-from pydantic import BaseModel, ConfigDict, ValidationError
+from pydantic import BaseModel, ConfigDict
 from starlette.requests import Request
 from starlette.responses import JSONResponse
 
 from sincpro_framework.auth import security
-from sincpro_framework.common.failures import (
-    failure_reason,
-    refined_failure_kind,
-    retry_after,
-    said_to_the_caller,
-)
+from sincpro_framework.common import failures
 from sincpro_framework.entrypoints.adapters.fastapi import exceptions
 from sincpro_framework.observability import process
 from sincpro_framework.observability.tracing.propagation import trace_id_of
@@ -50,37 +48,6 @@ them, put in place of FastAPI's by `problem_document`."""
 INSTALLED = "sincpro_problem_handlers"
 BUSES_STATE = "sincpro_buses"
 TRACE_STATE = "sincpro_trace_id"
-
-STATUS_OF: Mapping[exceptions.FailureKind, int] = {
-    exceptions.FailureKind.INVALID: 422,
-    exceptions.FailureKind.UNAUTHENTICATED: 401,
-    exceptions.FailureKind.PERMISSION_DENIED: 403,
-    exceptions.FailureKind.NOT_FOUND: 404,
-    exceptions.FailureKind.CONFLICT: 409,
-    exceptions.FailureKind.IN_PROGRESS: 409,
-    exceptions.FailureKind.KEY_REUSED: 422,
-    exceptions.FailureKind.DOMAIN: 422,
-    exceptions.FailureKind.EXHAUSTED: 429,
-    exceptions.FailureKind.UNAVAILABLE: 503,
-    exceptions.FailureKind.UNKNOWN_OUTCOME: 504,
-    exceptions.FailureKind.INTERNAL: 500,
-}
-"""The REST column of PRD_15 §1.3 — one row per kind, so no refusal turns into a crash."""
-
-TITLE_OF: Mapping[exceptions.FailureKind, str] = {
-    exceptions.FailureKind.INVALID: "The request does not validate",
-    exceptions.FailureKind.UNAUTHENTICATED: "Who is calling is not known",
-    exceptions.FailureKind.PERMISSION_DENIED: "Not allowed",
-    exceptions.FailureKind.NOT_FOUND: "Not found",
-    exceptions.FailureKind.CONFLICT: "The write collided",
-    exceptions.FailureKind.IN_PROGRESS: "The same request is still running",
-    exceptions.FailureKind.KEY_REUSED: "The idempotency key was used for another request",
-    exceptions.FailureKind.DOMAIN: "The domain refused the request",
-    exceptions.FailureKind.EXHAUSTED: "Too many requests",
-    exceptions.FailureKind.UNAVAILABLE: "Unavailable for now",
-    exceptions.FailureKind.UNKNOWN_OUTCOME: "It may have run — verify before retrying",
-    exceptions.FailureKind.INTERNAL: "Internal error",
-}
 
 KIND_OF_STATUS: Mapping[int, exceptions.FailureKind] = {
     401: exceptions.FailureKind.UNAUTHENTICATED,
@@ -115,34 +82,15 @@ class Problem(BaseModel):
     """The failure kind — the same word on every wire."""
     reason: str
     """UPPER_SNAKE, stable: what a client switches on."""
+    next_step: str
+    """What the caller does next — the same word on every wire (`NextStep`)."""
+    guidance: str
+    """What to do next, in words — for a person or an agent reading it."""
+    retryable: bool
+    retry_after: float | None = None
+    """Seconds to wait before sending it again — as the `Retry-After` header says."""
     trace_id: str | None = None
     errors: list[ProblemError] = []
-
-
-def _pointer(location: Sequence[Any]) -> str:
-    """A validation error's location as a JSON pointer into the DTO (RFC 6901) — where the
-    value came from (`body`, `query`, ...) dropped, `~` and `/` escaped.
-
-        _pointer(("body", "lines", 0, "amount"))  ->  "#/lines/0/amount"
-    """
-    parts = list(location)
-    if parts and parts[0] in ("body", "query", "path", "header", "cookie"):
-        parts = parts[1:]
-    return "#/" + "/".join(str(one).replace("~", "~0").replace("/", "~1") for one in parts)
-
-
-def _errors(errors: Iterable[Mapping[str, Any]]) -> list[dict[str, str]]:
-    """Pydantic's or FastAPI's errors as a problem's `errors` — a pointer and a message each.
-
-        _errors([{"loc": ("body", "total"), "msg": "Field required"}])
-        ->  [{"pointer": "#/total", "detail": "Field required"}]
-
-    Each `loc` becomes a JSON pointer (`_pointer`).
-    """
-    return [
-        {"pointer": _pointer(one.get("loc", ())), "detail": str(one.get("msg", ""))}
-        for one in errors
-    ]
 
 
 def _trace_id(request: Request) -> str | None:
@@ -163,36 +111,26 @@ def _challenges(request: Request) -> list[str]:
     return security.challenges(buses) or ["Bearer"]
 
 
-def _body(
-    request: Request,
-    kind: exceptions.FailureKind,
-    status: int,
-    reason: str,
-    detail: str | None,
-    **extensions: Any,
-) -> dict[str, Any]:
-    """A problem's body: the RFC 9457 members, `kind`, `reason`, the trace, and each
-    extension that holds a value.
+def _body(request: Request, problem: failures.Problem) -> dict[str, Any]:
+    """A problem's body: the RFC 9457 members, the problem as every wire tells it, the trace, and
+    what its error disclosed — a member with nothing to say is left out.
 
-        _body(request, FailureKind.NOT_FOUND, 404, "INVOICE_NOT_FOUND", "F-9 does not exist")
+        _body(request, problem_of(InvoiceNotFound("F-9 does not exist")))
         ->  {"type": "urn:sincpro:problem:not_found", "title": "Not found", "status": 404,
              "instance": "/v1/billing/invoices/F-9", "kind": "not_found",
-             "reason": "INVOICE_NOT_FOUND", "trace_id": "4bf9…",
-             "detail": "F-9 does not exist"}
+             "reason": "INVOICE_NOT_FOUND", "detail": "F-9 does not exist",
+             "next_step": "do_not_retry", "guidance": "…", "retryable": false,
+             "trace_id": "4bf9…"}
     """
-    body: dict[str, Any] = {
-        "type": f"urn:sincpro:problem:{kind.value}",
-        "title": TITLE_OF[kind],
-        "status": status,
+    told = problem.model_dump(mode="json", exclude={"extensions"})
+    body = {
+        "type": f"urn:sincpro:problem:{problem.kind.value}",
         "instance": request.url.path,
-        "kind": kind.value,
-        "reason": reason,
         "trace_id": _trace_id(request),
+        **told,
+        **problem.extensions,
     }
-    if detail:
-        body["detail"] = detail
-    body.update({name: value for name, value in extensions.items() if value})
-    return body
+    return {name: value for name, value in body.items() if value not in (None, [], {}, "")}
 
 
 def _answer(body: dict[str, Any], headers: Mapping[str, str] | None = None) -> JSONResponse:
@@ -222,32 +160,31 @@ def problem_of(request: Request, error: Exception) -> JSONResponse:
     """
     if isinstance(error, RequestValidationError):
         unreadable = any(one.get("type") == "json_invalid" for one in error.errors())
-        status = 400 if unreadable else 422
+        problem = failures.Problem.for_kind(
+            exceptions.FailureKind.INVALID,
+            "UNREADABLE" if unreadable else "INVALID",
+            None,
+            [
+                failures.FieldError(
+                    pointer=failures.pointer(one.get("loc", ())),
+                    detail=str(one.get("msg", "")),
+                )
+                for one in error.errors()
+            ],
+        )
         return _answer(
-            _body(
-                request,
-                exceptions.FailureKind.INVALID,
-                status,
-                "UNREADABLE" if unreadable else "INVALID",
-                None,
-                errors=_errors(error.errors()),
-            )
+            _body(request, problem.model_copy(update={"status": 400 if unreadable else 422}))
         )
     if isinstance(error, exceptions.InvalidRequest | exceptions.IdempotencyKeyMissing):
         reason = (
             "IDEMPOTENCY_KEY_MISSING"
             if isinstance(error, exceptions.IdempotencyKeyMissing)
-            else ""
+            else "UNREADABLE"
         )
-        return _answer(
-            _body(
-                request,
-                exceptions.FailureKind.INVALID,
-                400,
-                reason or "UNREADABLE",
-                str(error) or None,
-            )
+        problem = failures.Problem.for_kind(
+            exceptions.FailureKind.INVALID, reason, str(error) or None
         )
+        return _answer(_body(request, problem.model_copy(update={"status": 400})))
     if isinstance(error, starlette.exceptions.HTTPException):
         status = error.status_code
         kind = KIND_OF_STATUS.get(
@@ -260,55 +197,27 @@ def problem_of(request: Request, error: Exception) -> JSONResponse:
         )
         phrase = HTTPStatus(status).phrase if status in HTTPStatus._value2member_map_ else ""
         detail = error.detail if isinstance(error.detail, str) else None
-        body = _body(
-            request,
+        problem = failures.Problem.for_kind(
             kind,
-            status,
             phrase.upper().replace(" ", "_").replace("-", "_") or kind.value.upper(),
             None if detail == phrase else detail,
         )
-        body["title"] = phrase or body["title"]
+        problem = problem.model_copy(
+            update={"status": status, "title": phrase or problem.title}
+        )
         headers = dict(error.headers or {})
         if status == 401 and "www-authenticate" not in {one.lower() for one in headers}:
             headers["WWW-Authenticate"] = ", ".join(_challenges(request))
-        return _answer(body, headers)
-    kind = refined_failure_kind(error)
-    status = STATUS_OF[kind]
-    reason = failure_reason(error, kind)
+        return _answer(_body(request, problem), headers)
+    problem = failures.problem_of(error)
     headers: dict[str, str] = {}
-    wait = retry_after(error, kind)
-    if wait is not None:
-        headers["Retry-After"] = str(math.ceil(wait.total_seconds()))
-    if isinstance(error, ValidationError):
-        body = _body(
-            request,
-            kind,
-            status,
-            reason,
-            None,
-            errors=_errors(error.errors(include_url=False)),
-        )
-    elif isinstance(error, exceptions.AuthError):
-        body = _body(
-            request,
-            kind,
-            status,
-            reason,
-            error.reason,
-            step_up=(
-                error.step_up if isinstance(error, exceptions.Unauthenticated) else None
-            ),
-            requirement=(
-                error.requirement if isinstance(error, exceptions.PermissionDenied) else None
-            ),
-        )
-    else:
-        body = _body(request, kind, status, reason, said_to_the_caller(error))
-    if status == 401:
+    if problem.retry_after is not None:
+        headers["Retry-After"] = str(math.ceil(problem.retry_after.total_seconds()))
+    if problem.status == 401:
         headers["WWW-Authenticate"] = ", ".join(_challenges(request))
-    if kind == exceptions.FailureKind.INTERNAL and not process.was_reported(error):
+    if problem.kind == exceptions.FailureKind.INTERNAL and not process.was_reported(error):
         logger.exception("REST %s %s failed", request.method, request.url.path)
-    return _answer(body, headers)
+    return _answer(_body(request, problem), headers)
 
 
 type Receive = Callable[[], Awaitable[MutableMapping[str, Any]]]

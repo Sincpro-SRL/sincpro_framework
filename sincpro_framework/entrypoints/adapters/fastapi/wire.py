@@ -31,6 +31,7 @@ from fastapi.routing import APIRoute
 from pydantic import BaseModel, ValidationError
 
 from sincpro_framework.auth import AccessControl
+from sincpro_framework.common import failures
 from sincpro_framework.common.naming import kebab
 from sincpro_framework.data_layer.caching import Idempotency
 from sincpro_framework.entrypoints.adapters.fastapi import exceptions
@@ -42,7 +43,6 @@ from sincpro_framework.entrypoints.adapters.fastapi.problems import (
     BODY_EXTENSION,
     INSTALLED,
     SCHEMES_EXTENSION,
-    STATUS_OF,
     install_problem_handlers,
     problem_response,
 )
@@ -239,7 +239,7 @@ def problem_responses(
     if handler is not None and Idempotency.declared_by(handler):
         described[409] = problem_response("The same request is still running")
     for error in errors:
-        status = STATUS_OF[_kind_of_error(error)]
+        status = failures.HTTP_STATUS_OF[_kind_of_error(error)]
         held = described.get(status) or problem_response("")
         reason = error.__name__
         held["description"] = "; ".join(one for one in (held["description"], reason) if one)

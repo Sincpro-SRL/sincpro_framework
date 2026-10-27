@@ -198,6 +198,14 @@ class EngineUnavailable(ddd_exceptions.DomainError):
 Only a `DomainError`'s message reaches the caller. A plain `Exception` with `failure_kind` gets
 the status but no `detail`; one without it is a 500 that says nothing.
 
+Every wire draws the same `Problem` (`from sincpro_framework import problem_of, Problem, NextStep`):
+`kind`, `reason`, `status`, `detail`, `next_step`, `guidance`, `retryable`, `retry_after`,
+`errors`, `extensions` — RFC 9457 on REST, `data` on JSON-RPC, `ErrorInfo`/`RetryInfo` on gRPC,
+a tool error with structured content on MCP. An error changes it by declaring `next_step` /
+`guidance`, or anything else with `refine_problem(self, problem) -> Problem`. A route of the
+project's own answers `problem_of(error)` (`.status`, `.model_dump(mode="json")`) — never a
+mapping table of its own. Docs: `docs/core/exceptions.md` "One problem, on every wire".
+
 ## Every wire, one base
 
 ```python

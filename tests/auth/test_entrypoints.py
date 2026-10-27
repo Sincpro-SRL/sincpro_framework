@@ -259,8 +259,13 @@ def test_an_mcp_tool_call_acts_as_whoever_the_request_says(
     _as_mcp_http_call(monkeypatch, _bearer("t-issuer"))
     assert issue() == {"by": "user:1"}
     _as_mcp_http_call(monkeypatch, _bearer("t-clerk"))
-    with pytest.raises(exceptions.PermissionDenied):
-        issue()
+    refused = issue()
+    assert refused.is_error
+    assert refused.structured_content["kind"] == "permission_denied"
+    assert refused.structured_content["next_step"] == "ask_for_access"
+    assert refused.structured_content["extensions"] == {
+        "requirement": "billing.invoice.issue"
+    }
 
 
 def test_fastmcp_verifies_bearers_with_the_buses_providers() -> None:

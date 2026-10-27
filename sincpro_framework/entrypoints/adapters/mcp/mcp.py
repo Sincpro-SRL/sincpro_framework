@@ -1,4 +1,4 @@
-"""FastMCP binding: a use case → typed function FastMCP 3 can register as a tool, and the
+"""FastMCP binding: a use case → typed function FastMCP can register as a tool, and the
 servers that register them — FastMCP is imported only when a server is built (`[mcp]` extra).
 """
 
@@ -9,6 +9,7 @@ from typing import TYPE_CHECKING, Annotated, Any
 
 from pydantic import BaseModel, Field
 
+from sincpro_framework.common.failures import Problem, problem_of
 from sincpro_framework.context import EntrypointKind
 from sincpro_framework.entrypoints.adapters.mcp import exceptions
 from sincpro_framework.entrypoints.adapters.mcp.auth import (
@@ -17,6 +18,9 @@ from sincpro_framework.entrypoints.adapters.mcp.auth import (
 )
 from sincpro_framework.entrypoints.adapters.mcp.wire import McpTool, catalog_hints
 from sincpro_framework.entrypoints.domain.packed import PackedFeatureOrAppService
+from sincpro_framework.exceptions import FailureKind
+from sincpro_framework.observability import process
+from sincpro_framework.sincpro_logger import logger
 
 if TYPE_CHECKING:
     from sincpro_framework.auth import AccessControl
@@ -51,14 +55,56 @@ def _dto_parameters(
         yield field.name, field.type, default, factory
 
 
+def told_to_the_model(problem: Problem) -> str:
+    """A failure as the text a model reads: what happened, what it may read of it, and what to do
+    next — the `Problem` whole is the result's structured content.
+
+        told_to_the_model(problem_of(InvoiceNotFound("invoice F-9 does not exist")))
+        ->  "Not found (INVOICE_NOT_FOUND): invoice F-9 does not exist
+             Next step: do_not_retry — What the request names does not exist: …"
+    """
+    lines = [
+        f"{problem.title} ({problem.reason})"
+        + (f": {problem.detail}" if problem.detail else "")
+    ]
+    lines += [f"- {one.pointer}: {one.detail}" for one in problem.errors]
+    lines.append(f"Next step: {problem.next_step.value} — {problem.guidance}")
+    if problem.retry_after is not None:
+        lines.append(f"Retry after {problem.retry_after.total_seconds():g} seconds.")
+    return "\n".join(lines)
+
+
+def tool_error(error: Exception) -> Any:
+    """A failure of a tool call as an MCP tool error (`isError`): the text a model reads
+    (`told_to_the_model`) and the `Problem` every wire tells as structured content — what a
+    client switches on (`kind`, `reason`, `next_step`), never the text. A crash nobody reported
+    is logged here; nothing of it is told.
+
+        tool_error(InvoiceNotFound("invoice F-9 does not exist"))
+        ->  ToolResult(is_error=True, content="Not found (INVOICE_NOT_FOUND): …",
+                       structured_content={"kind": "not_found", "next_step": "do_not_retry", …})
+    """
+    from fastmcp.tools import ToolResult  # pyright: ignore[reportMissingImports]
+
+    problem = problem_of(error)
+    if problem.kind == FailureKind.INTERNAL and not process.was_reported(error):
+        logger.exception("MCP tool call failed")
+    return ToolResult(
+        content=told_to_the_model(problem),
+        structured_content=problem.model_dump(mode="json", exclude_none=True),
+        is_error=True,
+    )
+
+
 def tool_function(
     dto: Any,
     name: str,
     description: str,
     run: Callable[[dict[str, Any]], Any],
     bus: "UseFramework | None" = None,
+    on_failure: Callable[[Exception], Any] = tool_error,
 ) -> Callable[..., Any]:
-    """Build a typed function FastMCP 3 inspects to generate the MCP schema.
+    """Build a typed function FastMCP inspects to generate the MCP schema.
 
         fn = tool_function(CommandIssueInvoice, "issue_invoice", "Issue an invoice.",
                            operation.run, billing)
@@ -66,7 +112,8 @@ def tool_function(
         fn(amount=10, customer_id="C-1")                   ->  {"invoice_id": "F-1", ...}
 
     1. Forward keyword arguments to `run` — the bus, DTO validation inside — acting as whoever
-       called, authenticated by `bus`'s `AccessControl` when a bus is given.
+       called, authenticated by `bus`'s `AccessControl` when a bus is given; a failure is what
+       `on_failure` makes of it — by default a tool error carrying its `Problem` (`tool_error`).
     2. Stamp a keyword-only signature from the Command's fields so FastMCP sees
        Pydantic types (Value Objects, Field descriptions) instead of a nested
        wrapper object.
@@ -84,11 +131,14 @@ def tool_function(
 
             tool_fn(amount=10, customer_id="C-1")  ->  {"invoice_id": "F-1", ...}
         """
-        with acting_for_tool_call(bus):
-            if bus is None:
-                return run(kwargs)
-            with bus.context(kind=EntrypointKind.MCP):
-                return run(kwargs)
+        try:
+            with acting_for_tool_call(bus):
+                if bus is None:
+                    return run(kwargs)
+                with bus.context(kind=EntrypointKind.MCP):
+                    return run(kwargs)
+        except Exception as error:
+            return on_failure(error)
 
     parameters: list[inspect.Parameter] = []
     annotations: dict[str, Any] = {"return": dict[str, Any]}
@@ -127,7 +177,7 @@ def catalog_server(
     auth: "AccessControl[Any] | None" = None,
     base_url: str | None = None,
 ) -> Any:
-    """A FastMCP 3 server with every catalog entry of `operations` a tool named by its DTO.
+    """A FastMCP server with every catalog entry of `operations` a tool named by its DTO.
 
         catalog_server("billing", catalog.get_scalar_use_cases(filter_binaries_schema=True),
                        billing)
@@ -164,7 +214,7 @@ def surface_server(
     auth: "AccessControl[Any] | None" = None,
     base_url: str | None = None,
 ) -> Any:
-    """A FastMCP 3 server with every tool of a validated surface — returned, not run.
+    """A FastMCP server with every tool of a validated surface — returned, not run.
 
         surface_server("sincpro-mcp", gateway.tools())
         ->  FastMCP("sincpro-mcp"), tool "issue_invoice"

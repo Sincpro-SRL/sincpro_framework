@@ -1,4 +1,4 @@
-"""The MCP wire: use cases as tools of a FastMCP 3 server, every call through the bus — what
+"""The MCP wire: use cases as tools of a FastMCP server, every call through the bus — what
 `McpGateway` and the MCP `Entrypoint` build on.
 
     McpWire().build(surface)        ->  [McpTool(name="issue_invoice", ...), ...]

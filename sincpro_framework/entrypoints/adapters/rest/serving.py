@@ -12,6 +12,7 @@ Context: the route table and the document are built without a web library (`rout
 
 import asyncio
 import json
+import math
 from collections.abc import Callable, Sequence
 from typing import Any
 
@@ -108,7 +109,7 @@ def routes(
             2. The context the caller carried (`merge_http_context`).
             3. `call_route` in a worker thread, with the request's credentials.
             Final: its `(status, body)` as JSON — a 401 with the buses' challenges in
-            `WWW-Authenticate`.
+            `WWW-Authenticate`, a failure that says how long to wait with `Retry-After`.
             """
             try:
                 payload = await payload_of(request, route)
@@ -123,10 +124,13 @@ def routes(
                 context,
                 Credentials.from_asgi(request.scope),
             )
-            headers = None
+            headers: dict[str, str] = {}
             if status == 401 and (refusals := challenges()):
-                headers = {"www-authenticate": ", ".join(refusals)}
-            return JSONResponse(body, status_code=status, headers=headers)
+                headers["www-authenticate"] = ", ".join(refusals)
+            wait = body.get("error", {}).get("retry_after") if status >= 400 else None
+            if wait is not None:
+                headers["retry-after"] = str(math.ceil(wait))
+            return JSONResponse(body, status_code=status, headers=headers or None)
 
         return answer
 

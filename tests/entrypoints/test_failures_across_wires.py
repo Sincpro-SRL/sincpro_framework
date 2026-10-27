@@ -12,7 +12,10 @@ from typing import Any
 
 import grpc
 import pytest
+from fastapi import FastAPI
 from google.protobuf.struct_pb2 import Struct
+from google.rpc import error_details_pb2
+from grpc_status import rpc_status
 from starlette.testclient import TestClient
 
 from sincpro_framework import DataTransferObject, Feature, UseFramework, exceptions
@@ -20,7 +23,9 @@ from sincpro_framework.common.failures import refined_failure_kind
 from sincpro_framework.data_layer.caching.domain import exceptions as caching_exceptions
 from sincpro_framework.ddd import exceptions as ddd_exceptions
 from sincpro_framework.entrypoints import GrpcGateway, RestGateway, RpcGateway
+from sincpro_framework.entrypoints.adapters.fastapi import install_problem_handlers
 from sincpro_framework.entrypoints.adapters.grpc.wire import scalar_to_struct
+from sincpro_framework.entrypoints.adapters.mcp.mcp import tool_function
 from sincpro_framework.entrypoints.adapters.rpc.errors import (
     CONFLICT,
     DOMAIN_ERROR,
@@ -50,6 +55,8 @@ def _billing() -> UseFramework:
         def execute(self, dto: CommandFail) -> None:
             if dto.how == "not_found":
                 raise InvoiceNotFound("invoice F-9 does not exist")
+            if dto.how == "down":
+                raise TaxAuthorityDown("SIAT did not answer")
             raise RAISED[dto.how]
 
     return billing
@@ -66,6 +73,11 @@ def test_each_failure_is_one_kind() -> None:
 
 class InvoiceNotFound(ddd_exceptions.DomainError):
     failure_kind = exceptions.FailureKind.NOT_FOUND
+
+
+class TaxAuthorityDown(exceptions.ServiceUnavailableError):
+    retry_after = 30
+    guidance = "The tax authority is down: the invoice is kept, send it again in 30 seconds."
 
 
 def test_every_base_says_its_own_kind_and_a_subclass_may_say_another() -> None:
@@ -214,3 +226,79 @@ def test_narrowing_a_catalog_lets_what_it_kept_go() -> None:
     narrowed = RpcGateway(exposure=Exposure.CATALOG, unguarded=True)
     narrowed.add("billing", _billing(), exclude=[CommandFail])
     assert "billing.fail" not in narrowed.methods()
+
+
+def _said(problem: dict[str, Any]) -> tuple[Any, ...]:
+    return (
+        problem["kind"],
+        problem["next_step"],
+        problem["guidance"],
+        problem["retry_after"],
+    )
+
+
+SAID_WHEN_DOWN = (
+    "unavailable",
+    "retry_later",
+    "The tax authority is down: the invoice is kept, send it again in 30 seconds.",
+    30.0,
+)
+
+
+def test_one_failure_says_the_same_kind_next_step_guidance_and_wait_on_every_wire(
+    grpc_call: Any,
+) -> None:
+    """The issue's acceptance: REST, JSON-RPC and gRPC each in its own encoding, the same
+    problem — what happened, what to do next, how long to wait."""
+    expected = SAID_WHEN_DOWN
+
+    rest = TestClient(RestGateway({"billing": _billing()}).app()).post(
+        "/billing/command-fail", json={"how": "down"}
+    )
+    assert (rest.status_code, rest.headers["Retry-After"]) == (503, "30")
+    assert _said(rest.json()["error"]) == expected
+
+    app = FastAPI()
+    install_problem_handlers(app)
+
+    @app.post("/fail")
+    def fail() -> None:
+        _billing()(CommandFail(how="down"))
+
+    problem = TestClient(app).post("/fail")
+    assert problem.headers["content-type"] == "application/problem+json"
+    assert _said(problem.json()) == expected
+
+    rpc = _rpc_catalog().handle(
+        {"jsonrpc": "2.0", "id": 1, "method": "billing.fail", "params": {"how": "down"}}
+    )
+    assert isinstance(rpc, dict)
+    assert _said(rpc["error"]["data"]) == expected
+
+    with pytest.raises(grpc.RpcError) as failed:
+        grpc_call(scalar_to_struct({"how": "down"}))
+    refused: Any = failed.value
+    status = rpc_status.from_call(refused)
+    assert status is not None
+    info, retry = error_details_pb2.ErrorInfo(), error_details_pb2.RetryInfo()
+    for detail in status.details:
+        detail.Unpack(info) if detail.Is(info.DESCRIPTOR) else None
+        detail.Unpack(retry) if detail.Is(retry.DESCRIPTOR) else None
+    assert (
+        info.metadata["kind"],
+        info.metadata["next_step"],
+        info.metadata["guidance"],
+        retry.retry_delay.seconds,
+    ) == (*expected[:3], 30)
+
+
+def test_an_mcp_tool_says_the_same_problem_as_every_other_wire() -> None:
+    pytest.importorskip("fastmcp")
+    billing = _billing()
+    tool = tool_function(
+        CommandFail, "fail", "Fail.", lambda payload: billing(CommandFail(**payload)), billing
+    )
+    answered = tool(how="down")
+    assert answered.is_error
+    assert _said(answered.structured_content) == SAID_WHEN_DOWN
+    assert "Next step: retry_later" in answered.content[0].text

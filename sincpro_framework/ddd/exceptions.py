@@ -14,6 +14,7 @@ A stale version and a lost transaction are the ones worth running again. A proje
 declares another kind with `failure_kind = FailureKind...` on its class.
 """
 
+from sincpro_framework.common.failures.problem import NextStep
 from sincpro_framework.context import DraftConflict
 from sincpro_framework.exceptions import (
     ClientError,
@@ -55,6 +56,8 @@ class DuplicateAggregate(DomainError):
     """
 
     failure_kind = FailureKind.CONFLICT
+    next_step = NextStep.DO_NOT_RETRY
+    guidance = "It already exists: read it instead of writing it again."
 
 
 class ConstraintViolation(DomainError):

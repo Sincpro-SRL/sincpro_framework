@@ -18,13 +18,8 @@ from collections.abc import Iterable, Mapping
 from dataclasses import dataclass, field
 from typing import Any
 
-from pydantic import ValidationError
-
 from sincpro_framework.auth import Credentials
-from sincpro_framework.common.failures import (
-    json_safe_validation_errors,
-    refined_failure_kind,
-)
+from sincpro_framework.common.failures import Problem, problem_of
 from sincpro_framework.common.naming import kebab
 from sincpro_framework.context import EntrypointKind
 from sincpro_framework.ddd.query import Query
@@ -177,51 +172,34 @@ def payload_from_query(query: Mapping[str, str], schema: Mapping[str, Any]) -> S
     return payload
 
 
-STATUS_OF = {
-    exceptions.FailureKind.INVALID: 422,
-    exceptions.FailureKind.UNAUTHENTICATED: 401,
-    exceptions.FailureKind.PERMISSION_DENIED: 403,
-    exceptions.FailureKind.NOT_FOUND: 404,
-    exceptions.FailureKind.CONFLICT: 409,
-    exceptions.FailureKind.IN_PROGRESS: 409,
-    exceptions.FailureKind.KEY_REUSED: 422,
-    exceptions.FailureKind.DOMAIN: 422,
-    exceptions.FailureKind.EXHAUSTED: 429,
-    exceptions.FailureKind.UNAVAILABLE: 503,
-    exceptions.FailureKind.UNKNOWN_OUTCOME: 504,
-    exceptions.FailureKind.INTERNAL: 500,
-}
-
-
 def failure_answer(error: Exception) -> tuple[int, dict[str, Any]]:
-    """The status and body a failure is answered with — its kind (`common.failures`, the same
-    on every wire), and the reason for what the caller may read, never the inside of the
-    process. A request that could not be read at all is a 400.
+    """The status and body a failure is answered with: the `Problem` every wire tells
+    (`common.failures.problem_of`) — its kind, reason, what the caller reads, the next step and
+    its guidance — never the inside of the process. A request that could not be read at all is a
+    400.
 
         failure_answer(InvalidRequest("the body is not JSON"))
-        ->  (400, {"kind": "invalid", "message": "the body is not JSON"})
+        ->  (400, {"kind": "invalid", "reason": "UNREADABLE", "detail": "the body is not JSON",
+                   "next_step": "fix_request", …})
         failure_answer(RuntimeError("db password=..."))
-        ->  (500, {"kind": "internal", "message": "Internal error"})
+        ->  (500, {"kind": "internal", "reason": "INTERNAL", "next_step": "retry_later", …})
 
-    1. What could not be read: 400.
-    2. Anything else classified once (`refined_failure_kind`), its status by kind.
-    3. Its body: the validation errors, the auth refusal (`AuthError.refusal_body`), or the
-       message.
-    Final: an internal failure says nothing of the inside.
+    Context: what the error disclosed besides (an auth refusal's `requirement` or `step_up`) sits
+    beside the problem's members; a member with nothing to say is left out.
     """
     if isinstance(error, exceptions.InvalidRequest):
-        return 400, {"kind": exceptions.FailureKind.INVALID.value, "message": str(error)}
-    kind = refined_failure_kind(error)
-    if isinstance(error, ValidationError):
-        return STATUS_OF[kind], {
-            "kind": kind.value,
-            "detail": json_safe_validation_errors(error),
-        }
-    if isinstance(error, exceptions.AuthError):
-        return STATUS_OF[kind], error.refusal_body()
-    if kind == exceptions.FailureKind.INTERNAL:
-        return STATUS_OF[kind], {"kind": kind.value, "message": "Internal error"}
-    return STATUS_OF[kind], {"kind": kind.value, "message": str(error)}
+        problem = Problem.for_kind(
+            exceptions.FailureKind.INVALID, "UNREADABLE", str(error)
+        ).model_copy(update={"status": 400})
+    else:
+        problem = problem_of(error)
+    body = {
+        **problem.model_dump(mode="json", exclude={"extensions"}),
+        **problem.extensions,
+    }
+    return problem.status, {
+        name: value for name, value in body.items() if value not in (None, [], {}, "")
+    }
 
 
 def call_route(
@@ -236,7 +214,7 @@ def call_route(
         call_route(<POST /billing/command-issue-invoice>, {"total": 10})
         ->  (200, {"invoice_id": "F-1", "total": 10})
         call_route(<same route>, {"total": "ten"})
-        ->  (422, {"error": {"kind": "invalid", "detail": [...]}})
+        ->  (422, {"error": {"kind": "invalid", "errors": [{"pointer": "#/total", …}], …}})
 
     1. The use case's `call`, inside the context and as whoever the credentials say — a REST
        entrypoint.
