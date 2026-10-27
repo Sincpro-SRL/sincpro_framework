@@ -85,6 +85,7 @@ assert labels == {
     "sincpro.outcome": "ok",
     "sincpro.fault": "false",
     "error.type": "",
+    "sincpro.run": "executed",  # or dry_run, or replayed
 }
 ```
 
@@ -104,7 +105,7 @@ The framework's own pieces count what they do, declaring nothing either:
 
 | Metric | Labels | What it answers |
 |---|---|---|
-| `sincpro.use_case.duration` (s) | `service.name`, `sincpro.context`, `sincpro.use_case`, `sincpro.layer`, `sincpro.outcome`, `sincpro.fault`, `error.type` | rate, faults and latency of every use case |
+| `sincpro.use_case.duration` (s) | `service.name`, `sincpro.context`, `sincpro.use_case`, `sincpro.layer`, `sincpro.outcome`, `sincpro.fault`, `error.type`, `sincpro.run` (`executed`, `dry_run`, `replayed`) | rate, faults and latency of every use case |
 | `sincpro.cache.outcomes` | `sincpro.namespace`, `sincpro.outcome` (`hit`, `stale`, `computed`, `coalesced`, `invalidated`, `fallback`, `bypassed`) | a fail-safe serving through an outage, a store bypassed |
 | `sincpro.idempotency.outcomes` | `sincpro.namespace`, `sincpro.outcome` (`claimed`, `replayed`, `in_progress`, `key_reused`) | the rate of duplicates |
 | `sincpro.queue.deliveries` | `messaging.system`, `messaging.destination.name`, `sincpro.settlement`, `sincpro.failure_kind` | acks, retries and dead letters per channel — the queue alert |
@@ -151,7 +152,10 @@ assert recorder.totals("billing.issue_invoice.total") == {(("currency", "BOB"), 
 (`Feature[Command, Response, BillingContext]`): `field_path(BillingContext)["channel"]` reads the
 execution context when the run is recorded. A path into any other DTO or context is refused at
 import.
-A failed run is not counted here: it is already in `sincpro.use_case.duration`, by kind.
+A failed run is not counted here: it is already in `sincpro.use_case.duration`, by kind. Neither
+is a run that did nothing — a dry run (`DryRunnable`, `dry_run=True`), or an answer the
+idempotency replayed without running the use case: both are timed, `sincpro.run` saying
+`dry_run` or `replayed`, and count, sum and measure nothing.
 
 ### Labels: the project's choice, with one warning
 

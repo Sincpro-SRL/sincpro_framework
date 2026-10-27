@@ -48,6 +48,7 @@ from sincpro_framework.observability.metrics.services.declaring import (
 from sincpro_framework.observability.metrics.services.measuring import (
     MeasuredExecution,
     measured,
+    replayed,
 )
 from sincpro_framework.observability.metrics.services.outcomes import outcome_of
 from sincpro_framework.observability.metrics.services.recording import active_recorder
@@ -188,6 +189,11 @@ class Metrics:
     def recorder(self) -> Recorder | None:
         """The recorder this process records into — `None` when metrics are off."""
         return active_recorder.get()
+
+    def replayed(self) -> None:
+        """The run in progress was answered with a stored answer, without running — what the
+        idempotency says: it is timed as `replayed`, and counts, sums and measures nothing."""
+        replayed()
 
     def use(self, recorder: Recorder | None) -> None:
         """This process records into `recorder` from now on — `None` records nothing."""

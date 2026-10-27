@@ -669,6 +669,20 @@ class IdempotencyFacade:
         bus = None if self.name == GLOBAL else self.name
         return idempotency.completed(dto, bus, vary_by)
 
+    def completed_key(self, key: Any, records: IdempotencyRecords | None = None) -> bool:
+        """Whether a key run by hand (`run(key, ...)`) holds a completed answer that has not
+        expired — `records` those it ran on with `exactly_once`, else the facade's.
+
+            billing.idempotency.run(("charge", "r-1"), charge, policy, codec)
+            billing.idempotency.completed_key(("charge", "r-1"))   ->  True"""
+        idempotency = self.idempotency
+        if records is not None:
+            with self._lock:
+                idempotency = self._exactly.get(records) or Idempotency(
+                    records, namespace=self.name
+                )
+        return idempotency.completed_key(key)
+
     def outcomes(self) -> AbstractContextManager[list[IdempotencyOutcome]]:
         """What every idempotent run inside the block did, in order — `REPLAYED` for an answer
         served without running. See `Idempotency.outcomes`.

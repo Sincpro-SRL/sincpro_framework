@@ -202,4 +202,5 @@ assert moved == ["won"]
 
 A retried write runs once with `@bus.idempotency`, or `bus.idempotency.declare_for(WriteCommand,
 ...)` for every write at once: a dry run is never claimed — answered by `preview` or in `execute`,
-it is not stored and never in `outcomes()`.
+it is not stored and never in `outcomes()`. A business metric (`@metrics.counts`, `sums`,
+`measures`) counts nothing for it either: the duration is recorded with `sincpro.run="dry_run"`.

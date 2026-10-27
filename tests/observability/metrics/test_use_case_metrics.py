@@ -117,6 +117,7 @@ def test_every_use_case_is_timed_with_its_context_and_outcome(recorder):
         "sincpro.outcome": "ok",
         "sincpro.fault": "false",
         "error.type": "",
+        "sincpro.run": "executed",
     }
     assert len(values) == 1 and values[0] >= 0
 
