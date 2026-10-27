@@ -84,7 +84,7 @@ def tool_error(error: Exception) -> Any:
         ->  ToolResult(is_error=True, content="Not found (INVOICE_NOT_FOUND): …",
                        structured_content={"kind": "not_found", "next_step": "do_not_retry", …})
     """
-    from fastmcp.tools import ToolResult
+    from fastmcp.tools import ToolResult  # pyright: ignore[reportMissingImports]
 
     problem = problem_of(error)
     if problem.kind == FailureKind.INTERNAL and not process.was_reported(error):
