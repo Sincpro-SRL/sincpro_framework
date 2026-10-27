@@ -299,3 +299,10 @@ on them.
 - Metrics, traces, errors reporting, `with_trace`: `sincpro-framework-observability`
 - Auth is the outermost interceptor: `sincpro-framework-auth`
 - Real idempotency and query caching — `bus.cache`, `bus.cache.queries(Query)`, `bus.idempotency` on every bus, stored where its context is stored: `sincpro-framework-caching`
+
+**Interceptors as classes, and for a base.** `@bus.interceptor(CommandX) class CheckCredit(Interceptor):
+def intercept(self, dto, call_next)` — dependencies injected as a Feature's (`self.<name>`, typed by
+the context's own base `class Interceptor(_Interceptor, DependencyContextType)`), one made per
+generation. `@bus.interceptor(WriteCommand, subclasses=True)` wraps every subclass of a base no
+handler answers. A dependency registered as `None` is replaced with `add_dependency(name, dep,
+replaces=None)`.

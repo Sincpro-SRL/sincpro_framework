@@ -46,6 +46,18 @@ class AuthProvider(ABC):
         (`sincpro_framework.exceptions`), and every entrypoint answers 503 to retry, never 401.
         """
 
+    def refusing_any(
+        self, identity: Identity, permissions: Sequence[str], reasons: Sequence[str]
+    ) -> str | None:
+        """The reason told when `identity` holds none of `permissions` — an `any_of` refused
+        whole — given each one's own `reasons`, in order. `None`, the default, joins those:
+        "lacks a and lacks b"; a provider answers its own words for the whole requirement.
+
+            refusing_any(ana, ["agents.sales", "agents.crm"], [...])
+                ->  "this tenant has none of these agents enabled: sales, crm"
+        """
+        return None
+
     def has_permission(
         self,
         identity: Identity,

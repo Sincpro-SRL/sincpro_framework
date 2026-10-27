@@ -8,10 +8,12 @@ request, and the libraries' own logging in the same format, on the same trace.
 
 Context: the bus already traces and logs every use case; what never reaches one — a 401 from
 the host's own auth, a 413 from a body limit, a route that does not exist — is seen only here.
-Each request leaves one line: method, path, status and duration, with the trace ids. The query
+Each request leaves one line: method, path, status, duration and the size it declared, with the
+trace ids; a refusal may carry fields of the host's own (`describe`), and a request that raised
+before answering is an error with its traceback, reported to the error tracker. The query
 string is never written: a credential may ride in it. The level follows the status — `info`,
 `warning` from 400, `error` from 500 — and a path the probes hit every few seconds
-(`/health`) is written only when it fails.
+(`/health`) is written only when it fails, and never traced.
 
 With the `[opentelemetry]` extra, the request runs inside a server span — a child of the
 `traceparent` it brought, unless the host says not to trust it (a gateway that starts traces of
@@ -22,7 +24,8 @@ the line is still written, with no ids. Nothing here imports a web framework: it
 import logging
 import sys
 import time
-from collections.abc import Awaitable, Callable, Iterable, MutableMapping
+from collections.abc import Awaitable, Callable, Iterable, Mapping, MutableMapping
+from dataclasses import dataclass
 from typing import Any
 
 import structlog
@@ -72,6 +75,25 @@ def _with_trace_ids(
     return event
 
 
+def instrument_httpx() -> bool:
+    """Trace every httpx call — when `opentelemetry-instrumentation-httpx` is installed; once,
+    however many times it is called. Answers whether httpx is traced.
+
+    Context: the instrumentation takes OpenTelemetry's global tracer, a proxy that follows the
+    provider the framework installs when a bus is built; a host that wants to be sure calls this
+    again after `build_root_bus()`, and nothing is instrumented twice."""
+    try:
+        from opentelemetry.instrumentation.httpx import (  # pyright: ignore[reportMissingImports]
+            HTTPXClientInstrumentor,
+        )
+    except ImportError:
+        return False
+    instrumentor = HTTPXClientInstrumentor()
+    if not instrumentor.is_instrumented_by_opentelemetry:
+        instrumentor.instrument()
+    return True
+
+
 def configure_process_logging(
     level: str = "INFO", loggers: Iterable[str] = LIBRARY_LOGGERS
 ) -> None:
@@ -86,7 +108,7 @@ def configure_process_logging(
        change of format reaches both, with the trace ids added.
     2. Each of `loggers` drops handlers of its own and propagates to the root: uvicorn installs
        its own, and a line would otherwise be written twice.
-    3. httpx is traced when its OpenTelemetry instrumentation is installed and a tracer is.
+    3. httpx is traced when its OpenTelemetry instrumentation is installed (`instrument_httpx`).
     Final: the root at `level`, nobody else's level lowered.
 
     Context: the backend is the one the framework was configured with — `print`, `file` or
@@ -114,14 +136,23 @@ def configure_process_logging(
         library = logging.getLogger(name)
         library.handlers = []
         library.propagate = True
-    try:
-        from opentelemetry.instrumentation.httpx import (  # pyright: ignore[reportMissingImports]
-            HTTPXClientInstrumentor,
-        )
-    except ImportError:
-        return
-    if process.tracer("opentelemetry.instrumentation.httpx") is not None:
-        HTTPXClientInstrumentor().instrument()
+    instrument_httpx()
+
+
+type Describe = Callable[[Scope, int, bytes], Mapping[str, Any]]
+"""What a host adds to the line of a refused request — given the scope, the status and the first
+bytes of the answer; never a credential, which is the host's to leave out."""
+
+
+@dataclass
+class _Answer:
+    """How one request was answered, as the middleware saw it."""
+
+    status: int = 0
+    body: bytes = b""
+    """The first bytes of a refusal's body — for `describe`."""
+    error: Exception | None = None
+    """What escaped before anything was answered."""
 
 
 def _headers(scope: Scope) -> dict[str, str]:
@@ -140,28 +171,47 @@ class AccessLog:
         app: ASGIApp,
         quiet_paths: Iterable[str] = QUIET_PATHS,
         trust_incoming_trace: bool = True,
+        describe: Describe | None = None,
+        body_bytes: int = 512,
     ) -> None:
-        """`app` wrapped; `quiet_paths` written only when they fail; `trust_incoming_trace`
-        says whether a request's `traceparent` is its parent — `False` behind a gateway that
-        starts traces of its own, so each request roots its own."""
+        """`app` wrapped; `quiet_paths` written only when they fail, and never traced;
+        `trust_incoming_trace` says whether a request's `traceparent` is its parent — `False`
+        behind a gateway that starts traces of its own; `describe` adds fields of the host's own
+        to the line of a request answered from 400 up, given the scope, the status and the first
+        `body_bytes` of what was answered."""
         self.app = app
         self.quiet_paths = frozenset(quiet_paths)
         self.trust_incoming_trace = trust_incoming_trace
+        self.describe = describe
+        self.body_bytes = body_bytes
 
-    def _logged(self, scope: Scope, status: int, started: float) -> None:
-        """The request's line: method, path — never its query string —, status and duration, at
-        the level its status says."""
-        method, path = scope.get("method", ""), scope.get("path", "")
+    def _logged(self, scope: Scope, answer: "_Answer", started: float) -> None:
+        """The request's line, at the level its status says: method, path — never its query
+        string —, status, duration, the size the request declared, and what `describe` adds to
+        a refusal. A request that raised before answering is an error with its traceback,
+        reported to the error tracker."""
+        method, path, status = scope.get("method", ""), scope.get("path", ""), answer.status
         if path in self.quiet_paths and status < 400:
             return
         said = f"{method} {path} {status}"
-        fields = {
+        fields: dict[str, Any] = {
             "http_method": method,
             "http_path": path,
             "http_status": status,
             "duration_ms": round((time.perf_counter() - started) * 1000, 1),
         }
-        if status >= 500:
+        declared = _headers(scope).get("content-length", "")
+        if declared.isdigit():
+            fields["request_bytes"] = int(declared)
+        if self.describe is not None and status >= 400:
+            try:
+                fields.update(self.describe(scope, status, bytes(answer.body)))
+            except Exception as error:
+                fields["describe_failed"] = type(error).__name__
+        if answer.error is not None:
+            access_log.exception(said, **fields)
+            process.record_error(answer.error, layer="asgi")
+        elif status >= 500:
             access_log.error(said, **fields)
         elif status >= 400:
             access_log.warning(said, **fields)
@@ -169,37 +219,50 @@ class AccessLog:
             access_log.info(said, **fields)
 
     async def _served(
-        self, scope: Scope, receive: Receive, send: Send, answered: list[int]
+        self, scope: Scope, receive: Receive, send: Send, answer: "_Answer"
     ) -> None:
-        """The request served — the status it answered appended to `answered` as it starts,
-        so a request that raises after answering is still written with its status."""
+        """The request served — its status noted as it starts, the first `body_bytes` of a
+        refusal kept, and what escaped before answering held — so the line is written whatever
+        happened."""
 
         async def capture(message: Message) -> None:
             if message["type"] == "http.response.start":
-                answered.append(message["status"])
+                answer.status = message["status"]
+            elif (
+                message["type"] == "http.response.body"
+                and answer.status >= 400
+                and len(answer.body) < self.body_bytes
+            ):
+                answer.body += message.get("body", b"")[: self.body_bytes - len(answer.body)]
             await send(message)
 
-        await self.app(scope, receive, capture)
+        try:
+            await self.app(scope, receive, capture)
+        except Exception as error:
+            if not answer.status:
+                answer.status, answer.error = 500, error
+            raise
 
     async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
         """Serve the request inside its span, then write its line.
 
         1. Anything but HTTP — a lifespan, a websocket — passes untouched.
-        2. With a tracer: a server span, the child of the incoming `traceparent` when it is
-           trusted, a root otherwise; the status code on it, an error status from 500.
+        2. A quiet path, or no tracer: served with no span.
+        3. Else a server span, the child of the incoming `traceparent` when it is trusted, a
+           root otherwise; the status code on it, an error status from 500.
         Final: the line, whether the request answered or raised — 500 when it raised before
         answering."""
         if scope.get("type") != "http":
             await self.app(scope, receive, send)
             return
         started = time.perf_counter()
-        answered: list[int] = []
+        answer = _Answer()
         tracer = process.tracer(INSTRUMENTATION)
-        if tracer is None:
+        if tracer is None or scope.get("path", "") in self.quiet_paths:
             try:
-                await self._served(scope, receive, send, answered)
+                await self._served(scope, receive, send, answer)
             finally:
-                self._logged(scope, answered[0] if answered else 500, started)
+                self._logged(scope, answer, started)
             return
         from opentelemetry import context, propagate, trace
 
@@ -218,23 +281,27 @@ class AccessLog:
             },
         ) as span:
             try:
-                await self._served(scope, receive, send, answered)
+                await self._served(scope, receive, send, answer)
             finally:
-                status = answered[0] if answered else 500
+                status = answer.status or 500
+                answer.status = status
                 span.set_attribute("http.response.status_code", status)
                 if status >= 500:
                     span.set_status(trace.Status(trace.StatusCode.ERROR))
-                self._logged(scope, status, started)  # inside the span: the line has its ids
+                self._logged(scope, answer, started)  # inside the span: the line has its ids
 
 
 def http_middleware(
     app: ASGIApp,
     quiet_paths: Iterable[str] = QUIET_PATHS,
     trust_incoming_trace: bool = True,
+    describe: Describe | None = None,
+    body_bytes: int = 512,
 ) -> AccessLog:
     """`app` with one JSON line and one span per request — the host's one line.
 
     app = http_middleware(FastApiGateway({...}).app())
     app = http_middleware(mcp.http_app(), trust_incoming_trace=False)    behind Kong
+    app = http_middleware(app, describe=lambda scope, status, body: {"answered": body[:200]})
     """
-    return AccessLog(app, quiet_paths, trust_incoming_trace)
+    return AccessLog(app, quiet_paths, trust_incoming_trace, describe, body_bytes)

@@ -8,7 +8,9 @@ from sincpro_log.logger import LoggerProxy
 
 from sincpro_framework import exceptions
 from sincpro_framework.bus_pipeline.interceptors.interceptor import (
+    Intercepting,
     Interceptor,
+    InterceptorCall,
     InterceptorRegistration,
     interceptors_for,
 )
@@ -33,18 +35,21 @@ class BusInterceptorsMixin:
 
         def _registered(self, replay: Callable[[Any], Any], what: str) -> None: ...
 
+        dynamic_dep_registry: dict[str, Any]
+
     def _init_interceptors(self) -> None:
         """No interceptors registered, none switched off."""
         self._interceptors: list[InterceptorRegistration] = []
-        self._interceptors_off: list[Interceptor] = []
+        self._interceptors_off: list[Intercepting] = []
 
-    def interceptor[T: Interceptor](
+    def interceptor[T: Intercepting](
         self,
         *commands: type,
-        replaces: Interceptor | None = None,
-        before: Sequence[Interceptor] = (),
-        after: Sequence[Interceptor] = (),
+        replaces: Intercepting | None = None,
+        before: Sequence[Intercepting] = (),
+        after: Sequence[Intercepting] = (),
         sequence: int = DEFAULT_SEQUENCE,
+        subclasses: bool = False,
     ) -> Callable[[T], T]:
         """Run the decorated function around every execution of these Commands — all of this
         bus's when none is named — however they are reached.
@@ -54,8 +59,13 @@ class BusInterceptorsMixin:
 
             @billing.interceptor(CommandCreateInvoice, replaces=credit_check)   in its place
             @billing.interceptor(CommandCreateInvoice, before=[credit_check])    outside it
+            @billing.interceptor(WriteCommand, subclasses=True)                  every write
+            @billing.interceptor(CommandCreateInvoice)
+            class CheckCredit(Interceptor): ...       a class: dependencies injected, typed
 
-        Context: the first to run is the outermost. They run by `before`/`after`, then
+        Context: a Command named is wrapped as it is, never its subclasses — `subclasses=True`
+        wraps them too, and the base need not be answered by any handler. The first to run is
+        the outermost. They run by `before`/`after`, then
         `sequence` (lower first), then the order they were registered — the order every
         extension point uses, see `sincpro_framework.common.ordering`; a replacement takes the place
         of what it replaces and wraps the same Commands. Registered after the bus was built, it
@@ -70,7 +80,13 @@ class BusInterceptorsMixin:
             with self._build_lock:
                 self._interceptors.append(
                     InterceptorRegistration(
-                        interceptor, commands, sequence, tuple(before), tuple(after), replaces
+                        interceptor,
+                        commands,
+                        sequence,
+                        tuple(before),
+                        tuple(after),
+                        replaces,
+                        subclasses,
                     )
                 )
                 self._registered(
@@ -80,6 +96,7 @@ class BusInterceptorsMixin:
                         before=before,
                         after=after,
                         sequence=sequence,
+                        subclasses=subclasses,
                     )(interceptor),
                     f"interceptor {name_of(interceptor)}",
                 )
@@ -87,7 +104,7 @@ class BusInterceptorsMixin:
 
         return register
 
-    def without_interceptor(self, interceptor: Interceptor) -> None:
+    def without_interceptor(self, interceptor: Intercepting) -> None:
         """Switch off an interceptor registered on this bus — it wraps nothing from then on, or
         from the next execution when the bus was already built."""
         with self._build_lock:
@@ -128,6 +145,18 @@ class BusInterceptorsMixin:
             self.logger.info(f"interceptor {name_of(switched_off)} is switched off")
         return [by_interceptor[one] for one in result.items]
 
+    def _call_of(self, item: Intercepting) -> InterceptorCall:
+        """What the chain runs for a registered interceptor: a function as it is; for a class of
+        `Interceptor`, the `intercept` of one made for this generation — this bus's
+        dependencies set on it, bound to its context."""
+        if not (isinstance(item, type) and issubclass(item, Interceptor)):
+            return item  # type: ignore[return-value]
+        made = item()
+        for name, dependency in self.dynamic_dep_registry.items():
+            setattr(made, name, dependency)
+        made.bind_to_framework(self)
+        return made.intercept
+
     def _wrap_handlers(
         self, bus: "FrameworkBus", attached: Sequence[InterceptorRegistration]
     ) -> None:
@@ -138,17 +167,29 @@ class BusInterceptorsMixin:
         answered = {*feature_bus.feature_registry, *app_service_bus.app_service_registry}
         interceptors = self._ordered_interceptors(attached)
         for registration in interceptors:
+            if registration.subclasses:
+                if registration.commands and not any(
+                    registration.wraps(command) for command in answered
+                ):
+                    self.logger.warning(
+                        f"interceptor {registration.name} wraps "
+                        f"{', '.join(one.__name__ for one in registration.commands)} and its "
+                        f"subclasses, and no Feature or ApplicationService on '{self.name}' "
+                        "answers any of them"
+                    )
+                continue
             for command in registration.commands:
                 if command not in answered:
                     raise exceptions.UnknownDTOToExecute(
                         f"interceptor {registration.name} wraps {command.__name__}, which no "
                         f"Feature or ApplicationService on '{self.name}' answers"
                     )
+        calls = {one.interceptor: self._call_of(one.interceptor) for one in interceptors}
         feature_bus.interceptors = {
-            command: interceptors_for(command, interceptors)
+            command: interceptors_for(command, interceptors, calls)
             for command in feature_bus.feature_registry
         }
         app_service_bus.interceptors = {
-            command: interceptors_for(command, interceptors)
+            command: interceptors_for(command, interceptors, calls)
             for command in app_service_bus.app_service_registry
         }

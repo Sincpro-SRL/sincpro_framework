@@ -44,14 +44,21 @@ configure_process_logging("INFO")   # uvicorn, httpx, starlette: the framework's
 app = http_middleware(app)          # any ASGI app — FastAPI, Starlette, FastMCP's
 ```
 
-- **One line per request**: method, path, status and duration, with `trace_id` — never the query
-  string, where a credential may ride. `info`, `warning` from 400, `error` from 500; a path probes
-  hit (`quiet_paths`, `/health` by default) only when it fails.
+- **One line per request**: method, path, status, duration and the size the request declared
+  (`request_bytes`, what explains a 413), with `trace_id` — never the query string, where a
+  credential may ride. `info`, `warning` from 400, `error` from 500; a path probes hit
+  (`quiet_paths`, `/health` by default) only when it fails, and never traced.
+- **A refusal says what the host wants said**: `describe=(scope, status, body_head) -> fields`
+  adds fields of its own to a line from 400 up, with the first `body_bytes` of the answer — what a
+  transport answered, a client header; a description that fails never fails the line.
+- **What escaped before answering** is written with its traceback and reported to the error
+  tracker (`process.record_error(..., layer="asgi")`).
 - **One server span per request** with `[opentelemetry]`: the child of the request's
   `traceparent`, or a root of its own behind a gateway that starts traces
   (`trust_incoming_trace=False`); the buses' spans and every log line of the request land on it.
 - **The libraries' logging** through the root, in the framework's format and where it writes —
   stdout or its file; with the `stdlib` backend (inside Odoo) the root stays the host's and the
   libraries only propagate to it. httpx is traced when `opentelemetry-instrumentation-httpx` is
-  installed.
+  installed — `instrument_httpx()` on its own, once however many times it is called, for a host
+  that configures logging before its buses are built.
 

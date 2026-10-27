@@ -62,6 +62,11 @@ class Bus(ABC, metaclass=abc.ABCMeta):
         """
         ...
 
+class ContextConsumer:
+    @property
+    def context(self) -> Any: ...
+    def bind_to_framework(self, binder: Any) -> None: ...
+
 class Feature(ABC, Generic[TypeDTO, TypeDTOResponse, ContextT], metaclass=abc.ABCMeta):
     """
     Feature is the first layer of the framework, it is the main abstraction to execute a business logic.

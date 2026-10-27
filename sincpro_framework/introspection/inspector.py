@@ -14,7 +14,7 @@ from collections.abc import Mapping
 from typing import Any, get_args, get_origin, get_type_hints
 
 from sincpro_framework.bus import FrameworkBus
-from sincpro_framework.bus_pipeline.interceptors.interceptor import Interceptor
+from sincpro_framework.bus_pipeline.interceptors.interceptor import InterceptorCall
 from sincpro_framework.common.ordering import name_of
 from sincpro_framework.sincpro_abstractions import (
     ApplicationService,
@@ -142,7 +142,7 @@ def _resolve_response(feature_or_app_type: type) -> Any | None:
 
 def _describe_all(
     registry: Mapping[type, Feature | ApplicationService | type],
-    interceptors: Mapping[type, tuple[Interceptor, ...]],
+    interceptors: Mapping[type, tuple[InterceptorCall, ...]],
     replacements: Mapping[type, tuple[str, ...]],
 ) -> dict[DtoName, FeatureOrAppServiceMetadata]:
     """Each handler described — an instance of a built bus, or the class a reference

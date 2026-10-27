@@ -255,3 +255,10 @@ the new one, on every bus made of it too. **A provider whose backend does not an
 `ServiceUnavailableError` (503 + `Retry-After`, never 401 nor 500); `AuthProviderContract` checks it
 with `make_provider_whose_backend_is_down()`. A provider should depend on an adapter (with its own
 cache), not run a use case on the bus it guards: that call re-enters the guard as anonymous.
+
+**A requirement the Command chooses, and asking without running.** `@auth.requires(auth.by_field("direction",
+{Direction.INBOUND: P.RECEIVE, Direction.OUTBOUND: P.PAY}))` — never a check inside the Feature
+for that. `auth.may_run(bus, Command, identity=None, dto=None)` / `auth.refusal_of(...)` /
+`auth.requirements_of(Command, bus=bus)` answer with the guard's own decision — what a catalog
+(`tools/list`) filters with, so the catalog never lists what the run refuses. A provider words an
+`any_of` refusal with `refusing_any(identity, permissions, reasons)`.

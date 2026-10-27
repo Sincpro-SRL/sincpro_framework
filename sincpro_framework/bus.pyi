@@ -3,7 +3,7 @@ from typing import Any, Callable, Dict, Optional, Tuple, Type, overload
 from sincpro_log.logger import LoggerProxy
 
 from .bus_pipeline.incomes.incomes import Incomes
-from .bus_pipeline.interceptors.interceptor import Interceptor
+from .bus_pipeline.interceptors.interceptor import InterceptorCall
 from .bus_pipeline.outcomes.outcomes import Outcomes
 from .context.domain.providers import ContextProvider
 from .observability import Observability
@@ -26,7 +26,7 @@ class FeatureBus(Bus):
 
     log_after_execution: bool
     feature_registry: Dict[type, Feature]
-    interceptors: Dict[type, tuple[Interceptor, ...]]
+    interceptors: Dict[type, tuple[InterceptorCall, ...]]
     replacements: Dict[type, tuple[str, ...]]
     handle_error: Optional[Callable[..., Any]]
     logger: LoggerProxy
@@ -82,7 +82,7 @@ class ApplicationServiceBus(Bus):
 
     log_after_execution: bool
     app_service_registry: Dict[type, ApplicationService]
-    interceptors: Dict[type, tuple[Interceptor, ...]]
+    interceptors: Dict[type, tuple[InterceptorCall, ...]]
     replacements: Dict[type, tuple[str, ...]]
     handle_error: Optional[Callable[..., Any]]
     logger: LoggerProxy

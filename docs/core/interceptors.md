@@ -383,6 +383,90 @@ assert extended(CommandCreateInvoice(customer_id="acme", total=5), ResponseCreat
 assert order == ["trace", "limits by segment"]
 ```
 
+## A class, its dependencies injected
+
+An interceptor that needs an adapter is written as a class: its dependencies are injected as a
+Feature's are — `self.<name>`, typed by the bounded context's own base — and one is made for
+each generation of the bus, so a dependency replaced in a `fresh()` bus reaches it.
+
+```python
+from sincpro_framework import DataTransferObject, Feature, Interceptor, UseFramework
+from sincpro_framework.bus_pipeline.interceptors import CallNext
+
+
+class CommandShip(DataTransferObject):
+    customer: str
+
+
+class Blocklist:
+    def allows(self, customer: str) -> bool:
+        return customer != "blocked"
+
+
+class Refused(Exception):
+    pass
+
+
+shipping = UseFramework("shipping-interceptor-class", log_after_execution=False)
+shipping.add_dependency("blocklist", Blocklist())
+
+
+@shipping.feature(CommandShip)
+class Ship(Feature):
+    def execute(self, dto: CommandShip) -> str:
+        return f"shipped to {dto.customer}"
+
+
+@shipping.interceptor(CommandShip)
+class CheckBlocklist(Interceptor):          # a context's own base: class Interceptor(_Interceptor, Deps)
+    blocklist: Blocklist
+
+    def intercept(self, dto: CommandShip, call_next: CallNext[str]) -> str:
+        if not self.blocklist.allows(dto.customer):
+            raise Refused(dto.customer)
+        return call_next(dto)
+
+
+assert shipping(CommandShip(customer="acme")) == "shipped to acme"
+```
+
+`replaces=` and `without_interceptor` name the class; a function `(dto, call_next)` stays as it
+was.
+
+## Every subclass of a base
+
+A Command named is wrapped as it is, never its subclasses. `subclasses=True` wraps every
+subclass too — a base no handler answers standing for all of them:
+
+```python
+class WriteCommand(DataTransferObject):
+    company_id: int = 0
+
+
+class CommandCreateLead(WriteCommand):
+    name: str
+
+
+crm = UseFramework("crm-interceptor-subclasses", log_after_execution=False)
+writes: list[str] = []
+
+
+@crm.feature(CommandCreateLead)
+class CreateLead(Feature):
+    def execute(self, dto: CommandCreateLead) -> None:
+        return None
+
+
+@crm.interceptor(WriteCommand, subclasses=True)
+def every_write(dto: WriteCommand, call_next: CallNext[None]) -> None:
+    writes.append(type(dto).__name__)
+    return call_next(dto)
+
+
+crm(CommandCreateLead(name="Juan"))
+assert writes == ["CommandCreateLead"]
+```
+
 ## What runs, answered
 
 ```python

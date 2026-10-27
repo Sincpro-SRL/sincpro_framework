@@ -181,6 +181,8 @@ assert shop(CommandCheckout(sku="A-1", quantity=1), ResponseCheckout).total == 1
 - A name is taken once. A second adapter under it is refused (`DependencyAlreadyRegistered`),
   naming the class already there — unless it names what it replaces with `replaces=`.
 - A `replaces=` that names another object, or nothing, works with a warning.
+- A dependency registered as `None` — an optional adapter with nothing configured — is replaced
+  naming it: `replaces=None`.
 - `bus.deps.<name>` reads a dependency from outside a handler — a test, an entrypoint.
 - In a test, `override_dependencies(bus, name=double)` puts a double in place for a block and the
   real one back after (`sincpro_framework.runtime.testing`).
