@@ -20,10 +20,15 @@ each other's.
 from typing import TYPE_CHECKING
 
 from sincpro_framework.context import ContextStore
+from sincpro_framework.data_layer.caching.entrypoint import facades
 from sincpro_framework.data_layer.caching.entrypoint.facades import (
     CacheFacade,
     IdempotencyFacade,
 )
+from sincpro_framework.data_layer.caching.services.idempotency import Idempotency
+
+if TYPE_CHECKING:
+    from sincpro_framework.bus import FrameworkBus
 
 
 class BusCachingMixin:
@@ -68,6 +73,30 @@ class BusCachingMixin:
         """
         found = self.__dict__.get("_idempotency_facade")
         if found is None:
-            found = IdempotencyFacade(self.name, self.store)
+            found = IdempotencyFacade(self.name, self.store, self)
             self.__dict__["_idempotency_facade"] = found
         return found
+
+    def _idempotency_by_type(self, bus: "FrameworkBus") -> None:
+        """Each handler of `bus` whose Command a `declare_for` names runs once per request —
+        this bus's declarations first, then the service's.
+
+        1. A class that already runs once — it declared `@billing.idempotency`, or a base of
+           it did, or an earlier build gave it its declaration — is left as it is.
+        2. Of the declarations whose type the Command is, the nearer in its bases wins; between
+           two as near, the first declared.
+        Final: that declaration taken by the class, as `@billing.idempotency(...)` would."""
+        declared = [*self.idempotency.declared_for, *facades.idempotency.declared_for]
+        if not declared:
+            return
+        handlers = {
+            **bus.feature_bus.feature_registry,
+            **bus.app_service_bus.app_service_registry,
+        }
+        for command, handler in handlers.items():
+            if Idempotency.declared_by(type(handler)):
+                continue
+            matching = [one for one in declared if issubclass(command, one[0])]
+            if matching:
+                nearest = min(matching, key=lambda one: command.__mro__.index(one[0]))
+                nearest[1](type(handler))

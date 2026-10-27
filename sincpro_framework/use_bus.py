@@ -418,8 +418,10 @@ class UseFramework(
         )
 
     def _assemble_handlers(self, bus: FrameworkBus) -> None:
-        """Each handler wrapped by its interceptors and the recorders of the pipelines, and who
-        replaced whom — said once, in the build log."""
+        """Each handler run once per request when a `declare_for` names its Command, wrapped by
+        its interceptors and the recorders of the pipelines, and who replaced whom — said once,
+        in the build log."""
+        self._idempotency_by_type(bus)
         self._wrap_handlers(bus, self._pipeline_recorders())
         feature_bus, app_service_bus = bus.feature_bus, bus.app_service_bus
         replacements = self._sp_container.replacements()

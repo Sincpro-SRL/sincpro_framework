@@ -534,17 +534,23 @@ class IdempotencyFacade:
     """The idempotency of a bounded context (`billing.idempotency`) or of the whole
     service."""
 
-    def __init__(self, name: str, store_of: Callable[[], ContextStore]) -> None:
+    def __init__(
+        self, name: str, store_of: Callable[[], ContextStore], bus: Any = None
+    ) -> None:
         """`name` separates its keys from every other facade's on one store; `store_of`
-        answers the context store its records are stored on, asked at every run.
+        answers the context store its records are stored on, asked at every run; `bus` is the
+        bounded context it belongs to — none for the service's.
 
-            IdempotencyFacade("billing", billing.store)
+            IdempotencyFacade("billing", billing.store, billing)
                 ->  `billing.idempotency`: records under the "billing" namespace, on the
                     `KeyValueStore` of whatever context store answers at each run
 
         The `Idempotency` of each `exactly_once` records object is built later, on its use."""
         self.name = name
         self.store_of = store_of
+        self.bus = bus
+        self.declared_for: list[tuple[type, Callable[[type], type]]] = []
+        """Each type of Command `declare_for` named, with the declaration its handlers take."""
         self.idempotency = Idempotency(
             namespace=name,
             records_of=lambda: _records_on(key_value_store_of(self.store_of())),
@@ -569,6 +575,41 @@ class IdempotencyFacade:
             expires_after, in_progress_for, wait_for_completion, vary_by
         )
         return declare(cls) if cls is not None else declare
+
+    def declare_for(
+        self,
+        command: type,
+        expires_after: timedelta = DEFAULT_EXPIRES_AFTER,
+        in_progress_for: timedelta = timedelta(minutes=1),
+        wait_for_completion: timedelta = timedelta(0),
+        vary_by: str | Sequence[str] = (),
+    ) -> None:
+        """Run once per request every Feature and ApplicationService whose Command is `command`
+        or a subclass of it — declared once, instead of on each class. The same parameters as
+        `@billing.idempotency(...)`.
+
+            sales.idempotency.declare_for(WriteCommand, expires_after=timedelta(seconds=120),
+                                          wait_for_completion=timedelta(seconds=25))
+
+        Context: taken by the handlers when the bus is built — registered before or after this,
+        on every generation, `fresh()` included. A class that declares `@billing.idempotency`
+        itself keeps its own; of two types a Command is, the nearer one in its bases wins. On
+        the service's facade (`idempotency.declare_for`), it reaches every bus."""
+        self.declared_for.append(
+            (
+                command,
+                self.idempotency.once(
+                    expires_after, in_progress_for, wait_for_completion, vary_by
+                ),
+            )
+        )
+        if self.bus is not None:
+            self.bus._registered(
+                lambda fresh: fresh.idempotency.declare_for(
+                    command, expires_after, in_progress_for, wait_for_completion, vary_by
+                ),
+                f"idempotency for {command.__name__}",
+            )
 
     def exactly_once(
         self,
