@@ -181,11 +181,110 @@ def test_a_waiting_run_called_again_without_its_decision_still_waits():
 def test_the_runs_waiting_for_a_decision_are_found_by_their_state():
     bus, _ = forge()
     bus(CommandRunIssue(run_id="i-7"))
+    bus(CommandRunIssue(run_id="i-8"))
     bus(CommandRunIssue(run_id="i-8", approval="approved"))
 
     waiting = bus(QueryIssueRuns(state=PipelineState.WAITING), ResponseRuns)
 
     assert [one.run_id for one in waiting.runs] == ["i-7"]
+
+
+def test_a_decision_on_a_first_call_waits_all_the_same():
+    bus, did = forge()
+
+    first = bus(CommandRunIssue(run_id="i-10", approval="approved"), PipelineRun)
+
+    assert (first.state, first.waiting_for) == (PipelineState.WAITING, "approval")
+    assert first.decisions == {} and did == ["refine"]
+
+
+def test_a_continued_run_goes_on_with_the_input_it_was_given():
+    seen: list[int] = []
+    bus = UseFramework("forge-await-input", log_after_execution=False)
+    bus.store_context_in(InMemoryContexts())
+
+    class CommandPay(DataTransferObject):
+        run_id: str = ""
+        amount: int = 0
+        approval: str | None = None
+
+    class CommandCharge(DataTransferObject):
+        amount: int
+
+    @bus.feature(CommandCharge)
+    class Charge(Feature):
+        def execute(self, dto: CommandCharge) -> None:
+            seen.append(dto.amount)
+
+    class Pay(Pipeline, ApplicationService):
+        steps = [Await("approval"), CommandCharge]
+
+    bus.app_service(CommandPay)(Pay)
+    bus(CommandPay(run_id="p-1", amount=10))
+
+    done = bus(CommandPay(run_id="p-1", amount=99, approval="ana"), PipelineRun)
+
+    assert seen == [10] and done.state is PipelineState.SUCCEEDED
+    assert done.input["amount"] == 10
+
+
+def test_an_await_whose_field_decides_by_default_is_refused_when_the_bus_is_built():
+    bus = UseFramework("forge-await-bool", log_after_execution=False)
+    bus.store_context_in(InMemoryContexts())
+
+    class CommandSend(DataTransferObject):
+        run_id: str = ""
+        confirmed: bool = False
+
+    class Send(Pipeline, ApplicationService):
+        steps = [Await("confirmed")]
+
+    bus.app_service(CommandSend)(Send)
+
+    with pytest.raises(pipelines_exceptions.ProgrammingError, match="defaults to False"):
+        bus.build_root_bus()
+
+
+def test_a_step_is_filled_with_what_the_step_before_it_answered_also_in_another_request():
+    billed: list[str] = []
+    bus = UseFramework("forge-handed", log_after_execution=False)
+    bus.store_context_in(InMemoryContexts())
+
+    class CommandSell(DataTransferObject):
+        run_id: str = ""
+        customer: str = ""
+        approval: str = ""
+
+    class CommandOpenInvoice(DataTransferObject):
+        customer: str
+
+    class ResponseOpened(DataTransferObject):
+        invoice_id: str
+
+    class CommandSendInvoice(DataTransferObject):
+        invoice_id: str
+        approval: str
+
+    @bus.feature(CommandOpenInvoice)
+    class OpenInvoice(Feature):
+        def execute(self, dto: CommandOpenInvoice) -> ResponseOpened:
+            return ResponseOpened(invoice_id=f"F-{dto.customer}")
+
+    @bus.feature(CommandSendInvoice)
+    class SendInvoice(Feature):
+        def execute(self, dto: CommandSendInvoice) -> None:
+            billed.append(f"{dto.invoice_id} by {dto.approval}")
+
+    class Sell(Pipeline, ApplicationService):
+        steps = [CommandOpenInvoice, Await("approval"), CommandSendInvoice]
+
+    bus.app_service(CommandSell)(Sell)
+    waiting = bus(CommandSell(run_id="s-1", customer="acme"), PipelineRun)
+    assert waiting.steps[0].answer == {"invoice_id": "F-acme"}
+
+    done = bus(CommandSell(run_id="s-1", approval="ana"), PipelineRun)
+
+    assert billed == ["F-acme by ana"] and done.state is PipelineState.SUCCEEDED
 
 
 # --- reads -------------------------------------------------------------------------------------
