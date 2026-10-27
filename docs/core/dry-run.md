@@ -149,6 +149,48 @@ mailing(CommandSendMail(to="ana@acme.bo", dry_run=False))
 assert sent == ["ana@acme.bo"]
 ```
 
+## Answered in `execute`, run once
+
+A handler with no `preview` gets its dry run in `execute`, and answers it there — the gate a
+project already has, with the flag in the Command. Its idempotency is declared once for every
+write: a dry run is never claimed, so it is not stored and answers with the store down.
+
+```python
+from datetime import timedelta
+
+
+class CommandUpdateDeal(WriteCommand):
+    deal_id: int
+    stage: str
+
+
+class ResponseDeal(DataTransferObject):
+    deal_id: int
+
+
+crm = UseFramework("crm-dry-run-guide", log_after_execution=False)
+crm.idempotency.declare_for(WriteCommand, expires_after=timedelta(minutes=2))
+moved: list[str] = []
+
+
+@crm.feature(CommandUpdateDeal)
+class UpdateDeal(Feature):
+    def execute(self, dto: CommandUpdateDeal) -> ResponseDeal | Preview:
+        if dto.dry_run:
+            return Preview(text=f"Deal {dto.deal_id} moves to {dto.stage}")
+        moved.append(dto.stage)
+        return ResponseDeal(deal_id=dto.deal_id)
+
+
+with crm.context({"tenant_id": "acme", "user_id": "ana"}):
+    assert crm(CommandUpdateDeal(deal_id=7, stage="won")) == Preview(
+        text="Deal 7 moves to won"
+    )
+    crm(CommandUpdateDeal(deal_id=7, stage="won", dry_run=False))
+    crm(CommandUpdateDeal(deal_id=7, stage="won", dry_run=False))     # a retry: replayed
+assert moved == ["won"]
+```
+
 ## From every caller
 
 | Caller | How it asks |
@@ -158,5 +200,6 @@ assert sent == ["ana@acme.bo"]
 | REST, RPC, a queue | `"dry_run": true` in the body, as any field |
 | An MCP tool | the `dry_run` argument the tool already publishes from the Command |
 
-A retried write runs once with `@bus.idempotency`: `dry_run` is part of the Command, so a dry run
-and the run are two requests, and a dry run — answered by `preview` — is never stored.
+A retried write runs once with `@bus.idempotency`, or `bus.idempotency.declare_for(WriteCommand,
+...)` for every write at once: a dry run is never claimed — answered by `preview` or in `execute`,
+it is not stored and never in `outcomes()`.

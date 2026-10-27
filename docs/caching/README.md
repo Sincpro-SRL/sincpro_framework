@@ -141,7 +141,7 @@ assert own.store().key_value_store() is billing_redis
 |---|---|---|---|
 | `bus.cache`, `cache` | a minute, the old answer served 10 s more while one caller recomputes it, at most 1 s waiting for a value another computes | `fail_safe=`, `vary_by=`, `owned_by=`, `near=` on every form | `.ttl(ttl, stale_for, jitter)`, `.sliding(idle_for, at_most)`, `.versioned(current, version_of, trusted_for)`, `facade(CachePolicy(...))` for any combination |
 | `bus.cache.queries(Query)` | a Query's answer, a minute, let go of when an aggregate it read is written (below) | `bus.cache.queries(Query, QueryCachePolicy(...))` | — |
-| `bus.idempotency`, `idempotency` | once per request, replayed 24 h, a duplicate in flight refused at once (409) | `expires_after=`, `in_progress_for=`, `wait_for_completion=`, `vary_by=` | `.exactly_once(records)`: the answer in the write's transaction (below); `.completed(dto)`, `.outcomes()` |
+| `bus.idempotency`, `idempotency` | once per request, replayed 24 h, a duplicate in flight refused at once (409) | `expires_after=`, `in_progress_for=`, `wait_for_completion=`, `vary_by=` | `.exactly_once(records)`: the answer in the write's transaction (below); `.declare_for(WriteCommand, ...)`: every handler of a type of Command; `.completed(dto)`, `.outcomes()` |
 
 - **The key** is the facade's name, the function — its module and name — or the key given by
   hand, its arguments written canonically (a decimal by its value, a date in ISO, a DTO by its
@@ -184,6 +184,8 @@ The same facade, one option of the same call each:
 | a version per key — per token, per tenant | `.versioned(lambda token: registry.version_of(token))`: `current` is asked with the cached function's own arguments (the key, by hand) |
 | a test that moves time | `billing.cache.now = clock.now` |
 | a preview that says "confirming again writes nothing" | `billing.idempotency.completed(command)` |
+| the same idempotency for every write, declared once | `billing.idempotency.declare_for(WriteCommand, expires_after=...)`: every Feature and ApplicationService whose Command is one, registered before or after, on every generation; a class's own `@billing.idempotency` keeps its own; `idempotency.declare_for(...)` reaches every bus |
+| a dry run (`DryRunnable`, `dry_run=True`) | never claimed: it writes nothing, so it is not stored, not in `outcomes()`, and it answers with the store down |
 | telling the client that nothing was written again | `with billing.idempotency.outcomes() as seen:` — `seen == [IdempotencyOutcome.REPLAYED]`, also through `get_async_bus()` |
 | a Redis or Valkey client that fails fast | `RedisKeyValue.from_url(url)`: half a second, no retries — redis-py waits forever by default |
 | the process's memory, bounded | `InMemoryKeyValue(max_entries=50_000)`: the least recently used let go first; what expired is swept as it is written |
@@ -233,6 +235,49 @@ with payments.idempotency.outcomes() as seen:
     payments(charge, ResponsePay)
 assert seen == [IdempotencyOutcome.CLAIMED]
 assert payments.idempotency.completed(charge) is True        # confirming again replays
+```
+
+Declared once for a type of Command, every write of it runs once — and its dry run is never
+claimed:
+
+```python
+from sincpro_framework import DataTransferObject, DryRunnable, Feature, Preview
+
+
+class WriteCommand(DryRunnable):
+    dry_run: bool = True                                     # previewed unless said otherwise
+
+
+class CommandRefund(WriteCommand):
+    request_id: str
+    amount: int
+
+
+class ResponseRefund(DataTransferObject):
+    refunded: int
+
+
+refunds = payments.fresh()
+refunds.idempotency.declare_for(WriteCommand, expires_after=timedelta(minutes=2))
+refunded: list[int] = []
+
+
+@refunds.feature(CommandRefund)
+class Refund(Feature):                                       # declares nothing itself
+    def execute(self, dto: CommandRefund) -> ResponseRefund | Preview:
+        if dto.dry_run:
+            return Preview(text=f"Refund {dto.amount}")       # never claimed, never stored
+        refunded.append(dto.amount)
+        return ResponseRefund(refunded=dto.amount)
+
+
+with refunds.context({"tenant_id": "acme", "user_id": "ana"}):
+    with refunds.idempotency.outcomes() as seen:
+        refunds(CommandRefund(request_id="f-1", amount=5))                # a dry run
+    assert seen == []
+    refunds(CommandRefund(request_id="f-1", amount=5, dry_run=False))
+    refunds(CommandRefund(request_id="f-1", amount=5, dry_run=False))     # replayed
+assert refunded == [5]
 ```
 
 ## A use case that knows nothing

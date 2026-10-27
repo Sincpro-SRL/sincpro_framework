@@ -41,6 +41,9 @@ case's own database, completing in its transaction (`records.transaction()`), cl
 — `DatabaseIdempotencyRecords`. A release that fails is said, never raised over the write's
 error: the claim expires all the same.
 
+A dry run — a `DryRunnable` Command with `dry_run=True` — is never claimed: it writes nothing,
+so there is nothing to run once, and it answers with the store down.
+
 `once(...)` wraps the use case's own `execute`, so nothing is wired on the bus: the use case still
 runs inside it — Sentry, its span, and the access guard around it, so a replayed answer is still
 authorized. A subclass that inherits `execute` inherits `once()`; a `replaces=` handler with an
@@ -88,6 +91,7 @@ from sincpro_framework.data_layer.caching.domain.observer import (
 from sincpro_framework.data_layer.caching.domain.policies import IdempotencyPolicy
 from sincpro_framework.data_layer.caching.infrastructure.flight import POLL_SECONDS
 from sincpro_framework.data_layer.store import KeyValueStore
+from sincpro_framework.sincpro_abstractions import DryRunnable
 from sincpro_framework.sincpro_logger import logger
 
 
@@ -488,7 +492,8 @@ class Idempotency:
         2. The class decorator it answers:
            2.1 a class that already declared `once()`, or whose `execute` is async, is
                refused (`ProgrammingError`);
-           2.2 `execute` is replaced by a wrapper that, at each run, reads the response's
+           2.2 `execute` is replaced by a wrapper that runs a dry run (`DryRunnable`) as it
+               is, and at each other run reads the response's
                codec (the first run only), the context's `vary_by` values, the Command's
                identity, its request key (`request_key_of`, a transport's key beside it) and
                its owner (`Owner.of`);
@@ -528,10 +533,14 @@ class Idempotency:
             def execute(handler: Any, dto: Any) -> Any:
                 """The original `execute`, once per key.
 
-                1. The answer's codec, read from the declared response type at the first run.
-                2. The key: the Command's identity, its request key, its owner.
+                1. A dry run — a `DryRunnable` with `dry_run=True` — runs the original as it is:
+                   nothing is claimed, stored or told, and the store is never asked.
+                2. The answer's codec, read from the declared response type at the first run.
+                3. The key: the Command's identity, its request key, its owner.
                 Final: `run(...)` — with the key a release before this one wrote as `before`.
                 """
+                if isinstance(dto, DryRunnable) and dto.dry_run:
+                    return original(handler, dto)
                 if not codecs:
                     codecs.append(JsonCodec(_response_of(cls, original)))
                 context = handler.context or {}
