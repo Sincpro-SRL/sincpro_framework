@@ -1,5 +1,6 @@
 """`Publications`: an object reachable by an id — for a time, for a number of uses, to read or to
-write — saved in the context's store, a use spent atomically."""
+write, and to another access once the first is spent — saved on the context's `KeyValueStore`
+for its own time, a use counted atomically."""
 
 import threading
 from collections.abc import Iterator
@@ -7,10 +8,17 @@ from datetime import UTC, datetime, timedelta
 
 import pytest
 
-from sincpro_framework.context import InMemoryContexts
-from sincpro_framework.data_layer.object_storage import Access, PublicationRefused, Refusal
+from sincpro_framework.context import KeyValueContexts
+from sincpro_framework.data_layer.object_storage import (
+    Access,
+    Grant,
+    PublicationRefused,
+    Refusal,
+)
 from sincpro_framework.data_layer.object_storage.services.ids import PublicationIds
 from sincpro_framework.data_layer.object_storage.services.publications import Publications
+from sincpro_framework.data_layer.store import InMemoryKeyValue
+from sincpro_framework.exceptions import FailureKind, ProgrammingError
 from sincpro_framework.runtime.testing import ManualClock, fresh_context
 
 NOON = datetime(2026, 10, 27, 12, 0, tzinfo=UTC)
@@ -157,12 +165,125 @@ def test_of_many_redeems_at_once_of_one_use_exactly_one_opens():
     assert opened == [1] and refused == [Refusal.USED_UP] * 7
 
 
-def test_publications_are_saved_in_a_store_of_its_own_when_given():
-    own = InMemoryContexts()
-    publications = Publications(PublicationIds("s3cr3t"), own)
+class RecordingKeyValue(InMemoryKeyValue):
+    """Memory that says how long each key was set for."""
 
+    def __init__(self) -> None:
+        super().__init__()
+        self.lasting: dict[str, timedelta | None] = {}
+
+    def set(self, key: str, value: bytes, ttl: timedelta | None = None) -> None:
+        self.lasting[key] = ttl
+        super().set(key, value, ttl)
+
+
+def test_a_publication_lasts_its_own_time_and_a_day_more_in_a_store_of_its_own():
+    recording = RecordingKeyValue()
+    publications = Publications(PublicationIds("s3cr3t"), KeyValueContexts(recording))
+
+    published = publish(publications, expires_in=timedelta(minutes=5))
+
+    record = f"sincpro:object_publication:{published.id.partition('.')[0]}"
+    assert recording.lasting == {record: timedelta(minutes=5) + timedelta(days=1)}
+
+
+def test_uploaded_once_then_claimed_once_with_the_same_id():
+    clock = ManualClock(NOON)
+    publications = publications_at(clock)
+    ticket = publications.publish(
+        "inbox/scan.pdf",
+        Access.WRITE,
+        timedelta(minutes=5),
+        1,
+        {"filename": "scan.pdf"},
+        Grant(access=Access.READ, expires_in=timedelta(hours=1), max_uses=1),
+    )
+    assert (
+        refusal_of(lambda: publications.opened(ticket.id, Access.READ, spend=False))
+        is Refusal.WRONG_ACCESS
+    )
+
+    clock.advance(minutes=4)
+    uploaded = publications.opened(ticket.id, Access.WRITE, spend=True)
+    previewed = publications.opened(ticket.id, Access.READ, spend=False)
+    claimed = publications.opened(ticket.id, Access.READ, spend=True)
+
+    assert (uploaded.access, uploaded.uses) == (Access.WRITE, 1)
+    assert (previewed.access, previewed.uses, previewed.then) == (Access.READ, 0, None)
+    assert previewed.expires_at == NOON + timedelta(minutes=4, hours=1)
+    assert (claimed.uses, claimed.metadata) == (1, {"filename": "scan.pdf"})
+    assert (
+        refusal_of(lambda: publications.opened(ticket.id, Access.WRITE, spend=True))
+        is Refusal.USED_UP
+    )
+    assert (
+        refusal_of(lambda: publications.opened(ticket.id, Access.READ, spend=True))
+        is Refusal.USED_UP
+    )
+
+
+def test_what_it_opens_to_runs_its_own_time_from_when_it_opened():
+    clock = ManualClock(NOON)
+    publications = publications_at(clock)
+    ticket = publications.publish(
+        "inbox/scan.pdf",
+        Access.WRITE,
+        timedelta(minutes=5),
+        1,
+        {},
+        Grant(access=Access.READ, expires_in=timedelta(hours=1)),
+    )
+    publications.opened(ticket.id, Access.WRITE, spend=True)
+
+    clock.advance(minutes=59)
+    assert publications.opened(ticket.id, Access.READ, spend=True).uses == 1
+    clock.advance(minutes=1)
+    assert (
+        refusal_of(lambda: publications.opened(ticket.id, Access.READ, spend=False))
+        is Refusal.EXPIRED
+    )
+
+
+def test_a_then_on_uses_without_end_is_a_programming_error():
+    publications = publications_at(ManualClock(NOON))
+
+    with pytest.raises(ProgrammingError, match="max_uses"):
+        publications.publish(
+            "a.pdf",
+            Access.WRITE,
+            timedelta(minutes=5),
+            None,
+            {},
+            Grant(access=Access.READ, expires_in=timedelta(hours=1)),
+        )
+
+
+def test_uses_without_end_are_counted_by_every_redeem_at_once():
+    publications = publications_at(ManualClock(NOON))
     published = publish(publications)
+    counted: list[int] = []
 
-    assert own.list_entries("SINCPRO_OBJECT_PUBLICATION") == [
-        f"SINCPRO_OBJECT_PUBLICATION:{published.id.partition('.')[0]}"
-    ]
+    def redeem() -> None:
+        counted.append(publications.opened(published.id, Access.READ, spend=True).uses)
+
+    threads = [threading.Thread(target=redeem) for _ in range(8)]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join()
+
+    assert sorted(counted) == list(range(1, 9))
+
+
+@pytest.mark.parametrize(
+    ("reason", "kind"),
+    [
+        (Refusal.UNKNOWN, FailureKind.NOT_FOUND),
+        (Refusal.FORGED, FailureKind.PERMISSION_DENIED),
+        (Refusal.EXPIRED, FailureKind.PERMISSION_DENIED),
+        (Refusal.USED_UP, FailureKind.PERMISSION_DENIED),
+        (Refusal.WRONG_ACCESS, FailureKind.PERMISSION_DENIED),
+    ],
+)
+def test_every_wire_answers_an_unknown_id_as_not_found_and_the_rest_as_denied(reason, kind):
+    assert PublicationRefused(reason, "refused").failure_kind is kind

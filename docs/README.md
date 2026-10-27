@@ -31,7 +31,7 @@ with:
 | Something slow to compute or to fetch, with a fallback when its source fails | `bus.cache`, `Cache`, `QueryCaching` | `@billing.cache` on the function — kept where the context is kept; `.ttl`, `.sliding`, `.versioned`, `fail_safe=`; handed to an adapter; `billing.cache.queries(Query)` for a Query's answer; `Cache(store)` built with every strategy | [caching/README.md](caching/README.md#the-simple-way-buscache-and-busidempotency-nothing-to-build) |
 | What a form keeps between requests, per user | Drafts | `self.context.drafts()` | [core/drafts.md](core/drafts.md) |
 | See what a write would do before it happens | Dry run | `class CommandX(DryRunnable)`, `def preview`, `dry_run=True` | [core/dry-run.md](core/dry-run.md) |
-| Store an object and publish it by an id — for a time, for a number of uses, to read or to upload | Object storage | `ObjectStorage(S3CompatibleObjectStore(...))`, `publish`, `check`, `redeem` | [object_storage/](object_storage/README.md) |
+| Store an object and publish it by an id — for a time, for a number of uses, to read or to upload | Object storage | `ObjectStorage(S3CompatibleObjectStore(...))`, `open`, `take`, `publish`, `check`, `redeem` | [object_storage/](object_storage/README.md) |
 | A sign-in that lasts while it is used; a code used once | Sessions | `use_context().sessions().open({...})` | [core/sessions.md](core/sessions.md) |
 | Whether a failure is the caller's, the business's or the service's — answer it, retry it, report it | `failure_kind` | declared once on the error; every wire, `Retry`, the queue and the observability read it | [core/exceptions.md](core/exceptions.md) |
 

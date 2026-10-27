@@ -9,7 +9,7 @@ answer — the publication knows no URL, no route, no host. Whoever receives the
 `ObjectStorage.redeem` and serves or takes the bytes its own way.
 """
 
-from datetime import datetime
+from datetime import datetime, timedelta
 from enum import StrEnum
 from typing import Any
 
@@ -32,6 +32,18 @@ class Refusal(StrEnum):
     """It was published to read and asked to write, or the other way."""
 
 
+class Grant(DataTransferObject):
+    """What a publication opens to once its first access is spent: another access, for its own
+    time from that moment, its own number of uses.
+
+        Grant(access=Access.READ, expires_in=timedelta(hours=1), max_uses=1)    upload, then claim once
+    """
+
+    access: Access
+    expires_in: timedelta
+    max_uses: int | None = None
+
+
 class Publication(DataTransferObject):
     """An object reachable by `id` until `expires_at`, `max_uses` times — every time with `None`."""
 
@@ -46,3 +58,6 @@ class Publication(DataTransferObject):
     metadata: dict[str, Any] = {}
     """What the publisher said of it — a filename, who may use it, what to do after — read back
     by whoever checks or redeems it, to judge by rules of its own."""
+    then: Grant | None = None
+    """What it opens to once this access is spent — `None` once it has, or when it opens to
+    nothing more."""

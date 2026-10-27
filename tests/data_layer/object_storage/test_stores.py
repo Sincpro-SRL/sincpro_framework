@@ -51,12 +51,10 @@ class FakeS3:
         self.asked["get_object"] = extra
         if (Bucket, Key) not in self.objects:
             raise S3Error("NoSuchKey")
-        return {"Body": io.BytesIO(self.objects[Bucket, Key]["Body"])}
+        held = self.objects[Bucket, Key]
+        return {**self._head(Bucket, Key), "Body": io.BytesIO(held["Body"])}
 
-    def head_object(self, Bucket: str, Key: str, **extra: Any) -> dict[str, Any]:
-        self.asked["head_object"] = extra
-        if (Bucket, Key) not in self.objects:
-            raise S3Error("404")
+    def _head(self, Bucket: str, Key: str) -> dict[str, Any]:
         held = self.objects[Bucket, Key]
         return {
             "ContentLength": len(held["Body"]),
@@ -64,6 +62,12 @@ class FakeS3:
             "Metadata": held["Metadata"],
             "LastModified": NOON,
         }
+
+    def head_object(self, Bucket: str, Key: str, **extra: Any) -> dict[str, Any]:
+        self.asked["head_object"] = extra
+        if (Bucket, Key) not in self.objects:
+            raise S3Error("404")
+        return self._head(Bucket, Key)
 
     def delete_object(self, Bucket: str, Key: str, **extra: Any) -> None:
         self.asked["delete_object"] = extra
@@ -117,7 +121,7 @@ def test_a_bucket_keeps_every_key_under_its_prefix_and_answers_it_without():
     client = FakeS3()
     store = S3CompatibleObjectStore("documents", client, prefix="billing/")
 
-    store.put("a.pdf", b"%PDF", "application/pdf", {}, False)
+    store.put("a.pdf", b"%PDF", "application/pdf", {}, False, None)
 
     assert ("documents", "billing/a.pdf") in client.objects
     assert list(store.keys("")) == ["a.pdf"]
@@ -129,7 +133,9 @@ def test_the_options_of_every_put_go_with_each_and_a_call_s_own_win():
         "documents", client, put_options={"ServerSideEncryption": "AES256", "ACL": "private"}
     )
 
-    store.put("a.pdf", b"%PDF", "application/pdf", {"by": "ana"}, False, ACL="public-read")
+    store.put(
+        "a.pdf", b"%PDF", "application/pdf", {"by": "ana"}, False, None, ACL="public-read"
+    )
 
     assert client.objects["documents", "a.pdf"] == {
         "Body": b"%PDF",
@@ -140,11 +146,53 @@ def test_the_options_of_every_put_go_with_each_and_a_call_s_own_win():
     }
 
 
+class RgwLikeClient(FakeS3):
+    """A bucket that answers metadata the way DigitalOcean Spaces (Ceph RGW) does: the beast
+    frontend turns a header into an environment variable (`-` → `_`), and `init_meta_info` turns
+    it back into a name (`_` → `-`). `moto` keeps the `_` like AWS, so it never shows this."""
+
+    def _head(self, Bucket: str, Key: str) -> dict[str, Any]:
+        answered = super()._head(Bucket, Key)
+        answered["Metadata"] = {
+            name.replace("_", "-"): value for name, value in answered["Metadata"].items()
+        }
+        return answered
+
+
+def test_what_a_bucket_like_spaces_answers_comes_back_as_written():
+    store = S3CompatibleObjectStore("documents", RgwLikeClient())
+    expires_at = datetime(2099, 1, 1, tzinfo=UTC)
+
+    store.put(
+        "a.pdf", b"%PDF", "application/pdf", {"file-name": "resumen.pdf"}, False, expires_at
+    )
+
+    found = store.get("a.pdf")
+    assert found is not None
+    assert (found.ref.metadata, found.ref.expires_at) == (
+        {"file-name": "resumen.pdf"},
+        expires_at,
+    )
+
+
+def test_a_bucket_answers_an_object_and_what_it_is_in_one_read():
+    client = FakeS3()
+    store = S3CompatibleObjectStore("documents", client)
+    store.put("a.pdf", b"%PDF", "application/pdf", {"by": "ana"}, False, None)
+
+    found = store.get("a.pdf")
+
+    assert found is not None and (found.data, found.ref.metadata) == (b"%PDF", {"by": "ana"})
+    assert "head_object" not in client.asked
+
+
 def test_a_bucket_carries_metadata_as_ascii_headers():
     client = FakeS3()
     store = S3CompatibleObjectStore("documents", client)
 
-    store.put("a.pdf", b"%PDF", "application/pdf", {"filename": "facturación.pdf"}, False)
+    store.put(
+        "a.pdf", b"%PDF", "application/pdf", {"filename": "facturación.pdf"}, False, None
+    )
 
     assert client.objects["documents", "a.pdf"]["Metadata"] == {
         "filename": "facturaci%C3%B3n.pdf"
@@ -155,7 +203,7 @@ def test_every_call_hands_the_storage_its_own_options():
     client = FakeS3()
     store = S3CompatibleObjectStore("documents", client)
     sse_c = {"SSECustomerAlgorithm": "AES256", "SSECustomerKey": "k" * 32}
-    store.put("a.pdf", b"%PDF", "application/pdf", {}, False, **sse_c)
+    store.put("a.pdf", b"%PDF", "application/pdf", {}, False, None, **sse_c)
 
     store.get("a.pdf", **sse_c)
     store.info("a.pdf", **sse_c)
@@ -190,11 +238,13 @@ def test_a_bucket_that_fails_is_an_external_service_error():
     client.down = True
 
     with pytest.raises(ExternalServiceError, match="failed to put a.pdf on documents"):
-        S3CompatibleObjectStore("documents", client).put("a.pdf", b"%PDF", "x", {}, False)
+        S3CompatibleObjectStore("documents", client).put(
+            "a.pdf", b"%PDF", "x", {}, False, None
+        )
 
 
 def test_a_key_never_leaves_the_local_directory(tmp_path: Path):
     store = LocalObjectStore(tmp_path / "objects")
 
     with pytest.raises(ProgrammingError, match="leaves the store's directory"):
-        store.put("../outside.txt", b"x", "text/plain", {}, False)
+        store.put("../outside.txt", b"x", "text/plain", {}, False, None)

@@ -5,7 +5,7 @@ DigitalOcean Spaces, MinIO, Cloudflare R2, Wasabi.
     S3CompatibleObjectStore("documents", client, prefix="billing/")           every key under a prefix
     S3CompatibleObjectStore("documents", client, put_options={"ServerSideEncryption": "AES256",
                             "StorageClass": "STANDARD_IA", "ACL": "private"})   on every put
-    store.put(key, data, "application/pdf", {"by": "ana"}, False, CacheControl="max-age=3600")
+    store.put(key, data, "application/pdf", {"by": "ana"}, False, None, CacheControl="max-age=3600")
     store.presign(key, Access.READ, timedelta(hours=1), ResponseContentDisposition="attachment")
         ->  "https://documents.s3…?X-Amz-Signature=…"   the client gets the bytes from the bucket
 
@@ -20,13 +20,15 @@ call's parameters — an SSE-C key, a `VersionId`, a `Range`.
 `presign` is this technology's own, not the port's: a Feature that wants the bucket to serve the
 bytes types this adapter. A file-like is the `Body` as it is, streamed by the client. Metadata
 travels as HTTP headers, so each value is percent-encoded beyond printable ASCII and decoded back
-(`"facturación.pdf"` reads as written). A put `if_absent` is a conditional write
-(`IfNoneMatch="*"`). A
-failure of the storage — not a key with nothing under it — is an `ExternalServiceError`.
+(`"facturación.pdf"` reads as written). When an object expires is one more metadata value,
+`sincpro-expires-at`, taken out of `metadata` when read — a name with `-`, never `_`, since Ceph RGW
+(DigitalOcean Spaces) answers a `_` as `-`. A bucket's listing does not read it: a lifecycle rule
+cleans what expired. A put `if_absent` is a conditional write (`IfNoneMatch="*"`). A failure of the
+storage — not a key with nothing under it — is an `ExternalServiceError`.
 """
 
 from collections.abc import Iterator, Mapping
-from datetime import timedelta
+from datetime import datetime, timedelta
 from typing import Any, BinaryIO
 from urllib.parse import quote, unquote
 
@@ -35,6 +37,7 @@ from sincpro_framework.data_layer.object_storage.domain.object_store import (
     Access,
     ObjectRef,
     ObjectStore,
+    StoredObject,
 )
 
 MISSING = frozenset({"NoSuchKey", "404", "NotFound"})
@@ -43,6 +46,9 @@ MISSING = frozenset({"NoSuchKey", "404", "NotFound"})
 HEADER_SAFE = "".join(chr(code) for code in range(0x20, 0x7F) if chr(code) != "%")
 """What a metadata value keeps as it is: printable ASCII but `%` — everything else, an accent or
 an emoji, is percent-encoded, since the storage carries metadata as HTTP headers."""
+
+EXPIRES_AT = "sincpro-expires-at"
+"""The metadata name an object's `expires_at` travels under, ISO 8601."""
 
 TAKEN = frozenset({"PreconditionFailed", "412", "ConditionalRequestConflict", "409"})
 """The error codes a conditional write answers when another object is, or is being, written."""
@@ -79,6 +85,21 @@ class S3CompatibleObjectStore(ObjectStore):
             f"the object storage failed to {doing} {key} on {self.bucket}: {error}"
         )
 
+    def _ref(self, key: str, answer: Mapping[str, Any]) -> ObjectRef:
+        """What a `head_object` or a `get_object` answered of `key`."""
+        said = {
+            name: unquote(value) for name, value in (answer.get("Metadata") or {}).items()
+        }
+        expires_at = said.pop(EXPIRES_AT, None)
+        return ObjectRef(
+            key=key,
+            size=int(answer.get("ContentLength", 0)),
+            content_type=answer.get("ContentType") or "application/octet-stream",
+            metadata=said,
+            modified_at=answer.get("LastModified"),
+            expires_at=datetime.fromisoformat(expires_at) if expires_at else None,
+        )
+
     def put(
         self,
         key: str,
@@ -86,9 +107,11 @@ class S3CompatibleObjectStore(ObjectStore):
         content_type: str,
         metadata: Mapping[str, str],
         if_absent: bool,
+        expires_at: datetime | None,
         **options: Any,
     ) -> bool:
         conditions = {"IfNoneMatch": "*"} if if_absent else {}
+        said = {**metadata, **({EXPIRES_AT: expires_at.isoformat()} if expires_at else {})}
         try:
             self.client.put_object(
                 Bucket=self.bucket,
@@ -97,8 +120,7 @@ class S3CompatibleObjectStore(ObjectStore):
                 ContentType=content_type,
                 **{
                     "Metadata": {
-                        name: quote(value, safe=HEADER_SAFE)
-                        for name, value in metadata.items()
+                        name: quote(value, safe=HEADER_SAFE) for name, value in said.items()
                     },
                     **self.put_options,
                     **conditions,
@@ -111,7 +133,7 @@ class S3CompatibleObjectStore(ObjectStore):
             raise self._failed("put", key, error) from error
         return True
 
-    def get(self, key: str, **options: Any) -> bytes | None:
+    def get(self, key: str, **options: Any) -> StoredObject | None:
         try:
             answer = self.client.get_object(
                 Bucket=self.bucket, Key=self.prefix + key, **options
@@ -120,7 +142,7 @@ class S3CompatibleObjectStore(ObjectStore):
             if _code(error) in MISSING:
                 return None
             raise self._failed("get", key, error) from error
-        return answer["Body"].read()
+        return StoredObject(data=answer["Body"].read(), ref=self._ref(key, answer))
 
     def info(self, key: str, **options: Any) -> ObjectRef | None:
         try:
@@ -131,15 +153,7 @@ class S3CompatibleObjectStore(ObjectStore):
             if _code(error) in MISSING:
                 return None
             raise self._failed("read", key, error) from error
-        return ObjectRef(
-            key=key,
-            size=int(answer.get("ContentLength", 0)),
-            content_type=answer.get("ContentType") or "application/octet-stream",
-            metadata={
-                name: unquote(value) for name, value in (answer.get("Metadata") or {}).items()
-            },
-            modified_at=answer.get("LastModified"),
-        )
+        return self._ref(key, answer)
 
     def delete(self, key: str, **options: Any) -> None:
         try:

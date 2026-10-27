@@ -1,5 +1,6 @@
-"""`PublicationIds`: the id a publication is reached by — 128 random bits, and their HMAC-SHA256 when
-there is a secret, so an id not made here is refused before any store is asked.
+"""`PublicationIds`: the id a publication is reached by — 128 random bits, and their HMAC-SHA256 cut to
+128 bits when there is a secret, so an id not made here is refused before any store is asked; 55
+characters, short enough for a person or a model to copy.
 
     ids = PublicationIds("the-service-secret")
     raw, id = ids.new()                     ->  "0b9c…", "0b9c….Zk3…"
@@ -27,11 +28,11 @@ class PublicationIds:
         self.secret = secret.encode() if isinstance(secret, str) else secret
 
     def signed(self, raw: str) -> str:
-        """The id its holder is handed for `raw`: `raw`, and its HMAC-SHA256 after a dot when
-        there is a secret."""
+        """The id its holder is handed for `raw`: `raw`, and its HMAC-SHA256 cut to 128 bits
+        after a dot when there is a secret."""
         if self.secret is None:
             return raw
-        digest = hmac.new(self.secret, raw.encode(), hashlib.sha256).digest()
+        digest = hmac.new(self.secret, raw.encode(), hashlib.sha256).digest()[:16]
         return f"{raw}.{base64.urlsafe_b64encode(digest).decode().rstrip('=')}"
 
     def unsigned(self, id: str) -> str:
