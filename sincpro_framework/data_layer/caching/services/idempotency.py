@@ -42,7 +42,9 @@ case's own database, completing in its transaction (`records.transaction()`), cl
 error: the claim expires all the same.
 
 A dry run — a `DryRunnable` Command with `dry_run=True` — is never claimed: it writes nothing,
-so there is nothing to run once, and it answers with the store down.
+so there is nothing to run once, and it answers with the store down. A run that answers a
+`Preview` all the same — a confirmed write whose document changed since it was seen, asking again
+— wrote nothing either: its claim is released and it is never replayed.
 
 `once(...)` wraps the use case's own `execute`, so nothing is wired on the bus: the use case still
 runs inside it — Sentry, its span, and the access guard around it, so a replayed answer is still
@@ -92,7 +94,7 @@ from sincpro_framework.data_layer.caching.domain.policies import IdempotencyPoli
 from sincpro_framework.data_layer.caching.infrastructure.flight import POLL_SECONDS
 from sincpro_framework.data_layer.store import KeyValueStore
 from sincpro_framework.observability.metrics import metrics
-from sincpro_framework.sincpro_abstractions import DryRunnable
+from sincpro_framework.sincpro_abstractions import DryRunnable, Preview
 from sincpro_framework.sincpro_logger import logger
 
 
@@ -343,7 +345,9 @@ class Idempotency:
 
         1. `before` given and an answer completed there for this payload: that answer.
         2. The claim won: `run()` inside the records' transaction, knowing its key; its answer
-           completed for `expires_after`. Anything raised releases the claim and is re-raised.
+           completed for `expires_after`. Anything raised releases the claim and is re-raised;
+           an answer that is a `Preview` — nothing was done, what would be is told again —
+           releases it too, and is never replayed.
         3. The key held for another payload: `KeyReused`.
         4. The key held by a completed answer: that answer — run again when it no longer
            decodes as the use case's response.
@@ -378,16 +382,21 @@ class Idempotency:
                     with records.transaction():
                         with self._running_as(hashed):
                             answer = run()
-                        completed = {
-                            "state": RecordState.COMPLETED,
-                            "answer": codec.encode(answer),
-                        }
-                        records.complete(
-                            hashed, claim.model_copy(update=completed), policy.expires_after
-                        )
+                        if not isinstance(answer, Preview):
+                            completed = {
+                                "state": RecordState.COMPLETED,
+                                "answer": codec.encode(answer),
+                            }
+                            records.complete(
+                                hashed,
+                                claim.model_copy(update=completed),
+                                policy.expires_after,
+                            )
                 except BaseException:
                     _released(records, hashed, owner)
                     raise
+                if isinstance(answer, Preview):
+                    _released(records, hashed, owner)
                 return answer
             held = records.read(hashed)
             if held is None:

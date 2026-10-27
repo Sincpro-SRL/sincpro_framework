@@ -187,6 +187,7 @@ The same facade, one option of the same call each:
 | the same question for a key run by hand (`run(key, ...)`) | `billing.idempotency.completed_key(key)`: a completed answer that has not expired |
 | the same idempotency for every write, declared once | `billing.idempotency.declare_for(WriteCommand, expires_after=...)`: every Feature and ApplicationService whose Command is one, registered before or after, on every generation; a class's own `@billing.idempotency` keeps its own; `idempotency.declare_for(...)` reaches every bus |
 | a dry run (`DryRunnable`, `dry_run=True`) | never claimed: it writes nothing, so it is not stored, not in `outcomes()`, and it answers with the store down |
+| a write that answers a `Preview` all the same — its document changed since it was seen | the claim released, never replayed: the next confirmed call runs |
 | telling the client that nothing was written again | `with billing.idempotency.outcomes() as seen:` — `seen == [IdempotencyOutcome.REPLAYED]`, also through `get_async_bus()` |
 | a Redis or Valkey client that fails fast | `RedisKeyValue.from_url(url)`: half a second, no retries — redis-py waits forever by default |
 | the process's memory, bounded | `InMemoryKeyValue(max_entries=50_000)`: the least recently used let go first; what expired is swept as it is written |

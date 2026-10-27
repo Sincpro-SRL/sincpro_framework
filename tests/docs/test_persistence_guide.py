@@ -38,6 +38,7 @@ DATA_ANALYSIS = ROOT / "docs" / "data_analysis" / "README.md"
 RUNTIME_USE_CASES = ROOT / "docs" / "runtime_use_cases" / "README.md"
 BROKERS = ROOT / "docs" / "events" / "brokers.md"
 CACHING = ROOT / "docs" / "caching" / "README.md"
+OBJECT_STORAGE = ROOT / "docs" / "object_storage" / "README.md"
 AUTH = ROOT / "docs" / "auth" / "README.md"
 REST = ROOT / "docs" / "entrypoints" / "rest.md"
 FASTAPI = ROOT / "docs" / "entrypoints" / "fastapi.md"
@@ -91,6 +92,7 @@ def _failing_line(error: Exception, path: Path) -> int:
         RUNTIME_USE_CASES,
         BROKERS,
         CACHING,
+        OBJECT_STORAGE,
         AUTH,
         REST,
         FASTAPI,
