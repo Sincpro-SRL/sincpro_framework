@@ -55,8 +55,9 @@ assert taken.data == b"%PDF-1.7" and not storage.exists("inbox/scan.pdf")
 - **`expires_in`** makes an object gone after its time: `find`, `open`, `get`, `take` and `exists`
   answer it as not there, and delete it. Memory and disk drop what expired as they list; a bucket's
   listing does not read the expiry, so `keys` may name one until a lifecycle rule cleans it.
-- **`data` is bytes or a file-like** — a request body spooled to disk — streamed to the store,
-  never all in memory where the store streams (a bucket does).
+- **`data` is bytes or a file-like** — a multipart upload's file, a body spooled to disk, another
+  object's stream — read to its end by the store, never all in memory where the store streams: a
+  bucket uploads it in parts as it is read, of any length; the disk copies it.
 - **Metadata values are any text**: a bucket carries them as headers, so the adapter encodes what
   is not ASCII and reads it back as written. **Metadata names** are lowercase letters, digits and
   `-` — anything else is a `ProgrammingError` on every store, memory included: AWS lowercases
@@ -69,6 +70,57 @@ assert taken.data == b"%PDF-1.7" and not storage.exists("inbox/scan.pdf")
 - **`if_absent=True`** writes only under a free key, atomically — `ObjectAlreadyExists`
   (`conflict`) otherwise. What a claim needs: of two writers at once, one stores.
 - A failure of the storage — a bucket down, credentials refused — is an `ExternalServiceError`.
+
+## Whole, or by parts
+
+An object reaches a use case for one of two things, and each has one way:
+
+| The use case… | Calls | Memory it takes |
+|---|---|---|
+| needs the bytes whole — an OCR engine, an attachment encoded for another system, a DataFrame | `get` · `open` · `take` | the object |
+| hands them on — a download, an upload, a copy to another store — or reads them by parts — a hash, a CSV row by row | `stream` · `put(key, file)` | one part |
+
+```python
+import csv
+import hashlib
+import io
+
+from sincpro_framework.data_layer.object_storage import LocalObjectStore
+
+storage.put("exports/movements.csv", b"account,amount\n1101,100\n1102,250\n", "text/csv")
+
+with storage.stream("exports/movements.csv") as exported:     # ObjectStream: a binary file
+    assert exported.ref.content_type == "text/csv"            # and what the object is
+    rows = list(csv.DictReader(io.TextIOWrapper(exported, "utf-8")))
+assert rows[1] == {"account": "1102", "amount": "250"}
+
+with storage.stream("exports/movements.csv") as exported:
+    fingerprint = hashlib.file_digest(exported, "sha256").hexdigest()
+
+archive = ObjectStorage(LocalObjectStore("archive"))
+with storage.stream("exports/movements.csv") as exported:     # store to store, a part at a time
+    archive.put("2026/movements.csv", exported, exported.ref.content_type)
+assert archive.get("2026/movements.csv") == storage.get("exports/movements.csv")
+
+parts = list(storage.stream("exports/movements.csv").chunks(16))   # 1 MiB when no size is given
+assert parts[0] == b"account,amount\n1"
+```
+
+- **`stream`** answers an `ObjectStream`: a binary file of the standard library (`io.RawIOBase`)
+  with the object's `ref`, so whatever takes a file takes it as it is — `csv`, `io.TextIOWrapper`,
+  `hashlib.file_digest`, `shutil.copyfileobj`, `pandas.read_csv`, another store's `put`. Only the
+  part being read is in memory; closing it closes the store's response or file.
+- **`chunks(size)`** yields the bytes `size` at a time and closes the stream when they end, or
+  when what iterates them stops — a client gone mid-download.
+- **The rules are `open`'s**: nothing under the key, or expired, is `ObjectNotFound`; `options` go
+  to the store — `stream(key, Range="bytes=0-1023")` reads part of an object on a bucket.
+- **On each store**: a bucket answers `get_object`'s body as it arrives, the disk the open file,
+  memory its bytes. A store of a project's own streams `get`'s bytes from memory until it answers
+  `stream` itself.
+- **`direct(key)`** is the storage's own URL to the object — a bucket's presigned URL, to read for
+  a minute unless said otherwise (`direct(key, Access.WRITE, timedelta(minutes=5))`) — or `None`
+  from a store that cannot serve the bytes itself (memory, a disk): then they go through the
+  service, by `stream`.
 
 ## Publishing: an id, its time, its uses
 
@@ -161,38 +213,56 @@ Asking the first access again once it is spent is `USED_UP`; the `then` is `None
 ## The entrypoint's side
 
 The URL is the entrypoint's: its host, its route, its headers. It publishes, puts the id where it
-likes, and redeems the id when it comes back — any HTTP framework, a queue, a CLI:
+likes, and redeems the id when it comes back — any HTTP framework, a queue, a CLI. The bytes pass
+through it without being held: a download is a redirect to the storage when it serves them itself,
+else a part at a time; an upload is a file the store reads to its end.
 
 ```python
-def download_route(id: str) -> tuple[int, bytes]:
-    """`GET /files/{id}` of the host's own — 200 with the bytes, or what the refusal says."""
+from collections.abc import Iterator
+from typing import BinaryIO
+
+
+def download_route(id: str) -> tuple[int, dict[str, str], Iterator[bytes]]:
+    """`GET /files/{id}` of the host's own — what Starlette's `RedirectResponse` or
+    `StreamingResponse` answers, or what the refusal says."""
     try:
         opened = storage.redeem(id, Access.READ)
     except PublicationRefused as refused:
-        return (410 if refused.reason in (Refusal.EXPIRED, Refusal.USED_UP) else 404), b""
-    return 200, storage.get(opened.key)
+        return (410 if refused.reason in (Refusal.EXPIRED, Refusal.USED_UP) else 404), {}, iter(())
+    url = storage.direct(opened.key)
+    if url:
+        return 307, {"Location": url}, iter(())
+    streamed = storage.stream(opened.key)
+    said = {"Content-Type": streamed.ref.content_type, "Content-Length": str(streamed.ref.size)}
+    return 200, said, streamed.chunks()
 
 
 link = storage.publish("exports/invoices.csv", max_uses=1)
 url = f"https://api.acme.bo/files/{link.id}"          # what the caller is handed
-assert download_route(link.id)[0] == 200
+status, said, body = download_route(link.id)
+assert (status, b"".join(body)) == (200, storage.get("exports/invoices.csv"))
 assert download_route(link.id)[0] == 410
 
 
-def upload_route(id: str, body: bytes, content_type: str) -> int:
-    """`PUT /uploads/{id}` — the client sends the bytes, the id says where they go."""
+def upload_route(id: str, file: BinaryIO, content_type: str) -> int:
+    """`POST /uploads/{id}` — a multipart part's file (Starlette's `UploadFile.file`, on disk past
+    1 MB), or a raw body (`curl -T`) written to a `tempfile.SpooledTemporaryFile` first."""
     try:
         opened = storage.redeem(id, Access.WRITE)
     except PublicationRefused:
         return 403
-    storage.put(opened.key, body, content_type, {"filename": opened.metadata.get("filename", "")})
+    storage.put(opened.key, file, content_type, {"filename": opened.metadata.get("filename", "")})
     return 201
 
 
 ticket = storage.publish("inbox/scan.pdf", Access.WRITE, timedelta(minutes=5), max_uses=1, metadata={"filename": "scan.pdf"})
-assert upload_route(ticket.id, b"%PDF-1.7", "application/pdf") == 201
+assert upload_route(ticket.id, io.BytesIO(b"%PDF-1.7"), "application/pdf") == 201
 assert storage.find("inbox/scan.pdf").metadata == {"filename": "scan.pdf"}
 ```
+
+A redirect needs a client that reaches the storage's host; one in a sandbox that reaches only the
+service — an MCP client's — is answered the stream. A presigned URL opens as often as it is used
+while it lives: the publication's uses count the id, so `direct` URLs live a minute by default.
 
 ## The stores
 
@@ -200,7 +270,7 @@ assert storage.find("inbox/scan.pdf").metadata == {"filename": "scan.pdf"}
 |---|---|
 | `InMemoryObjectStore()` | tests, one replica |
 | `LocalObjectStore("/data/objects")` | a volume the service mounts; a key never leaves the directory, the metadata is a JSON file beside each object, `if_absent` an exclusive create |
-| `S3CompatibleObjectStore("bucket", client, prefix="", put_options={})` | any object storage on the S3 API — AWS, DigitalOcean Spaces, MinIO, Cloudflare R2, Wasabi; `if_absent` a conditional write |
+| `S3CompatibleObjectStore("bucket", client, prefix="", put_options={}, transfer_config=None)` | any object storage on the S3 API — AWS, DigitalOcean Spaces, MinIO, Cloudflare R2, Wasabi, Backblaze B2, Ceph; a file put in parts by boto3's managed transfer (`TransferConfig`: part size, threads); `if_absent` a conditional write |
 | a project's own | inherit `ObjectStore`; prove it with `ObjectStoreContract` |
 
 **A bucket is configured the way the industry does.** The client is the project's, built with
@@ -288,22 +358,24 @@ What `ObjectStorage` does is the recommended default, never the only way:
 | To change | How |
 |---|---|
 | What the storage is told — headers, an ACL, a cache control, an encryption key, a version, a range | pass it on any call: `storage.put(key, data, type, CacheControl="max-age=3600")`, `storage.get(key, SSECustomerAlgorithm="AES256", SSECustomerKey=k)`, `storage.get(key, VersionId=v)`, `storage.delete(key, VersionId=v)` — options go to the storage as they are |
-| The bucket serving the bytes itself | type the adapter: `s3_store.presign(key, Access.READ, ttl, ResponseContentDisposition="attachment")` — a presigned URL, the technology's own |
+| The bucket serving the bytes itself | `storage.direct(key, Access.READ, ttl, ResponseContentDisposition="attachment")` — the store's `presign`, `None` from one that cannot |
 | Rules of its own — who may redeem, what happens after | put them in `metadata` at `publish`, read them from what `check` / `redeem` answer |
 | Where publications and claims are saved | `ObjectStorage(store, secret, context_store=a_context_store)` |
 | How ids are signed | a `PublicationIds` of its own (`signed` / `unsigned`) in `storage.ids` and `storage.publications.ids` |
 | How a publication opens | a `Publications` of its own in `storage.publications` |
-| Where the bytes live | an `ObjectStore` of its own, proven with `ObjectStoreContract` |
+| Where the bytes live | an `ObjectStore` of its own, proven with `ObjectStoreContract` — `stream` and `presign` answered by default (`get`'s bytes from memory, `None`) until it answers them |
 
 `ObjectStorage` is a facade and decides nothing: each call goes to the service of its use case, and
 each is an attribute a project reads or replaces.
 
 | Attribute | Service | Use case |
 |---|---|---|
-| `storage.objects` | `Objects` | put, open, get, find, exists, take, delete, keys — the rules over the store |
+| `storage.objects` | `Objects` | put, find, exists, delete, keys — what is stored |
+| `storage.contents` | `Contents` | open, get, take — the bytes whole, to process them |
+| `storage.transfers` | `Transfers` | stream, direct — the bytes passed on without holding them |
 | `storage.ids` | `PublicationIds` | the id, signed with the secret |
 | `storage.publications` | `Publications` | publish, check, redeem, revoke — on the context's `KeyValueStore` |
-| `storage.store` | the `ObjectStore` | what only its technology offers — a bucket's `presign` |
+| `storage.store` | the `ObjectStore` | what only its technology offers |
 
 ```python
 from sincpro_framework.context import InMemoryContexts

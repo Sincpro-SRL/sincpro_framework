@@ -47,6 +47,19 @@ class FakeS3:
             raise S3Error("PreconditionFailed")
         self.objects[Bucket, Key] = {"Body": Body, **extra}
 
+    def upload_fileobj(
+        self,
+        Fileobj: Any,
+        Bucket: str,
+        Key: str,
+        ExtraArgs: dict[str, Any] | None = None,
+        Config: Any = None,
+    ) -> None:
+        """boto3's managed transfer: the file read by parts, its arguments as `put_object`'s."""
+        self.asked["upload_fileobj"] = {"ExtraArgs": ExtraArgs, "Config": Config}
+        parts = b"".join(iter(lambda: Fileobj.read(8 * 1024 * 1024), b""))
+        self.put_object(Bucket, Key, parts, **(ExtraArgs or {}))
+
     def get_object(self, Bucket: str, Key: str, **extra: Any) -> dict[str, Any]:
         self.asked["get_object"] = extra
         if (Bucket, Key) not in self.objects:
@@ -186,6 +199,70 @@ def test_a_bucket_answers_an_object_and_what_it_is_in_one_read():
     assert "head_object" not in client.asked
 
 
+class Unseekable(io.BufferedReader):
+    """A file that can only be read forward — another object's stream, a request's body."""
+
+    def __init__(self, data: bytes) -> None:
+        super().__init__(io.BytesIO(data))
+
+    def seekable(self) -> bool:
+        return False
+
+
+def test_a_file_is_put_by_parts_with_every_option_and_the_transfer_s_config():
+    client = FakeS3()
+    transfer = object()
+    store = S3CompatibleObjectStore(
+        "documents",
+        client,
+        put_options={"ServerSideEncryption": "AES256"},
+        transfer_config=transfer,
+    )
+
+    store.put(
+        "v.mp4",
+        Unseekable(b"x" * 70_000),
+        "video/mp4",
+        {"by": "ana"},
+        False,
+        None,
+        ACL="private",
+    )
+
+    assert client.asked["upload_fileobj"] == {
+        "ExtraArgs": {
+            "ContentType": "video/mp4",
+            "Metadata": {"by": "ana"},
+            "ServerSideEncryption": "AES256",
+            "ACL": "private",
+        },
+        "Config": transfer,
+    }
+    assert client.objects["documents", "v.mp4"]["Body"] == b"x" * 70_000
+
+
+def test_bytes_and_a_put_if_absent_are_one_put_object():
+    client = FakeS3()
+    store = S3CompatibleObjectStore("documents", client)
+
+    store.put("a.pdf", b"%PDF", "application/pdf", {}, False, None)
+    store.put("b.pdf", io.BytesIO(b"%PDF"), "application/pdf", {}, True, None)
+
+    assert "upload_fileobj" not in client.asked
+    assert {key for _, key in client.objects} == {"a.pdf", "b.pdf"}
+
+
+def test_a_bucket_streams_the_response_s_body_unread():
+    client = FakeS3()
+    store = S3CompatibleObjectStore("documents", client)
+    store.put("a.csv", b"a,b\n1,2\n", "text/csv", {"by": "ana"}, False, None)
+
+    streamed = store.stream("a.csv")
+
+    assert streamed is not None and streamed.ref.metadata == {"by": "ana"}
+    assert (streamed.read(4), streamed.read()) == (b"a,b\n", b"1,2\n")
+
+
 def test_a_bucket_carries_metadata_as_ascii_headers():
     client = FakeS3()
     store = S3CompatibleObjectStore("documents", client)
@@ -248,3 +325,35 @@ def test_a_key_never_leaves_the_local_directory(tmp_path: Path):
 
     with pytest.raises(ProgrammingError, match="leaves the store's directory"):
         store.put("../outside.txt", b"x", "text/plain", {}, False, None)
+
+
+def test_a_file_of_any_length_reaches_a_real_bucket_in_parts_and_streams_back():
+    moto = pytest.importorskip("moto")
+    boto3 = pytest.importorskip("boto3")
+    transfer = pytest.importorskip("boto3.s3.transfer")
+    five_mib = 5 * 1024 * 1024
+    data = b"y" * (12 * 1024 * 1024)
+
+    with moto.mock_aws():
+        client = boto3.client("s3", region_name="us-east-1")
+        client.create_bucket(Bucket="documents")
+        store = S3CompatibleObjectStore(
+            "documents",
+            client,
+            prefix="billing/",
+            transfer_config=transfer.TransferConfig(
+                multipart_threshold=five_mib, multipart_chunksize=five_mib
+            ),
+        )
+
+        store.put(
+            "v.bin", Unseekable(data), "video/mp4", {"filename": "vídeo.bin"}, False, None
+        )
+        streamed = store.stream("v.bin")
+
+        assert streamed is not None
+        assert (streamed.ref.size, streamed.ref.metadata) == (
+            len(data),
+            {"filename": "vídeo.bin"},
+        )
+        assert b"".join(streamed.chunks()) == data

@@ -1,20 +1,19 @@
-"""`Objects`: storing and reading objects by key — the rules over the port, the same on every store:
-a missing key is `ObjectNotFound`, a taken one under `if_absent` is `ObjectAlreadyExists`, an object
-past its `expires_at` is gone, a content type not given is guessed from the key, and a metadata
-name is lowercase letters, digits and `-`.
+"""`Objects`: what is stored, by key — put, found, listed, deleted — with the rules over the port, the same
+on every store: a taken key under `if_absent` is `ObjectAlreadyExists`, an object past its
+`expires_at` is gone, a content type not given is guessed from the key, and a metadata name is
+lowercase letters, digits and `-`.
 
     objects = Objects(store)
     objects.put("exports/invoices.csv", data, expires_in=timedelta(hours=1))
         ->  ObjectRef(content_type="text/csv", expires_at=…)
-    objects.open("exports/invoices.csv")      ->  StoredObject(data, ref): one read of the store
-    objects.take("inbox/scan.pdf")            ->  StoredObject, and it is gone — once, on any store
-    objects.get("never")                      ->  ObjectNotFound
+    objects.put("videos/raw.mov", a_file)     ->  the file read to its end, streamed where the store streams
+    objects.find("exports/invoices.csv")      ->  ObjectRef, without its bytes — None when it is not there
+    list(objects.keys("exports/"))            ->  ["exports/invoices.csv"]
 
-Context: `take` claims the key in the `KeyValueStore` the context stands on (`add`, a `SET NX` on
-Redis or Valkey) before it reads and deletes, so of two replicas taking one object, one gets it —
-whatever the storage offers; a claim lasts a minute at most, so a process that dies holding one
-never locks the object for good. A metadata name is held to what every storage answers back as
-written: AWS lowercases names, and Ceph RGW (DigitalOcean Spaces) answers a `_` as `-`.
+Context: the bytes are read by `Contents` (whole, to process them) and passed on by `Transfers`
+(by parts, or by the storage itself); this is what is there. A metadata name is held to what
+every storage answers back as written: AWS lowercases names, and Ceph RGW (DigitalOcean Spaces)
+answers a `_` as `-`.
 """
 
 import mimetypes
@@ -24,13 +23,10 @@ from datetime import UTC, datetime, timedelta
 from functools import partial
 from typing import Any, BinaryIO
 
-from sincpro_framework.context import ContextStore, use_context
-from sincpro_framework.context.entrypoint.resolution import key_value_store_of
 from sincpro_framework.data_layer.object_storage.domain import exceptions
 from sincpro_framework.data_layer.object_storage.domain.object_store import (
     ObjectRef,
     ObjectStore,
-    StoredObject,
 )
 
 DEFAULT_CONTENT_TYPE = "application/octet-stream"
@@ -39,31 +35,18 @@ DEFAULT_CONTENT_TYPE = "application/octet-stream"
 METADATA_NAME = re.compile(r"[a-z0-9-]+")
 """A metadata name every storage answers back as written."""
 
-CLAIMS = "sincpro:object_claim"
-"""The section of the `KeyValueStore` a `take` claims its key in."""
-
-CLAIM_TTL = timedelta(minutes=1)
-"""The longest a claim is held — what a process that dies while taking leaves behind."""
-
 
 class Objects:
-    """Objects on one `ObjectStore`."""
+    """What is stored on one `ObjectStore`."""
 
     def __init__(
         self,
         store: ObjectStore,
-        context_store: ContextStore | None = None,
         now: Callable[[], datetime] = partial(datetime.now, UTC),
     ) -> None:
-        """`store` holds the bytes; `context_store` is where a `take` claims, else the
-        context's store in play; `now` the clock objects expire by."""
+        """`store` holds the bytes; `now` the clock objects expire by."""
         self.store = store
-        self.context_store = context_store
         self.now = now
-
-    def _expired(self, ref: ObjectRef) -> bool:
-        """Whether `ref` is past its `expires_at`."""
-        return ref.expires_at is not None and ref.expires_at <= self.now()
 
     def put(
         self,
@@ -113,7 +96,7 @@ class Objects:
         """What is stored under `key`, without its bytes — `None` when nothing is, or it
         expired (and then it is deleted)."""
         found = self.store.info(key, **options)
-        if found is not None and self._expired(found):
+        if found is not None and found.expired(self.now()):
             self.store.delete(key)
             return None
         return found
@@ -121,43 +104,6 @@ class Objects:
     def exists(self, key: str, **options: Any) -> bool:
         """Whether an object is stored under `key`, and has not expired."""
         return self.find(key, **options) is not None
-
-    def open(self, key: str, **options: Any) -> StoredObject:
-        """The bytes under `key` and what they are, in one read of the store — `ObjectNotFound`
-        when there are none, or they expired (and then they are deleted)."""
-        found = self.store.get(key, **options)
-        if found is not None and self._expired(found.ref):
-            self.store.delete(key)
-            found = None
-        if found is None:
-            raise exceptions.ObjectNotFound(f"no object is stored under {key}")
-        return found
-
-    def get(self, key: str, **options: Any) -> bytes:
-        """The bytes under `key` — `ObjectNotFound` when there are none, or they expired."""
-        return self.open(key, **options).data
-
-    def take(self, key: str, **options: Any) -> StoredObject:
-        """The object under `key`, deleted as it is read — of every caller taking it at once, on
-        any replica, one gets it and the rest `ObjectNotFound`, as when it is not there.
-
-        1. Claim `key` in the context's `KeyValueStore` (`add`); a claim held is
-           `ObjectNotFound`.
-        2. Open it, then delete it.
-        Final: the claim is let go, so the key can be stored and taken again.
-        """
-        claims = key_value_store_of(use_context().store_in_use(self.context_store))
-        claim = f"{CLAIMS}:{key}"
-        if not claims.add(claim, b"", CLAIM_TTL):
-            raise exceptions.ObjectNotFound(
-                f"the object under {key} is being taken by another"
-            )
-        try:
-            taken = self.open(key, **options)
-            self.store.delete(key, **options)
-            return taken
-        finally:
-            claims.delete(claim)
 
     def delete(self, key: str, **options: Any) -> None:
         """Drop what is under `key`; nothing there is not an error."""

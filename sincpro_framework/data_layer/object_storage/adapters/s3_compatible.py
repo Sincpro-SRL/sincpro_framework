@@ -6,6 +6,9 @@ DigitalOcean Spaces, MinIO, Cloudflare R2, Wasabi.
     S3CompatibleObjectStore("documents", client, put_options={"ServerSideEncryption": "AES256",
                             "StorageClass": "STANDARD_IA", "ACL": "private"})   on every put
     store.put(key, data, "application/pdf", {"by": "ana"}, False, None, CacheControl="max-age=3600")
+    S3CompatibleObjectStore("documents", client, transfer_config=TransferConfig(multipart_chunksize=16 * MB))
+    store.put(key, a_file, "video/mp4", {}, False, None)       in parts, as the file is read
+    store.stream(key)                                          the response's body, unread
     store.presign(key, Access.READ, timedelta(hours=1), ResponseContentDisposition="attachment")
         ->  "https://documents.s3…?X-Amz-Signature=…"   the client gets the bytes from the bucket
 
@@ -16,9 +19,11 @@ boto3); nothing is imported here. What the industry sets once per bucket is the 
 class, ACL, cache control, tagging — each call's options over them. Every option the API takes
 passes as it is: `put`, `get`, `info`, `delete` and `keys` hand them to `put_object`,
 `get_object`, `head_object`, `delete_object` and `list_objects_v2`, `presign` to the presigned
-call's parameters — an SSE-C key, a `VersionId`, a `Range`.
-`presign` is this technology's own, not the port's: a Feature that wants the bucket to serve the
-bytes types this adapter. A file-like is the `Body` as it is, streamed by the client. Metadata
+call's parameters — an SSE-C key, a `VersionId`, a `Range`. `stream` is `get_object`'s body as
+it arrives. A file-like is put through boto3's managed transfer (`upload_fileobj`): parts of
+`transfer_config`'s size uploaded as they are read, of any length, from any file — one that cannot
+seek too (another object's stream); its options are those `upload_fileobj` takes. Bytes, and a
+put `if_absent` — the managed transfer does not carry `IfNoneMatch` — are one `put_object`. Metadata
 travels as HTTP headers, so each value is percent-encoded beyond printable ASCII and decoded back
 (`"facturación.pdf"` reads as written). When an object expires is one more metadata value,
 `sincpro-expires-at`, taken out of `metadata` when read — a name with `-`, never `_`, since Ceph RGW
@@ -37,6 +42,7 @@ from sincpro_framework.data_layer.object_storage.domain.object_store import (
     Access,
     ObjectRef,
     ObjectStore,
+    ObjectStream,
     StoredObject,
 )
 
@@ -69,13 +75,16 @@ class S3CompatibleObjectStore(ObjectStore):
         client: Any,
         prefix: str = "",
         put_options: Mapping[str, Any] | None = None,
+        transfer_config: Any = None,
     ) -> None:
         """`bucket` on `client` — a boto3 client of the S3 API — each key under `prefix`, every
-        put with `put_options`."""
+        put with `put_options`, a file put by parts as boto3's `TransferConfig` says — its
+        defaults when `None`."""
         self.bucket = bucket
         self.client = client
         self.prefix = prefix
         self.put_options = dict(put_options or {})
+        self.transfer_config = transfer_config
 
     def _failed(
         self, doing: str, key: str, error: Exception
@@ -110,30 +119,39 @@ class S3CompatibleObjectStore(ObjectStore):
         expires_at: datetime | None,
         **options: Any,
     ) -> bool:
-        conditions = {"IfNoneMatch": "*"} if if_absent else {}
         said = {**metadata, **({EXPIRES_AT: expires_at.isoformat()} if expires_at else {})}
+        arguments = {
+            "ContentType": content_type,
+            "Metadata": {
+                name: quote(value, safe=HEADER_SAFE) for name, value in said.items()
+            },
+            **self.put_options,
+            **options,
+        }
         try:
-            self.client.put_object(
-                Bucket=self.bucket,
-                Key=self.prefix + key,
-                Body=data,
-                ContentType=content_type,
-                **{
-                    "Metadata": {
-                        name: quote(value, safe=HEADER_SAFE) for name, value in said.items()
-                    },
-                    **self.put_options,
-                    **conditions,
-                    **options,
-                },
-            )
+            if isinstance(data, bytes) or if_absent:
+                self.client.put_object(
+                    Bucket=self.bucket,
+                    Key=self.prefix + key,
+                    Body=data,
+                    **arguments,
+                    **({"IfNoneMatch": "*"} if if_absent else {}),
+                )
+            else:
+                self.client.upload_fileobj(
+                    data,
+                    self.bucket,
+                    self.prefix + key,
+                    ExtraArgs=arguments,
+                    Config=self.transfer_config,
+                )
         except Exception as error:
             if if_absent and _code(error) in TAKEN:
                 return False
             raise self._failed("put", key, error) from error
         return True
 
-    def get(self, key: str, **options: Any) -> StoredObject | None:
+    def stream(self, key: str, **options: Any) -> ObjectStream | None:
         try:
             answer = self.client.get_object(
                 Bucket=self.bucket, Key=self.prefix + key, **options
@@ -142,7 +160,14 @@ class S3CompatibleObjectStore(ObjectStore):
             if _code(error) in MISSING:
                 return None
             raise self._failed("get", key, error) from error
-        return StoredObject(data=answer["Body"].read(), ref=self._ref(key, answer))
+        return ObjectStream(answer["Body"], self._ref(key, answer))
+
+    def get(self, key: str, **options: Any) -> StoredObject | None:
+        found = self.stream(key, **options)
+        if found is None:
+            return None
+        with found:
+            return StoredObject(data=found.read(), ref=found.ref)
 
     def info(self, key: str, **options: Any) -> ObjectRef | None:
         try:

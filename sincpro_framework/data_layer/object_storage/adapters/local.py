@@ -7,7 +7,7 @@ filesystem's own semantics — a volume a service mounts.
 Context: a key is a path under the root, and never leaves it — `../` is refused
 (`ProgrammingError`), since it would read or write outside what the service was given. The
 content type, the metadata and when it expires are a JSON file beside each object; `keys` never
-answers them, and drops what expired on the way. A
+answers them, and drops what expired on the way. `stream` is the file, open. A
 put `if_absent` creates the file exclusively (`O_CREAT | O_EXCL`), the one primitive a disk
 holds atomic across processes.
 """
@@ -23,6 +23,7 @@ from sincpro_framework.data_layer.object_storage.domain import exceptions
 from sincpro_framework.data_layer.object_storage.domain.object_store import (
     ObjectRef,
     ObjectStore,
+    ObjectStream,
     StoredObject,
 )
 
@@ -94,6 +95,15 @@ class LocalObjectStore(ObjectStore):
                 datetime.fromisoformat(said["expires_at"]) if said.get("expires_at") else None
             ),
         )
+
+    def stream(self, key: str, **options: Any) -> ObjectStream | None:
+        found = self.info(key)
+        if found is None:
+            return None
+        try:
+            return ObjectStream(self._path(key).open("rb"), found)
+        except FileNotFoundError:
+            return None
 
     def get(self, key: str, **options: Any) -> StoredObject | None:
         found = self.info(key)
