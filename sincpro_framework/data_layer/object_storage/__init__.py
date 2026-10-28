@@ -7,10 +7,12 @@ entrypoint's, and `ObjectStorage` is injected as any adapter.
     billing.add_dependency("storage", ObjectStorage(S3CompatibleObjectStore("documents", boto3_client), secret))
 
     self.storage.put("exports/invoices.csv", data, "text/csv")
+    self.storage.get("exports/invoices.csv")           whole, to process it
+    self.storage.stream("exports/invoices.csv")        by parts, to pass it on
     published = self.storage.publish("exports/invoices.csv", Access.READ, timedelta(hours=1), max_uses=1)
     self.storage.redeem(published.id, Access.READ)     the entrypoint, when the id comes back
 
-    domain/      ObjectStore (the port), ObjectRef, StoredObject, Access, Publication, Grant, Refusal;
+    domain/      ObjectStore (the port), ObjectRef, StoredObject, ObjectStream, Access, Publication, Grant, Refusal;
                  ObjectNotFound, ObjectAlreadyExists, PublicationRefused
     adapters/    InMemoryObjectStore, LocalObjectStore, S3CompatibleObjectStore
     entrypoint/  ObjectStorage, the facade a project injects
@@ -30,6 +32,7 @@ from sincpro_framework.data_layer.object_storage.domain.object_store import (
     Access,
     ObjectRef,
     ObjectStore,
+    ObjectStream,
     StoredObject,
 )
 from sincpro_framework.data_layer.object_storage.domain.publication import (
@@ -51,6 +54,7 @@ __all__ = [
     "ObjectRef",
     "ObjectStorage",
     "ObjectStore",
+    "ObjectStream",
     "Publication",
     "PublicationRefused",
     "Refusal",

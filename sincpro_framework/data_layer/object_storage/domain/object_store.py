@@ -6,18 +6,23 @@ an object is to whoever asks for it (`ObjectRef`).
     store.get("exports/invoices.csv")          ->  StoredObject(data=b"...", ref=ObjectRef(…))
     store.info("exports/invoices.csv")         ->  ObjectRef(size=812, content_type="text/csv", metadata={"by": "ana"})
     list(store.keys("exports/"))               ->  ["exports/invoices.csv"]
+    store.stream("exports/invoices.csv")       ->  ObjectStream: the bytes by parts, and its ref
+    store.presign("exports/invoices.csv", Access.READ, timedelta(minutes=1))
+        ->  "https://…" from a bucket, `None` from a store that cannot serve the bytes itself
 
 Context: a key is the caller's — the store knows nothing of who stores what, nor why. Five
-operations, what every object storage does. A store keeps `expires_at` and answers it; judging an
-object past it as gone is `Objects`'s, so every store follows one rule; what only one technology offers (a bucket's presigned
-URL) is a method of its adapter, reached by typing the adapter. `options` are the storage's own,
-passed as they are — headers, an ACL, a cache control — so nothing a storage offers is out of
-reach; a store with no use for them ignores them.
+operations, what every object storage does, and two a store answers by default: `stream` reads
+`get`'s bytes from memory until the store streams them (a bucket its response's body, the disk the
+open file), `presign` is `None` until the store can hand the bytes out itself. A store keeps
+`expires_at` and answers it; judging an object past it as gone is the services', so every store
+follows one rule. `options` are the storage's own, passed as they are — headers, an ACL, a cache
+control — so nothing a storage offers is out of reach; a store with no use for them ignores them.
 """
 
+import io
 from abc import ABC, abstractmethod
-from collections.abc import Iterator, Mapping
-from datetime import datetime
+from collections.abc import Generator, Iterator, Mapping
+from datetime import datetime, timedelta
 from enum import StrEnum
 from typing import Any, BinaryIO
 
@@ -46,12 +51,48 @@ class ObjectRef(DataTransferObject):
     expires_at: datetime | None = None
     """When it stops being there — `None`, never."""
 
+    def expired(self, now: datetime) -> bool:
+        """Whether it stopped being there by `now` — what every read judges before it answers."""
+        return self.expires_at is not None and self.expires_at <= now
+
 
 class StoredObject(DataTransferObject):
     """An object with its bytes: what `open` and `take` answer, in one read of the store."""
 
     data: bytes
     ref: ObjectRef
+
+
+PART_SIZE = 1024 * 1024
+"""The bytes `ObjectStream.chunks` yields at a time when no size is given: 1 MiB."""
+
+
+class ObjectStream(io.BufferedReader):
+    """An object read by parts: a binary file of the standard library, with what the object is
+    (`ref`) — what `csv`, `hashlib.file_digest`, `shutil.copyfileobj` and `put` take as they are.
+
+        with storage.stream("exports/movements.csv") as exported:
+            rows = csv.DictReader(io.TextIOWrapper(exported, "utf-8"))
+        StreamingResponse(storage.stream(key).chunks())     closed when the client has it all
+
+    Only the part being read is in memory; closing it closes the store's response or file.
+    """
+
+    def __init__(self, source: Any, ref: ObjectRef) -> None:
+        """`source` the store's bytes as they arrive — a response's body, an open file, a
+        `BytesIO` — and `ref` what they are."""
+        super().__init__(source)
+        self.ref = ref
+
+    def chunks(self, size: int = PART_SIZE) -> Generator[bytes, None, None]:
+        """The bytes `size` at a time to the end — closed when they end, or when what iterates
+        them stops: what a streaming response hands the client after the route has returned.
+        """
+        try:
+            while part := self.read(size):
+                yield part
+        finally:
+            self.close()
 
 
 class ObjectStore(ABC):
@@ -95,3 +136,18 @@ class ObjectStore(ABC):
         """Every key that starts with `prefix` — `""` for all of them; `options` the storage's
         own. A store that knows an object's `expires_at` without reading it leaves the expired
         out; one that does not (a bucket's listing) may answer them until they are cleaned."""
+
+    def stream(self, key: str, **options: Any) -> ObjectStream | None:
+        """The object under `key` to read by parts — `None` when there is none; `options` the
+        storage's own (a range, a version). By default `get`'s bytes, all in memory: a store
+        that streams answers its own."""
+        found = self.get(key, **options)
+        return None if found is None else ObjectStream(io.BytesIO(found.data), found.ref)
+
+    def presign(
+        self, key: str, access: Access, expires_in: timedelta, **options: Any
+    ) -> str | None:
+        """A URL the storage itself serves `key` at, to `access` it, for `expires_in` —
+        `options` among its parameters. By default `None`: a store that cannot (memory, a
+        disk) leaves the bytes to the service."""
+        return None

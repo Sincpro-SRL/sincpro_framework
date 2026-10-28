@@ -39,6 +39,25 @@ class ObjectStoreContract:
         if found is None or found.data != b"x" * 70_000 or found.ref.size != 70_000:
             raise AssertionError("a file-like put was not got back")
 
+    def test_an_object_is_streamed_by_parts_with_what_it_is(self) -> None:
+        """`stream` answers the bytes `put` stored, read part by part, and what `info` says of
+        them; a missing key is `None`."""
+        store = self.make_store()
+        store.put(
+            "big.bin", b"x" * 70_000, "application/octet-stream", {"by": "ana"}, False, None
+        )
+        streamed, said = store.stream("big.bin"), store.info("big.bin")
+        if streamed is None or said is None:
+            raise AssertionError("a stored object was not streamed")
+        with streamed:
+            parts = list(iter(lambda: streamed.read(16_384), b""))
+        if b"".join(parts) != b"x" * 70_000 or max(len(part) for part in parts) > 16_384:
+            raise AssertionError("a stream did not answer the bytes part by part")
+        if (streamed.ref.size, streamed.ref.metadata) != (said.size, said.metadata):
+            raise AssertionError(f"stream answered {streamed.ref!r}, info {said!r}")
+        if store.stream("never") is not None:
+            raise AssertionError("a missing key was streamed")
+
     def test_metadata_of_any_text_is_read_as_written(self) -> None:
         """A value with accents, spaces and signs comes back as it went in."""
         store = self.make_store()
@@ -87,7 +106,7 @@ class ObjectStoreContract:
             raise AssertionError(f"get answered {got!r}, info {said!r}")
 
     def test_an_expiry_is_answered_back_as_given(self) -> None:
-        """`expires_at` is kept and answered back — judging it is `Objects`'s, not the store's."""
+        """`expires_at` is kept and answered back — judging it is the services', not the store's."""
         store = self.make_store()
         expires_at = datetime.now(UTC).replace(microsecond=0) + timedelta(hours=1)
         store.put("a.txt", b"x", "text/plain", {}, False, expires_at)

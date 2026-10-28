@@ -5,7 +5,10 @@ case.
     billing.add_dependency("storage", ObjectStorage(S3CompatibleObjectStore("documents", client), secret))
 
     self.storage.put("exports/invoices.csv", data)                    ->  ObjectRef(content_type="text/csv", …)
-    self.storage.get("exports/invoices.csv")                          ->  b"..."
+    self.storage.get("exports/invoices.csv")                          ->  b"...", whole, to process
+    self.storage.stream("exports/invoices.csv")                       ->  ObjectStream, by parts, to pass on
+    self.storage.direct("exports/invoices.csv", Access.READ, timedelta(minutes=1))
+        ->  the storage's own URL, or None when the bytes go through the service
     published = self.storage.publish("exports/invoices.csv", Access.READ, timedelta(hours=1), max_uses=1)
     published.id                                                      what an entrypoint puts in its URL
 
@@ -21,13 +24,14 @@ Context: a publication is the mechanism, never a URL — how long, how many uses
 write, and what the publisher said of it (`metadata`). The entrypoint that exposes it builds its
 URL from the id, and asks `redeem` when the id comes back.
 
-    objects        Objects          put, open, get, find, exists, take, delete, keys
+    objects        Objects          put, find, exists, delete, keys — what is stored
+    contents       Contents         open, get, take — the bytes whole, to process them
+    transfers      Transfers        stream, direct — the bytes passed on without holding them
     ids            PublicationIds   the id, signed with the secret
     publications   Publications     publish, check, redeem, revoke — in the context's store
 
 Each is an attribute a project reads or replaces — a subclass of its own, a store of its own —
-and `store` is the `ObjectStore` itself, for what only its technology offers (a bucket's
-`presign`).
+and `store` is the `ObjectStore` itself, for what only its technology offers.
 """
 
 from collections.abc import Callable, Iterator, Mapping
@@ -40,17 +44,20 @@ from sincpro_framework.data_layer.object_storage.domain.object_store import (
     Access,
     ObjectRef,
     ObjectStore,
+    ObjectStream,
     StoredObject,
 )
 from sincpro_framework.data_layer.object_storage.domain.publication import (
     Grant,
     Publication,
 )
+from sincpro_framework.data_layer.object_storage.services.contents import Contents
 from sincpro_framework.data_layer.object_storage.services.ids import PublicationIds
 from sincpro_framework.data_layer.object_storage.services.objects import Objects
 from sincpro_framework.data_layer.object_storage.services.publications import (
     Publications,
 )
+from sincpro_framework.data_layer.object_storage.services.transfers import Transfers
 
 
 class ObjectStorage:
@@ -68,7 +75,9 @@ class ObjectStorage:
         context's store in play when each call runs; `now` the clock objects and publications
         expire by."""
         self.store = store
-        self.objects = Objects(store, context_store, now)
+        self.objects = Objects(store, now)
+        self.contents = Contents(store, context_store, now)
+        self.transfers = Transfers(store, now)
         self.ids = PublicationIds(secret)
         self.publications = Publications(self.ids, context_store, now)
 
@@ -90,16 +99,32 @@ class ObjectStorage:
     def open(self, key: str, **options: Any) -> StoredObject:
         """The bytes under `key` and what they are, in one read — `ObjectNotFound` when there
         are none, or they expired."""
-        return self.objects.open(key, **options)
+        return self.contents.open(key, **options)
 
     def get(self, key: str, **options: Any) -> bytes:
         """The bytes under `key` — `ObjectNotFound` when there are none, or they expired."""
-        return self.objects.get(key, **options)
+        return self.contents.get(key, **options)
 
     def take(self, key: str, **options: Any) -> StoredObject:
         """The object under `key`, deleted as it is read — once, on any replica; the rest
         `ObjectNotFound`."""
-        return self.objects.take(key, **options)
+        return self.contents.take(key, **options)
+
+    def stream(self, key: str, **options: Any) -> ObjectStream:
+        """The object under `key` to read by parts, one in memory at a time — `ObjectNotFound`
+        when there is none, or it expired."""
+        return self.transfers.stream(key, **options)
+
+    def direct(
+        self,
+        key: str,
+        access: Access = Access.READ,
+        expires_in: timedelta = timedelta(minutes=1),
+        **options: Any,
+    ) -> str | None:
+        """A URL the storage itself serves `key` at, to `access` it, for `expires_in` — `None`
+        when the store cannot, and the bytes go through the service (`stream`)."""
+        return self.transfers.direct(key, access, expires_in, **options)
 
     def find(self, key: str, **options: Any) -> ObjectRef | None:
         """What is stored under `key`, without its bytes — `None` when nothing is, or it

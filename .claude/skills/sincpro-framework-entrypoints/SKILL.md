@@ -179,6 +179,13 @@ The route translates and calls; it orchestrates nothing. Two use cases chained t
 ApplicationService in `services/`. Runnable version, in the framework repo: `docs/entrypoints/fastapi.md`, "A DTO that
 cannot travel as JSON".
 
+A file that should not sit in memory goes through `ObjectStorage` (`docs/object_storage/README.md`,
+"Whole, or by parts" and "The entrypoint's side"): the route puts the upload's file
+(`storage.put(key, upload.file, ...)`, read to its end by the store), the Command carries the key or
+the publication id, and the Feature reads `storage.get(key)` when it needs the bytes whole or
+`storage.stream(key)` by parts. A download answers `storage.direct(key)` as a redirect when the
+storage serves the bytes itself, else `StreamingResponse(storage.stream(key).chunks())`.
+
 ## Errors: declare them, don't handle them
 
 A project's exception subclasses `DomainError` and declares `failure_kind`. Every wire maps it to
