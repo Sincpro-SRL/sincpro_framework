@@ -116,13 +116,15 @@ class RestGateway(Gateway):
         openapi_path: str | None = "/openapi.json",
         docs_path: str | None = "/docs",
         health_path: str | None = "/healthz",
+        ready_path: str | None = "/readyz",
     ) -> list[Any]:
         """This gateway's Starlette routes, mountable into any app — every use case, and, unless
-        `None`, the OpenAPI document, its docs page and a health check (`serving.routes`).
+        `None`, the OpenAPI document, its docs page, the liveness check and the readiness check
+        of `readiness` (`serving.routes`).
 
             gateway.routes()
             ->  [Route("/billing/command-issue-invoice", methods=["POST"]), ...,
-                 Route("/openapi.json"), Route("/docs"), Route("/healthz")]
+                 Route("/openapi.json"), Route("/docs"), Route("/healthz"), Route("/readyz")]
             gateway.routes(openapi_path=None, health_path=None)  ->  the use cases only
         """
         return serving.routes(
@@ -134,6 +136,8 @@ class RestGateway(Gateway):
             openapi_path,
             docs_path,
             health_path,
+            self.readiness.answer,
+            ready_path,
         )
 
     def app(

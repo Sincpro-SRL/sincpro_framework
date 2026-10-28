@@ -334,14 +334,16 @@ nor `protobuf`, so a build step can export the contract without the `[grpc]` ext
 `grpcio-health-checking` is missing (a warning, never a failed start). It answers **per service**
 — each served service by its full name (`billing.v1.BillingService`), `sincpro.Introspection`,
 and `""` for the whole server; any other name is `NOT_FOUND`. `Check` and `Watch` re-evaluate
-readiness on every call — the default asks whether every published `UseFramework` is still built:
+readiness on every call — the default is the gateway's `readiness`: every bus still built, and every
+check the project added (`gateway.readiness.add("valkey", valkey.ping)`, see
+[readiness](readiness.md)):
 
 ```bash
 grpcurl -plaintext -d '{"service": "billing.v1.BillingService"}' localhost:50051 grpc.health.v1.Health/Check
 grpc_health_probe -addr=localhost:50051   # what Kubernetes' native gRPC probe speaks
 ```
 
-A deeper probe (a DB ping, a queue connection) replaces the default:
+A `health_check` of the caller's replaces readiness altogether:
 
 ```python
 GrpcGateway([billing]).run(health_check=lambda: db.ping() and queue.connected())

@@ -345,7 +345,9 @@ RpcGateway({"qr": qr}).routes(health_path="/live")  # custom path, for composing
 ```
 
 `RpcGateway.is_healthy()` is the check itself, for a host that wants the boolean without the
-route (its own health endpoint, a startup probe before serving traffic).
+route (its own health endpoint, a startup probe before serving traffic). Readiness — the checks a
+service registers (`gateway.readiness.add(...)`) — is `GET /readyz` beside it, `ready_path=None`
+to drop it: see [readiness](readiness.md).
 
 ---
 

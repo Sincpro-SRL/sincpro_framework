@@ -78,6 +78,7 @@ from sincpro_framework.ddd.events import (
 from sincpro_framework.ddd.exceptions import (
     AggregateNotFound,
     ConstraintViolation,
+    CurrencyMismatch,
     DomainError,
     DuplicateAggregate,
     InvalidCriteria,
@@ -86,6 +87,8 @@ from sincpro_framework.ddd.exceptions import (
     TimedOut,
     TransactionConflict,
 )
+from sincpro_framework.ddd.exchange_rates import ExchangeRates, InMemoryExchangeRates
+from sincpro_framework.ddd.money import Currency, ExchangeRate, Money
 from sincpro_framework.ddd.query import (
     DraftState,
     Query,
@@ -141,6 +144,8 @@ __all__ = [
     "Count",
     "CountMode",
     "Criteria",
+    "Currency",
+    "CurrencyMismatch",
     "Cursor",
     "DeliverableEventMixin",
     "Derivations",
@@ -159,6 +164,8 @@ __all__ = [
     "EntityReads",
     "EntityUpdated",
     "EventSourcedMixin",
+    "ExchangeRate",
+    "ExchangeRates",
     "FieldMeta",
     "FieldState",
     "FieldType",
@@ -171,9 +178,11 @@ __all__ = [
     "Hooks",
     "INumbering",
     "IRepository",
+    "InMemoryExchangeRates",
     "InvalidCriteria",
     "LiteralSearch",
     "Meta",
+    "Money",
     "NAME_SEARCH_LIMIT",
     "Not",
     "Now",

@@ -378,9 +378,81 @@ assert unreadable.json()["detail"] == "content_base64 is not valid base64"
 - `documents_api.app()` installed the problem handlers, so the `DomainError` raised in the
   route answers RFC 9457 like any refusal from the bus.
 
+## Paging: one cursor, sent back as it came
+
+A paged answer (`ResponsePaginatedQuery`) carries a `cursor`; a `Query` takes it back, as it came,
+in its own `cursor` field. The criteria never changes between pages, so no client rebuilds it, and
+`null` says there is no more. Being a field of the Command, every wire carries it with its schema:
+a query-string parameter here, a param on JSON-RPC, an argument an MCP tool describes. The use
+case reads `dto.criteria`, gone on from the cursor already.
+
+```python
+from sincpro_framework.ddd import Criteria, ResponsePaginatedQuery
+
+
+class QueryMovements(Query):
+    account: str
+
+
+class ResponseMovements(ResponsePaginatedQuery):
+    movements: list[int]
+
+
+ledger = UseFramework("ledger", log_after_execution=False)
+
+
+@ledger.feature(QueryMovements)
+@rest.get("/movements")
+class ListMovements(Feature):
+    """A page of an account's movements; its cursor is where the next one starts."""
+
+    def execute(self, dto: QueryMovements) -> ResponseMovements:
+        start = int(dto.criteria.cursor or 0)
+        end = start + dto.criteria.limit
+        return ResponseMovements(
+            movements=list(range(start, min(end, 7))), cursor=str(end) if end < 7 else None
+        )
+
+
+ledger_client = TestClient(FastApiGateway([ledger], unguarded=True).app())
+criteria = json.dumps({"pagination": {"limit": 3}})          # the same on every page
+
+read, cursor = [], None
+while True:
+    asked = {"account": "1101", "criteria": criteria} | ({"cursor": cursor} if cursor else {})
+    page = ledger_client.get("/ledger/movements", params=asked).json()
+    read += page["movements"]
+    cursor = page["cursor"]
+    if cursor is None:
+        break
+assert read == [0, 1, 2, 3, 4, 5, 6]
+
+query = QueryMovements(account="1101", criteria=Criteria.model_validate({"pagination": {"limit": 3}}))
+assert [page.movements for page in query.pages(ledger, ResponseMovements)] == [[0, 1, 2], [3, 4, 5], [6]]
+```
+
+- **A frontend**: the same criteria and the cursor it got. An infinite scroll is TanStack Query's
+  `useInfiniteQuery`, the cursor its page parameter:
+
+  ```ts
+  useInfiniteQuery({
+    queryKey: ["movements", account, criteria],
+    queryFn: ({ pageParam }) => api.get("/ledger/movements", { account, criteria, cursor: pageParam }),
+    initialPageParam: undefined,
+    getNextPageParam: (last) => last.cursor ?? undefined,
+  })
+  ```
+
+- **Python** — another service holding a reference to the context, or the bus itself —
+  `query.pages(bus, ResponseType, max_pages=None)`: a page at a time, each one call, until an
+  answer has no cursor. Anything of the bus's shape, `(dto, response_type) -> response`, is a
+  caller.
+- **Every page can be asked again.** The server keeps nothing between pages: a retry, a second
+  tab or a page asked twice reads the same page.
+- A `cursor` given wins over a token the criteria carries itself.
+
 ## Not yet
 
-- The paged envelope for list Queries (`items`, `next_page_token`): phase 2.
 - `ETag` / `If-Match`, and `body="merge-patch"`: phase 2. A binding that declares
   `concurrency="if-match"` or `body="merge-patch"` is refused. Accepting an `If-Match` without
   checking it would be a lie.

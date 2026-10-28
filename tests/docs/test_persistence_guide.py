@@ -39,9 +39,11 @@ RUNTIME_USE_CASES = ROOT / "docs" / "runtime_use_cases" / "README.md"
 BROKERS = ROOT / "docs" / "events" / "brokers.md"
 CACHING = ROOT / "docs" / "caching" / "README.md"
 OBJECT_STORAGE = ROOT / "docs" / "object_storage" / "README.md"
+MONEY = ROOT / "docs" / "ddd" / "money.md"
 AUTH = ROOT / "docs" / "auth" / "README.md"
 REST = ROOT / "docs" / "entrypoints" / "rest.md"
 FASTAPI = ROOT / "docs" / "entrypoints" / "fastapi.md"
+READINESS = ROOT / "docs" / "entrypoints" / "readiness.md"
 METRICS = ROOT / "docs" / "observability" / "metrics.md"
 SPAN_ATTRIBUTES = ROOT / "docs" / "observability" / "span-attributes.md"
 README = ROOT / "README.md"
@@ -93,9 +95,11 @@ def _failing_line(error: Exception, path: Path) -> int:
         BROKERS,
         CACHING,
         OBJECT_STORAGE,
+        MONEY,
         AUTH,
         REST,
         FASTAPI,
+        READINESS,
         METRICS,
         SPAN_ATTRIBUTES,
     ],

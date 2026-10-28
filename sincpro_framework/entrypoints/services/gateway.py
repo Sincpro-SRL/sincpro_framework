@@ -56,6 +56,7 @@ from sincpro_framework.entrypoints.domain.surface import (
 )
 from sincpro_framework.entrypoints.infrastructure.registry import entrypoint_bindings
 from sincpro_framework.entrypoints.services.catalog import Catalog
+from sincpro_framework.entrypoints.services.readiness import ReadinessChecks
 from sincpro_framework.introspection import inspector
 from sincpro_framework.sincpro_logger import logger
 from sincpro_framework.use_bus import UseFramework
@@ -308,7 +309,8 @@ class Gateway:
             Gateway({"ventas": sales}, layers=("features",), unguarded=True)
 
         1. The layers, title, version, exposure, unguarded and port stored as given.
-        2. No catalog, group or composition yet; nothing resolved.
+        2. No catalog, group or composition yet; nothing resolved; `buses` the one readiness
+           check.
         3. `instances` read as aliases to buses when a mapping, as buses otherwise.
         Final: each one added (`add`) — under its alias, or the bus's own name.
         """
@@ -324,6 +326,10 @@ class Gateway:
         """Each `override` (its fields) and `bind` (its binding), in the order called."""
         self._resolved: list[tuple[Resolved[Any], Published]] | None = None
         self._resolved_revisions: tuple[int, ...] = ()
+        self.readiness = ReadinessChecks().add("buses", self.is_healthy)
+        """What the service must reach before it takes traffic — every wire's readiness probe
+        reports it; `buses` (every bus still built) is the first. A gateway of another wire
+        in the same process shares it by assignment: `rpc.readiness = rest.readiness`."""
         named = (
             instances.items()
             if isinstance(instances, Mapping)
@@ -700,7 +706,8 @@ class Gateway:
         return [published for _, published in self._resolve_validated()]
 
     def is_healthy(self) -> bool:
-        """Every bus is still built — what every wire's health check answers."""
+        """Every bus is still built — what every wire's liveness check answers; readiness is
+        `readiness`."""
         return all(one.is_ready for one in self.buses())
 
     @property

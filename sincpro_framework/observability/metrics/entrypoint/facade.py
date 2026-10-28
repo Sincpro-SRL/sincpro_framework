@@ -73,12 +73,13 @@ class Metrics:
         self, value: Any, by: Labels = None, unit: str = "", description: str = ""
     ):
         """A field of the Command or the Response, added up on each successful run —
-        `{context}.{use_case}.{field}`."""
+        `{context}.{use_case}.{field}`; a money by its currency, one series each."""
+        read = FieldPath.required(value, "what is summed").numeric()
         return declaring(
             MetricDeclaration(
                 measure=MetricDecorator.SUMS,
-                value=FieldPath.required(value, "what is summed").numeric(),
-                labels=label_paths(by),
+                value=read,
+                labels=label_paths(by) + read.own_labels(),
                 unit=unit,
                 description=description,
             )
@@ -93,12 +94,13 @@ class Metrics:
         description: str = "",
     ):
         """A field of the Command or the Response as a distribution —
-        `{context}.{use_case}.{field}`."""
+        `{context}.{use_case}.{field}`; a money by its currency, one series each."""
+        read = FieldPath.required(value, "what is measured").numeric()
         return declaring(
             MetricDeclaration(
                 measure=MetricDecorator.MEASURES,
-                value=FieldPath.required(value, "what is measured").numeric(),
-                labels=label_paths(by),
+                value=read,
+                labels=label_paths(by) + read.own_labels(),
                 unit=unit,
                 buckets=buckets,
                 description=description,

@@ -244,17 +244,29 @@ class FieldPath:
                 ->  ProgrammingError("field_path(CommandIssueInvoice).currency: currency is
                     not a number — only a number is summed or measured")
 
-        A `bool` is an `int` to Python, never a number here."""
+        A `bool` is an `int` to Python, never a number here; a value that reads as one
+        (`float()` takes it — a money) is."""
         annotation = without_none(self._annotation)
         if (
             isinstance(annotation, type)
-            and issubclass(annotation, NUMBERS)
-            and annotation is not bool
+            and (issubclass(annotation, NUMBERS) or hasattr(annotation, "__float__"))
+            and not issubclass(annotation, (bool, str))
         ):
             return self
         raise exceptions.ProgrammingError(
             f"{self!r}: {self.key} is not a number — only a number is summed or measured"
         )
+
+    def own_labels(self) -> tuple["FieldPath", ...]:
+        """What the value it reads says it is labelled by (`labelled_by`) — a money's currency,
+        so a sum of amounts is one series per currency, never added across.
+
+            field_path(ResponseIssueInvoice).total.own_labels()
+                ->  (field_path(ResponseIssueInvoice).total.currency,)    # a Money
+            field_path(ResponseIssueInvoice).lines.own_labels()  ->  ()   # an int
+        """
+        names = getattr(without_none(self._annotation), "labelled_by", ())
+        return tuple(getattr(self, name) for name in names)
 
     @classmethod
     def required(cls, reference: Any, role: str) -> "FieldPath":

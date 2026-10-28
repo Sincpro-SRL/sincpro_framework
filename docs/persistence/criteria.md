@@ -186,7 +186,9 @@ All(all=[Condition(field=…, operator=Operator.GT, value=…)]), order=Sort.par
 The nodes carry the names the JSON uses — `All`, `Any`, `Not` and `Condition`, from
 `sincpro_framework.ddd` — so `{"any": [...]}` is `Any(any=[...])`.
 `Query` is the command base that carries one, `ResponsePaginatedQuery` the answer base that
-returns the page with its definition cut by the same specification.
+returns the page with its definition cut by the same specification. A client pages by the answer's
+`cursor`, sent back in the `Query`'s own `cursor` field — never by rewriting the criteria's
+`pagination` (see [paging](../entrypoints/fastapi.md#paging-one-cursor-sent-back-as-it-came)).
 
 ## What a client reads
 

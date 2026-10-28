@@ -168,13 +168,15 @@ class FastApiGateway(Gateway):
         self,
         health_path: str | None = "/healthz",
         metrics_path: str | None = "/metrics",
+        ready_path: str | None = "/readyz",
         **fastapi_kwargs: Any,
     ) -> "FastAPI":
-        """Every context's router in one FastAPI app, its problem handlers installed, a health
-        check, and — when the process's metrics are scraped (`PrometheusRecorder`) — the scrape
-        at `metrics_path` (`wire.fastapi_app`). `fastapi_kwargs` go to `FastAPI(...)`.
+        """Every context's router in one FastAPI app, its problem handlers installed, the
+        liveness check, the readiness check of `readiness`, and — when the process's metrics are
+        scraped (`PrometheusRecorder`) — the scrape at `metrics_path` (`wire.fastapi_app`).
+        `fastapi_kwargs` go to `FastAPI(...)`.
 
-            gateway.app()                     ->  FastAPI with /healthz and every route
+            gateway.app()                     ->  FastAPI with /healthz, /readyz and every route
             gateway.app(health_path=None, docs_url=None)
             ->  no health check, no Swagger UI
         """
@@ -185,6 +187,8 @@ class FastApiGateway(Gateway):
             self.is_healthy,
             health_path,
             metrics_path,
+            self.readiness.answer,
+            ready_path,
             **fastapi_kwargs,
         )
 

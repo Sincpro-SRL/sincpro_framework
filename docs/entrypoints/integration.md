@@ -257,6 +257,6 @@ middleware, interceptors and plugins:
   way each protocol's clients understand — see [auth](../auth/README.md#entrypoints-authenticate-by-themselves).
 - **Validation**: the DTO validates the payload; a refusal is the wire's "invalid" answer.
 - **Disclosure**: a `DomainError`'s message reaches the caller; anything else stays in the log.
-- **Health**: `gateway.is_healthy()` — every bus still built — behind each wire's health check.
+- **Health**: liveness is `gateway.is_healthy()` — every bus still built; readiness is `gateway.readiness` — `buses` and the checks the project adds — behind `/readyz` and gRPC's health ([readiness](readiness.md)).
 - **Optional**: a wire's library (`starlette`, `grpc`, `fastmcp`) is read only when that wire is
   served; building a gateway, its route table or its document needs none of them.

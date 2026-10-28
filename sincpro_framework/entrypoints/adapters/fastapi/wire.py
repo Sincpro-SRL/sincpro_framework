@@ -18,6 +18,7 @@ validated once. The route calls the bus through `bus_call` — the helper a hand
 uses, so the two cannot differ.
 """
 
+import asyncio
 import inspect
 import json
 import re
@@ -42,6 +43,7 @@ from sincpro_framework.entrypoints.adapters.fastapi.calling import (
 from sincpro_framework.entrypoints.adapters.fastapi.problems import (
     BODY_EXTENSION,
     INSTALLED,
+    PROBLEM_JSON,
     SCHEMES_EXTENSION,
     install_problem_handlers,
     problem_response,
@@ -637,20 +639,26 @@ def fastapi_app(
     is_healthy: Callable[[], bool],
     health_path: str | None = "/healthz",
     metrics_path: str | None = "/metrics",
+    readiness: Callable[[], tuple[int, dict[str, Any]]] | None = None,
+    ready_path: str | None = "/readyz",
     **fastapi_kwargs: Any,
 ) -> FastAPI:
-    """`router` in one FastAPI app, its problem handlers installed, a health check, and — when
-    the process's metrics are scraped (`PrometheusRecorder`) — the scrape at `metrics_path`.
-    `fastapi_kwargs` go to `FastAPI(...)`.
+    """`router` in one FastAPI app, its problem handlers installed, a liveness check, a readiness
+    check when `readiness` is given, and — when the process's metrics are scraped
+    (`PrometheusRecorder`) — the scrape at `metrics_path`. `fastapi_kwargs` go to `FastAPI(...)`.
 
-        fastapi_app("sincpro", "1.0.0", router, gateway.is_healthy)
-        ->  FastAPI with /healthz and every route
+        fastapi_app("sincpro", "1.0.0", router, gateway.is_healthy,
+                    readiness=gateway.readiness.answer)
+        ->  FastAPI with /healthz, /readyz and every route
         GET /healthz                      ->  200 {"status": "ok"}  (503 "unhealthy")
+        GET /readyz                       ->  200 every check  (503 the problem naming them)
 
     1. `separate_input_output_schemas` off unless said — one schema per DTO.
     2. The app, titled and versioned; the problem handlers installed.
     3. `router` included.
-    4. The health check at `health_path`, out of the OpenAPI document — unless `None`.
+    4. The liveness check at `health_path`, out of the OpenAPI document — unless `None`.
+    5. The readiness check at `ready_path`, out of the document — `readiness()` in a worker
+       thread, its status and body; `application/problem+json` when it fails.
     Final: the scrape mounted at `metrics_path`, when the process's metrics are scraped.
     """
     fastapi_kwargs.setdefault("separate_input_output_schemas", False)
@@ -667,6 +675,18 @@ def fastapi_app(
                 json.dumps({"status": "ok" if healthy else "unhealthy"}),
                 status_code=200 if healthy else 503,
                 media_type="application/json",
+            )
+
+    if readiness is not None and ready_path is not None:
+
+        @app.get(ready_path, include_in_schema=False)
+        async def ready() -> Response:
+            """200 and every check while each passes, else 503 and the problem naming them."""
+            status, body = await asyncio.to_thread(readiness)
+            return Response(
+                json.dumps(body),
+                status_code=status,
+                media_type="application/json" if status == 200 else PROBLEM_JSON,
             )
 
     scrape = _scrape_app()

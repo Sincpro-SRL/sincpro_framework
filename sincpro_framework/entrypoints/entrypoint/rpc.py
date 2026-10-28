@@ -180,27 +180,38 @@ class RpcGateway(Gateway):
         default; `health_path=None` on either drops it for a host that wires its own."""
         return serving.health_route(self.is_healthy, path)
 
+    def ready_route(self, path: str = "/readyz") -> Any:
+        """A `GET` route answering 200 and every check of `readiness` while each passes, 503 and
+        the problem naming those that failed (`serving.ready_route`). Included in
+        `.routes()`/`.app()` by default; `ready_path=None` on either drops it."""
+        return serving.ready_route(self.readiness.answer, path)
+
     def routes(
         self,
         rpc_path: str = "/rpc",
         discover_path: str = "/openrpc.json",
         health_path: str | None = "/healthz",
+        ready_path: str | None = "/readyz",
     ) -> list[Any]:
         """This gateway's Starlette `Route`s, mountable into any app: JSON-RPC, OpenRPC
-        discovery and — by default — a health check (`serving.routes`).
+        discovery and — by default — the liveness and readiness checks (`serving.routes`).
 
         The composable primitive: `Starlette(routes=[*gateway.routes(), *my_own_routes])`,
         or `Mount("/payments", routes=gateway.routes())` to namespace one gateway among
         several. `.app()` is this same list with no host around it supplied.
 
             gateway.routes()
-            ->  [Route("/rpc", POST), Route("/openrpc.json", GET), Route("/healthz", GET)]
+            ->  [Route("/rpc", POST), Route("/openrpc.json", GET), Route("/healthz", GET),
+                 Route("/readyz", GET)]
 
         1. The surface built once (`build`) — the routes serve that one.
-        Final: its routes, with the health route unless `health_path` is `None`.
+        Final: its routes, with the liveness and readiness routes unless their path is `None`.
         """
-        health = self.health_route(health_path) if health_path is not None else None
-        return serving.routes(self.build(), rpc_path, discover_path, health)
+        probes = [
+            *([self.health_route(health_path)] if health_path is not None else []),
+            *([self.ready_route(ready_path)] if ready_path is not None else []),
+        ]
+        return serving.routes(self.build(), rpc_path, discover_path, probes)
 
     def app(
         self,
@@ -208,17 +219,18 @@ class RpcGateway(Gateway):
         routes: Sequence[Any] | None = None,
         lifespan: Any | None = None,
         health_path: str | None = "/healthz",
+        ready_path: str | None = "/readyz",
         **starlette_kwargs: Any,
     ) -> Any:
         """A standalone ASGI app: `POST /rpc` (JSON-RPC 2.0), `GET /openrpc.json`,
-        and — by default — `GET /healthz`.
+        and — by default — `GET /healthz` and `GET /readyz`.
 
         The convenience path, for a process that serves only this gateway. `middleware` is a
         list of Starlette `Middleware(...)` instances (CORS, an auth check, request logging);
         `routes` are extra routes served alongside this gateway's own (another gateway's
         `.routes()`, a metrics endpoint); `lifespan` is a Starlette lifespan context manager
-        for startup/shutdown (opening a connection pool, warming a cache); `health_path=None`
-        drops the health route. Anything else `starlette.applications.Starlette` accepts
+        for startup/shutdown (opening a connection pool, warming a cache); `health_path=None` and
+        `ready_path=None` drop the liveness and readiness routes. Anything else `starlette.applications.Starlette` accepts
         passes through in `starlette_kwargs`.
 
         A process that wants a different CORS policy per set of buses composes one `Starlette`
@@ -228,7 +240,7 @@ class RpcGateway(Gateway):
         name inside the body.
         """
         return serving.app(
-            [*self.routes(health_path=health_path), *(routes or ())],
+            [*self.routes(health_path=health_path, ready_path=ready_path), *(routes or ())],
             middleware,
             lifespan,
             **starlette_kwargs,

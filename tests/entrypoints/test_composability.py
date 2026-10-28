@@ -59,12 +59,17 @@ def _rpc_catalog(bus: UseFramework) -> RpcGateway:
 def test_routes_returns_starlette_route_objects_not_an_app():
     routes = RpcGateway({"pay": _bus("pay")}).routes()
 
-    assert {route.path for route in routes} == {"/rpc", "/openrpc.json", "/healthz"}
+    assert {route.path for route in routes} == {
+        "/rpc",
+        "/openrpc.json",
+        "/healthz",
+        "/readyz",
+    }
     assert all(isinstance(route, Route) for route in routes)
 
 
-def test_routes_health_path_none_drops_the_health_route():
-    routes = RpcGateway({"pay": _bus("pay")}).routes(health_path=None)
+def test_routes_probe_paths_none_drop_the_probes():
+    routes = RpcGateway({"pay": _bus("pay")}).routes(health_path=None, ready_path=None)
 
     assert {route.path for route in routes} == {"/rpc", "/openrpc.json"}
 
@@ -74,12 +79,14 @@ def test_routes_paths_are_configurable_for_mounting_under_a_prefix():
         rpc_path="/payments/rpc",
         discover_path="/payments/openrpc.json",
         health_path="/payments/healthz",
+        ready_path="/payments/readyz",
     )
 
     assert {route.path for route in routes} == {
         "/payments/rpc",
         "/payments/openrpc.json",
         "/payments/healthz",
+        "/payments/readyz",
     }
 
 

@@ -13,12 +13,12 @@ Without these two, every listing writes the same five fields again and the sixth
 them slightly differently.
 """
 
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from contextlib import contextmanager
 from contextvars import ContextVar
 from datetime import datetime
 from functools import cache
-from typing import Any, Literal, get_args, get_origin
+from typing import Any, Literal, Self, get_args, get_origin
 
 from pydantic import (
     GetJsonSchemaHandler,
@@ -26,6 +26,7 @@ from pydantic import (
     SerializationInfo,
     TypeAdapter,
     model_serializer,
+    model_validator,
 )
 from pydantic.errors import PydanticInvalidForJsonSchema, PydanticSchemaGenerationError
 from pydantic_core import to_jsonable_python
@@ -273,20 +274,6 @@ def _properties(
     return written
 
 
-class Query(DataTransferObject):
-    """What any command that reads carries.
-
-    class CommandListDatasets(Query):   →   CommandListDatasets(criteria=Criteria(...))
-        pass
-    """
-
-    criteria: Criteria = Criteria()
-    """Everything being asked: the filter, the ordering, the page and what to bring along.
-
-    One field rather than a parameter per filter, because a filter *is* a criteria — what the
-    interface calls a saved reading is the same object, merged."""
-
-
 class ResponsePaginatedQuery(DataTransferObject):
     """What any paged answer returns beside its records.
 
@@ -438,6 +425,72 @@ class ResponsePaginatedQuery(DataTransferObject):
         response._specification = criteria.specification
         response._meta = page.meta
         return response
+
+
+class Query(DataTransferObject):
+    """What any command that reads carries: what is asked (`criteria`), and where the reading
+    goes on from (`cursor`).
+
+        class QueryInvoices(Query):   →   QueryInvoices(criteria=Criteria(...), cursor="eyJ…")
+            pass
+
+        for page in QueryInvoices(criteria=criteria).pages(billing, ResponseInvoices):
+            export(page.invoices)
+
+    Context: one name on the way in and on the way out — an answer's `cursor` is sent back as
+    it came, and `None` says there is no more. The criteria never changes between pages, so a
+    client never rebuilds it: a frontend sends the same criteria and the cursor it got, an agent
+    passes the cursor back, a wire carries it as any field. On validation the cursor goes into
+    the criteria (`criteria.resuming_from`), so a use case reads `dto.criteria` and pages as it
+    always did.
+    """
+
+    criteria: Criteria = Criteria()
+    """Everything being asked: the filter, the ordering, the page and what to bring along.
+
+    One field rather than a parameter per filter, because a filter *is* a criteria — what the
+    interface calls a saved reading is the same object, merged."""
+
+    cursor: str | None = None
+    """The `cursor` the previous answer came with, sent back as it is, to read the page after
+    it — none for the first page."""
+
+    @model_validator(mode="after")
+    def _resume_from_cursor(self) -> Self:
+        """The criteria goes on from `cursor` when one is given — over a token the criteria
+        carries itself."""
+        if self.cursor is not None:
+            self.criteria = self.criteria.resuming_from(self.cursor)
+        return self
+
+    def pages[R: ResponsePaginatedQuery](
+        self,
+        answer: Callable[[Self, type[R]], R | None],
+        response_type: type[R],
+        max_pages: int | None = None,
+    ) -> Iterator[R]:
+        """Every page of this reading, one at a time, each one call of `answer` — the bus, a
+        reference to a context another service hosts, or a client of the same shape — until an
+        answer has no `cursor`, or `max_pages` were read.
+
+            for page in QueryInvoices(criteria=criteria).pages(billing, ResponseInvoices):
+                export(page.invoices)
+        """
+        query, read = self, 0
+        while max_pages is None or read < max_pages:
+            page = answer(query, response_type)
+            if page is None:
+                return
+            yield page
+            read += 1
+            if page.cursor is None:
+                return
+            query = query.model_copy(
+                update={
+                    "cursor": page.cursor,
+                    "criteria": query.criteria.resuming_from(page.cursor),
+                }
+            )
 
 
 class DraftState(DataTransferObject):

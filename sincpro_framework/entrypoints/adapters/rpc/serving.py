@@ -1,8 +1,9 @@
 """The JSON-RPC surface served on Starlette — the `[rpc]` extra: its routes, a standalone app,
 and uvicorn to run it.
 
-    routes(surface, "/rpc", "/openrpc.json", health_route(is_healthy))
-    ->  [Route("/rpc", POST), Route("/openrpc.json", GET), Route("/healthz", GET)]
+    routes(surface, "/rpc", "/openrpc.json", [health_route(is_healthy), ready_route(checks.answer)])
+    ->  [Route("/rpc", POST), Route("/openrpc.json", GET), Route("/healthz", GET),
+         Route("/readyz", GET)]
     run(app(routes), "127.0.0.1", 8080)
 
 Context: `.app()` is the batteries-included path: one process, the gateway's routes, nothing
@@ -82,14 +83,45 @@ def health_route(is_healthy: Callable[[], bool], path: str = "/healthz") -> Any:
     return Route(path, healthz, methods=["GET"])
 
 
+def ready_route(
+    readiness: Callable[[], tuple[int, dict[str, Any]]], path: str = "/readyz"
+) -> Any:
+    """A `GET` route answering what `readiness()` says — 200 and every check while each passes,
+    503 and the problem naming those that failed — for a probe that speaks plain HTTP.
+
+        ready_route(gateway.readiness.answer)   ->  Route("/readyz", methods=["GET"])
+        GET /readyz                             ->  200 {"ready": true, "checks": [...]}
+        GET /readyz  <valkey down>              ->  503 {"kind": "unavailable", "checks": [...]}
+
+    1. Starlette imported — refused with the extra-install hint without it.
+    2. An endpoint that runs `readiness()` in a worker thread on every request.
+    Final: a `GET` route at `path` serving it.
+    """
+    try:
+        from starlette.requests import Request  # pyright: ignore[reportMissingImports]
+        from starlette.responses import (  # pyright: ignore[reportMissingImports]
+            JSONResponse,
+        )
+        from starlette.routing import Route  # pyright: ignore[reportMissingImports]
+    except ImportError as error:
+        raise ImportError(RPC_MISSING) from error
+
+    async def readyz(_request: Request) -> JSONResponse:
+        """200 and every check while each passes, else 503 and the problem naming them."""
+        status, body = await asyncio.to_thread(readiness)
+        return JSONResponse(body, status_code=status)
+
+    return Route(path, readyz, methods=["GET"])
+
+
 def routes(
     surface: RpcSurface,
     rpc_path: str = "/rpc",
     discover_path: str = "/openrpc.json",
-    health: Any | None = None,
+    probes: Sequence[Any] = (),
 ) -> list[Any]:
     """The Starlette `Route`s serving `surface`: JSON-RPC, OpenRPC discovery and — when given —
-    the `health` route.
+    the `probes` (liveness, readiness).
 
         routes(surface)
         ->  [Route("/rpc", POST), Route("/openrpc.json", GET)]
@@ -104,7 +136,7 @@ def routes(
        2.3 `dispatch` in a worker thread, with the request's credentials and headers;
        2.4 the reply answered with the status and headers `http_status` gives it.
     3. `GET discover_path`: the OpenRPC document of that surface.
-    Final: the `health` route after them, when one is given.
+    Final: the `probes` after them.
     """
     try:
         from starlette.requests import Request  # pyright: ignore[reportMissingImports]
@@ -165,8 +197,7 @@ def routes(
         Route(rpc_path, rpc_endpoint, methods=["POST"]),
         Route(discover_path, openrpc_endpoint, methods=["GET"]),
     ]
-    if health is not None:
-        served.append(health)
+    served.extend(probes)
     return served
 
 
