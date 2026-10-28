@@ -228,6 +228,20 @@ class Problem(DataTransferObject):
             extensions=extensions,
         )
 
+    def body(self) -> dict[str, Any]:
+        """The problem as JSON, as RFC 9457 lays it out: its members and, beside them, what its
+        error disclosed (`extensions`) — a member with nothing to say left out.
+
+            Problem.for_kind(FailureKind.INVALID, "UNREADABLE", "not JSON").body()
+            ->  {"kind": "invalid", "reason": "UNREADABLE", "title": "…", "status": 422,
+                 "detail": "not JSON", "next_step": "fix_request", "guidance": "…",
+                 "retryable": False}
+        """
+        told = {**self.model_dump(mode="json", exclude={"extensions"}), **self.extensions}
+        return {
+            name: value for name, value in told.items() if value not in (None, [], {}, "")
+        }
+
 
 def problem_of(error: Exception) -> Problem:
     """The problem every wire answers `error` with.

@@ -115,7 +115,8 @@ from sincpro_framework.entrypoints import FastApiGateway
 
 api = FastApiGateway({"billing": billing}, title="Billing API", unguarded=True)
 api.group(billing, version="v1")         # /v1/billing/invoices
-app = api.app()                          # routes, OpenAPI, RFC 9457 problems, /healthz
+api.readiness.add("valkey", valkey.ping)  # readiness: a binary, a key, a store — bounded in time
+app = api.app()                          # routes, OpenAPI, RFC 9457 problems, /healthz, /readyz
 ```
 
 `uvicorn my_service.entrypoints.http.app:app`. `unguarded=True` is only for a bus with no
@@ -140,9 +141,11 @@ app = api.app()                          # routes, OpenAPI, RFC 9457 problems, /
   `/{version}{prefix}{path}`.
 - **Creating the gateway before `auth.on(bus)` / interceptors.** The gateway reads the bus's
   access when it is built, and a wiring error of what comes later waits for the next execution.
-- **Turning off `health_path` / `metrics_path` and rewriting `/health`.** `app()` gives
-  `/healthz`, plus `/metrics` when Prometheus records. Add a readiness route only for checks of
-  your own (a binary, a model).
+- **Turning off `health_path` / `metrics_path` and rewriting `/health` or a readiness route.**
+  `app()` gives `/healthz` (liveness), `/readyz` (readiness) and `/metrics` when Prometheus
+  records. A check of your own (a binary, a model, a store) is `gateway.readiness.add(name,
+  check, timeout=)` — a 503 naming it when it fails, and gRPC's health follows it
+  (`docs/entrypoints/readiness.md`).
 - **Calling `execute` from a route.** That skips auth, idempotency, the span and Sentry. Call the
   bus (`bus_call`, or `bus(dto)` in-process).
 
@@ -184,7 +187,28 @@ A file that should not sit in memory goes through `ObjectStorage` (`docs/object_
 (`storage.put(key, upload.file, ...)`, read to its end by the store), the Command carries the key or
 the publication id, and the Feature reads `storage.get(key)` when it needs the bytes whole or
 `storage.stream(key)` by parts. A download answers `storage.direct(key)` as a redirect when the
-storage serves the bytes itself, else `StreamingResponse(storage.stream(key).chunks())`.
+storage serves the bytes itself, else `StreamingResponse(storage.stream(key).chunks())`. A tool
+or route handed a URL instead of the bytes calls `storage.fetch(url, key, max_bytes=...)`: the bytes
+stream into the store, refused past the size or the time, nothing kept when refused.
+
+**Security to weigh — warn the user, never decide for them.** The framework imposes no restriction
+here ("security is the client's"); when a task does one of these, say what it exposes and which
+option closes it, and let the user choose:
+
+- **`storage.fetch` of a URL a user gave** reads whatever it points at: any scheme the standard
+  library opens — `file:///etc/passwd` reads the server's own files — and any host, a private
+  address or the cloud's metadata endpoint (`169.254.169.254`) included (SSRF). What closes it:
+  `schemes={"https"}`, `allowed_hosts={...}`, `max_bytes=`, a short `timeout=`; a host rule judges
+  the name, not where DNS points it.
+- **`storage.direct` / `presign` URLs** open as often as they are used while they live — the
+  publication's `max_uses` counts the id, not the URL. Keep them short (a minute by default).
+- **An upload route** takes what it is sent: no size cap unless the route sets one, a
+  `Content-Type` and a filename the client claims. Put a limit in the route; never build a key or
+  a path from the filename unchecked (`LocalObjectStore` refuses `../`, other systems may not).
+- **`ObjectStorage(store)` without a secret** hands out unsigned publication ids: anyone who
+  guesses one has nothing to forge. Pass the service's secret.
+- **`/readyz` answers which dependency failed and why**: on a public host that names the
+  service's internals. Serve probes on an internal port or path when that matters.
 
 ## Errors: declare them, don't handle them
 

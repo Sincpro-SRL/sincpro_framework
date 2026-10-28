@@ -122,6 +122,56 @@ assert parts[0] == b"account,amount\n1"
   from a store that cannot serve the bytes itself (memory, a disk): then they go through the
   service, by `stream`.
 
+## From a URL into the store
+
+A use case handed a link — a document a person has a URL for, a file a partner publishes — reads it
+straight into the store, a part at a time, within the bounds it gives:
+
+```python
+import functools
+import threading
+from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
+from pathlib import Path
+
+from sincpro_framework.data_layer.object_storage import FetchRefusal, FetchRefused
+
+Path("public").mkdir()
+Path("public/scan.pdf").write_bytes(b"%PDF-1.7" + b"x" * 4096)
+origin = ThreadingHTTPServer(("127.0.0.1", 0), functools.partial(SimpleHTTPRequestHandler, directory="public"))
+threading.Thread(target=origin.serve_forever, daemon=True).start()
+url = f"http://127.0.0.1:{origin.server_address[1]}/scan.pdf"
+
+fetched = storage.fetch(url, "inbox/scan.pdf", max_bytes=10 * 1024 * 1024, metadata={"filename": "scan.pdf"})
+assert (fetched.size, fetched.content_type) == (4104, "application/pdf")     # what its server said
+
+try:
+    storage.fetch(url, "inbox/too-big.pdf", max_bytes=1024)
+except FetchRefused as refused:
+    assert refused.reason is FetchRefusal.TOO_LARGE
+assert not storage.exists("inbox/too-big.pdf")                               # nothing of it kept
+origin.shutdown()
+```
+
+| Bound | Option | Default | Refused as |
+|---|---|---|---|
+| size | `max_bytes` — by its `Content-Length` before a byte is read, and counted as they come | none | `FetchRefused`, `TOO_LARGE` |
+| time | `timeout` — connecting and every byte, in all | 30 seconds | `FetchFailed` |
+| redirects | `follow_redirects=True` follows them, each new URL judged again | not followed | `FetchRefused`, `REDIRECTED` |
+| hosts | `allowed_hosts={"cdn.acme.bo"}` — the URL's and every redirect's | any | `FetchRefused`, `HOST_NOT_ALLOWED` |
+| schemes | `schemes={"https"}` | any the standard library opens — `http`, `https`, `ftp`, `file`, `data` | `FetchRefused`, `SCHEME_NOT_ALLOWED` |
+
+- **`FetchRefused`** (`invalid`, `fix_request`) is the URL's: a rule broken, or its server
+  answering a client error (`ANSWERED`, its `status`). **`FetchFailed`** (`unavailable`,
+  `retry_later`) is its server's: a 5xx, a host not reached, a time run out.
+- **Nothing partial is kept**: refused or failed, the key holds what it held before — a bucket's
+  managed upload is aborted, the disk writes beside the object and takes its place only once every
+  byte is there.
+- **What is stored** is `put`'s: `content_type` the one given, else the one the server says, else
+  the key's; `metadata`, `expires_in` and the storage's `options` as `put` takes them; `headers`
+  go with the request — a token the URL's server asks for.
+- The bytes are read with the standard library (`HttpSource`, over `urllib`); a project's own
+  source — another client, a proxy — is `Transfers(store, source=...)` in `storage.transfers`.
+
 ## Publishing: an id, its time, its uses
 
 ```python
@@ -359,6 +409,7 @@ What `ObjectStorage` does is the recommended default, never the only way:
 |---|---|
 | What the storage is told — headers, an ACL, a cache control, an encryption key, a version, a range | pass it on any call: `storage.put(key, data, type, CacheControl="max-age=3600")`, `storage.get(key, SSECustomerAlgorithm="AES256", SSECustomerKey=k)`, `storage.get(key, VersionId=v)`, `storage.delete(key, VersionId=v)` — options go to the storage as they are |
 | The bucket serving the bytes itself | `storage.direct(key, Access.READ, ttl, ResponseContentDisposition="attachment")` — the store's `presign`, `None` from one that cannot |
+| How a URL is read | `storage.transfers = Transfers(store, now, storage.objects, source=a_source)` — a source of its own, with `HttpSource.open`'s shape |
 | Rules of its own — who may redeem, what happens after | put them in `metadata` at `publish`, read them from what `check` / `redeem` answer |
 | Where publications and claims are saved | `ObjectStorage(store, secret, context_store=a_context_store)` |
 | How ids are signed | a `PublicationIds` of its own (`signed` / `unsigned`) in `storage.ids` and `storage.publications.ids` |
@@ -372,7 +423,7 @@ each is an attribute a project reads or replaces.
 |---|---|---|
 | `storage.objects` | `Objects` | put, find, exists, delete, keys — what is stored |
 | `storage.contents` | `Contents` | open, get, take — the bytes whole, to process them |
-| `storage.transfers` | `Transfers` | stream, direct — the bytes passed on without holding them |
+| `storage.transfers` | `Transfers` | stream, direct, fetch — the bytes passed on without holding them |
 | `storage.ids` | `PublicationIds` | the id, signed with the secret |
 | `storage.publications` | `Publications` | publish, check, redeem, revoke — on the context's `KeyValueStore` |
 | `storage.store` | the `ObjectStore` | what only its technology offers |

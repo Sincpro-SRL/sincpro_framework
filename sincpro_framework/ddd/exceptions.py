@@ -6,6 +6,7 @@
       TransactionConflict   the transaction lost to another one              (conflict, 409)
       ConstraintViolation   the database refused the write by a rule of its own
     InvalidCriteria       the caller asked what cannot be answered          (invalid, 400)
+    CurrencyMismatch      two currencies added, subtracted or compared      (invalid, 422)
     AggregateNotFound     the record the caller named is not there          (not found, 404)
     TimedOut              the engine stopped at a bound it was given        (unavailable, 503)
     RelationNotResolved   the code read a relation nobody asked for         (internal, 500)
@@ -97,6 +98,13 @@ class RelationNotResolved(ProgrammingError):
     a loop over two hundred rows would be two hundred queries hidden in an attribute access;
     name the relation in the criteria's specification instead.
     """
+
+
+class CurrencyMismatch(ClientError):
+    """Two amounts of different currencies added, subtracted, compared or converted by a rate
+    of neither — BOB + USD is never a number; a rate converts them."""
+
+    failure_kind = FailureKind.INVALID
 
 
 class AggregateNotFound(ClientError):

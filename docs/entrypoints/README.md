@@ -6,6 +6,7 @@ publish that catalog over a transport without the domain learning about the tran
 | Page | What it answers |
 |---|---|
 | [Integration](integration.md) | what every wire shares: N buses automatically, `include` / `exclude` / `layers` / `internal`, the app or server handed back for the project's middleware |
+| [Liveness and readiness](readiness.md) | `/healthz` and `/readyz` on every wire: checks a service registers by name — a binary, a key, a store — each bounded in time, a failing one answered 503 naming it |
 | [REST on FastAPI](fastapi.md) | `FastApiGateway`, the REST host: `@rest...` on the existing handlers, one `app.py`, RFC 9457 problems, hand-written routes through `bus_call`, files as base64 |
 | [REST (Starlette, frozen)](rest.md) | `RestGateway`: the minimal host older services use; no new features |
 | [JSON-RPC 2.0](rpc.md) | `entrypoint_rpc`: one or more instances as JSON-RPC methods, discovery through OpenRPC 1.4 |

@@ -13,8 +13,22 @@ page = repository.search(Invoices, big_ones)
 next_page = repository.search(Invoices, big_ones.resuming_from(page.cursor))
 ```
 
-In JSON it is `"pagination": {"limit": 20, "strategy": {"token": "<cursor>"}}`. A cursor belongs to
-one ordering over one filter; one minted under another ordering is refused.
+A cursor belongs to one ordering over one filter; one minted under another ordering is refused.
+
+**Over a wire, a client never writes the token into the criteria.** It sends the answer's `cursor`
+back in the `Query`'s own `cursor` field, with the same criteria; the Query puts it into its
+criteria on validation, so the Feature reads `dto.criteria` as above and changes nothing. From
+Python (another service, a script), `query.pages(bus, ResponseType, max_pages=None)` walks them:
+
+```python
+for page in QueryInvoices(criteria=big_ones).pages(billing, ResponseInvoices):
+    export(page.invoices)
+```
+
+Never add a paging method to the bus, and never keep a scroll on the server: every page can be
+asked again (a retry, a second tab). An infinite scroll keeps its cursor in the client
+(`useInfiniteQuery` with `getNextPageParam: last => last.cursor`). Runnable:
+`docs/entrypoints/fastapi.md`, "Paging".
 
 **`model_copy(update={"cursor": …})` does nothing**: `cursor` is read through the strategy, so the
 page never advances and a loop that walks pages never ends. `resuming_from` exists for this.

@@ -9,6 +9,8 @@ case.
     self.storage.stream("exports/invoices.csv")                       ->  ObjectStream, by parts, to pass on
     self.storage.direct("exports/invoices.csv", Access.READ, timedelta(minutes=1))
         ->  the storage's own URL, or None when the bytes go through the service
+    self.storage.fetch("https://cdn.acme.bo/scan.pdf", "inbox/scan.pdf", max_bytes=50 * MB)
+        ->  ObjectRef: a URL's bytes streamed into the store, within the bounds given
     published = self.storage.publish("exports/invoices.csv", Access.READ, timedelta(hours=1), max_uses=1)
     published.id                                                      what an entrypoint puts in its URL
 
@@ -26,7 +28,7 @@ URL from the id, and asks `redeem` when the id comes back.
 
     objects        Objects          put, find, exists, delete, keys — what is stored
     contents       Contents         open, get, take — the bytes whole, to process them
-    transfers      Transfers        stream, direct — the bytes passed on without holding them
+    transfers      Transfers        stream, direct, fetch — the bytes passed on without holding them
     ids            PublicationIds   the id, signed with the secret
     publications   Publications     publish, check, redeem, revoke — in the context's store
 
@@ -34,7 +36,7 @@ Each is an attribute a project reads or replaces — a subclass of its own, a st
 and `store` is the `ObjectStore` itself, for what only its technology offers.
 """
 
-from collections.abc import Callable, Iterator, Mapping
+from collections.abc import Callable, Collection, Iterator, Mapping
 from datetime import UTC, datetime, timedelta
 from functools import partial
 from typing import Any, BinaryIO
@@ -57,7 +59,10 @@ from sincpro_framework.data_layer.object_storage.services.objects import Objects
 from sincpro_framework.data_layer.object_storage.services.publications import (
     Publications,
 )
-from sincpro_framework.data_layer.object_storage.services.transfers import Transfers
+from sincpro_framework.data_layer.object_storage.services.transfers import (
+    FETCH_TIMEOUT,
+    Transfers,
+)
 
 
 class ObjectStorage:
@@ -77,7 +82,7 @@ class ObjectStorage:
         self.store = store
         self.objects = Objects(store, now)
         self.contents = Contents(store, context_store, now)
-        self.transfers = Transfers(store, now)
+        self.transfers = Transfers(store, now, self.objects)
         self.ids = PublicationIds(secret)
         self.publications = Publications(self.ids, context_store, now)
 
@@ -125,6 +130,39 @@ class ObjectStorage:
         """A URL the storage itself serves `key` at, to `access` it, for `expires_in` — `None`
         when the store cannot, and the bytes go through the service (`stream`)."""
         return self.transfers.direct(key, access, expires_in, **options)
+
+    def fetch(
+        self,
+        url: str,
+        key: str,
+        content_type: str | None = None,
+        metadata: Mapping[str, str] | None = None,
+        expires_in: timedelta | None = None,
+        max_bytes: int | None = None,
+        timeout: timedelta = FETCH_TIMEOUT,
+        follow_redirects: bool = False,
+        allowed_hosts: Collection[str] | None = None,
+        schemes: Collection[str] | None = None,
+        headers: Mapping[str, str] | None = None,
+        **options: Any,
+    ) -> ObjectRef:
+        """The bytes of `url` stored under `key`, a part at a time — refused past `max_bytes`,
+        `timeout` in all, a redirect unless `follow_redirects`, a host not in `allowed_hosts`
+        when given; nothing stored when refused — see `Transfers.fetch`."""
+        return self.transfers.fetch(
+            url,
+            key,
+            content_type,
+            metadata,
+            expires_in,
+            max_bytes,
+            timeout,
+            follow_redirects,
+            allowed_hosts,
+            schemes,
+            headers,
+            **options,
+        )
 
     def find(self, key: str, **options: Any) -> ObjectRef | None:
         """What is stored under `key`, without its bytes — `None` when nothing is, or it

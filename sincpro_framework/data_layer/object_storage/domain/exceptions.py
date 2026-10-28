@@ -1,7 +1,8 @@
 """What object storage refuses: an object that is not there, one that already is, a publication that
-does not open, and a storage that failed."""
+does not open, a URL that cannot be fetched, and a storage that failed."""
 
 from sincpro_framework.context import EntryConflict
+from sincpro_framework.data_layer.object_storage.domain.fetch import FetchRefusal
 from sincpro_framework.data_layer.object_storage.domain.publication import (
     Publication,
     Refusal,
@@ -11,6 +12,7 @@ from sincpro_framework.exceptions import (
     ExternalServiceError,
     FailureKind,
     ProgrammingError,
+    ServiceUnavailableError,
 )
 
 
@@ -47,3 +49,32 @@ class PublicationRefused(ClientError):
             if reason is Refusal.UNKNOWN
             else FailureKind.PERMISSION_DENIED
         )
+
+
+class FetchRefused(ClientError):
+    """A URL given to fetch that breaks its rules, and why (`reason`) — refused before its bytes
+    are read, or as soon as they break one; nothing of it is stored. `status` is what its
+    server answered, when it answered."""
+
+    failure_kind = FailureKind.INVALID
+
+    def __init__(
+        self, reason: FetchRefusal, url: str, message: str, status: int | None = None
+    ) -> None:
+        """Say why, in the message and as `reason`, of which `url`."""
+        super().__init__(message)
+        self.reason = reason
+        self.url = url
+        self.status = status
+
+
+class FetchFailed(ServiceUnavailableError):
+    """A URL that did not answer in its time, could not be reached, or whose server failed (5xx)
+    — nothing of it is stored; asking again later may succeed. `status` is what its server
+    answered, when it answered."""
+
+    def __init__(self, url: str, message: str, status: int | None = None) -> None:
+        """Say what failed, of which `url`."""
+        super().__init__(message)
+        self.url = url
+        self.status = status

@@ -7,9 +7,11 @@ filesystem's own semantics — a volume a service mounts.
 Context: a key is a path under the root, and never leaves it — `../` is refused
 (`ProgrammingError`), since it would read or write outside what the service was given. The
 content type, the metadata and when it expires are a JSON file beside each object; `keys` never
-answers them, and drops what expired on the way. `stream` is the file, open. A
-put `if_absent` creates the file exclusively (`O_CREAT | O_EXCL`), the one primitive a disk
-holds atomic across processes.
+answers them, and drops what expired on the way. `stream` is the file, open. A put writes beside
+the object and takes its place once every byte is written (`os.replace`), so a put that fails
+half-way — a stream cut, a source refused — leaves what was there, never a part. A put
+`if_absent` creates the file exclusively (`O_CREAT | O_EXCL`), the one primitive a disk holds
+atomic across processes, and removes it when the write fails.
 """
 
 import json
@@ -29,6 +31,9 @@ from sincpro_framework.data_layer.object_storage.domain.object_store import (
 
 META_SUFFIX = ".object-meta.json"
 """Beside each object, the file that says its content type, metadata and expiry."""
+
+PARTIAL_SUFFIX = ".object-partial"
+"""Beside an object being put, its bytes until they are all written — then they take its place."""
 
 
 class LocalObjectStore(ObjectStore):
@@ -62,14 +67,20 @@ class LocalObjectStore(ObjectStore):
     ) -> bool:
         path = self._path(key)
         path.parent.mkdir(parents=True, exist_ok=True)
+        target = path if if_absent else path.with_name(path.name + PARTIAL_SUFFIX)
         try:
-            with path.open("xb" if if_absent else "wb") as written:
+            with target.open("xb" if if_absent else "wb") as written:
                 if isinstance(data, bytes):
                     written.write(data)
                 else:
                     shutil.copyfileobj(data, written)
         except FileExistsError:
             return False
+        except BaseException:
+            target.unlink(missing_ok=True)
+            raise
+        if target != path:
+            target.replace(path)
         said = {
             "content_type": content_type,
             "metadata": dict(metadata),
@@ -123,7 +134,11 @@ class LocalObjectStore(ObjectStore):
         moment = datetime.now(UTC)
         for path in sorted(self.root.rglob("*")):
             key = path.relative_to(self.root).as_posix()
-            if not path.is_file() or key.endswith(META_SUFFIX) or not key.startswith(prefix):
+            if (
+                not path.is_file()
+                or key.endswith((META_SUFFIX, PARTIAL_SUFFIX))
+                or not key.startswith(prefix)
+            ):
                 continue
             found = self.info(key)
             if (

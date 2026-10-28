@@ -112,6 +112,27 @@ def test_watch_streams_the_current_status(served):
     assert first.status == health_pb2.HealthCheckResponse.SERVING
 
 
+def test_by_default_health_serves_while_every_readiness_check_passes():
+    """The default is the gateway's readiness — its buses, and what the project added."""
+    reachable = {"value": False}
+    gateway = _gateway({"payments": _bus("payments")})
+    gateway.readiness.add("valkey", lambda: reachable["value"])
+    server = gateway.server(reflection=False)
+    port = server.add_insecure_port("127.0.0.1:0")
+    server.start()
+    channel = grpc.insecure_channel(f"127.0.0.1:{port}")
+    stub: Any = health_pb2_grpc.HealthStub(channel)
+
+    not_ready = stub.Check(health_pb2.HealthCheckRequest(service=""))
+    reachable["value"] = True
+    now_ready = stub.Check(health_pb2.HealthCheckRequest(service=""))
+
+    assert not_ready.status == health_pb2.HealthCheckResponse.NOT_SERVING
+    assert now_ready.status == health_pb2.HealthCheckResponse.SERVING
+    channel.close()
+    server.stop(None)
+
+
 def test_a_custom_health_check_overrides_the_default():
     """A caller wiring a deeper probe (a DB ping) replaces "is the bus built"."""
     ready = {"value": False}

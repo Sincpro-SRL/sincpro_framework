@@ -1,9 +1,10 @@
 """The REST route table served on Starlette — the `[rest]` extra: each route's endpoint, the
-OpenAPI document, its docs page, a health check, a standalone app and uvicorn to run it.
+OpenAPI document, its docs page, its liveness and readiness probes, a standalone app and uvicorn
+to run it.
 
-    routes(rest_routes, challenges, document, is_healthy, "sincpro-rest")
+    routes(rest_routes, challenges, document, is_healthy, "sincpro-rest", readiness=checks.answer)
     ->  [Route("/billing/command-issue-invoice", methods=["POST"]), ...,
-         Route("/openapi.json"), Route("/docs"), Route("/healthz")]
+         Route("/openapi.json"), Route("/docs"), Route("/healthz"), Route("/readyz")]
     run(app(routes), "127.0.0.1", 8080)
 
 Context: the route table and the document are built without a web library (`routing`,
@@ -70,9 +71,12 @@ def routes(
     openapi_path: str | None = "/openapi.json",
     docs_path: str | None = "/docs",
     health_path: str | None = "/healthz",
+    readiness: Callable[[], tuple[int, dict[str, Any]]] | None = None,
+    ready_path: str | None = "/readyz",
 ) -> list[Any]:
     """The Starlette routes of `rest_routes`, mountable into any app — every use case, and,
-    unless `None`, the OpenAPI document, its docs page and a health check.
+    unless `None`, the OpenAPI document, its docs page, a liveness check and — given
+    `readiness` — a readiness check.
 
         routes(rest_routes, challenges, document, is_healthy, "sincpro-rest")
         ->  [Route("/billing/command-issue-invoice", methods=["POST"]), ...,
@@ -87,7 +91,9 @@ def routes(
        2.4 answers its `(status, body)` as JSON — a 401 with the `challenges`.
     3. The OpenAPI `document` at `openapi_path`, built per request.
     4. The Swagger UI page at `docs_path` — only when there is a document to read.
-    Final: the health check at `health_path` — 200 `ok`, or 503 `unhealthy`.
+    5. The liveness check at `health_path` — 200 `ok`, or 503 `unhealthy`.
+    Final: the readiness check at `ready_path` — `readiness()` in a worker thread, its status
+    and body: every check, or the problem naming those that failed.
     """
     try:
         from starlette.requests import Request  # pyright: ignore[reportMissingImports]
@@ -169,6 +175,14 @@ def routes(
             )
 
         served.append(Route(health_path, health, methods=["GET"]))
+    if readiness is not None and ready_path is not None:
+
+        async def ready(_request: Request) -> JSONResponse:
+            """200 and every check while each passes, else 503 and the problem naming them."""
+            status, body = await asyncio.to_thread(readiness)
+            return JSONResponse(body, status_code=status)
+
+        served.append(Route(ready_path, ready, methods=["GET"]))
     return served
 
 

@@ -122,15 +122,13 @@ def _body(request: Request, problem: failures.Problem) -> dict[str, Any]:
              "next_step": "do_not_retry", "guidance": "…", "retryable": false,
              "trace_id": "4bf9…"}
     """
-    told = problem.model_dump(mode="json", exclude={"extensions"})
     body = {
         "type": f"urn:sincpro:problem:{problem.kind.value}",
         "instance": request.url.path,
         "trace_id": _trace_id(request),
-        **told,
-        **problem.extensions,
+        **problem.body(),
     }
-    return {name: value for name, value in body.items() if value not in (None, [], {}, "")}
+    return {name: value for name, value in body.items() if value is not None}
 
 
 def _answer(body: dict[str, Any], headers: Mapping[str, str] | None = None) -> JSONResponse:

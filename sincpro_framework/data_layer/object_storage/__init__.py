@@ -9,11 +9,13 @@ entrypoint's, and `ObjectStorage` is injected as any adapter.
     self.storage.put("exports/invoices.csv", data, "text/csv")
     self.storage.get("exports/invoices.csv")           whole, to process it
     self.storage.stream("exports/invoices.csv")        by parts, to pass it on
+    self.storage.fetch(url, "inbox/scan.pdf", max_bytes=50 * MB)   a URL's bytes into the store
     published = self.storage.publish("exports/invoices.csv", Access.READ, timedelta(hours=1), max_uses=1)
     self.storage.redeem(published.id, Access.READ)     the entrypoint, when the id comes back
 
     domain/      ObjectStore (the port), ObjectRef, StoredObject, ObjectStream, Access, Publication, Grant, Refusal;
-                 ObjectNotFound, ObjectAlreadyExists, PublicationRefused
+                 ObjectNotFound, ObjectAlreadyExists, PublicationRefused, FetchRefused, FetchFailed,
+                 FetchRefusal
     adapters/    InMemoryObjectStore, LocalObjectStore, S3CompatibleObjectStore
     entrypoint/  ObjectStorage, the facade a project injects
 """
@@ -24,10 +26,13 @@ from sincpro_framework.data_layer.object_storage.adapters.s3_compatible import (
     S3CompatibleObjectStore,
 )
 from sincpro_framework.data_layer.object_storage.domain.exceptions import (
+    FetchFailed,
+    FetchRefused,
     ObjectAlreadyExists,
     ObjectNotFound,
     PublicationRefused,
 )
+from sincpro_framework.data_layer.object_storage.domain.fetch import FetchRefusal
 from sincpro_framework.data_layer.object_storage.domain.object_store import (
     Access,
     ObjectRef,
@@ -46,6 +51,9 @@ from sincpro_framework.data_layer.object_storage.entrypoint.object_storage impor
 
 __all__ = [
     "Access",
+    "FetchFailed",
+    "FetchRefusal",
+    "FetchRefused",
     "Grant",
     "InMemoryObjectStore",
     "LocalObjectStore",

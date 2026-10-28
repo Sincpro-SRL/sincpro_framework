@@ -231,8 +231,8 @@ class GrpcGateway(Gateway):
         `sincpro.Introspection` and, by default, `grpc.health.v1.Health`. No `grpc.Server`
         around them, no reflection (`mount` adds it), never remote execution's door.
 
-        `health_check` is re-evaluated on every `Check`/`Watch`; the default asks every
-        published `UseFramework` whether it is still built. After `drain()` every service
+        `health_check` is re-evaluated on every `Check`/`Watch`; the default is `readiness` —
+        every bus still built, and every check the project added. After `drain()` every service
         answers NOT_SERVING.
 
             gateway.handlers()     ->  (<billing.v1.BillingService>, <sincpro.Introspection>,
@@ -246,9 +246,12 @@ class GrpcGateway(Gateway):
         specs = self.methods()
         if not specs:
             logger.warning(NOTHING_PUBLISHED, self._title)
-        is_ready = wire.Readiness(
-            health_check or wire.default_health_check(specs), self._draining
-        )
+
+        def ready() -> bool:
+            """Every readiness check passes — `buses` the first of them."""
+            return self.readiness.report().ready
+
+        is_ready = wire.Readiness(health_check or ready, self._draining)
         document = proto.describe_document(self._title, self._version, specs)
         return tuple(wire.generic_handlers(specs, document, is_ready))
 

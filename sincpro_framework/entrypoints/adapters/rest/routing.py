@@ -193,13 +193,7 @@ def failure_answer(error: Exception) -> tuple[int, dict[str, Any]]:
         ).model_copy(update={"status": 400})
     else:
         problem = problem_of(error)
-    body = {
-        **problem.model_dump(mode="json", exclude={"extensions"}),
-        **problem.extensions,
-    }
-    return problem.status, {
-        name: value for name, value in body.items() if value not in (None, [], {}, "")
-    }
+    return problem.status, problem.body()
 
 
 def call_route(

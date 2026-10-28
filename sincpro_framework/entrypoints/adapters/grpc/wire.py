@@ -463,25 +463,6 @@ class Readiness:
         return not self.draining.is_set() and self.check()
 
 
-def default_health_check(specs: Mapping[str, GrpcMethodSpec]) -> Callable[[], bool]:
-    """Every published `UseFramework` is ready — built, or a reference — verified live on
-    every `Check` instead of assumed once. A caller wanting a deeper probe (a DB ping, a queue
-    connection) passes its own `health_check`.
-
-        default_health_check(specs)()    ->  True while billing and stock are both ready
-        <billing torn down>              ->  False
-
-    Each bus is asked once per check, however many methods it publishes.
-    """
-    frameworks = {spec.framework for spec in specs.values()}
-
-    def check() -> bool:
-        """Every published bus is ready right now."""
-        return all(f.is_ready for f in frameworks)
-
-    return check
-
-
 def generic_handlers(
     specs: Mapping[str, GrpcMethodSpec], document: Scalar, is_ready: Callable[[], bool]
 ) -> list[Any]:
