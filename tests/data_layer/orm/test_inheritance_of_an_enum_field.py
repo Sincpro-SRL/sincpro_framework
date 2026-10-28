@@ -14,6 +14,7 @@ values and words, the column stays text, and a query by any class reads what eac
 each row as the class it was saved as.
 """
 
+from collections.abc import Mapping
 from dataclasses import dataclass
 from enum import StrEnum
 
@@ -29,7 +30,7 @@ from sincpro_framework.data_layer.orm.sqlalchemy.services.model_introspection im
 )
 from sincpro_framework.ddd import Criteria
 from sincpro_framework.ddd.criteria import Condition
-from sincpro_framework.ddd.entity import Entity, Translated
+from sincpro_framework.ddd.entity import Entity
 
 from .engines import fresh
 
@@ -39,11 +40,11 @@ class State(StrEnum):
     POSTED = "posted"
 
     @classmethod
-    def translations(cls) -> Translated:
+    def translations(cls) -> Mapping[str, str]:
         return {"default": "State", "es": "Estado"}
 
     @classmethod
-    def choice_translations(cls) -> dict[str, Translated]:
+    def choice_translations(cls) -> dict[str, Mapping[str, str]]:
         return {cls.DRAFT: {"es": "Borrador"}, cls.POSTED: {"es": "Publicada"}}
 
 
@@ -53,11 +54,11 @@ class SiatState(StrEnum):
     OBSERVED = "observed"
 
     @classmethod
-    def translations(cls) -> Translated:
+    def translations(cls) -> Mapping[str, str]:
         return {"default": "SIAT state", "es": "Estado SIAT"}
 
     @classmethod
-    def choice_translations(cls) -> dict[str, Translated]:
+    def choice_translations(cls) -> dict[str, Mapping[str, str]]:
         return {
             cls.DRAFT: {"es": "Borrador"},
             cls.POSTED: {"es": "Validada"},

@@ -30,6 +30,9 @@ class ContextKey(StrEnum):
     EXECUTION_ID = "execution_id"
     CAUSATION_ID = "causation_id"
     CORRELATION_ID = "correlation_id"
+    LANG = "lang"
+    """The language of the call, a BCP 47 tag (`es-BO`) — what a `MultiLanguage` and a message
+    are read in."""
     PIPELINE_CONTEXT = "SINCPRO_PIPELINE_CONTEXT"
     """The run a pipeline's steps belong to — `{"pipeline": …, "run_id": …}` on the node of its
     execution, so a run at the same time is another branch; in the store, the namespace of every

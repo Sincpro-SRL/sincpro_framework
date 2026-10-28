@@ -25,7 +25,8 @@ from sincpro_framework.data_layer.orm.sqlalchemy.entrypoint.template_table impor
     entity_table,
     event_columns,
 )
-from sincpro_framework.ddd.entity import ArchivableMixin, AuditedMixin, Entity, Translated
+from sincpro_framework.ddd import MultiLanguage
+from sincpro_framework.ddd.entity import ArchivableMixin, AuditedMixin, Entity
 from sincpro_framework.ddd.entity.entity_collection import EntityCollection
 from sincpro_framework.ddd.events import ChangeTrackingMixin, DomainEvent
 
@@ -60,8 +61,8 @@ class Note(Entity):
     body: str = field(default="", metadata={"label": {"default": "Body", "es": "Cuerpo"}})
 
     @classmethod
-    def translations(cls) -> Translated:
-        return {"default": "Note", "es": "Nota"}
+    def translations(cls) -> MultiLanguage:
+        return MultiLanguage("Note", es="Nota")
 
 
 class Notes(EntityCollection[Note]):

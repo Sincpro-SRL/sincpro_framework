@@ -11,6 +11,7 @@ unified `FieldMeta`.
 Only what Python and the tables cannot say is declared. Everything else is read off them.
 """
 
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 from datetime import date, datetime
 from decimal import Decimal
@@ -39,7 +40,7 @@ from sincpro_framework.data_layer.orm.sqlalchemy.domain.custom_fields import (
 from sincpro_framework.data_layer.orm.sqlalchemy.entrypoint.repository import Repository
 from sincpro_framework.data_layer.orm.sqlalchemy.entrypoint.template_table import entity_table
 from sincpro_framework.data_layer.orm.sqlalchemy.infrastructure.database import Database
-from sincpro_framework.ddd.entity import Entity, Translated
+from sincpro_framework.ddd.entity import Entity
 from sincpro_framework.ddd.entity.entity_collection import EntityCollection
 
 from .related_models import (
@@ -97,7 +98,7 @@ class Work(Entity):
     publisher: Publisher | None = None
 
     @classmethod
-    def translations(cls) -> Translated:
+    def translations(cls) -> Mapping[str, str]:
         return {"default": "Work"}
 
 

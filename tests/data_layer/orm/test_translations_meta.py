@@ -6,6 +6,7 @@ values of a select. The class answers a dictionary, `Meta` maps it, and it is re
 class.
 """
 
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 from enum import StrEnum
 
@@ -21,8 +22,9 @@ from sincpro_framework.data_layer.orm.sqlalchemy.infrastructure.database import 
 from sincpro_framework.data_layer.orm.sqlalchemy.services.model_introspection import (
     ModelIntrospection,
 )
+from sincpro_framework.ddd import MultiLanguage
 from sincpro_framework.ddd.criteria import Condition, Criteria, Operator, Pagination
-from sincpro_framework.ddd.entity import Entity, Translated
+from sincpro_framework.ddd.entity import Entity
 from sincpro_framework.ddd.entity.entity_meta import FieldType
 
 
@@ -36,11 +38,11 @@ class Priority(StrEnum):
     HIGH = "high"
 
     @classmethod
-    def translations(cls) -> Translated:
-        return {"default": "Priority", "es": "Prioridad"}
+    def translations(cls) -> Mapping[str, str]:
+        return {"default": "Priority", "es": "Prioridad"}  # a plain mapping is taken too
 
     @classmethod
-    def choice_translations(cls) -> dict[str, Translated]:
+    def choice_translations(cls) -> dict[str, Mapping[str, str]]:
         return {cls.LOW: {"default": "Low", "es": "Baja"}, cls.HIGH: {"default": "High"}}
 
 
@@ -64,8 +66,8 @@ class Invoice(Entity):
     priority: Priority = Priority.LOW
 
     @classmethod
-    def translations(cls) -> Translated:
-        return {"default": "Invoice", "es": "Factura"}
+    def translations(cls) -> MultiLanguage:
+        return MultiLanguage("Invoice", es="Factura")
 
 
 @dataclass
