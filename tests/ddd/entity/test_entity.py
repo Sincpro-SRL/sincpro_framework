@@ -12,8 +12,9 @@ from decimal import Decimal
 
 import pytest
 
+from sincpro_framework.ddd import MultiLanguage
 from sincpro_framework.ddd import entity as entity_module
-from sincpro_framework.ddd.entity import Entity, Translated, new_entity_id, uuid7
+from sincpro_framework.ddd.entity import Entity, new_entity_id, uuid7
 from sincpro_framework.ddd.entity.entity_collection import identity_of
 
 
@@ -29,8 +30,8 @@ class Invoice(Entity):
     total: int = field(default=0, metadata={"label": {"default": "Total"}})
 
     @classmethod
-    def translations(cls) -> Translated:
-        return {"default": "Invoice", "es": "Factura"}
+    def translations(cls) -> MultiLanguage:
+        return MultiLanguage("Invoice", es="Factura")
 
 
 def test_the_class_answers_its_own_name_in_every_language():

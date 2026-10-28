@@ -10,6 +10,7 @@ Plain dataclasses in this module, tables at the bottom, one `map_aggregates`; th
 never learn where they live.
 """
 
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 from datetime import datetime
 from decimal import Decimal
@@ -20,7 +21,7 @@ from sqlalchemy.orm import registry
 from sincpro_framework import exceptions
 from sincpro_framework.data_layer.orm import map_aggregates
 from sincpro_framework.data_layer.orm.sqlalchemy.entrypoint.template_table import entity_table
-from sincpro_framework.ddd.entity import Entity, Translated
+from sincpro_framework.ddd.entity import Entity
 from sincpro_framework.ddd.entity.entity_collection import EntityCollection
 from sincpro_framework.ddd.events import DomainEvent
 
@@ -56,7 +57,7 @@ class Account(Entity):
     )
 
     @classmethod
-    def translations(cls) -> Translated:
+    def translations(cls) -> Mapping[str, str]:
         return {"default": "Account", "es": "Cuenta"}
 
     def apply(self, debit: Decimal, credit: Decimal) -> None:

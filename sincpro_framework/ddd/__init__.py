@@ -46,7 +46,6 @@ from sincpro_framework.ddd.entity import (
     AuditedMixin,
     Entity,
     EventSourcedMixin,
-    Translated,
     new_entity_id,
     utc_now,
 )
@@ -89,6 +88,8 @@ from sincpro_framework.ddd.exceptions import (
 )
 from sincpro_framework.ddd.exchange_rates import ExchangeRates, InMemoryExchangeRates
 from sincpro_framework.ddd.money import Currency, ExchangeRate, Money
+from sincpro_framework.ddd.multi_currency import MultiCurrency
+from sincpro_framework.ddd.multi_language import MultiLanguage
 from sincpro_framework.ddd.query import (
     DraftState,
     Query,
@@ -183,6 +184,8 @@ __all__ = [
     "LiteralSearch",
     "Meta",
     "Money",
+    "MultiCurrency",
+    "MultiLanguage",
     "NAME_SEARCH_LIMIT",
     "Not",
     "Now",
@@ -216,7 +219,6 @@ __all__ = [
     "Today",
     "TransactionConflict",
     "Transacts",
-    "Translated",
     "Upserted",
     "ValueObject",
     "When",

@@ -9,6 +9,7 @@ which may be NULL, which annotation points at another mapped class.
 Cached, because mappings are applied once at boot and a table grows no column at runtime.
 """
 
+from collections.abc import Mapping
 from dataclasses import is_dataclass
 from decimal import Decimal
 from functools import cache
@@ -28,7 +29,7 @@ from sincpro_framework.data_layer.orm.sqlalchemy.services.event_mapping import (
 from sincpro_framework.data_layer.orm.sqlalchemy.services.extension_typing import (
     HIDDEN,
 )
-from sincpro_framework.ddd.entity import Translated, extensions
+from sincpro_framework.ddd.entity import extensions
 from sincpro_framework.ddd.entity.entity_meta import (
     FieldMeta,
     FieldType,
@@ -47,6 +48,7 @@ from sincpro_framework.ddd.entity.entity_meta import (
     without_optional,
 )
 from sincpro_framework.ddd.entity.relations import key_pair
+from sincpro_framework.ddd.multi_language import MultiLanguage
 
 
 def _relational_type(kind: str, many: bool) -> FieldType:
@@ -187,10 +189,10 @@ class ModelIntrospection:
         annotations = annotations_of(entity)
         identity = mapper.primary_key[0].name
         translator = getattr(entity, "translations", None)
-        aggregate_name: Translated = (
-            cast(Translated, translator())
+        aggregate_name = (
+            MultiLanguage(cast(Mapping[str, str], translator()))
             if callable(translator)
-            else {"default": entity.__name__}
+            else MultiLanguage(entity.__name__)
         )
 
         fields: dict[str, FieldMeta] = {}

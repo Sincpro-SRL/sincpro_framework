@@ -17,6 +17,7 @@ import inspect
 import sys
 import types
 import uuid
+from collections.abc import Mapping
 from datetime import UTC, date, datetime, time, tzinfo
 from decimal import Decimal
 from enum import Enum, StrEnum
@@ -63,16 +64,8 @@ from sincpro_framework.ddd.entity.presentation import (
     When,
     field_name,
 )
+from sincpro_framework.ddd.multi_language import MultiLanguage
 from sincpro_framework.sincpro_abstractions import DataTransferObject
-
-Translated = dict[str, str]
-"""One piece of text in every language the project speaks, `{"default": "Note", "es": "Nota"}`
-— always a `"default"`, plus whatever languages beyond it. The shape `Entity.translations()`
-answers for the aggregate's own name, and the same shape `field(metadata={"label": …, "help":
-…})` uses for one field. A field's label and help are never in `translations()` — they live on
-the field itself, read by `describe_class`/`describe` straight off the dataclass, because they
-are a property of that field, not of the class."""
-
 
 TRUTHY = frozenset({"1", "true", "yes", "on", "t"})
 
@@ -310,7 +303,7 @@ def members_of(annotation: Any) -> list[Any]:
     return [] if members is None else [member.value for member in members]
 
 
-def type_translations(annotation: Any) -> Translated:
+def type_translations(annotation: Any) -> MultiLanguage:
     """What an enum calls itself — its `translations()`, the shape an `Entity` answers its own
     name with. Empty for any other annotation, and for an enum that declares none.
 
@@ -318,10 +311,12 @@ def type_translations(annotation: Any) -> Translated:
     out {"default": "Priority", "es": "Prioridad"}
     """
     translator = getattr(enum_of(annotation), "translations", None)
-    return cast(Translated, translator()) if callable(translator) else {}
+    if not callable(translator):
+        return MultiLanguage()
+    return MultiLanguage(cast(Mapping[str, str], translator()))
 
 
-def choice_translations_of(annotation: Any) -> dict[str, Translated]:
+def choice_translations_of(annotation: Any) -> dict[str, MultiLanguage]:
     """What each value of an enum is called — its `choice_translations()` — keyed by the value
     as text, as JSON keys travel, in the order the enum declares its values. Empty when the
     annotation is not an enum or the enum names none; a value it leaves out has no label.
@@ -340,10 +335,10 @@ def choice_translations_of(annotation: Any) -> dict[str, Translated]:
     translator = getattr(members, "choice_translations", None)
     if members is None or not callable(translator):
         return {}
-    by_member: dict[Any, Translated] = {}
-    for value, translated in cast(dict[Any, Translated], translator()).items():
+    by_member: dict[Any, MultiLanguage] = {}
+    for value, translated in cast(Mapping[Any, Mapping[str, str]], translator()).items():
         try:
-            by_member[members(value)] = translated
+            by_member[members(value)] = MultiLanguage(translated)
         except ValueError as error:
             raise exceptions.ProgrammingError(
                 f"{members.__name__}.choice_translations() names {value!r}, which is not one "
@@ -353,7 +348,7 @@ def choice_translations_of(annotation: Any) -> dict[str, Translated]:
 
 
 @cache
-def _labels_of_types(declared: type) -> dict[str, Translated]:
+def _labels_of_types(declared: type) -> dict[str, MultiLanguage]:
     """`{field_name: translated}` for every field whose type names itself — an enum with
     `translations()`. Once per class: the annotations are resolved here, and a change event
     asks for the labels at every write."""
@@ -364,7 +359,7 @@ def _labels_of_types(declared: type) -> dict[str, Translated]:
     }
 
 
-def field_translations(declared: type, key: str) -> dict[str, Translated]:
+def field_translations(declared: type, key: str) -> dict[str, MultiLanguage]:
     """`{field_name: translated}` for every field of `declared` that carries
     `field(metadata={key: translated})` — empty for a class that is not a dataclass, or that
     declared none. `key` is `"label"` or `"help"`; read once per class, alongside the rest of
@@ -386,7 +381,7 @@ def field_translations(declared: type, key: str) -> dict[str, Translated]:
     if not dataclasses.is_dataclass(declared):
         return {}
     declared_here = {
-        one.name: cast(Translated, one.metadata[key])
+        one.name: MultiLanguage(one.metadata[key])
         for one in dataclasses.fields(declared)
         if key in one.metadata
     }
@@ -467,7 +462,7 @@ class FieldMeta(DataTransferObject):
 
     choices: list[Any] = []
     """The values an enum field may hold — what a select is built from."""
-    choice_labels: dict[str, Translated] = {}
+    choice_labels: dict[str, MultiLanguage] = {}
     """What each of `choices` is called, keyed by the value as text — the enum's
     `choice_translations()`. Empty when the enum names none; a value missing here has no label."""
 
@@ -475,10 +470,10 @@ class FieldMeta(DataTransferObject):
     """A decimal: a condition's value is read as a `Decimal` and compared exactly, so `"0.1"`
     finds `Decimal("0.10")` — a float would not."""
 
-    label: Translated = {}
+    label: MultiLanguage = MultiLanguage()
     """This field's own name, for a screen — `field(metadata={"label": {"default": "Title"}})`
     on the dataclass. Empty when the field declared none."""
-    help: Translated = {}
+    help: MultiLanguage = MultiLanguage()
     """What this field is for, longer than the label — `field(metadata={"help": {...}})`.
     Empty when the field declared none."""
 
@@ -604,7 +599,7 @@ class FieldMeta(DataTransferObject):
         nullable: bool,
         members: list[Any] | None = None,
         exact: bool = False,
-        choice_labels: dict[str, Translated] | None = None,
+        choice_labels: dict[str, MultiLanguage] | None = None,
     ) -> "FieldMeta":
         """The definition of one column, from what the reader knows about it.
 
@@ -760,7 +755,7 @@ class Meta(DataTransferObject):
     """What one record brings when nobody asks otherwise (`DEFAULT_READING`). `detail_of`
     answers it; `None` is every scalar and no relation."""
     fields: dict[str, FieldMeta]
-    name: Translated
+    name: MultiLanguage
     """The aggregate's own name, exactly as the class's `translations()` answered it. A
     field's own label/help live on `fields[name].label`/`.help`, not here."""
     resolvers: list[ResolverMeta] = Field(default_factory=lambda: list(RESOLVERS))
@@ -1524,10 +1519,10 @@ def describe_class(declared: type, identity: str = "") -> "Meta":
     """
     annotations = annotations_of(declared)
     translator = getattr(declared, "translations", None)
-    name: Translated = (
-        cast(Translated, translator())
+    name = (
+        MultiLanguage(cast(Mapping[str, str], translator()))
         if callable(translator)
-        else {"default": declared.__name__}
+        else MultiLanguage(declared.__name__)
     )
     fields = _worded(
         {

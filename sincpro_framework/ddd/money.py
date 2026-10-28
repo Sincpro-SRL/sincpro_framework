@@ -26,7 +26,7 @@ from datetime import date
 from decimal import ROUND_DOWN, ROUND_HALF_UP, Context, Decimal, localcontext
 from typing import Any, ClassVar, Self
 
-from pydantic import BaseModel, ConfigDict, field_validator
+from pydantic import BaseModel, ConfigDict, field_serializer, field_validator
 from pydantic_core import core_schema
 
 from sincpro_framework.ddd import exceptions
@@ -182,6 +182,14 @@ class ExchangeRate(DataTransferObject):
             raise ValueError(f"a rate is a number more than zero, not {value!r}")
         return rate
 
+    def __repr__(self) -> str:
+        said = "".join(
+            f", {name}={value!r}"
+            for name, value in (("on", self.on), ("source", self.source))
+            if value
+        )
+        return f"ExchangeRate('{self.base}', '{self.quote}', '{self.rate:f}'{said})"
+
     def inverse(self) -> "ExchangeRate":
         """The same rate the other way: `quote` in `base`."""
         with localcontext(PRECISION):
@@ -222,6 +230,11 @@ class Money(DataTransferObject):
     @classmethod
     def _currency(cls, value: Any) -> Currency:
         return currency_of(value, cls.currencies)
+
+    @field_serializer("amount", when_used="json")
+    def _written(self, amount: Decimal) -> str:
+        """In fixed point — `"0.000000000000000001"`, never `"1E-18"` — what every reader parses."""
+        return format(amount, "f")
 
     # building
 
@@ -438,10 +451,10 @@ class Money(DataTransferObject):
         return float(self.amount)
 
     def __str__(self) -> str:
-        return f"{self.amount} {self.currency}"
+        return f"{self.amount:f} {self.currency}"
 
     def __repr__(self) -> str:
-        return f"{type(self).__name__}('{self.amount}', '{self.currency}')"
+        return f"{type(self).__name__}('{self.amount:f}', '{self.currency}')"
 
     def __format__(self, spec: str) -> str:
         """`f"{m:.2f}"` → `"4.19 BOB"`: the amount formatted, rounded by the money's rule when

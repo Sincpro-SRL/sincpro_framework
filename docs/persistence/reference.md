@@ -25,7 +25,7 @@ catalogue before it moved here.
 | `StoreCapabilities` | What the engine under one store honours: row locks, `skip_locked`, `nowait`, savepoints, percentiles | `repository.capabilities`, read at run time |
 | `AggregateRepository[T]` | One aggregate's view over a repository, for questions that deserve names | Optional; `orm.DatabaseAggregateRepository[T]` adds the database repository's capabilities |
 | `Evaluation.matches(record, expression)` | The filter language evaluated in memory | Tests without a database; `EntityCollection.filtered_by` |
-| `Translated`, `translations()` | The words a screen shows: the aggregate names itself, each field declares its own in `field(metadata=…)` | `Meta.name` and `Meta.fields[x].label` / `.help` |
+| `MultiLanguage`, `translations()` | The words a screen shows: the aggregate names itself, each field declares its own in `field(metadata=…)` | `Meta.name` and `Meta.fields[x].label` / `.help`, each a `MultiLanguage` |
 | `DomainEvent`, `Entity.record` / `pull_events` | Records in memory; `save(aggregate)` also stores mapped events in the context's table without draining them | See [events.md](../events/README.md) |
 
 Three rules, each preventing a failure that was observed in real code:
@@ -55,15 +55,17 @@ class Invoice(Entity):
     )
 
     @classmethod
-    def translations(cls) -> Translated:
-        return {"default": "Invoice", "es": "Factura"}
+    def translations(cls) -> MultiLanguage:
+        return MultiLanguage("Invoice", es="Factura")
 ```
 
 **A field's words are declared on the field**, in the `metadata` a dataclass field already
 takes, beside its type and its default — so the one place that says what `number` is also says
 what to call it. The class method answers only the aggregate's own name.
 
-`Translated` is `dict[str, str]`: a text per locale, with a `default`. `ModelIntrospection.describe()` reads both:
+Each is a `MultiLanguage` ([languages](../ddd/languages.md)) — a text per language with a `default`,
+read by its language (`label["es"]`, `label.in_("es-BO")`, `str(label)` in the call's), and a
+mapping by language still: a plain `{"default": …}` declared is read as one. `ModelIntrospection.describe()` reads both:
 
 ```python
 meta.name                     # {"default": "Invoice", "es": "Factura"}
@@ -73,7 +75,7 @@ meta.fields["number"].help    # {"default": "As printed on the document"}
 ```
 
 A class that declares nothing is named after itself and says nothing else. The client reads the
-dictionary and picks the locale.
+dictionary — the JSON is the same — and picks the locale.
 
 ### A category says its words once, in its enum
 
@@ -87,12 +89,12 @@ class Priority(StrEnum):
     HIGH = "high"
 
     @classmethod
-    def translations(cls) -> Translated:                    # its own name, as an entity's
-        return {"default": "Priority", "es": "Prioridad"}
+    def translations(cls) -> MultiLanguage:                 # its own name, as an entity's
+        return MultiLanguage("Priority", es="Prioridad")
 
     @classmethod
-    def choice_translations(cls) -> dict[str, Translated]:  # each value's
-        return {cls.LOW: {"default": "Low", "es": "Baja"}, cls.HIGH: {"default": "High", "es": "Alta"}}
+    def choice_translations(cls) -> dict[str, MultiLanguage]:  # each value's
+        return {cls.LOW: MultiLanguage("Low", es="Baja"), cls.HIGH: MultiLanguage("High", es="Alta")}
 
 
 @dataclass

@@ -7,6 +7,7 @@ decorators beside these.
 """
 
 import json
+from collections.abc import Mapping
 from typing import Any
 
 from pydantic import TypeAdapter
@@ -14,6 +15,8 @@ from sqlalchemy import JSON, Dialect, Text, TypeDecorator
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.sql.operators import OperatorType
 from sqlalchemy.types import TypeEngine
+
+from sincpro_framework.ddd.multi_language import MultiLanguage
 
 
 class TypedJson[T](TypeDecorator[T]):
@@ -98,11 +101,11 @@ class JsonText(TypeDecorator):
 
 
 class TranslatedText(TypeDecorator):
-    """A text in several languages — `dict[str, str]` with a `default` — as a JSON object in
-    the column.
+    """A text in several languages — a `MultiLanguage`, or any mapping by language with a
+    `default` — as a JSON object in the column, read back as a `MultiLanguage`.
 
-        write  {"default": "Hola", "en": "Hello"}  →  '{"default": "Hola", "en": "Hello"}'
-        read   '{"default": "Hola", "en": "Hello"}'  →  {"default": "Hola", "en": "Hello"}
+        write  MultiLanguage("Hola", en="Hello")    →  '{"default": "Hola", "en": "Hello"}'
+        read   '{"default": "Hola", "en": "Hello"}'  →  MultiLanguage({"default": "Hola", "en": "Hello"})
 
     Written with the characters as they are, not escaped, so `like` over the stored text
     finds "año" when somebody types "año". A stored value without a default is refused on
@@ -113,7 +116,7 @@ class TranslatedText(TypeDecorator):
     cache_ok = True
 
     def process_bind_param(
-        self, value: dict[str, str] | None, dialect: Dialect
+        self, value: Mapping[str, str] | None, dialect: Dialect
     ) -> str | None:
         """The translations as a JSON object, characters unescaped — refused without a
         `default`, the text every reader falls back to.
@@ -132,6 +135,6 @@ class TranslatedText(TypeDecorator):
 
     def process_result_value(
         self, value: str | None, dialect: Dialect
-    ) -> dict[str, str] | None:
-        """The stored JSON object back as `{language: text}`."""
-        return None if value is None else json.loads(value)
+    ) -> MultiLanguage | None:
+        """The stored JSON object back as the text in its languages."""
+        return None if value is None else MultiLanguage(json.loads(value))

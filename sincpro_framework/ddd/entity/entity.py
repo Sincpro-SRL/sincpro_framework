@@ -30,6 +30,7 @@ aggregate opts into each independently, the same way it opts into this base clas
 """
 
 import dataclasses
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from functools import lru_cache
@@ -51,12 +52,12 @@ from sincpro_framework.ddd.criteria import (
 from sincpro_framework.ddd.entity.derivations import Derivations
 from sincpro_framework.ddd.entity.entity_meta import (
     TEXT_TYPES,
-    Translated,
     annotations_of,
     logical_type,
 )
 from sincpro_framework.ddd.entity.presentation import Presentation
 from sincpro_framework.ddd.entity.utils.annotations import is_class_var, own_annotations
+from sincpro_framework.ddd.multi_language import MultiLanguage
 
 if TYPE_CHECKING:
     from sincpro_framework.ddd.events import DomainEvent
@@ -133,8 +134,8 @@ class Entity:
             title: str = field(metadata={"label": {"default": "Title"}})
 
             @classmethod
-            def translations(cls) -> Translated:
-                return {"default": "Note"}
+            def translations(cls) -> MultiLanguage:
+                return MultiLanguage("Note", es="Nota")
 
     A subclass is an ordinary `@dataclass`. Its first declared field is still its identity,
     because these come first in the field order — which is the convention `EntityCollection`
@@ -207,15 +208,16 @@ class Entity:
             )
 
     @classmethod
-    def translations(cls) -> Translated:
-        """The aggregate's own name, in every language the project speaks. Override it.
+    def translations(cls) -> Mapping[str, str]:
+        """The aggregate's own name, in every language the project speaks. Override it —
+        a `MultiLanguage`, or any mapping by language; read as a `MultiLanguage`.
 
-            {"default": "Note", "es": "Nota"}
+            MultiLanguage("Note", es="Nota")
 
         Read by the definition of the model, once per class. A field's own label and help text
         are not here — see `field(metadata={"label": …, "help": …})`.
         """
-        return {"default": cls.__name__}
+        return MultiLanguage(cls.__name__)
 
     @classmethod
     def DEFAULT_GET_ID(cls) -> str:

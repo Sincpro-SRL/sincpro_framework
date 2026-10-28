@@ -187,9 +187,80 @@ An adapter of a project's own proves itself with `ExchangeRatesContract`
 labelled by its currency, with nothing declared — one series per currency, never summed across
 (`labelled_by` on the class says so). `measures` does the same.
 
+## Several currencies at once: `MultiCurrency`
+
+An amount as it happened and what it is worth in other currencies — the company's, the group's,
+the reports' — each equivalent with the rate it was converted by, frozen when it was recorded. It
+is read as a text kept in several languages is read: by its key.
+
+```python
+from sincpro_framework.ddd import MultiCurrency
+
+eur_to_usd = ExchangeRate("EUR", "USD", "1.0858", on=date(2026, 10, 1), source="ECB")
+paid = MultiCurrency(Money("100", "USD")).at(usd_to_bob, eur_to_usd)
+
+assert (paid.origin, paid["BOB"], paid["EUR"]) == (
+    Money("100", "USD"), Money("696.00", "BOB"), Money("92.10", "EUR")
+)
+assert paid.codes == ("USD", "BOB", "EUR") and "BOB" in paid
+assert paid.rate("EUR") == eur_to_usd                       # kept as published, never inverted
+
+price = MultiCurrency(Money("10", "USD")).at(Money("70", "BOB"))   # a price set by hand: no rate
+assert price["BOB"] == Money("70", "BOB") and price.rate("BOB") is None
+
+closing = paid.at(ExchangeRate("USD", "BOB", "6.97", on=date(2026, 10, 31)))
+assert closing["BOB"] - paid["BOB"] == Money("1.00", "BOB")   # the exchange difference, paid untouched
+
+lines = [paid, paid]
+assert sum(lines)["BOB"] == Money("1392.00", "BOB")          # a document's lines, currency by currency
+assert sum(lines).rate("BOB") == usd_to_bob                   # a rate every line shares is kept
+```
+
+- **`at(*conversions)`** answers a new value: a rate converts the origin either way it is stated,
+  a `Money` is an amount set by hand; an equivalent already held is replaced, the origin never.
+- **A rate is kept as it was stated**, with the currency it is stated for (`base`, ISO 20022's unit
+  currency) — the digits the bank published, never their inverse.
+- **Adding** two needs the same currencies; an equivalent keeps its rate only when both share it.
+- JSON is one document: `{"origin": {...}, "equivalents": {"BOB": {"amount": "696.00", "rate":
+  "6.96", "base": "USD", "on": "2026-10-01", "source": "BCB"}, ...}}`. A subclass reads codes of
+  its own, as `Money`'s does.
+
+## In an Entity
+
+A field is `total: Money` or `total: MultiCurrency`; the table keeps it in one JSON column —
+`jsonb` on Postgres — and the repository reads it back as the value, with all its API:
+
+```python
+from sqlalchemy import Column, Integer, MetaData, Numeric, Table, cast, create_engine, func, insert, select
+
+from sincpro_framework.data_layer.orm.sqlalchemy.domain.custom_fields import TypedJson
+
+metadata = MetaData()
+invoices = Table(
+    "invoice",
+    metadata,
+    Column("id", Integer, primary_key=True),
+    Column("total", TypedJson(MultiCurrency)),
+)
+engine = create_engine("sqlite://")
+metadata.create_all(engine)
+
+with engine.begin() as connection:
+    connection.execute(insert(invoices), [{"id": 1, "total": paid}, {"id": 2, "total": paid}])
+    assert connection.execute(select(invoices.c.total)).scalars().first() == paid
+    in_bob = cast(invoices.c.total["equivalents"]["BOB"]["amount"].as_string(), Numeric(38, 18))
+    assert connection.execute(select(func.sum(in_bob))).scalar() == 1392   # summed by the database
+```
+
+In an Entity's table that is `entity_table("invoice", metadata, Column("total", TypedJson(Money)))`
+— nothing else to declare: any precision, any currency, nothing to migrate when one more is held.
+The database sums it by extracting the amount; when a table of millions is summed and filtered by
+currency, columns derived from the JSON do it natively ([money-storage.md](money-storage.md)).
+
 ## Not here
 
-- **Storing it in an Entity** as two columns (`total_amount`, `total_currency`), or several amounts
-  sharing one currency column as Odoo's `Monetary(currency_field=…)` does: the next step.
+- **Columns** — `Money` on two columns, several amounts sharing one currency column, columns
+  generated from the JSON for the currencies a report sums — and the Criteria over each: designed
+  in [money-storage.md](money-storage.md), the next steps.
 - Formatting for a locale (the frontend's, `Intl.NumberFormat`), amounts in words, exchange
-  differences and revaluation — the ERP's rules.
+  differences and revaluation entries — the ERP's rules.

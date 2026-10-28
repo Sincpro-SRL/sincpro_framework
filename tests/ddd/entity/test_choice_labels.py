@@ -6,13 +6,14 @@ name with `translations()`, as an entity does, and each value's with `choice_tra
 and a field's own `label` still wins where the field means something more specific.
 """
 
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 from enum import StrEnum
 
 import pytest
 
-from sincpro_framework.ddd import exceptions
-from sincpro_framework.ddd.entity import Entity, Translated
+from sincpro_framework.ddd import MultiLanguage, exceptions
+from sincpro_framework.ddd.entity import Entity
 from sincpro_framework.ddd.entity.entity_meta import describe_class
 
 
@@ -21,14 +22,14 @@ class Priority(StrEnum):
     HIGH = "high"
 
     @classmethod
-    def translations(cls) -> Translated:
-        return {"default": "Priority", "es": "Prioridad"}
+    def translations(cls) -> MultiLanguage:
+        return MultiLanguage("Priority", es="Prioridad")
 
     @classmethod
-    def choice_translations(cls) -> dict[str, Translated]:
+    def choice_translations(cls) -> dict[str, MultiLanguage]:
         return {
-            cls.LOW: {"default": "Low", "es": "Baja"},
-            cls.HIGH: {"default": "High", "es": "Alta"},
+            cls.LOW: MultiLanguage("Low", es="Baja"),
+            cls.HIGH: MultiLanguage("High", es="Alta"),
         }
 
 
@@ -95,7 +96,7 @@ def test_the_labels_follow_the_order_the_enum_declares_its_values_in():
         APPROVED = "approved"
 
         @classmethod
-        def choice_translations(cls) -> dict[str, Translated]:
+        def choice_translations(cls) -> dict[str, Mapping[str, str]]:
             return {
                 cls.APPROVED: {"default": "Approved"},
                 cls.DRAFT: {"default": "Draft"},
@@ -117,7 +118,7 @@ def test_a_value_the_enum_does_not_have_is_refused_when_described():
         OPEN = "open"
 
         @classmethod
-        def choice_translations(cls) -> dict[str, Translated]:
+        def choice_translations(cls) -> dict[str, Mapping[str, str]]:
             return {"opne": {"default": "Open"}}
 
     @dataclass
