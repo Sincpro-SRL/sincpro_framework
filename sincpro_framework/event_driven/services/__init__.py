@@ -1,4 +1,4 @@
-"""The operations behind what a project holds: `EventPublication` puts a fact into a queue,
-`EventDispatch` hands an event to the buses that hear it, `EventRelaying` runs one pass of the
-outbox. The entrypoint's `Publisher`, `Subscriber` and `EventRelay` delegate to them.
+"""The operations behind what a project holds: `EventPublication` puts a message into a queue,
+`Forwarding` holds a publisher's messages and forwards them in order, `EventDispatch` hands an
+event to the buses that hear it. The entrypoint's `Publisher` and `Subscriber` delegate to them.
 """

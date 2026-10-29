@@ -15,6 +15,11 @@ publisher; it never imports the queue, and the queue never imports a context. Th
 is no late import anywhere in this package and no `# noqa: E402`. The knot it cuts: a queue
 needs a subscriber, a subscriber needs the buses, and a bus needs the publisher the queue is
 behind — `SyncQueue` takes a *function*, so the queue is built before a single bus exists.
+
+**Billing publishes on commit, to a broker that holds.** Its repository hands what a write
+recorded to `shop.broker` once it committed; the broker keeps it until a test says it is consumed
+(`release()`), so the window between a commit and the other contexts hearing of it is something a
+test can stand in.
 """
 
 from dataclasses import dataclass, field
@@ -22,6 +27,7 @@ from dataclasses import dataclass, field
 from sincpro_framework import UseFramework
 from sincpro_framework.data_layer.orm.sqlalchemy.entrypoint.repository import Repository
 from sincpro_framework.data_layer.orm.sqlalchemy.infrastructure.database import Database
+from sincpro_framework.ddd.events import DomainEvent
 from sincpro_framework.event_driven import (
     Publisher,
     Subscriber,
@@ -38,6 +44,29 @@ CONTEXTS = {
 }
 
 
+class HoldingBroker:
+    """A broker that took what it was handed and lets the consumers have it when told — the
+    queue billing's repository publishes on commit to."""
+
+    def __init__(self) -> None:
+        self.held: list[DomainEvent] = []
+        self.consumers: Publisher | None = None
+
+    def put(self, event: DomainEvent) -> None:
+        self.held.append(event)
+
+    async def aput(self, event: DomainEvent) -> None:
+        self.held.append(event)
+
+    def release(self) -> int:
+        """Every event held, to the consumers in the order it was taken — how many."""
+        released, self.held = self.held, []
+        assert self.consumers is not None
+        for event in released:
+            self.consumers.publish(event)
+        return len(released)
+
+
 @dataclass
 class Shop:
     """Four bounded contexts and however many databases the shape asked for."""
@@ -47,6 +76,7 @@ class Shop:
     stores: dict[str, Repository] = field(default_factory=dict)
     databases: dict[str, Database] = field(default_factory=dict)
     publisher: Publisher = field(init=False)
+    broker: HoldingBroker = field(default_factory=HoldingBroker)
 
     def __getitem__(self, name: str) -> UseFramework:
         return self.buses[name]
@@ -69,11 +99,13 @@ def _built(
     """
     shop = Shop(shape=shape, databases=per_context)
 
+    shop.publisher = Publisher(SyncQueue(lambda: Subscriber(*shop.buses.values())))
+    shop.broker.consumers = shop.publisher
+
     for name, module in CONTEXTS.items():
         module.metadata.create_all(per_context[name].engine)
-        shop.stores[name] = Repository(per_context[name])
-
-    shop.publisher = Publisher(SyncQueue(lambda: Subscriber(*shop.buses.values())))
+        publishes = Publisher(shop.broker) if name == "billing" else None
+        shop.stores[name] = Repository(per_context[name], publish_on_commit=publishes)
 
     def ask_orders(order_id: str) -> orders.ResponseAboutOrder:
         """How `billing` reaches `orders`: a command on that bus, not an import and not a
@@ -128,7 +160,7 @@ def paired(billing_refuses: bool = False) -> Shop:
 
 def distributed(billing_refuses: bool = False) -> Shop:
     """**A database each.** No reference between contexts can be a key, so every one of them is
-    a fact that crossed — which is why the outbox stops being optional here.
+    a fact that crossed — which is why billing publishes only once its write committed.
     """
     return _built(
         "distributed", {name: Database("sqlite://") for name in CONTEXTS}, billing_refuses

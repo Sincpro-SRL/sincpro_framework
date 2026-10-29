@@ -1,7 +1,7 @@
-# Events: entities persisted with the change, delivered by a relay, carried by queues to buses
+# Events: entities stored with the change, published by a Publisher, carried by queues to buses
 
 For an existing service, read [upgrading.md](upgrading.md) before changing imports or migrating
-history. It records the main revision, removed APIs and verified delivery/query limitations.
+history.
 
 ```python
 @dataclass(kw_only=True)
@@ -10,8 +10,8 @@ class DatasetRegistered(CatalogDomainEvent):                 # the context's bas
     dataset_id: str
 
 dataset.record(DatasetRegistered(dataset_id=dataset.id))     # the aggregate says it; in memory
-self.repository.save(dataset)                                # persisted with it, when the context has an event table
-for event in dataset.pull_events():                          # the Feature may still pull and publish
+self.repository.save(dataset)                                # stored with it, when the context has an event table
+for event in dataset.pull_events():                          # the Feature publishes what it decides
     self.publisher.publish(event)
 
 @planning.feature([CommandBuildPlan, DatasetRegistered])     # the subscriber is a Feature
@@ -21,27 +21,39 @@ publisher = Publisher(SyncQueue(Subscriber(planning, assurance)))
 ```
 
 Nothing is wired by default. A project builds the queue it wants with the buses it names, and
-publishes when a Feature decides to. What an aggregate recorded lives in memory and dies with the
-object — unless the context gives its events a table. **A domain event is an entity**: the
-context maps its base event class to one table (`event_table`, `map_events`), every subclass
-goes there, and the repository it already has stores and queries them — `save(aggregate)` in the
-same commit as the change, `search(InvoicePaid, criteria)` like any entity. What must leave the
-context is marked `DeliverableEventMixin` and sent on by an `EventRelay`:
+publishes when a Feature decides to — or has its repository publish what a write recorded once
+it committed. Two concepts, kept apart:
+
+- **Event storing.** What an aggregate recorded lives in memory and dies with the object —
+  unless the context gives its events a table. **A domain event is an entity**: the context maps
+  its base event class to one table (`event_table`, `map_events`), every subclass goes there, and
+  the repository it already has stores and queries them — `save(aggregate)` in the same commit
+  as the change, `search(InvoicePaid, criteria)` like any entity.
+- **Event-driven.** A `Publisher` puts a message into a queue, and the queue carries it to whoever
+  listens. It sends in the call, or — with `forwarding` — holds the message in a line and sends it
+  in order on a thread of its own while the broker is down.
+
+They meet in one place, opted into per repository: `publish_on_commit=` hands the
+`DeliverableEventMixin` events a write recorded to a publisher once the write committed, and
+stamps each stored row with when it went out.
 
 ```
-   save(aggregate) · save(events)        the events, in the same commit as the change
+   save(aggregate)                       the events, in the same commit as the change
             │
    the context's event table             one table · one row per event · its class by name
-            │  deliverable, not delivered, due
-   EventRelay                            SKIP LOCKED across replicas · a failure policy · marks each row
             │
-   Publisher(Queue)                      SyncQueue · BackgroundQueue · FastStreamQueue
+            │  after the commit          publish_on_commit= · or the Feature: publisher.publish(event)
+            ▼
+   Publisher(Queue)                      sends in the call
+            │  forwarding=True           held in a line in memory · sent in order · waits the broker out
+            ▼
+   Queue                                 SyncQueue · BackgroundQueue · FastStreamQueue · AWS
             │
    Subscriber(buses) · the broker's consumers
 ```
 
-That is the transactional outbox with the event table as the outbox. An entity whose state *is*
-its events is `EventSourcedMixin`, rebuilt from the same table. How to use it is
+An entity whose state *is* its events is `EventSourcedMixin`, rebuilt from the same table. How
+to use it is
 [persistence guide §10–§12](../persistence/guide.md#10-change-tracking-and-the-contexts-event-table);
 why it is shaped this way is [PRD_19](../prd/PRD_19_events-as-entities.md) and
 [decision 31](../persistence/decisions.md#31-a-bounded-contexts-events-are-entities-in-one-table).
@@ -57,29 +69,29 @@ is the parts.
 | `DomainEvent` | `ddd/events/domain_event.py` | An `Entity` with the envelope: `id` (UUID v7), `created_at`, `entity_type`, `entity_id`, `entity_version`, `correlation_id`, `causation_id`, `label` |
 | `Entity.record` / `pull_events` | `ddd/entity/entity.py` | Records with the aggregate's type and id; pulling hands them back and forgets them |
 | `ChangeTrackingMixin` | `ddd/events/mixins/change_tracking.py` | One `Updated` event with every field that changed — see [change-tracking.md](change-tracking.md) |
-| `DeliverableEventMixin` | `ddd/events/mixins/deliverable.py` | Marks an event delivered beyond the context, and stores its delivery: `delivered_at`, `next_delivery_at`, `delivery` |
+| `DeliverableEventMixin` | `ddd/events/mixins/deliverable.py` | Marks a contract other contexts hear — warned without a versioned `name` — and stores when it went out: `delivered_at`, `delivery` |
 | `EventSourcedMixin` | `ddd/entity/mixins/event_sourced.py` | An entity whose state is its events: `happened`, `apply`, rebuilt by `get`, appended by `save` |
 | `event_table` / `map_events` | `orm/sqlalchemy/entrypoint/template_table/events.py`, `orm/sqlalchemy/services/event_mapping.py` | The context's one event table, and its base class mapped to it — every subclass with it |
-| `EventRelay` | `event_driven/entrypoint/relay.py` → `services/relaying.py` | Delivers the deliverable events not delivered and due, over any repository; `run_once()` → `RelayPass` |
-| `DeliveryFailurePolicy` | `event_driven/domain/failure.py` | `RetryInPlace` · `RetryLater` · `ParkAndContinue` · `SkipAndContinue`; `ExponentialBackoff`, `FixedBackoff` |
-| `Publisher` | `event_driven/entrypoint/publisher.py` → `services/publication.py` | Emits to a queue, with the signature of a bus |
+| `PublishOnCommit` | `ddd/repositories/publication.py` | What a write recorded, handed to a publisher once it committed, and the stored row stamped — `publish_on_commit=` on `Repository` and `MemoryRepository` |
+| `Publisher` | `event_driven/entrypoint/publisher.py` → `services/publication.py` | Puts any message into a queue, with the signature of a bus; `forwarding=` holds and forwards |
+| `Forwarding` | `event_driven/services/forwarding.py` | Store-and-forward in the process: a line in memory, one thread, a `CircuitBreaker`, backoff |
+| `Forwarded` / `ForwardingHook` | `event_driven/domain/forwarding.py` | How one message went (`attempts`, `delivered_at`, `last_error`, `set_aside`), and the hook told of every delivery and failed attempt |
 | `Subscriber` | `event_driven/entrypoint/subscriber.py` → `services/dispatch.py` | The bus instances handed in explicitly; executes the ones whose registry knows the event — every one, whatever another raised |
 | `Queue` | `event_driven/domain/queue.py` | The protocol: `put` and `aput` |
 | `Envelope` | `event_driven/domain/envelope.py` | What travels with a message on a broker: `Envelope.headers_for(message, source=...)` stamps it, `Envelope.of(headers)` reads it |
 | `SyncQueue` | `event_driven/adapters/sync_queue.py` | Same process; `publish` runs the subscriber and returns |
 | `BackgroundQueue` | `event_driven/adapters/background_queue.py` | Another process consumes; `start()` / `stop()`; not durable |
-| `RepositoryQueue` | `event_driven/adapters/repository_queue.py` | `publish` saves the event through the repository, in the unit of work in play, for the relay |
 
 **A bus declares nothing.** Its registry already says which DTOs it answers, an event is a DTO,
 and the subscriber executes the bus with it. `@bus.feature([SomeCommand, SomeEvent])` is the
 whole subscription; `Subscriber(planning, assurance)` is the whole wiring.
 
 **A redelivery runs again only what failed — when told where to remember.** Delivery is at least
-once: a relay or a broker delivers an event again when a bus failed, and every bus that answers it
-runs again, so a handler of an event is idempotent. `Subscriber(planning, assurance,
-receipts=store)` stores which bus handled which event (`keep_for`, a day by default) in a
-`KeyValueStore` — `RedisKeyValue`, `DynamoKeyValue`, shared by the replicas — and a redelivery
-then runs only the bus that failed.
+once: a broker delivers an event again when a bus failed, and every bus that answers it runs
+again, so a handler of an event is idempotent. `Subscriber(planning, assurance, receipts=store)`
+stores which bus handled which event (`keep_for`, a day by default) in a `KeyValueStore` —
+`RedisKeyValue`, `DynamoKeyValue`, shared by the replicas — and a redelivery then runs only the
+bus that failed.
 
 ## `Publisher`: the signature of a bus
 
@@ -94,8 +106,127 @@ where somebody can answer in the same call: a `SyncQueue` with exactly one bus f
 `BackgroundQueue` cannot answer from another process, and two buses have no one answer, so both
 are refused rather than guessed. What a bus raises, the publisher raises.
 
+**Any message.** The publisher refuses nothing. A `DomainEvent` is the one this framework
+recommends: published inside an execution it goes out caused by it and in its flow
+(`causation_id`, `correlation_id`), as a copy — the one handed in is untouched. A message of the
+project's own goes into the queue as it is, and what the queue can carry is the queue's to say:
+`FastStreamQueue` writes a `DomainEvent` or a `DataTransferObject` as its own JSON (`as_json`),
+and anything else with `serializer=`, on the channel `channel_of=` names when it has no `name` —
+without them it raises a `ProgrammingError` naming the option. The AWS queues write
+`DomainEvent`s.
+
+```python
+FastStreamQueue(broker, channel_of=lambda message: "tickets", serializer=json.dumps)
+```
+
 `Subscriber.handle(event)` and `subscriber.get_async_subscriber().handle(event)` are the same two
 forms on the receiving side; the async one runs each bus through its own `get_async_bus()`.
+
+## Forwarding: held, and sent in order
+
+`Publisher(queue)` sends in the call: a broker that is down fails the `publish` where it was
+called. With `forwarding`, nobody waits:
+
+```python
+from sincpro_framework.circuit_breaker import CircuitBreaker
+from sincpro_framework.event_driven import Forwarded, Forwarding, ForwardingHook, Publisher
+
+rabbit = Publisher(queue, forwarding=True)                 # the defaults
+future = rabbit.publish(InvoicePaid(invoice_id="F-1"))     # returns at once
+future.result()                                            # Forwarded(attempts=1, delivered_at=…)
+
+
+class Alerted(ForwardingHook):
+    def after_failure(self, message, forwarded: Forwarded) -> None:
+        if forwarded.set_aside:
+            alerts.send(f"{message.name} never goes: {forwarded.last_error}")
+
+
+rabbit = Publisher(
+    queue,
+    forwarding=Forwarding(
+        name="rabbit",
+        breaker=CircuitBreaker("rabbit", failures=3),
+        hooks=[Alerted()],
+        wait=timedelta(seconds=1),
+        longest_wait=timedelta(minutes=1),
+    ),
+)
+```
+
+| What | How |
+|---|---|
+| the line | `publish` puts the message at the end of a line in memory and returns a `Future[Forwarded]` |
+| one thread | one daemon thread per `Forwarding`, started by the first message, sends one message at a time, in order — nothing to deploy beside the service: no cron, no worker process |
+| a failed attempt | the message stays first; the thread sleeps the backoff — from `wait`, doubled each attempt, up to `longest_wait` — or the error's `retry_after`, whichever is longer, and tries it again |
+| a broker that keeps failing | the attempts go through a `CircuitBreaker` stored where the context stores its circuits: open, it stops trying until the broker may be back; replicas that share a store open and close together |
+| a message that never goes | an error that fails the same way every time (`PERMANENT`: invalid, a refusal) sets it aside — `Forwarded(set_aside=True)` — so it never holds the line |
+| its context | each message is sent in the context it was published in — its trace, its execution, its tenant |
+| its hooks | `ForwardingHook.after_delivery(message, forwarded)` and `after_failure(message, forwarded)`, run on the forwarding's thread; one that raises is logged and the line goes on |
+
+`Forwarded(attempts, delivered_at, last_error, set_aside)` is how one message went. A typed
+publish — `publish(event, ResponseDTO)` — through a forwarding raises a `ProgrammingError`: it
+returns before the message went out. One `Forwarding` forwards to one queue.
+
+**Gone with the process.** The line lives in this process's memory: a message still in it when
+the process dies is not sent. A fact that must survive that is stored with the change that made it
+true, in the event table, and its row says whether it went out — the framework ships no outbox
+that would send it again.
+
+## Publishing on commit
+
+The opt-in is per repository — where each bounded context already wires its store, so it holds
+for the whole context:
+
+```python
+from sincpro_framework.data_layer.orm import Repository
+from sincpro_framework.ddd.repositories import PublishOnCommit
+
+Repository(database, billing_hooks, publish_on_commit=rabbit)       # every deliverable event
+Repository(
+    database,
+    publish_on_commit=PublishOnCommit(rabbit, entities=[Invoice, Payment], when=lambda event: …),
+)
+
+
+class InvoiceEvents(PublishOnCommit):
+    def publishes(self, event) -> bool: ...        # what goes out
+    def publisher_of(self, event) -> Publisher: ...  # a publisher per event
+```
+
+`MemoryRepository(publish_on_commit=...)` takes the same. By default what goes out is every
+`DeliverableEventMixin` event the write recorded; `entities` narrows it to what those aggregates
+recorded (by the recording aggregate's class name) and `when` to what it admits, both on top of
+the mark. A subclass overrides `publishes(event)` for what goes out and `publisher_of(event)` for
+where — a channel per event is the queue's `channel_of`, not another publisher.
+
+| Rule | What it means |
+|---|---|
+| after the commit, never before | inside a unit of work the events wait for its `after_commit`, and a rollback drops them; outside one each `save` commits on its own, so they go out as it returns |
+| taken once | what goes out is pulled from the aggregate and the rest recorded back, so a later save — or the Feature's own `pull_events()` — never hands the same event on twice |
+| a record of its own | an event saved by itself goes out when it was never tried |
+| the commit stands | a publisher that raises never undoes it: the error is logged and stamped |
+
+**The stored row says how it went.** A `DeliverableEventMixin` event the repository stored is
+stamped in a unit of work of its own: `delivered_at` and `delivery={"attempts": n}` when it went
+out, `delivery["last_error"]` when it did not — at once for a publisher that sends in the call,
+when the `Future` resolves for a forwarding one. `created_at` is when it happened, `delivered_at`
+when it went out: both are there for an audit. Neither field is ever sent: `as_json()` leaves them
+out.
+
+**The mark is a default filter, not a condition.** `DeliverableEventMixin` says "a contract other
+contexts hear" and is what `publish_on_commit` picks by default. `publisher.publish(...)` never
+looks at it. On the explicit path — a Feature that pulls and publishes — the order, what a
+rollback undoes and whether a failure matters are the Feature's to decide.
+
+## Who guarantees what
+
+| Stretch | Who answers for it |
+|---|---|
+| what to publish, and when | the Feature, or `publish_on_commit` |
+| the publisher to the broker | the publisher — in the call, or its `Forwarding` |
+| the broker to a consumer | the broker and the consumer's subscription: retries, dead letters, redelivery — [`subscribe`](brokers.md), [`QueueGateway`](../entrypoints/queue.md) |
+| the consumer storing it as its own event | the consumer's context |
 
 ## The two queues
 
@@ -117,8 +248,9 @@ reason: there, the function runs in the worker because a bus cannot cross a proc
 
 **Publishing runs the subscriber in the call**, so a subscriber that publishes re-enters the
 queue depth-first — a listener registered after it hears the *inner* fact first. Where the order
-of facts matters, write the fact down in the context it happened in, or send it through an
-outbox whose relay delivers them in order (a waiting retry holds back what comes after it).
+of facts matters, write the fact down in the context it happened in, or publish through a
+`Forwarding`, which sends its line in order (a message waiting for its retry holds back what
+comes after it).
 
 **`BackgroundQueue(build_subscriber)`** — the smallest «do it in the background»:
 

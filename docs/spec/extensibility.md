@@ -442,8 +442,8 @@ it needs and reacts to events.
   The list can be large: it travels as one parameter on PostgreSQL.
 - **What must not change after the fact is copied**, not referenced: an invoice keeps the name and
   the tax id of its customer as they were when it was issued.
-- **No foreign key and no join across contexts.** What crosses is a fact, with an outbox and an
-  idempotent consumer.
+- **No foreign key and no join across contexts.** What crosses is a fact, published once the
+  write committed, and an idempotent consumer.
 
 ## 10. A module today
 

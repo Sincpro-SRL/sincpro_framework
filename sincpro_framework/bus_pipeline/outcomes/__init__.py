@@ -47,7 +47,7 @@ there is logged.
 
 **Announced when the use case answered, not when a transaction commits.** A completion inside a unit
 of work that a caller rolls back afterwards was still announced; what must follow the commit is
-recorded through the context's event table and its relay.
+recorded by the aggregate and published by its repository on commit (`publish_on_commit=`).
 
 Context: the events load with the first who asks for them — a process nobody listens in never loads
 them, nor the DDD layer they are built on.

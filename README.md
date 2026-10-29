@@ -382,6 +382,9 @@ See [docs/events/brokers.md](docs/events/brokers.md).
   or NATS carry it through FastStream, behind the `[faststream]` extra.
 - `FastStreamQueue(broker).start()` for synchronous code, `aput` for async; `subscribe(broker,
   Subscriber(...))` subscribes every event the buses registered.
+- `Publisher(queue, forwarding=True)` returns at once and sends in order on a thread of its own,
+  waiting a broker that is down out; `Repository(..., publish_on_commit=publisher)` publishes what
+  a write recorded once it committed — [docs/events/README.md](docs/events/README.md).
 
 ### Caching
 
@@ -410,7 +413,7 @@ See [docs/process/README.md](docs/process/README.md).
 
 - `Process` stays up and runs each loop (`run` / `stop`) on its own thread until SIGINT,
   SIGTERM, or `stop`. `CronGateway` is a loop. `Poll` calls a function every interval.
-- The function is the project's: a relay pass, or the Commands that claim a row. There is no
+- The function is the project's: the Commands that claim a row, a check, a sync. There is no
   job type. A broker stays `faststream run`. A server stays its gateway.
 
 ### Crons
@@ -457,7 +460,7 @@ See [Persistence (ORM)](#persistence-orm) for the full section.
 
 - An aggregate is a plain dataclass; a Feature reads and writes it through `self.repository`.
 - One way to ask — `Criteria` — and one shape back — a page with its cursor, count and definition.
-- Hooks, domain events, change tracking, event sourcing and an outbox on the same repository.
+- Hooks, domain events, change tracking, event sourcing and publishing on commit on the same repository.
 
 ### `entrypoint_mcp`
 
@@ -1131,7 +1134,7 @@ needs nothing installed. `sincpro_framework.data_layer.orm` is the SQLAlchemy ad
 | Mixins | `ArchivableMixin`, `AuditedMixin` (who wrote it), `ChangeTrackingMixin` (what changed) |
 | Domain events | Recorded by the aggregate, published by a Feature, answered by other buses |
 | Event table | A domain event is an entity: one table per bounded context (`template_table.event_table`, `map_events`), kept by `save` with the change |
-| Delivery | `DeliverableEventMixin` keeps its delivery on the row; `EventRelay` sends it on — `SKIP LOCKED`, failure policies, at least once |
+| Delivery | `publish_on_commit=` hands the `DeliverableEventMixin` events of a write to a `Publisher` once it committed and stamps `delivered_at` on the row; `Publisher(queue, forwarding=True)` holds and sends in order while the broker is down |
 | Event sourcing | `EventSourcedMixin`: rebuilt from its events by `get`, appended by `save`, `entity_version` against two writers |
 | Testing | `MemoryRepository`: the same vocabulary with no database, a unit of work included — `context()` commits or puts back, `for_update` holds rows across threads |
 
@@ -1194,7 +1197,7 @@ every example runs as part of the test suite — and the page that explains it i
 | Domain events | [Guide §9](docs/persistence/guide.md#9-domain-events) | [events/README.md](docs/events/README.md) |
 | Change tracking | [Guide §10](docs/persistence/guide.md#10-change-tracking-and-the-contexts-event-table) | [change-tracking.md](docs/events/change-tracking.md) |
 | Event sourcing | [Guide §11](docs/persistence/guide.md#11-event-sourcing) | [shapes.md §3](docs/shapes.md#3-the-facts-are-the-state) |
-| Outbox | [Guide §12](docs/persistence/guide.md#12-delivering-events) | [shapes.md §2](docs/shapes.md#2-a-database-per-context) |
+| Publishing on commit | [Guide §12](docs/persistence/guide.md#12-delivering-events) | [events/README.md](docs/events/README.md#publishing-on-commit) |
 | Testing | [Guide §13](docs/persistence/guide.md#13-testing) | [testing.md](docs/persistence/testing.md) |
 | Extending an aggregate | [Guide §14](docs/persistence/guide.md#14-extending-an-aggregate) | [reference.md](docs/persistence/reference.md) |
 | Why it is designed this way | — | [design.md](docs/persistence/design.md), [decisions.md](docs/persistence/decisions.md) |

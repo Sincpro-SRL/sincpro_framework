@@ -115,8 +115,9 @@ the checkpoint a batch uses so one failing group does not undo the others.
    fold functions through a closed list, values through the field's own reader.
 8. **Defaults, never ceilings.** What the client said is what the client gets.
 9. **The aggregate records; the repository stores mapped events with its explicit save.** Map
-   one context event base with `event_table` / `map_events`. A relay delivers marked events;
-   without a mapping, events remain in memory for explicit publication. Event-sourced
+   one context event base with `event_table` / `map_events`. A repository with
+   `publish_on_commit=` hands marked events to a publisher once the write committed and stamps
+   their rows; without it, events remain on the aggregate for explicit publication. Event-sourced
    aggregates use `EventSourcedMixin` and have no state row of their own.
 10. **A narrowed repository never reads wide.** An aggregate that cannot express the scope is
     refused; a scope that is silently dropped would hand over the whole table.

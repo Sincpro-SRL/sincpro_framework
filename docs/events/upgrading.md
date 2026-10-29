@@ -28,9 +28,9 @@ No consumer dependencies or data were changed as part of this documentation revi
 | Every repository promises every operation | `Analyzes`, `WritesInBulk`, `Transacts` are separate capabilities; inspect `StoreCapabilities` |
 | A custom repository class per aggregate | optional `ddd.AggregateRepository[T]` or `orm.DatabaseAggregateRepository[T]` |
 | `EventLogEntry` / `event_log_table` wrappers | context base `DomainEvent`, `orm.event_table` and `orm.map_events` |
-| `EventTrackableMixin`, `EventStatus`, `delivery_columns` | `DeliverableEventMixin`; the event table includes delivery columns |
+| `EventTrackableMixin`, `EventStatus`, `delivery_columns` | `DeliverableEventMixin`; the event table includes `delivered_at` and `delivery` |
 | `sequence` assigned by `record` | `entity_version` assigned by `EventSourcedMixin.happened`; plain `record` only stamps identity |
-| A manual outbox loop | `EventRelay.run_once`, failure policies, optional `Crons.run_relay` |
+| Publishing after the save by hand | `publish_on_commit=` on the repository; `Publisher(queue, forwarding=True)` while the broker is down |
 | Separate tables per sourced event and hand-written folds | one context event table and `EventSourcedMixin.apply` / `happened` |
 
 The old imports are not compatibility aliases in this baseline. Smoke-check the selected
@@ -40,7 +40,8 @@ artifact in the consumer's environment before starting migration:
 from sincpro_framework.ddd import (
     AggregateRepository, DeliverableEventMixin, EventSourcedMixin, IRepository,
 )
-from sincpro_framework.event_driven import EventRelay, Publisher, RepositoryQueue
+from sincpro_framework.ddd.repositories import PublishOnCommit
+from sincpro_framework.event_driven import Forwarding, Publisher
 from sincpro_framework.data_layer.orm import DatabaseAggregateRepository, map_events, template_table
 ```
 
@@ -60,11 +61,13 @@ provide that shared unit of work. `separate=True` deliberately starts another tr
 With `map_events(registry, ContextEvent, template_table.event_table(...))`, `save(aggregate)` persists its mapped
 recorded events in that same transaction, including mapped change-tracking events. It does
 not drain `recorded_events()`. Do not pull before saving or write a second manual history row.
-Standalone facts can be saved directly or through `Publisher(RepositoryQueue(repository))`.
+Standalone facts are saved directly: `save([DayClosed()])`.
 
-For durable delivery, add `DeliverableEventMixin` to the facts that should leave the context
-and let `EventRelay` deliver them. Do not also directly publish the same events. An
-`after_commit` callback closes neither the crash window nor the consumer idempotency problem.
+To publish what a write recorded once it committed, add `DeliverableEventMixin` to the facts
+that leave the context and give the repository `publish_on_commit=`; the stored row is stamped
+with when each went out. Do not also publish the same events by hand: the repository takes the
+ones it hands on. A message still in a forwarding's line when the process dies is not sent, and
+consumers stay idempotent.
 
 For gapless document numbering, use `DatabaseNumbering` within the same database transaction
 that saves the document. A number allocated outside commits independently.
@@ -92,12 +95,13 @@ Suggested migration sequence:
    payload rows to the new schema with explicit field mapping; preserve ids and causal data
    that actually exist. Do not invent missing stream versions or historical causation.
 4. Reconcile event counts, identities, per-entity history and representative payloads. Leave
-   historical classes importable. Decide explicitly whether migrated events should be sent;
-   blindly making all historical rows due can repeat old side effects.
+   historical classes importable. Decide explicitly whether migrated events should be sent: a
+   deliverable row saved with no delivery attempt through a repository that publishes on commit
+   goes out, and can repeat old side effects.
 5. Move readers and writes to the new mapping; remove old wrappers after reconciliation and
    an agreed rollback plan. Prove one fact is persisted once and rolled back with its change.
-6. Enable relay delivery only with idempotent consumers, observability for parked/retried
-   rows and recovery tests. Strict ordering is currently a blocker where it is required.
+6. Enable `publish_on_commit` only with idempotent consumers, and a way to find the rows that
+   never went out (`delivered_at` empty). Order holds per forwarding line, not across replicas.
 
 ## 5. MCP Odoo
 
@@ -126,7 +130,7 @@ These are reported for correction, not fixed by this documentation update:
 
 Further limits: delivery is at least once, not exactly once; multi-replica exclusion needs a
 backend with appropriate locks; stored event classes cannot simply be deleted; replay has
-no automatic snapshots. An in-memory queue is still nondurable even behind a persisted relay.
+no automatic snapshots. A forwarding's line and an in-memory queue live in the process.
 
 Verification evidence: existing `tests/event_driven`, `tests/data_layer/orm/test_events_table.py`,
 `test_unit_in_play.py`, `test_aggregate_repository.py`, `test_numbering.py`, and the executable

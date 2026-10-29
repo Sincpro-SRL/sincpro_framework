@@ -337,7 +337,7 @@ where the words are known; `Meta` carries them and nothing merges or guesses a l
 
 **Historical decision, superseded by section 31.** The in-memory recording and explicit
 publication contracts remain, but mapped events are now stored with the aggregate and
-`EventRelay` provides delivery. Do not use this section as the current persistence recipe.
+a repository with `publish_on_commit=` publishes them once the write committed. Do not use this section as the current persistence recipe.
 
 **Decision.** `Entity.record()` holds events in memory; `pull_events()` is explicit. A `Publisher`
 has the bus's signature: `publish(event)` or `publish(event, ResponseDTO)`. A `Subscriber` is a
@@ -346,7 +346,7 @@ list of `UseFramework` instances; a bus subscribes by registering a Feature for 
 in a spawned process, and survives a subscriber that raises.
 
 **Why.** An event is a DTO and the bus already routes DTOs; a second registry would drift from the
-first. Storing events, an outbox, session hooks, were built once and removed: durability is the
+first. Storing events and session hooks were built once and removed: durability is the
 project's decision through its own unit of work, and a hook that publishes inside a commit
 publishes what a rollback then undoes.
 
@@ -634,7 +634,7 @@ signatures — the coupling the framework is there to avoid. Spring's `REQUIRED`
 `TransactionScope` and Django's `atomic` join the transaction in play; `REQUIRES_NEW` is
 `separate=True`. The explicit opening stays: a transaction is never started by reading a
 repository. Two engines share no transaction, so a repository on another `Database` never joins —
-the outbox and sagas cover that, never a two-phase commit. Tests that played "another process"
+facts published on commit and sagas cover that, never a two-phase commit. Tests that played "another process"
 with a second repository on the same thread now run it on another thread, which is what it is.
 
 ## 30. Numbers without gaps come from a counter in the same transaction
@@ -665,18 +665,22 @@ declares as a JSON `payload`, typed back on load. Events are saved and found thr
 repository the context already has — `repository.save(events)`, `repository.search(InvoicePaid,
 criteria)`, `repository.search(BillingDomainEvent, criteria)` for all of them — and
 `save(aggregate)` stores what the aggregate recorded in the same transaction, reading them and
-never taking them: `pull_events()` stays open to whoever publishes by hand. An event about no
+never taking them: `pull_events()` stays open to whoever publishes by hand — unless the repository
+publishes on commit, which takes the ones it hands on. An event about no
 entity is stored the same way, its `entity_type` and `entity_id` empty.
 
-What leaves the context is marked `DeliverableEventMixin`, and its delivery is **the event's own
-state**: `is_deliverable`, `delivered_at` and `next_delivery_at` are columns a `Criteria`
-filters; `delivery` is JSON for people to read (attempts, last error, parked, skipped). None of
-the four is ever sent: `as_json()` leaves them out. An `EventRelay(repository, source, publisher,
-on_failure)` reads, over any repository, the deliverable events of `source` not delivered and
-due, oldest first, hands each one on and marks it — inside a unit of work with `FOR UPDATE SKIP
-LOCKED` where the store has row locks. What a failure does is a `DeliveryFailurePolicy`:
-`RetryInPlace` (the default, then `ParkAndContinue`), `RetryLater`, `ParkAndContinue`,
-`SkipAndContinue`, spaced by `ExponentialBackoff` or `FixedBackoff`.
+What leaves the context is marked `DeliverableEventMixin`: a contract other contexts hear,
+warned about without an explicit, versioned `name`. Its delivery is **the event's own state**:
+`delivered_at` is a column a `Criteria` filters; `delivery` is JSON for people to read
+(`attempts`, `last_error`). Neither is ever sent: `as_json()` leaves them out. Publishing is not
+the event table's. A repository opted in with `publish_on_commit=` — a publisher, or a
+`PublishOnCommit` narrowed by `entities` and `when`, or a subclass of it — hands the marked events
+a write recorded to a publisher once the write committed (the unit of work's `after_commit`;
+dropped with a rollback), takes them from the aggregate so none goes out twice, and stamps the
+stored row in a unit of work of its own: `delivered_at` and the attempts when it went out,
+`last_error` when it did not. A `Publisher(queue, forwarding=True)` holds each message in a line
+in memory and forwards it in order on a thread of its own, through a `CircuitBreaker`, setting
+aside what fails the same way every time; the row is stamped when its `Future` resolves.
 
 An entity whose state *is* its events is `EventSourcedMixin`: it records through `happened`,
 which numbers the event in the entity's history (`entity_version` 1, 2, 3 …) and applies it;
@@ -709,34 +713,31 @@ double stores them the same way, so a test needs nothing new.
 **Why delivery state on the event, and no checkpoint.** A checkpoint is the model of a log read
 by many independent readers (KurrentDB, Kafka). That is the broker's job here: the context
 delivers to one place, and fan-out, replay and retention per consumer are what Kafka already does
-— the framework does not rebuild it. A checkpoint also needed a lease, subscription tables and,
-on Postgres, a rule never to read past an uncommitted transaction, because positions commit out
-of order. Per-row state needs none of that: `FOR UPDATE SKIP LOCKED` lets every replica take
-different rows, an uncommitted row is simply not visible yet, and "what was not delivered" is a
-filter a person can run. It is the polling publisher of the transactional outbox (Richardson;
-Microsoft eShop's `IntegrationEventLogEntry`; Wolverine and NServiceBus store per-message state the
-same way). The mixin was named *Deliverable* and not *Integration* because what it marks is that
-the event is delivered, wherever to.
+— the framework does not rebuild it. On the row, `created_at` says when the fact happened and
+`delivered_at` when it went out — the two an audit asks for — and "what never went out" is a
+filter a person can run. The mixin was named *Deliverable* and not *Integration* because what it
+marks is that the event is delivered, wherever to.
 
-**Why a marker column beside the class.** The relay asks for "deliverable and not delivered" in
-one query. Knowing it from the class would mean listing every deliverable subclass in an `IN` on
-the name; `is_deliverable`, set from the class on insert, makes it a column, filtered and indexed
-(a partial index on what is still to deliver) like any other.
+**Why publish on commit, opted into per repository.** Publishing inside the commit publishes what
+a rollback undoes; publishing by hand after it is code every Feature repeats. The repository is
+where each bounded context already wires its store, so one argument there holds for the whole
+context. The mark is only its default filter: `publisher.publish(...)` never looks at it, and on
+the explicit path the order, what a rollback undoes and whether a failure matters are the
+Feature's to decide. A publisher that raises never undoes the commit: the fact stands, and its row
+says it did not go out.
 
-**Why at least once.** A relay that dies after handing an event on and before its commit leaves
-it unmarked and sends it again. The alternative to a duplicate is a lost event; the consumer's
-inbox makes the duplicate harmless. No transaction is held across the network beyond the pass.
+**Why forwarding in the process, and no polling relay.** A broker that is down should neither fail
+the request that changed the state nor need a second process to deploy. A line in memory with one
+thread sends in order, waits the broker out with a backoff and a circuit the replicas share
+through the context's store, and needs nothing beside the service. The trade-off is accepted: a
+message still in the line when the process dies is lost, and the framework ships no outbox that
+sends it again — the stored row says it never went out.
 
-**Why order per entity.** A consumer that hears `InvoicePaid` before `InvoiceIssued` of the same
-invoice is wrong even if both arrive. A retry in place holds the whole pass; a retry later holds
-only the later events of that entity, so the rest of the context still flows.
-
-**Why failures are a strategy.** Every mature consumer splits the same two decisions — whether to
-try again and how (in place, holding the rest: Spring Kafka's `DefaultErrorHandler`, NServiceBus's
-immediate retries; or later, letting the rest go on: Spring's retry topics, NServiceBus's delayed
-retries), and what to do once retries are spent (park, skip: Kafka Connect's `errors.tolerance`).
-An error that cannot succeed (`never_retry`) skips the retries. A policy decides and never acts,
-so a project writes its own without touching the relay.
+**Why each stretch answers for itself.** What to publish and when is the Feature's or
+`publish_on_commit`'s; the publisher to the broker is the forwarding's; the broker to a consumer
+is the broker's and the subscription's — retries, dead letters, redelivery at least once, the
+inbox making a duplicate harmless; storing the fact there as its own event is the consumer
+context's.
 
 **Why event sourcing too, and why `entity_version`.** Once events are entities in one table,
 rebuilding an entity from them is ordering by id and applying — there is no reason to refuse it,

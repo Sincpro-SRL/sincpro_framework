@@ -118,10 +118,9 @@ def test_what_commits_together_stops_at_the_pair(two_databases: Shop):
     store = two_databases.store("billing")
 
     assert store.count(billing.Invoices).value == 1
-    assert billing.pending(store) == 1
+    assert billing.pending(store) == 0  # with the broker since the commit, and stamped
 
     assert deliver(two_databases) == 1
-    assert billing.pending(store) == 0
 
 
 def test_each_side_keeps_its_own_record_of_the_same_fact(two_databases: Shop):
@@ -169,11 +168,12 @@ def test_the_timeline_is_folded_from_facts_that_crossed(two_databases: Shop):
     ) == sorted([OrderPlaced.name, StockReserved.name, InvoiceIssued.name])
 
 
-def test_the_invoice_fact_arrives_in_order_because_it_came_through_the_outbox(
+def test_the_invoice_fact_arrives_in_order_because_it_was_published_on_commit(
     two_databases: Shop,
 ):
-    """A relay delivers what is pending in `id` order, from outside anybody's call stack — so
-    unlike a fact published from inside a subscriber, this one cannot arrive early."""
+    """Published once each write committed, in the order they committed, from outside anybody's
+    call stack — so unlike a fact published from inside a subscriber, this one cannot arrive
+    early."""
     stocked(two_databases, on_hand=20)
     first = an_order(two_databases, customer="Ana")
     second = an_order(two_databases, customer="Bruno")
@@ -184,8 +184,8 @@ def test_the_invoice_fact_arrives_in_order_because_it_came_through_the_outbox(
         one.order_id
         for one in two_databases.store("notifications").fetch_all(
             notifications.Tolds,
-            # Read with an order, for the same reason the relay claims with one: without it the
-            # engine hands the rows back however it likes, and the question was about order.
+            # Read with an order: without it the engine hands the rows back however it likes,
+            # and the question was about order.
             Criteria(
                 where=Condition(field="said", value=InvoiceIssued.name),
                 order=(Sort(field="id"),),

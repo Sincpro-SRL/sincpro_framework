@@ -26,7 +26,7 @@ This skill stands alone. The framework repo also has a longer, test-backed walkt
   context's records are reached through that context's bus (a Command, or `Relation.bus`), and an
   external system is an adapter registered as a dependency.
 - Reading lists, filters, pages and totals is `sincpro-framework-criteria`; events, change
-  tracking, outbox and event sourcing are `sincpro-framework-domain-events`.
+  tracking, publishing on commit and event sourcing are `sincpro-framework-domain-events`.
 
 ## Abstractions
 
@@ -164,7 +164,8 @@ Silent ones first — the runtime gives no error for these.
   leaves the first committed. Writes that must succeed together go in one `with repository.context()`.
 - **`after_save` is not "after commit".** Inside `context()` the block can still roll back; sending
   an email or publishing from a hook announces a fact that may never happen. Publish
-  `pull_events()` after the block (or use the outbox, `sincpro-framework-domain-events`).
+  `pull_events()` after the block (or give the repository `publish_on_commit=`,
+  `sincpro-framework-domain-events`).
 - **`infrastructure/` importing from `services/`.** The hook collection lives in
   `infrastructure/hooks.py`, never in `services/hooks/__init__.py`: `services/__init__.py` imports
   the use cases, they import the bus still being built, and boot fails with a circular
@@ -294,8 +295,9 @@ use the common surface (then `MemoryRepository` substitutes in tests).
   `required`, `*_when` and the dataclass defaults reach `Meta.fields`; nothing checks them on
   save. A rule the server enforces is the project's own `before_save` hook, reading the same
   condition from `presentation_of(Entity)`. Recipe: [references/form-hints.md](references/form-hints.md).
-- **The aggregate records events; save stores mapped facts with it.** Use an `EventRelay`
-  for durable delivery; manual publication after commit is not a durable outbox.
+- **The aggregate records events; save stores mapped facts with it.** Publishing is separate:
+  the Feature publishes after the commit, or the repository does with `publish_on_commit=` and
+  stamps the stored row with how its delivery went.
 
 ## Numbering and aggregate views
 
@@ -322,7 +324,7 @@ rollback also returns the allocation. Calling outside commits the allocation ind
 ## Related
 
 - Queries, listings, counts, measures: `sincpro-framework-criteria`
-- Domain events, change tracking, event sourcing, outbox: `sincpro-framework-domain-events`
+- Domain events, change tracking, event sourcing, publishing: `sincpro-framework-domain-events`
 - Migrations of these tables: `sincpro-framework-operations`
 - A module in another repository adding fields to one of these entities: `sincpro-framework-extensions`
 - Bus, Features, `DependencyContextType`: `sincpro-framework` (router) and `sincpro-framework-core`

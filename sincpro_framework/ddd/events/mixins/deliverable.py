@@ -1,6 +1,6 @@
 """What an event opts into, the way an entity opts into `ArchivableMixin`.
 
-DeliverableEventMixin      delivered beyond this bounded context, and whether it was
+DeliverableEventMixin      heard beyond this bounded context, and when it went out
 """
 
 import json
@@ -12,8 +12,8 @@ from typing import Any
 
 from sincpro_framework.ddd.entity import utc_now
 
-DELIVERY_FIELDS = frozenset({"delivered_at", "next_delivery_at", "delivery"})
-"""Where a deliverable event's delivery stands — stored with the event, never sent with it."""
+DELIVERY_FIELDS = frozenset({"delivered_at", "delivery"})
+"""When a deliverable event went out and how — stored with the event, never sent with it."""
 
 VERSIONED = re.compile(r"\.v\d+\.")
 """A wire name with its contract's version in it: `billing.invoice.v1.paid`."""
@@ -21,9 +21,9 @@ VERSIONED = re.compile(r"\.v\d+\.")
 
 @dataclass(kw_only=True)
 class DeliverableEventMixin:
-    """Marks the events delivered beyond this bounded context — to a broker, to other services —
-    and stores where their delivery stands (the transactional outbox: Richardson's polling
-    publisher; Microsoft's eShop `IntegrationEventLogEntry`).
+    """Marks the events heard beyond this bounded context — by a broker, by other services — and
+    stores when one went out: the moment it happened is `created_at`, the moment it was delivered
+    is another fact, the one an audit asks for.
 
         @dataclass(kw_only=True)
         class InvoicePaid(DeliverableEventMixin, BillingDomainEvent):
@@ -33,8 +33,12 @@ class DeliverableEventMixin:
     | Field | What it stores |
     |---|---|
     | `delivered_at` | when it was delivered — empty while it is not |
-    | `next_delivery_at` | when the relay may try it — now, when it is made; later, after a failure; empty once parked |
-    | `delivery` | what a person reads: `{"attempts": 2, "last_error": "…", "parked": False}` |
+    | `delivery` | what a person reads: `{"attempts": 2, "last_error": "…"}` |
+
+    The mark is what a repository that publishes on commit hands on by default
+    (`publish_on_commit=`), and that repository stamps the stored event once it went out or
+    failed to. A publisher takes any message; the mark is how this framework sees a contract, not
+    a condition to publish.
 
     **The marked class is a contract.** A domain event carries what this context knows and may
     change with it; a delivered event is what other contexts depend on, so it carries only what
@@ -42,12 +46,11 @@ class DeliverableEventMixin:
     versioned `name` is warned about: renaming the class would rename the event under its
     consumers, and they would stop hearing it without an error.
 
-    **Delivery state stays home.** The three fields are written on the event's row and never in
+    **Delivery state stays home.** The two fields are written on the event's row and never in
     what is published: `as_json()` leaves them out.
     """
 
     delivered_at: datetime | None = None
-    next_delivery_at: datetime | None = field(default_factory=utc_now)
     delivery: dict[str, Any] = field(default_factory=dict)
 
     def __init_subclass__(cls, **kwargs: Any) -> None:
@@ -71,42 +74,24 @@ class DeliverableEventMixin:
 
     @property
     def delivery_attempts(self) -> int:
-        """How many times delivery was tried — delivered, failed or parked — since it was made
-        or last replayed."""
+        """How many times delivery was tried, delivered or not."""
         return int(self.delivery.get("attempts", 0))
 
-    def delivered(self, at: datetime | None = None) -> None:
-        """It went out."""
+    def delivered(self, at: datetime | None = None, attempts: int = 1) -> None:
+        """It went out at `at`, after `attempts` tries."""
         self.delivered_at = at or utc_now()
-        self.next_delivery_at = None
-        self.delivery = {**self.delivery, "attempts": self.delivery_attempts + 1}
+        self.delivery = {**self.delivery, "attempts": self.delivery_attempts + attempts}
 
-    def failed(self, error: str, next_delivery_at: datetime) -> None:
-        """It did not go out; it is tried again at `next_delivery_at`."""
-        self.next_delivery_at = next_delivery_at
+    def failed(self, error: str, attempts: int = 1) -> None:
+        """It did not go out, after `attempts` tries; `error` says why."""
         self.delivery = {
             **self.delivery,
-            "attempts": self.delivery_attempts + 1,
+            "attempts": self.delivery_attempts + attempts,
             "last_error": error,
         }
-
-    def parked(self, error: str) -> None:
-        """Given up on: stored with why, and never tried again until somebody replays it."""
-        self.next_delivery_at = None
-        self.delivery = {
-            **self.delivery,
-            "attempts": self.delivery_attempts + 1,
-            "last_error": error,
-            "parked": True,
-        }
-
-    def replayed(self, at: datetime | None = None) -> None:
-        """Tried again from now on, its attempts back to zero."""
-        self.next_delivery_at = at or utc_now()
-        self.delivery = {"attempts": 0}
 
     def as_json(self) -> str:
-        """The event as other contexts receive it: without where its delivery stands."""
+        """The event as other contexts receive it: without when its delivery happened."""
         written = json.loads(super().as_json())  # type: ignore[misc]
         return json.dumps(
             {key: value for key, value in written.items() if key not in DELIVERY_FIELDS}

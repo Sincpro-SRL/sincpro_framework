@@ -3,7 +3,7 @@ session the process opens.
 
     with repository.context() as unit:
         unit.save(invoice)
-        unit.after_commit(lambda: publisher.publish_all(invoice.pull_events()))
+        unit.after_commit(lambda: publisher.publish(receipt))
 
     a savepoint that ends well   →  what it registered moves to the level around it
     a savepoint that raises      →  its after_rollback runs; its after_commit is dropped

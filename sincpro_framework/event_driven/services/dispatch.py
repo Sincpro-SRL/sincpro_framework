@@ -12,7 +12,7 @@ same way a caller that is `async def` runs a command.
 **One bus failing never holds the event back from the others.** Every bus that answers the
 event is run, and what failed comes out once all of them ran: the error itself when one bus
 failed, an `ExceptionGroup` of them when several did. A delivery that failed is delivered
-again — by the relay, by the broker — to every bus that answers it, those that succeeded
+again — by the broker — to every bus that answers it, those that succeeded
 included: delivery is at least once, so a handler of an event is idempotent. With `receipts` —
 a `KeyValueStore`, shared by the replicas — the ones that succeeded are left out of the
 redelivery: only the bus that failed runs again.

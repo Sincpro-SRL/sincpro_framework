@@ -68,8 +68,8 @@ for event in recorded:            # committed by now
     self.publisher.publish(event)
 ```
 
-That is also why an outbox is a table and not a hook: the fact and the intent to publish it
-commit together, or neither does.
+That is also why `publish_on_commit=` waits for the unit of work's `after_commit`, never a hook
+inside the write: the fact is stored with the change, and only what committed is handed on.
 
 ## The two change-tracking halves
 

@@ -73,7 +73,10 @@ this replica only.
 - **Sending.** `put` returns once the broker took the message, so a broker that is down fails the
   `publish` where it was called. What the broker then promises (disk, replication) is its config.
 - **Between commit and publish.** A Feature that saves then publishes can crash in between: state
-  committed, event lost. Nothing here closes that window — that is the **outbox**.
+  committed, event lost. `publish_on_commit=` on the repository publishes after the commit and
+  stamps the stored row; `Publisher(queue, forwarding=True)` holds the message while the broker
+  is down. A message still in memory when the process dies is lost; the stored row says it never
+  went out ([publishing.md](publishing.md)).
 - **Receiving: at least once.** `subscribe` is `QueueGateway` over the subscriber's buses, and every
   subscription acknowledges manually (never FastStream's per-broker default, which is at-most-once).
   Every bus that registered the event runs it from one subscription; a retry re-runs only the bus

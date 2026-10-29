@@ -2,13 +2,13 @@
 loops, each on its own thread.
 
 It starts the application layer the way a server does, without a request: each loop it runs —
-crons on the clock, a poll of a relay — ends in an execution of the buses.
+crons on the clock, a poll of a table — ends in an execution of the buses.
 
     from datetime import timedelta
     from sincpro_framework.entrypoints.entrypoint.workers import Poll, Process
 
     def tick() -> None:
-        relay.run_once()
+        billing(CommandCloseExpiredQuotes())
 
     Process(
         CronGateway([billing_crons]),
@@ -17,7 +17,7 @@ crons on the clock, a poll of a relay — ends in an execution of the buses.
 
 A loop is anything with `run` and `stop`. `CronGateway` is one. `Poll` is the other this
 module ships: every interval it calls the function the project gave it. That function is a
-Command, a relay pass, or whatever the project writes. This module does not know the table,
+Command, or whatever the project writes. This module does not know the table,
 the row, or the broker.
 
 `faststream run` stays the broker's program. A server stays its gateway. This process is how
@@ -56,7 +56,7 @@ class Poll:
     def __init__(self, every: timedelta, tick: Callable[[], None]) -> None:
         """Poll `tick` every `every` — a zero or negative interval is refused, it would spin.
 
-            Poll(timedelta(seconds=5), relay.run_once)
+            Poll(timedelta(seconds=5), tick)
 
         `tick` takes nothing and answers nothing — what it runs is the project's.
         """
@@ -70,8 +70,8 @@ class Poll:
         """Call `tick`, then wait the interval — or less, when `stop` wakes the wait — until
         stopped. A `tick` that raises is logged and the loop goes on.
 
-            Poll(timedelta(seconds=5), relay.run_once).run()
-            ->  run_once at 0 s, 5 s, 10 s, ... — returns once `stop` is called
+            Poll(timedelta(seconds=5), tick).run()
+            ->  tick at 0 s, 5 s, 10 s, ... — returns once `stop` is called
 
         A `Poll` stopped before `run` returns at once, `tick` never called.
         """

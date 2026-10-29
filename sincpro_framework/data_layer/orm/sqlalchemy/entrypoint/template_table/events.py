@@ -9,7 +9,6 @@ A domain event is an entity: its envelope is columns, what each class adds is `p
 
 from sqlalchemy import (
     JSON,
-    Boolean,
     Column,
     DateTime,
     Index,
@@ -18,7 +17,6 @@ from sqlalchemy import (
     Table,
     Text,
     UniqueConstraint,
-    text,
 )
 from sqlalchemy.dialects.postgresql import JSONB
 
@@ -33,14 +31,13 @@ def event_table(name: str, metadata: MetaData) -> Table:
                 entity_type · entity_id · entity_version (its place in that entity's history)
                 correlation_id · causation_id · label · created_at
                 payload JSON — what the event's own class adds (JSONB on Postgres)
-                is_deliverable · delivered_at · next_delivery_at — what the relay filters
-                delivery JSON — where its delivery stands, for a person: attempts, last error
+                delivered_at — when a deliverable event went out, empty while it has not
+                delivery JSON — how its delivery went, for a person: attempts, last error
                 UNIQUE (entity_type, entity_id, entity_version)    two writers of one entity: one wins
                 INDEX (name, id) · INDEX (entity_type, entity_id, id)
-                INDEX (next_delivery_at) WHERE the event is deliverable and not delivered yet
 
     The fact never changes after the insert; only the delivery columns of a deliverable event
-    do, as the relay delivers it.
+    do, stamped by the repository that published it on commit.
     """
     moment = DateTime(timezone=True)
     return Table(
@@ -56,21 +53,13 @@ def event_table(name: str, metadata: MetaData) -> Table:
         Column("label", JsonText),
         Column("created_at", moment, nullable=False),
         Column("payload", JSON().with_variant(JSONB(), "postgresql"), nullable=False),
-        Column("is_deliverable", Boolean, nullable=False, default=False),
         Column("delivered_at", moment),
-        Column("next_delivery_at", moment),
         Column("delivery", JSON().with_variant(JSONB(), "postgresql")),
         UniqueConstraint(
             "entity_type", "entity_id", "entity_version", name=f"{name}_entity_version"
         ),
         Index(f"{name}_by_name", "name", "id"),
         Index(f"{name}_by_entity", "entity_type", "entity_id", "id"),
-        Index(
-            f"{name}_to_deliver",
-            "next_delivery_at",
-            postgresql_where=text("is_deliverable AND delivered_at IS NULL"),
-            sqlite_where=text("is_deliverable AND delivered_at IS NULL"),
-        ),
     )
 
 

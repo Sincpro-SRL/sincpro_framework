@@ -1,10 +1,10 @@
-"""The ports and policies of event delivery: `Queue` (what a publisher puts into), `Subscribes`
-(what a queue hands an event to), `Broker` and `Delivery` (what the queue wire needs of a
-message broker), `Envelope` (what travels with a message), `Publishes` and `RelayPass` (what the
-relay hands to and answers), and the delivery failure policies.
+"""The ports of event delivery and what they report: `Queue` (what a publisher puts into),
+`Subscribes` (what a queue hands an event to), `Broker` and `Delivery` (what the queue wire needs
+of a message broker), `Envelope` (what travels with a message), and `Forwarded` /
+`ForwardingHook` (how a forwarded message went, and who hears it).
 
-    from sincpro_framework.event_driven.domain.failure import ParkAndContinue, RetryLater
+    class Audited(ForwardingHook):
+        def after_delivery(self, message, forwarded): ...
 
-    policy = RetryLater(then=ParkAndContinue())
-    EventRelay(repository, BillingEvent, publisher, on_failure=policy)
+    Publisher(queue, forwarding=Forwarding(hooks=[Audited()]))
 """

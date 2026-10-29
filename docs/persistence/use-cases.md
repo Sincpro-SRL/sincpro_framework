@@ -154,11 +154,11 @@ The columns:
 | Store the context's events, with the change | `DomainEvent` is an `Entity`; `save(aggregate)` stores what it recorded; `MemoryRepository` stores them the same way in a test | `event_table` + `map_events(registry, ContextDomainEvent, table)`: one table, single-table inheritance by `name`, subclass fields in `payload` | — | ✅ |
 | Find events by class, and by entity | `search(InvoicePaid, criteria)`, `search(ContextDomainEvent, criteria)` | envelope columns filtered like any column | `statement()` | ✅ — by their own fields: filters inside JSON (gap) |
 | One entity's history | `Criteria` on `entity_type` / `entity_id`, ordered by `id` | indexed `(entity_type, entity_id, id)` | — | ✅ |
-| An event about no entity | `save([DayClosed()])`, `Publisher(RepositoryQueue(repository))` | `entity_type` / `entity_id` empty | — | ✅ |
+| An event about no entity | `save([DayClosed()])` | `entity_type` / `entity_id` empty | — | ✅ |
 | Event sourcing | `EventSourcedMixin`: `happened`, `apply`; `get` rebuilds, `save` appends | `entity_version` + `UNIQUE(entity_type, entity_id, entity_version)` → `StaleAggregate` | — | ✅ — snapshots next |
-| Mark what leaves, and where its delivery stands | `DeliverableEventMixin`: `delivered_at`, `next_delivery_at`, `delivery` | `is_deliverable` column; a partial index on what is still to deliver | — | ✅ |
-| Publish only what committed | `EventRelay(repository, source, publisher)` over any repository | `FOR UPDATE SKIP LOCKED` inside a unit of work; `Crons.run_relay`, `relay_deliverable_events` | — | ✅ at least once, in order per entity |
-| Decide what a failure does | `RetryInPlace`, `RetryLater`, `ParkAndContinue`, `SkipAndContinue`; `ExponentialBackoff`, `FixedBackoff` | — | — | ✅ |
+| Mark what leaves, and when it went out | `DeliverableEventMixin`: `delivered_at`, `delivery` (`attempts`, `last_error`) | `delivered_at` column, `delivery` JSON | — | ✅ |
+| Publish only what committed | `Repository(database, publish_on_commit=publisher)`, `PublishOnCommit(publisher, entities=…, when=…)`; also `MemoryRepository` | handed on by the unit of work's `after_commit`; the row stamped in a unit of work of its own | — | ✅ |
+| Wait a broker that is down out | `Publisher(queue, forwarding=True)`, `Forwarding(breaker=…, hooks=…, wait=…, longest_wait=…)` | — | — | ✅ in order, in memory: lost if the process dies |
 | Projections maintained from events | a Feature subscribed to the event saves a read model | — | — | 🟡 no rebuild helper |
 | Old events read by new code | — | — | — | ⬜ upcasters |
 | Deliver across services | `Publisher`, brokers (FastStream), inbox | at least once + idempotent handler | — | ✅ |
@@ -227,7 +227,7 @@ reasoning behind each, front by front, is in [landscape.md](landscape.md).
 | 6 | Read-only aggregates on views / materialized views | reporting across aggregates without joins in Features | `map_view` — reads through `Criteria`, writes refused, `refresh()` |
 | 7 | Filter inside JSON; full-text search | semi-structured data and ranked search in every enterprise system | `"address.city"` and a `search` operator, per dialect, index-backed |
 | 8 | Bulk load | `add_all` tops out long before a million rows | `load()` over `COPY` / ADBC |
-| 9 | Sagas | a process across contexts that has to undo its steps | the next iteration, over the event table and the relay |
+| 9 | Sagas | a process across contexts that has to undo its steps | the next iteration, over the event table and `publish_on_commit` |
 | 10 | Request-bound rules, `check_company`, `Money` | multi-company data leaks across a hand-forgotten filter | rules bound to the context, checked on read and write |
 | 11 | Replicas and run-time guards | reads crowd the primary; an N+1 reaches production unseen | `Database(url, replicas=[…])`; warnings, never refusals |
 | 12 | Access patterns and other stores | a second store needs to say how it answers, not only what | capabilities are declared (`Analyzes`, `WritesInBulk`, `Transacts`, `StoreCapabilities`); next: a lock asked of an engine without row locks warns, a key/range/index/scan planner, then Mongo |

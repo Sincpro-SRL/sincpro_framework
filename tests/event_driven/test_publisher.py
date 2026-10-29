@@ -96,17 +96,23 @@ def test_the_async_publisher_fans_out_concurrently(publisher, heard):
     assert sorted(heard["audit"]) == [f"audited t{n}" for n in range(5)]
 
 
-def test_a_command_is_refused_because_a_queue_carries_facts(sync_queue):
-    """A command is something one bus is asked to do, and it is asked directly. Published, it
-    used to fail deep inside the queue with `'CommandAudit' object has no attribute 'name'` —
-    true, and no help at all about why."""
-    with pytest.raises(exceptions.ProgrammingError, match="facts rather than orders"):
-        Publisher(sync_queue).publish(CommandAudit(text="do this"))  # type: ignore[arg-type]
+def test_a_message_of_the_project_s_own_is_published_as_it_is():
+    """The publisher imposes no abstraction: what the queue can carry is the queue's to say."""
 
+    class Recording:
+        def __init__(self) -> None:
+            self.put_in: list[object] = []
 
-def test_the_async_publisher_refuses_a_command_too(sync_queue):
-    async def publish() -> None:
-        await AsyncPublisher(sync_queue).publish(CommandAudit(text="do this"))  # type: ignore[arg-type]
+        def put(self, message: object) -> None:
+            self.put_in.append(message)
 
-    with pytest.raises(exceptions.ProgrammingError, match="facts rather than orders"):
-        asyncio.run(publish())
+        async def aput(self, message: object) -> None:
+            self.put_in.append(message)
+
+    queue = Recording()
+    mine = {"kind": "ticket.closed", "ticket": "T-1"}
+
+    assert Publisher(queue).publish(mine) is None
+    asyncio.run(AsyncPublisher(queue).publish(mine))
+
+    assert queue.put_in == [mine, mine]

@@ -7,7 +7,7 @@ around it. **Every example on this page was run before it was written.**
 | Your system | What you wire | Page |
 |---|---|---|
 | one database, foreign keys, everything in-process | `Database` + `Repository` + `ChangeTrackingMixin` | [§1](#1-one-database) |
-| a context per database, facts crossing between them | …plus an outbox table and a relay | [§2](#2-a-database-per-context) |
+| a context per database, facts crossing between them | …plus an event table and a repository that publishes on commit | [§2](#2-a-database-per-context) |
 | the facts *are* the state | …the events as the aggregates, plus a projection | [§3](#3-the-facts-are-the-state) |
 
 You can start at §1 and grow into §2 without rewriting the domain. That is the point of the
@@ -90,7 +90,7 @@ every bus is there. See [lifecycle.md](persistence/lifecycle.md).
 ## 2. A database per context
 
 Each bounded context owns its database, so **there are no foreign keys between them** — and the
-fact that crosses has to survive a crash between the write and the delivery.
+fact that crosses is stored with the write and published once it committed.
 
 ### The fact and the write commit together
 
@@ -105,10 +105,11 @@ with execution_repo.context() as unit:
     unit.save(run)                       # the run and its event, the same transaction
 ```
 
-Either both landed or neither did. **This is the reason the event is kept in the transaction**:
-publishing after the block commits is a window where a crash loses it for good.
+Either both landed or neither did. **This is the reason the event is stored in the
+transaction**: the fact exists if and only if the change does, and its row says whether it went
+out.
 
-### A relay sends it on
+### Published once it committed
 
 ```python
 @dataclass(kw_only=True)
@@ -116,14 +117,18 @@ class RunAdvanced(DeliverableEventMixin, ExecutionDomainEvent):   # it crosses: 
     name = "execution.run.v1.advanced"
 
 
-relay = EventRelay(execution_repo, ExecutionDomainEvent, publisher)
-relay.run_once()     # from a cron: take what is due with SKIP LOCKED, hand on, mark each row
+rabbit = Publisher(FastStreamQueue(broker).start(), forwarding=True)
+execution_repo = Repository(database, publish_on_commit=rabbit)
 ```
 
-Every replica can run it: each takes different rows, and an event is marked delivered in the
-same transaction it was taken in. A failure is what its policy says: tried again in place with a
-backoff and then parked, by default. See
-[persistence guide §12](persistence/guide.md#12-delivering-events).
+After the commit — never before, never after a rollback — the repository hands each deliverable
+event the write recorded to the publisher and stamps its row: `delivered_at` once it went out,
+`delivery["last_error"]` when it did not. With `forwarding=True` the publish returns at once; one
+thread sends the line in order and waits a broker that is down out, behind a `CircuitBreaker`.
+Nothing runs beside the service. The line lives in memory: a message still in it when the process
+dies is not sent, and its row says so. See
+[persistence guide §12](persistence/guide.md#12-delivering-events) and
+[events](events/README.md#publishing-on-commit).
 
 ### The contract that crosses
 
@@ -206,14 +211,14 @@ repository.measures(MoneyDeposited, Criteria(where=Condition(field="entity_id", 
 
 ## Which one am I?
 
-- **Everything in one database and one process** → §1. Do not build an outbox you do not need.
+- **Everything in one database and one process** → §1. Do not publish what nobody outside hears.
 - **A context that must keep working when another is down**, or two teams that deploy apart
-  → §2. The moment a fact crosses a process, it needs the outbox.
+  → §2. The moment a fact crosses a process, it is stored with the change and published on commit.
 - **The history is the product** — audit, ledger, anything where "why is it this value" is a
   question somebody asks → §3.
 
 Most systems are §1 growing into §2 for one or two facts. That is a normal shape, not a
-half-migration: the aggregates do not change, a table and a relay appear.
+half-migration: the aggregates do not change, an event table and `publish_on_commit=` appear.
 
 ---
 
@@ -272,11 +277,12 @@ would silently accept the second.
 what comes back is what the aggregate declared — `[]`, not `None`. A field that declared
 `| None` still gets the `None`: there the NULL is the answer.
 
-### An event table, and the outbox pattern
+### An event table, and what leaves the context
 
-A context's events are entities in one table (`event_table` + `map_events`), kept by the
-repository with the change; the outbox is that table, with `DeliverableEventMixin` marking what
-leaves and an `EventRelay` delivering it — no second table and no second API. See
+A context's events are entities in one table (`event_table` + `map_events`), stored by the
+repository with the change; `DeliverableEventMixin` marks what leaves, and the repository's
+`publish_on_commit=` hands it to a publisher once the write committed, stamping the row with how
+it went — no second table and no second API. See
 [§2](#2-a-database-per-context) and [§3](#3-the-facts-are-the-state).
 
 ---

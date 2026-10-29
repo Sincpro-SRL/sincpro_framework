@@ -145,7 +145,7 @@ class UnitOfWork(RepositoryState):
 
             with self.repository.context() as unit:
                 unit.save(invoice)
-                unit.after_commit(lambda: publisher.publish_all(invoice.pull_events()))
+                unit.after_commit(lambda: publisher.publish(receipt))
 
         **The moment to tell the world**: inside the block a fact can still be taken back, here
         it cannot. Registered inside a `savepoint()` that rolls back, it is dropped with it.

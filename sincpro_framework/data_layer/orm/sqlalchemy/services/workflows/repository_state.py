@@ -14,6 +14,7 @@ from sincpro_framework.data_layer.orm.sqlalchemy.infrastructure.unit_in_play imp
 from sincpro_framework.data_layer.orm.sqlalchemy.services.aggregation import (
     WITHOUT_PERCENTILES,
 )
+from sincpro_framework.data_layer.orm.sqlalchemy.services.event_mapping import is_mapped_event
 from sincpro_framework.ddd.criteria import (
     Condition,
     Criteria,
@@ -23,8 +24,10 @@ from sincpro_framework.ddd.criteria import (
 )
 from sincpro_framework.ddd.entity import ArchivableMixin
 from sincpro_framework.ddd.entity.entity_meta import Meta
+from sincpro_framework.ddd.events import DomainEvent
 from sincpro_framework.ddd.repositories.capabilities import StoreCapabilities
 from sincpro_framework.ddd.repositories.hooks import Hooks
+from sincpro_framework.ddd.repositories.publication import Publishes, PublishOnCommit
 from sincpro_framework.ddd.repositories.repository import IRepository
 
 WITHOUT_ROW_LOCKS = frozenset({"sqlite"})
@@ -47,6 +50,7 @@ class RepositoryState(IRepository):
         scope: Criteria | None = None,
         guard: "IRepository | None" = None,
         transaction: Transaction | None = None,
+        publish_on_commit: PublishOnCommit | Publishes | None = None,
     ) -> None:
         """`hooks` second, so a wiring reads as what it is — `Repository(database, billing_hooks)`.
         The rest are what a unit of work and a narrowing carry: its session, its scope, what
@@ -58,13 +62,22 @@ class RepositoryState(IRepository):
             Repository(database, session=session, scope=mine, transaction=asked)
                 ->  the view `context()` hands its block, bound to that session
 
+        `publish_on_commit` hands what a write recorded to a publisher once it committed — a
+        unit of work and a narrowing publish as the repository they are a view of.
+
+            Repository(database, billing_hooks, publish_on_commit=rabbit)
+
         Nothing is opened here: a repository holds a session only when it is handed one.
         """
-        super().__init__(hooks, guard)
+        super().__init__(hooks, guard, publish_on_commit)
         self.database = database
         self._held = session
         self._scope = scope
         self._opened_with = transaction or Transaction()
+
+    def _keeps(self, kind: type) -> bool:
+        """An event is held only when its class has an event table; every other kind is."""
+        return not issubclass(kind, DomainEvent) or is_mapped_event(kind)
 
     @property
     def _bound(self) -> Session | None:

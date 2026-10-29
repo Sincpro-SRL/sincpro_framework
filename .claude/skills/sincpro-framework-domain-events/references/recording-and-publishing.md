@@ -34,8 +34,9 @@ class Invoice(Entity):
 - With `map_events` on the context's base event, `save(aggregate)` persists these facts in the
   same transaction without pulling them. Plain `record` does not assign a stream version;
   `EventSourcedMixin.happened` assigns `entity_version` and applies the fact.
-- For durable delivery, mark the event `DeliverableEventMixin` and let `EventRelay` send it.
-  Do not also publish it in the manual loop below.
+- To publish after every commit without a loop, mark the event `DeliverableEventMixin` and give
+  the repository `publish_on_commit=publisher` ([publishing.md](publishing.md)). It pulls what it
+  hands on; do not also publish it in the manual loop below.
 
 ```python
 draft = repository.get_by(Invoice, number="F-004")
@@ -105,8 +106,9 @@ bus is registered — and reuses the subscriber it built. A publisher registered
 **`SyncQueue(subscriber)`** — `publish` runs the buses where it was called and returns. For one
 process, development, tests, and reactions that must be visible at once. **Publishing runs the
 subscriber in the call**, so a subscriber that publishes re-enters the queue depth-first. Where
-order of facts matters, write the fact down in the context it happened in, or send it through an
-outbox whose relay delivers them in order (a waiting retry holds back what comes after it).
+order of facts matters, write the fact down in the context it happened in, or publish through a
+`Forwarding`, which sends its line in order (a message waiting for its retry holds back what comes
+after it).
 
 **`BackgroundQueue(build_subscriber)`** — the smallest "do it in the background":
 

@@ -5,7 +5,8 @@ needs something the order knows, it asks — a command on the `orders` bus, answ
 context. That is the reference that works whether or not the two share a database.
 
 Its events are kept here too: the invoice and the fact it was issued commit together, in
-billing's event table, and the relay is what delivers the fact — the transactional outbox.
+billing's event table, and its repository publishes the fact once that commit happened
+(`publish_on_commit=`) — stamping the row with when it went out.
 """
 
 from dataclasses import dataclass
@@ -25,7 +26,6 @@ from sincpro_framework.ddd.criteria import (
 )
 from sincpro_framework.ddd.entity import Entity
 from sincpro_framework.ddd.entity.entity_collection import EntityCollection
-from sincpro_framework.event_driven import DeliveryFailurePolicy, EventRelay, RelayPass
 
 from .contracts import InvoiceIssued, StockReserved
 
@@ -50,7 +50,7 @@ class BillingEvent(DomainEvent):
 
 @dataclass(kw_only=True)
 class IssuedInvoice(DeliverableEventMixin, InvoiceIssued, BillingEvent):
-    """The contract other contexts hear, kept in billing's table and delivered by the relay."""
+    """The contract other contexts hear, kept in billing's table and published on commit."""
 
     name = "billing.v1.invoice_issued"
 
@@ -107,7 +107,7 @@ def build(repository: Repository, ask_orders, refuse: bool = False) -> UseFramew
         def execute(self, dto: StockReserved) -> ResponseHeard:
             """1. Ask the other context for what only it knows.
             2. The invoice and the fact, in one transaction.
-            3. Final: nothing is published here — the relay delivers it."""
+            3. Final: nothing is published here — the repository does, once it committed."""
             if refuse:
                 raise RefusedToInvoice(f"billing refused order {dto.order_id}")
             told = self.ask_orders(dto.order_id)  # type: ignore[operator]
@@ -121,12 +121,3 @@ def build(repository: Repository, ask_orders, refuse: bool = False) -> UseFramew
             return ResponseHeard()
 
     return bus
-
-
-def relay(
-    repository: Repository, publisher, on_failure: DeliveryFailurePolicy | None = None
-) -> RelayPass:
-    """One pass of billing's relay."""
-    if on_failure is None:
-        return EventRelay(repository, BillingEvent, publisher).run_once()
-    return EventRelay(repository, BillingEvent, publisher, on_failure).run_once()

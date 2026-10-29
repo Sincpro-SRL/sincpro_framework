@@ -40,7 +40,7 @@ Every use case announces that it began (`ExecutionStarted`) and how it ended (`E
 | Listeners of a bus and of the process | ✅ | `on_start` / `on_completion` / `on_failure`, `start_listeners` / `completion_listeners` / `failure_listeners`; a listener that raises reaches nothing | `tests/bus_pipeline/test_listeners.py` |
 | Handed to a queue | ✅ | `publish_starts` / `publish_completions` / `publish_failures(to=Publisher(...))` | `tests/bus_pipeline/outcomes/test_outcomes.py` |
 | **Hearing less** | ✅ | `use_cases=` (Commands or their names) and `when=` (a filter of `ddd.criteria` over the event by path: `context.tenant_id`, `dto.amount`, `kind`), on every way to listen | `tests/bus_pipeline/test_listeners.py` |
-| Delivered durably | ⬜ | an execution event through the outbox and its relay, for an audit trail that cannot lose one | — |
+| Delivered durably | ⬜ | an execution event stored in an event table and published on commit, for an audit trail that cannot lose one | — |
 
 **Rejected:** a filter language of our own, or SNS's JSON policy. The criteria a query uses is the
 one vocabulary; a project that needs more writes a function.

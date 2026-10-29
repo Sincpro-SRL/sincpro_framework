@@ -66,7 +66,8 @@ if event is not None:
 Returns `None` when nothing differs, or when the aggregate was never stored (a first save is a
 Created fact, not this). **Publish one or the other, never both** — it is the same event
 `pull_events()` will hand over. With a mapped context event base, `save(invoice)` already
-stores it; for a deliverable event omit the manual publish and let the relay deliver.
+stores it; for a deliverable event on a repository with `publish_on_commit=`, omit the manual
+publish — the repository sends it once the write committed.
 
 ## A custom `Updated` event and the words
 

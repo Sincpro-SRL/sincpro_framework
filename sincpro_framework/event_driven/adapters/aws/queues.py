@@ -32,7 +32,8 @@ from sincpro_framework.event_driven.domain.envelope import Envelope
 
 def _sent(service: str, event: DomainEvent, send: Any) -> None:
     """Call `send`; any error from AWS becomes a `ServiceUnavailableError` naming the service
-    and the event — the relay and a caller read it as "retry later", whatever boto raised."""
+    and the event — a forwarding and a caller read it as "retry later", whatever boto raised.
+    """
     try:
         send()
     except Exception as error:

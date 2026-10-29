@@ -12,8 +12,8 @@ the discriminator.
 **The envelope is columns, what a class adds is `payload`.** `id`, `entity_type`, `entity_id`,
 `entity_version`, `correlation_id`, `causation_id`, `label` and `created_at` are filtered like
 any column; the fields a subclass declares are written into `payload` on insert and set back on
-the event when it is loaded. A deliverable event's `delivered_at`, `next_delivery_at` and `delivery` are
-columns too, beside the fact, and never sent.
+the event when it is loaded. A deliverable event's `delivered_at` and `delivery` are columns too,
+beside the fact, and never sent.
 
 **Identified and ordered by its id** — a UUID v7, so ordering by it is ordering by time —
 `get(InvoicePaid, event_id)` works like any entity.
@@ -34,10 +34,7 @@ from sqlalchemy.orm import registry
 from sincpro_framework.data_layer import exceptions
 from sincpro_framework.ddd.events import DomainEvent
 from sincpro_framework.ddd.events.domain_event import NAME
-from sincpro_framework.ddd.events.mixins.deliverable import (
-    DELIVERY_FIELDS,
-    DeliverableEventMixin,
-)
+from sincpro_framework.ddd.events.mixins.deliverable import DELIVERY_FIELDS
 from sincpro_framework.sincpro_logger import logger
 
 ENVELOPE = frozenset(one.name for one in dataclasses.fields(DomainEvent))
@@ -68,15 +65,14 @@ def _is_mapped(cls: type) -> bool:
 
 
 def packed(_mapper: Any, _connection: Any, target: Any) -> None:
-    """Before an event is inserted: what its class adds goes to `payload`, and a deliverable one
-    is marked as such. Its `name` is a column of its own, never part of the payload."""
+    """Before an event is inserted: what its class adds goes to `payload`. Its `name` and a
+    deliverable one's delivery are columns of their own, never part of the payload."""
     written = json.loads(target.as_json())
     target.payload_of_class = {
         key: value
         for key, value in written.items()
         if key not in ENVELOPE and key not in COLUMNS_OF_DELIVERY and key != NAME
     }
-    target.is_deliverable = isinstance(target, DeliverableEventMixin)
 
 
 def unpacked(target: Any, _context: Any) -> None:

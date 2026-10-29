@@ -23,6 +23,7 @@ except ImportError as error:  # pragma: no cover - tests/core/test_core_without_
 
 from sincpro_framework.event_driven.adapters.faststream.queue import (  # noqa: E402 - after the guard
     FastStreamQueue,
+    as_json,
     by_event_name,
     keyed_by_entity,
 )
@@ -32,6 +33,7 @@ __all__ = [
     "FASTSTREAM_MISSING",
     "Broker",
     "FastStreamQueue",
+    "as_json",
     "by_event_name",
     "keyed_by_entity",
 ]
