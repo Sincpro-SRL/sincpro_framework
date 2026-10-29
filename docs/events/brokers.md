@@ -125,10 +125,14 @@ Read this before relying on an event to hold two contexts in step.
 - **Sending.** `put` returns once the broker took the message, so a broker that is down fails
   the `publish` where it was called. What the broker then promises — persisted on disk, replicated —
   is its configuration (a Kafka topic's replication, a durable RabbitMQ queue).
+- **A broker that is down.** `Publisher(queue, forwarding=True)` holds each message in a line in
+  memory and sends it in order once the broker takes it again; `publish` returns at once with a
+  `Future`. A message still in the line when the process dies is not sent
+  ([events](README.md#forwarding-held-and-sent-in-order)).
 - **Between the commit and the publish.** A Feature that saves and then publishes can crash in
-  between: the state is committed and the event is lost. The context's event table closes that
-  window: the event is persisted in the same transaction as the change, and an `EventRelay` publishes
-  it after, at least once
+  between: the state is committed and the event is not sent. Stored in the context's event table,
+  the fact is there whatever happened to its delivery, and a repository that publishes on commit
+  stamps the row with when it went out — or why it did not
   ([persistence guide §12](../persistence/guide.md#12-delivering-events)).
 - **Receiving: at least once.** `subscribe` is the queue entrypoint over the subscriber's buses
   — [`QueueGateway`](../entrypoints/queue.md), their events only — so every subscription
@@ -165,7 +169,7 @@ Read this before relying on an event to hold two contexts in step.
 
 | | |
 |---|---|
-| `FastStreamQueue(broker, channel_of=by_event_name, options_of=None)` | a `Queue`; `start()` / `stop()` for synchronous code |
+| `FastStreamQueue(broker, channel_of=by_event_name, options_of=None, source="", serializer=as_json)` | a `Queue`; `start()` / `stop()` for synchronous code; `serializer` writes a message that is not a `DomainEvent` or a `DataTransferObject` |
 | `queue.put(event)` / `await queue.aput(event)` | publish and wait until the broker took it |
 | `keyed_by_entity` | Kafka: `entity_id` as the message key |
 | `subscribe(broker, subscriber, channel_of_name=by_name, options=None)` | one subscription per channel of the events the buses registered — `QueueGateway` for events, `options` a `QueueOptions` |

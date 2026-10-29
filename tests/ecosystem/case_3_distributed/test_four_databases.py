@@ -8,7 +8,7 @@ The five things every case is measured on:
 
     1. relations       a key only inside a context; everything else is asked or told
     2. propagation     the only way anything crosses
-    3. write + publish the outbox stops being optional
+    3. write + publish published once the write committed, stamped where it is kept
     4. projections     a context whose entire state arrived from elsewhere
     5. sagas           the failure mode this shape makes unavoidable
 
@@ -17,18 +17,11 @@ transaction. It buys the thing the other two cannot have: a context that keeps w
 keeps answering, while another one is down.
 """
 
-from datetime import timedelta
-
 import pytest
 import sqlalchemy as sa
 from sqlalchemy.exc import OperationalError
 
 from sincpro_framework.ddd.criteria import Condition, Criteria, Sort
-from sincpro_framework.event_driven import (
-    FixedBackoff,
-    ParkAndContinue,
-    RetryInPlace,
-)
 
 from ..shop import billing, inventory, notifications, orders
 from ..shop.contracts import InvoiceIssued, OrderPlaced, StockRejected, StockReserved
@@ -148,21 +141,22 @@ def test_a_context_answers_from_its_own_database_alone(four_databases: Shop):
     assert said == [OrderPlaced.name, StockReserved.name, InvoiceIssued.name]
 
 
-# --- 3. the outbox stops being optional --------------------------------------------------------
+# --- 3. published once the write committed --------------------------------------------------
 
 
 def test_the_fact_and_the_invoice_commit_together_and_nothing_else_can(
     four_databases: Shop,
 ):
     """There is no transaction that covers the invoice and the telling of it — they are in
-    different databases. What *can* be made atomic is the invoice and the **intent** to tell,
-    and that is the whole idea of an outbox."""
+    different databases. What *is* atomic is the invoice and the fact; the telling follows the
+    commit, never precedes it, and the fact's row says when it went out. The other context hears
+    it when it consumes it."""
     stocked(four_databases)
     an_order(four_databases)
     store = four_databases.store("billing")
 
     assert store.count(billing.Invoices).value == 1
-    assert billing.pending(store) == 1
+    assert billing.pending(store) == 0
     assert (
         four_databases.store("notifications")
         .count(
@@ -174,19 +168,7 @@ def test_the_fact_and_the_invoice_commit_together_and_nothing_else_can(
     )
 
 
-def test_a_crash_before_the_relay_loses_nothing(four_databases: Shop):
-    """The window the outbox closes. The process ends between the commit and the delivery; the
-    fact is still sitting in the database, pending, and the next relay sends it."""
-    stocked(four_databases)
-    placed = an_order(four_databases)
-    # ...nothing delivered it. A new process starts and runs the relay.
-
-    assert deliver(four_databases) == 1
-
-    assert timeline(four_databases, placed.order_id).steps == 3
-
-
-def test_the_relay_is_idempotent(four_databases: Shop):
+def test_a_fact_crosses_once(four_databases: Shop):
     stocked(four_databases)
     placed = an_order(four_databases)
 
@@ -196,7 +178,7 @@ def test_the_relay_is_idempotent(four_databases: Shop):
 
 
 def test_a_delivered_fact_says_when_it_went_out_and_keeps_what_it_said(four_databases: Shop):
-    """The fact stays as it was written; what moved is where its delivery stands."""
+    """The fact stays as it was written; what moved is when its delivery happened."""
     stocked(four_databases)
     an_order(four_databases)
     deliver(four_databases)
@@ -289,37 +271,3 @@ def test_a_refusal_that_needs_no_compensation(four_databases: Shop):
         for one in four_databases.store("notifications").fetch_all(notifications.Tolds)
     ]
     assert StockRejected.name in said
-
-
-def test_a_fact_nobody_can_deliver_gives_up_saying_so(four_databases: Shop):
-    """**The dead letter, as a policy.** A consumer that is down makes every delivery fail. The
-    relay tries in place — nothing behind the fact goes first — and after the last attempt parks
-    it with its reason and goes on.
-
-    Retrying forever is how a broken consumer takes the producer down with it. Giving up
-    silently is how a fact disappears. This gives up *and says so*, and the fact is still there
-    to look at and replay.
-    """
-    stocked(four_databases)
-    an_order(four_databases)
-    store = four_databases.store("billing")
-
-    class ConsumerDown:
-        def publish(self, event) -> None:
-            raise ConnectionError("the consumer is down")
-
-    give_up_after_three = RetryInPlace(
-        attempts=3, backoff=FixedBackoff(timedelta(0)), then=ParkAndContinue()
-    )
-    passes = [billing.relay(store, ConsumerDown(), give_up_after_three) for _ in range(4)]
-
-    assert [(one.delivered, one.retried, one.parked) for one in passes] == [
-        (0, 1, 0),
-        (0, 1, 0),
-        (0, 0, 1),
-        (0, 0, 0),  # nothing tries it again
-    ]
-    [parked] = billing.facts(store)
-    assert parked.delivery["attempts"] == 3  # type: ignore[attr-defined]
-    assert "ConnectionError" in parked.delivery["last_error"]  # type: ignore[attr-defined]
-    assert timeline(four_databases, parked.order_id).steps == 2  # type: ignore[attr-defined]

@@ -100,6 +100,7 @@ from sincpro_framework.ddd.repositories.hooks import Hooks
 from sincpro_framework.ddd.repositories.mixins.change_tracking import (
     ChangeTrackingRepositoryMixin,
 )
+from sincpro_framework.ddd.repositories.publication import Publishes, PublishOnCommit
 from sincpro_framework.ddd.repositories.repository import (
     IRepository,
     records_of,
@@ -404,10 +405,12 @@ class MemoryRepository(
         *records: Any,
         hooks: Hooks | None = None,
         actor: "Callable[[], str | None] | None" = None,
+        publish_on_commit: PublishOnCommit | Publishes | None = None,
     ) -> None:
         """`actor` answers who is writing, for an `AuditedMixin` aggregate — the same argument
         `Database` takes and read the same way, once per save. Without one those fields stay
-        `None`, which is also what the engine does.
+        `None`, which is also what the engine does. `publish_on_commit` is the engine's too: what
+        a write recorded, handed to a publisher once it committed.
 
             repository = MemoryRepository(Invoice(id="F-1"), Invoice(id="F-2"), hooks=hooks)
             repository.get(Invoice, "F-1")     ->  Invoice(id="F-1")
@@ -418,7 +421,7 @@ class MemoryRepository(
         """
         refuse_wiring_as_a_record(records)
         self._actor = actor
-        super().__init__(hooks)
+        super().__init__(hooks, publish_on_commit=publish_on_commit)
         self._stored: dict[type, dict[Any, Any]] = {}
         self._units: ContextVar[MemoryUnit | None] = ContextVar(
             f"memory_unit_{id(self)}", default=None
@@ -619,7 +622,7 @@ class MemoryRepository(
             name: field for name, field in meta.fields.items() if name in columns
         }
         # The delivery columns are the table's, so a base event class that is not deliverable
-        # itself is still filtered by them — what the relay asks of a context's base class.
+        # itself is still filtered by them — which events went out, asked of the base class.
         delivery = describe_class(DeliverableEventMixin).fields
         return meta.model_copy(update={"fields": {**delivery, **envelope_fields}})
 

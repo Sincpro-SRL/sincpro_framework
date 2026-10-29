@@ -92,6 +92,36 @@ def test_sync_publishing_needs_the_loop_the_queue_owns(heard):
         queue.put(TicketClosed(reason="nobody started it"))
 
 
+def test_a_message_of_the_project_s_own_goes_out_as_its_serializer_writes_it():
+    broker = RabbitBroker()
+    received: list[str] = []
+
+    @broker.subscriber("tickets")
+    async def heard(body: str) -> None:
+        received.append(body)
+
+    queue = FastStreamQueue(
+        broker,
+        channel_of=lambda message: "tickets",
+        serializer=lambda message: f"closed:{message['ticket']}",
+    )
+
+    async def scenario() -> None:
+        async with TestRabbitBroker(broker):
+            await AsyncPublisher(queue).publish({"ticket": "T-1"})
+
+    asyncio.run(scenario())
+
+    assert received == ["closed:T-1"]
+
+
+def test_a_message_the_queue_cannot_write_is_refused_naming_what_to_give():
+    queue = FastStreamQueue(RabbitBroker(), channel_of=lambda message: "tickets")
+
+    with pytest.raises(exceptions.ProgrammingError, match="serializer="):
+        asyncio.run(AsyncPublisher(queue).publish({"ticket": "T-1"}))
+
+
 def test_kafka_keeps_one_entitys_events_in_order_by_its_key():
     broker = KafkaBroker()
     keys: list[bytes] = []

@@ -206,10 +206,12 @@ with self.repository.context(isolation=Isolation.SERIALIZABLE) as unit:
     unit.after_commit(publish_recorded)
 ```
 
-An `after_commit` callback is **not** an outbox: a crash before it runs still loses delivery,
-and a callback exception is logged after the commit. For durable delivery map the context's
-events with `event_table` / `map_events`, mark deliverable events, and use `EventRelay`
-(`sincpro-framework-domain-events`).
+A callback exception is logged after the commit; a crash before it runs loses the publish. The
+same thing in one line is the repository's own option: `Repository(database, hooks,
+publish_on_commit=publisher)` hands every `DeliverableEventMixin` event a write recorded to the
+publisher once it committed, and — with the events mapped by `event_table` / `map_events` —
+stamps each stored row with `delivered_at` or `delivery["last_error"]`, so what never went out is
+a criteria (`sincpro-framework-domain-events`).
 
 ## Writes past the aggregate
 

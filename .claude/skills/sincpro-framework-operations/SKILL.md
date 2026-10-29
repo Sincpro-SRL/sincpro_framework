@@ -1,6 +1,6 @@
 ---
 name: sincpro-framework-operations
-description: Run scheduled work and long-lived processes, and move schemas with sincpro_framework — Crons, CronProcess/CronGateway, Process/Poll, EventRelay scheduling and the Migrations timeline across contexts and stores. Use whenever a task needs a cron, a process that stays up and runs loops, a poll of a table or a relay, a background tick, run_relay/relay_deliverable_events, a schema change, an Alembic migration, or a system upgrade/downgrade.
+description: Run scheduled work and long-lived processes, and move schemas with sincpro_framework — Crons, CronProcess/CronGateway, Process/Poll and the Migrations timeline across contexts and stores. Use whenever a task needs a cron, a process that stays up and runs loops, a poll of a table, a background tick, a schema change, an Alembic migration, or a system upgrade/downgrade.
 ---
 
 # sincpro-framework-operations
@@ -21,7 +21,7 @@ deep docs it names live in the framework repository, not in the package.
 - **Process** answers "this program stays up and runs one or more loops". It lives in
   `sincpro_framework.entrypoints.entrypoint.workers`: an entrypoint, not a wire. A loop is `run` and `stop`.
   `CronGateway` is one. `Poll` calls a function every interval; the function is the
-  project's (a relay pass, or the Commands that claim a row). There is no job-queue table. A
+  project's (the Commands that claim a row, say). There is no job-queue table. A
   broker stays `faststream run`. A server stays its gateway. `docs/process/README.md`.
 - **Migrations** answer "in what order do the schema changes of every context and store run, where
   does the whole system stand, and how do I put it back". It runs with the system down, as one
@@ -34,7 +34,6 @@ deep docs it names live in the framework repository, not in the package.
 | Term | What it is | Kind | Import |
 |---|---|---|---|
 | `Crons` | The crons of one bounded context: a name (log/trace identity), dependencies by name, `@cron`, `without`; refuses changes once built | registry | `from sincpro_framework.entrypoints.adapters.cron import Crons` |
-| `run_relay` / `relay_deliverable_events` | Register an existing `EventRelay` or build one from `repository`, `source` and `to`; default interval two seconds | methods | on `Crons` |
 | `Cron` | Base class of a cron: `run(self, tick)`; every registry dependency is set on it as an attribute | port (abstract) | `from sincpro_framework.entrypoints.adapters.cron import Cron` |
 | `@crons.cron(...)` | Registers a class: `"0 2 * * *"` + `timezone=`, or `every=timedelta(...)`; `overlap`, `missed`, `missed_window`, `stale_after`, `replaces`, `name` | decorator | method of `Crons` |
 | `Overlap` / `Missed` | Policies: previous run still going (`SKIP`/`ALLOW`); ticks missed while down (`SKIP`/`RUN_LATEST`/`RUN_ALL`) | setting | `from sincpro_framework.entrypoints.adapters.cron import Overlap, Missed` |

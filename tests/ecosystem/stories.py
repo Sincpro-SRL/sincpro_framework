@@ -7,7 +7,7 @@ shapes are compared on the same one.
 
 from dataclasses import dataclass
 
-from .shop import billing, inventory, notifications, orders
+from .shop import inventory, notifications, orders
 from .wiring import Shop
 
 
@@ -32,7 +32,8 @@ def an_order(
     quantity: int = 3,
     price: int = 50,
 ) -> Placed:
-    """Place one order and let everything it sets off run, except the relay."""
+    """Place one order and let everything it sets off run, until billing's fact is with the
+    broker."""
     answered = shop["orders"](
         orders.CommandPlaceOrder(customer=customer, sku=sku, quantity=quantity, price=price),
         orders.ResponseOrder,
@@ -43,8 +44,8 @@ def an_order(
 
 
 def deliver(shop: Shop) -> int:
-    """Run billing's relay: what crosses the boundary, and when."""
-    return billing.relay(shop.store("billing"), shop.publisher).delivered
+    """The broker hands billing's facts to the consumers: what crosses the boundary, and when."""
+    return shop.broker.release()
 
 
 def timeline(shop: Shop, order_id: str) -> notifications.Timeline:

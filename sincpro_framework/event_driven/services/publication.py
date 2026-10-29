@@ -1,4 +1,4 @@
-"""`EventPublication`: puts a fact into a queue — what `Publisher` and `AsyncPublisher` delegate
+"""`EventPublication`: puts a message into a queue — what `Publisher` and `AsyncPublisher` delegate
 to.
 
     publication = EventPublication(queue)
@@ -12,8 +12,14 @@ the same call — a `SyncQueue` with exactly one bus for that event. A `Backgrou
 answer from another process, and two buses have no one answer, so both are refused rather than
 guessed.
 
-An event published inside an execution goes out caused by it and in its flow (`causation_id`,
-`correlation_id`), unless it already says otherwise — as a copy; the one handed in is untouched.
+**Any message.** A `DomainEvent` is what this framework recommends: published inside an
+execution it goes out caused by it and in its flow (`causation_id`, `correlation_id`), unless it
+already says otherwise — as a copy; the one handed in is untouched. A message of the project's own
+goes into the queue as it is, and what the queue can carry is the queue's to say.
+
+**Forwarded, when the publisher forwards.** The message goes to its `Forwarding` instead of the
+queue, chained here, where the execution is: the publish returns at once with a `Future` of how it
+went, so it can promise no answer.
 """
 
 import dataclasses
@@ -23,37 +29,35 @@ from sincpro_framework import exceptions
 from sincpro_framework.context import context_executions
 from sincpro_framework.ddd.events import DomainEvent
 from sincpro_framework.event_driven.domain.queue import Queue
+from sincpro_framework.event_driven.services.forwarding import Forwarding
 
 
 class EventPublication:
-    """Puts facts into one queue, refusing orders, and reads back the one answer a typed
+    """Puts messages into one queue — or its forwarding — and reads back the one answer a typed
     publish promised."""
 
-    def __init__(self, queue: Queue) -> None:
-        """Publish into `queue` — which one decides whether an answer can come back."""
+    def __init__(self, queue: Queue, forwarding: bool | Forwarding = False) -> None:
+        """Publish into `queue` — which one decides whether an answer can come back — or hand
+        each message to a forwarding bound to it: the defaults for `True`, the one given."""
         self.queue = queue
+        self.forwarding: Forwarding | None = None
+        if forwarding is True:
+            self.forwarding = Forwarding().bound_to(queue)
+        elif isinstance(forwarding, Forwarding):
+            self.forwarding = forwarding.bound_to(queue)
 
-    def _chained(self, event: Any) -> DomainEvent:
-        """The event as it goes out: a copy caused by the execution in play and in its flow —
-        refused, by name, when it is not a fact.
+    def _chained(self, message: Any) -> Any:
+        """The message as it goes out: a `DomainEvent` as a copy caused by the execution in play
+        and in its flow; anything else as it is.
 
-            publication._chained(InvoicePaid(…))     ->  InvoicePaid(…, causation_id="<run>")
-            publication._chained(CommandStartRun(…))
-                ->  raises ProgrammingError("CommandStartRun is not a DomainEvent, …")
-
-        Context: a `DataTransferObject` handed here used to fail deep inside the queue with
-        `'CommandStartRun' object has no attribute 'name'` — true, and no help at all about why
-        a command has no business being published.
+            publication._chained(InvoicePaid(…))      ->  InvoicePaid(…, causation_id="<run>")
+            publication._chained({"ticket": "T-1"})   ->  {"ticket": "T-1"}
         """
-        if not isinstance(event, DomainEvent):
-            raise exceptions.ProgrammingError(
-                f"{type(event).__name__} is not a DomainEvent, and a queue carries facts rather "
-                "than orders: a command is asked of one bus directly, `bus(command)`. If this is "
-                "meant to be a fact, make it a DomainEvent and give it a wire name"
-            )
-        return dataclasses.replace(event, **context_executions.chain_for(event))
+        if not isinstance(message, DomainEvent):
+            return message
+        return dataclasses.replace(message, **context_executions.chain_for(message))
 
-    def _one_answer(self, event: DomainEvent, answers: Any) -> Any:
+    def _one_answer(self, message: Any, answers: Any) -> Any:
         """The single answer a typed publish promised, or the reason there is none."""
         if not isinstance(answers, list):
             raise exceptions.ProgrammingError(
@@ -62,21 +66,38 @@ class EventPublication:
             )
         if len(answers) != 1:
             raise exceptions.ProgrammingError(
-                f"{event.name} was answered by {len(answers)} subscribers; a typed publish "
-                "needs exactly one"
+                f"{getattr(message, 'name', type(message).__name__)} was answered by "
+                f"{len(answers)} subscribers; a typed publish needs exactly one"
             )
         return answers[0]
 
-    def put(self, event: DomainEvent, return_type: Any = None) -> Any:
-        """The event into the queue; and, when a type is named, the one answer back.
+    def _forwarded(self, forwarding: Forwarding, message: Any, return_type: Any) -> Any:
+        """The message to the forwarding, chained here — refused with a return type, since a
+        forwarded message answers later or never."""
+        if return_type is not None:
+            raise exceptions.ProgrammingError(
+                f"a forwarded publish cannot wait for {getattr(return_type, '__name__', return_type)}"
+                ": it returns before the message went out — publish without a return type, or "
+                "through a publisher that does not forward"
+            )
+        return forwarding.forward(self._chained(message))
+
+    def put(self, message: Any, return_type: Any = None) -> Any:
+        """The message into the queue; and, when a type is named, the one answer back.
 
         in      DatasetRegistered(...)                  →  None
         in      DatasetRegistered(...), ResponsePlan    →  ResponsePlan(...)
+        in      DatasetRegistered(...), forwarded       →  Future[Forwarded], at once
         """
-        answers = self.queue.put(self._chained(event))
-        return None if return_type is None else self._one_answer(event, answers)
+        if self.forwarding is not None:
+            return self._forwarded(self.forwarding, message, return_type)
+        answers = self.queue.put(self._chained(message))
+        return None if return_type is None else self._one_answer(message, answers)
 
-    async def aput(self, event: DomainEvent, return_type: Any = None) -> Any:
-        """`put`, awaited on the queue's `aput`."""
-        answers = await self.queue.aput(self._chained(event))
-        return None if return_type is None else self._one_answer(event, answers)
+    async def aput(self, message: Any, return_type: Any = None) -> Any:
+        """`put`, awaited on the queue's `aput` — or handed to the forwarding, which never
+        waits."""
+        if self.forwarding is not None:
+            return self._forwarded(self.forwarding, message, return_type)
+        answers = await self.queue.aput(self._chained(message))
+        return None if return_type is None else self._one_answer(message, answers)

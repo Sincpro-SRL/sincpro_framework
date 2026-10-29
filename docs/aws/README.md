@@ -58,8 +58,9 @@ SnsQueue(topic_arn, source="urn:svc:billing", attributes_of=my_attributes)      
 - **EventBridge** rules read the body: the detail is `{"metadata": <envelope>, "data": <event>}` and
   the detail type the event's wire name — `{"detail-type": ["billing.invoice.v1.paid"]}`.
 
-What the service does not take is a `ServiceUnavailableError`: retry later — or keep the event in the
-outbox (`RepositoryQueue`) and let the relay send it with `Publisher(SnsQueue(...))`.
+What the service does not take is a `ServiceUnavailableError`: retry later — or let
+`Publisher(SnsQueue(...), forwarding=True)` hold the event and send it once AWS takes it again
+([events](../events/README.md#forwarding-held-and-sent-in-order)).
 
 ## Consuming a queue: `SqsBroker`
 

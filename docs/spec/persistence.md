@@ -111,7 +111,7 @@ The goal: **define the model and get the analysis**, without writing a query. A 
 | Cascade by assignment, upsert, bulk, writes by criteria | ✅ | | `tests/data_layer/orm/test_cascade.py`, `test_bulk_writes.py` |
 | `after_commit` hooks and a transactional event log | ✅ | | `tests/data_layer/orm/test_commit_hooks.py` |
 | Gapless numbering per series | ✅ | `DatabaseNumbering`: a counter row taken in the unit of work | `tests/data_layer/orm/test_numbering.py` |
-| Events as entities, relay, event sourcing | 🟡 | snapshots, projection rebuilds and sagas are not built | `tests/data_layer/orm/test_events_table.py` |
+| Events as entities, publishing on commit, event sourcing | 🟡 | snapshots, projection rebuilds and sagas are not built | `tests/data_layer/orm/test_events_table.py`, `tests/ddd/repositories/test_publish_on_commit.py` |
 | Rules checked on every write (`check_company`) | ⬜ | | — |
 | Attachments, erasure (GDPR) | ⬜ | | — |
 

@@ -41,7 +41,7 @@ PERMANENT = frozenset(
     }
 )
 """The kinds that fail the same way on every attempt: a queue consumer dead-letters them, the
-event relay gives up on them at the first failure — trying again only blocks what comes after."""
+forwarding sets them aside at the first failure — trying again only blocks what comes after."""
 
 DEFAULT_RETRY_AFTER = timedelta(seconds=1)
 DURATION = TypeAdapter(timedelta)

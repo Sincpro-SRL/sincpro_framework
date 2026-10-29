@@ -7,6 +7,7 @@
     INumbering                         gapless numbers per series and scope — a correlative
     ChangeTrackingRepositoryMixin   change tracking for a store with no flush to ask
     Hook / Hooks                    what a project puts around its own aggregates
+    PublishOnCommit                 what a write recorded, handed to a publisher once it committed
 
 An abstract class and not a `Protocol`: structural typing checked names only, so an
 implementation with the wrong signatures passed `isinstance` and failed where it was called.
@@ -32,6 +33,7 @@ from sincpro_framework.ddd.repositories.mixins.change_tracking import (
     ChangeTrackingRepositoryMixin,
 )
 from sincpro_framework.ddd.repositories.numbering import INumbering
+from sincpro_framework.ddd.repositories.publication import PublishOnCommit
 from sincpro_framework.ddd.repositories.repository import IRepository
 
 __all__ = [
@@ -41,6 +43,7 @@ __all__ = [
     "Hook",
     "Hooks",
     "INumbering",
+    "PublishOnCommit",
     "ReadsAggregates",
     "IRepository",
     "StoreCapabilities",

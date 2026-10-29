@@ -1,6 +1,6 @@
 ---
 name: sincpro-framework-domain-events
-description: Record, store and deliver domain events with sincpro_framework — DomainEvent, event_table/map_events, EventSourcedMixin, DeliverableEventMixin, EventRelay, RepositoryQueue, Publisher, change tracking and FastStream brokers. Use whenever a task publishes or subscribes to events, builds an audit trail, replays an aggregate, implements an outbox or retry policy, or wires a broker in a Sincpro Python service.
+description: Record, store and deliver domain events with sincpro_framework — DomainEvent, event_table/map_events, EventSourcedMixin, DeliverableEventMixin, Publisher, Forwarding (store-and-forward while the broker is down), PublishOnCommit/publish_on_commit, change tracking and FastStream brokers. Use whenever a task publishes or subscribes to events, builds an audit trail, replays an aggregate, publishes what a write recorded once it committed, retries a broker that is down, or wires a broker in a Sincpro Python service.
 ---
 
 # sincpro-framework-domain-events
@@ -8,22 +8,25 @@ description: Record, store and deliver domain events with sincpro_framework — 
 A domain event is a fact one bounded context states after its state changed, so that other
 contexts can react without being called. Nothing is wired by default. With a context event table,
 `save(aggregate)` stores its mapped recorded events in the same transaction, without draining
-them. Without that mapping they remain in memory. A Feature can publish after commit; durable
-delivery uses `DeliverableEventMixin` and `EventRelay` over that same event table.
+them. Without that mapping they remain in memory. Publishing is separate: a Feature publishes
+what it decides through a `Publisher`, or the repository publishes the `DeliverableEventMixin`
+events a write recorded once it committed (`publish_on_commit=`) and stamps their stored rows.
+`Publisher(queue, forwarding=True)` holds messages in memory and sends them in order while the
+broker is down.
 
 ## Context
 
 - **Solves:** "when X happens in context A, B and C react" without A importing or calling B and C;
   an audit trail of what changed; facts that cross a process or a database.
 - **Is not:** a way to ask for work. A Command is asked of one bus directly (`bus(command)`);
-  `Publisher.publish` refuses anything that is not a `DomainEvent`. It is not a Command consumer
+  `Publisher.publish` takes any message, but what goes out is a fact. It is not a Command consumer
   from a broker either — that is `QueueGateway` (`sincpro-framework-entrypoints`).
 - **Do not use it** to call a use case in your own context (execute its Command), to get a value
   back from another context (execute that context's Query on its bus), or to share state between
   two Features of one bus.
 - **Pick the wiring from the system shape:** one database → `SyncQueue` is enough; a database per
-  context, or a broker between processes → an outbox and a relay; the facts are the state → event
-  sourcing.
+  context, or a broker between processes → a broker queue, `publish_on_commit` and `forwarding`;
+  the facts are the state → event sourcing.
 
 ## Abstractions
 
@@ -35,9 +38,12 @@ delivery uses `DeliverableEventMixin` and `EventRelay` over that same event tabl
 | `DomainEvent.caused_by(cause)` | A copy with `causation_id`/`correlation_id` threaded from the incoming event | function | (method) |
 | `ChangeTrackingMixin` | Aggregate mixin: one `EntityUpdated` recorded per update, with every field that changed | dataclass mixin | `sincpro_framework.ddd` |
 | `EntityUpdated` | The event `ChangeTrackingMixin` records (`changes`, `field_labels`); subclass it for your own name | dataclass (`DomainEvent`) | `sincpro_framework.ddd` |
-| `DeliverableEventMixin` | Marks a fact for relay delivery; `delivered_at`, `next_delivery_at`, `delivery` are stored but excluded from its wire JSON | dataclass mixin | `sincpro_framework.ddd` |
+| `DeliverableEventMixin` | Marks a contract other contexts hear (warned without a versioned `name`) — the default filter of `publish_on_commit`; `delivered_at`, `delivery` are stored but excluded from its wire JSON | dataclass mixin | `sincpro_framework.ddd` |
 | `EventSourcedMixin` | No aggregate row: `happened` records/applies/numbers a fact; `get` rebuilds and `save` appends | mixin | `sincpro_framework.ddd` |
-| `Publisher` / `AsyncPublisher` | What a Feature holds: `publish(event)` or `publish(event, Response)`, into a `Queue` | class | `sincpro_framework.event_driven` |
+| `Publisher` / `AsyncPublisher` | What a Feature holds: `publish(message)` or `publish(event, Response)`, into a `Queue`; `forwarding=` holds and forwards | class | `sincpro_framework.event_driven` |
+| `Forwarding` | Store-and-forward in the process: a line in memory, one thread sending in order, backoff (`wait`, `longest_wait`), a `CircuitBreaker`, `hooks` | class | `sincpro_framework.event_driven` |
+| `Forwarded` / `ForwardingHook` | How one message went (`attempts`, `delivered_at`, `last_error`, `set_aside`) / told `after_delivery` and `after_failure` | DTO / hook | `sincpro_framework.event_driven` |
+| `PublishOnCommit` | `publish_on_commit=` on a repository: what a write recorded, to a publisher once it committed; `entities`, `when`, or override `publishes` / `publisher_of` | class | `sincpro_framework.ddd.repositories` |
 | `Queue` | Protocol: `put(event)` / `aput(event)` | port (abstract) | `sincpro_framework.event_driven` |
 | `SyncQueue` | Runs the subscriber inside the `publish` call, same process | adapter | `sincpro_framework.event_driven` |
 | `BackgroundQueue` | A spawned child consumes from a `multiprocessing.Queue`; `start()`/`stop()`. That child is this queue's, not `sincpro_framework.entrypoints.entrypoint.workers.Process` | adapter | `sincpro_framework.event_driven` |
@@ -51,19 +57,18 @@ delivery uses `DeliverableEventMixin` and `EventRelay` over that same event tabl
 | `QueueOptions` | Consumer settlement: `inbox`, `max_attempts`, dead-letter suffix, `subscription_of` | setting | `sincpro_framework.entrypoints.adapters.queue` |
 | `event_table(name, metadata)` / `map_events(registry, base, table)` | One event table per context; subclasses selected by wire name, extra fields in JSON payload | function | `sincpro_framework.data_layer.orm` |
 | `event_columns()` | Low-level envelope columns; prefer the complete `event_table` for context event storage | function | `sincpro_framework.data_layer.orm` |
-| `RepositoryQueue` | Stores a published event through the repository for later relay delivery | adapter | `sincpro_framework.event_driven` |
-| `EventRelay` / `RelayPass` | `run_once()` selects due deliverable events, publishes and saves outcomes; returns counts | entrypoint / DTO | `sincpro_framework.event_driven` |
-| `DeliveryFailurePolicy` | `RetryInPlace`, `RetryLater`, `ParkAndContinue`, `SkipAndContinue`; fixed/exponential backoff | strategy | `sincpro_framework.event_driven` |
 
 Look-alikes: `Queue` (carries events) ≠ `QueueGateway` (consumes Commands). `ChangeTrackingMixin`
-(on an aggregate, *records* `EntityUpdated`) ≠ `DeliverableEventMixin` (on an event, *tracks its
-delivery*). Event log (state + history) ≠ event sourcing (history *is* the state).
+(on an aggregate, *records* `EntityUpdated`) ≠ `DeliverableEventMixin` (on an event, *marks a
+contract and stores its delivery*). Event log (state + history) ≠ event sourcing (history *is* the state).
 
 ## Architecture
 
 **Inside the framework.** `sincpro_framework/ddd/` holds the vocabulary (`DomainEvent`,
-`DeliverableEventMixin`, `EventSourcedMixin`, `Entity.record`, `ChangeTrackingMixin`). `sincpro_framework/event_driven/` holds
-`Publisher`, `Subscriber`, `EventRelay` (facades in `entrypoint/` over `services/`), the `Queue`
+`DeliverableEventMixin`, `EventSourcedMixin`, `Entity.record`, `ChangeTrackingMixin`) and
+`ddd/repositories/publication.py` (`PublishOnCommit`). `sincpro_framework/event_driven/` holds
+`Publisher`, `Subscriber` (facades in `entrypoint/` over `services/`), `Forwarding`
+(`services/forwarding.py`, reporting `Forwarded` from `domain/forwarding.py`), the `Queue`
 protocol and its standard-library adapters (`SyncQueue`, `BackgroundQueue`), and the `Envelope`
 that travels with a message on a broker (`Envelope.headers_for`, `Envelope.of`). Optional extras, never core dependencies:
 `event_driven/adapters/faststream/` sends; `entrypoints/faststream/` subscribes (`[faststream]`
@@ -82,13 +87,12 @@ my_service/
       domain/invoice.py              # aggregate: invoice.record(InvoicePosted(...))
       domain/events.py               # @dataclass(kw_only=True) class InvoicePosted(DomainEvent): name = "billing.invoice.v1.posted"
       infrastructure/framework.py    # UseFramework("billing"); BUSES["billing"] = instance
-      infrastructure/dependencies.py # add_dependency("publisher", PUBLISHER), the repository, the tables
+      infrastructure/dependencies.py # add_dependency("publisher", PUBLISHER), Repository(..., publish_on_commit=...), the tables
       services/post_invoice.py       # Feature: save, pull_events, publish
     notifications/
       services/email_customer.py     # @notifications.feature(InvoicePosted) — the subscriber
   entrypoints/
     consumer.py                      # broker process: subscribe(broker, Subscriber(...)); FastStream(broker).run()
-    outbox_relay.py                  # drives EventRelay; or register it through Crons
 ```
 
 `common/` imports no sibling: each context adds itself to `BUSES`, and the `SyncQueue` function
@@ -105,7 +109,9 @@ Feature.execute(command)
       SyncQueue        → Subscriber.handle → each bus with event.name registered → its Feature, in this call
       BackgroundQueue  → multiprocessing.Queue → worker: build_subscriber().handle(event)
       FastStreamQueue  → broker channel (event.name) → subscribe(...) in the consumer → its buses
-outbox: one unit of work saves state + mapped facts → EventRelay reads due events → publish → delivered
+publish_on_commit: the unit of work commits state + mapped facts → after_commit → publisher.publish
+      → stored row stamped: delivered_at + delivery, or delivery["last_error"]
+forwarding=True: publish → line in memory → its thread → Queue.put, in order, retried with backoff
 ```
 
 ## Mistakes an agent makes
@@ -120,8 +126,9 @@ outbox: one unit of work saves state + mapped facts → EventRelay reads due eve
   `EntityUpdated`. Save, then pull, then publish.
 - **Publishing inside the unit of work.** With `SyncQueue`, subscribers run inside `publish`; doing
   it inside `with repository.context():` announces a fact a rollback can undo.
-- **Save-then-publish across processes.** A crash between commit and publish loses the event
-  silently. When the fact leaves the process, use the outbox.
+- **Save-then-publish across processes.** A crash between commit and publish loses the event;
+  a message still in a `Forwarding` line when the process dies is lost too. When the fact must
+  survive that, store it in the event table: its row (`delivered_at` empty) says it never went out.
 - **No explicit `name`.** The wire name defaults to the class name: renaming the class silently
   stops routing to consumers and stored rows. Set `name = "<context>.<aggregate>.v1.<verb>"`.
 - **A second base event class in a context.** One base event class and one `map_events` per
@@ -133,26 +140,25 @@ outbox: one unit of work saves state + mapped facts → EventRelay reads due eve
 - **Filtering a history by `entity_id` alone.** Two kinds of record may share an id; the type and
   the id go together (`DomainEvents` and `history_of` do it).
 - **Copying the old event-entry/status model.** Use the context base event, `event_table` and
-  `map_events`; delivery is metadata on that event. There is no separate outbox row to maintain.
-- **Direct publication plus a relay for the same fact.** Saving persists the event without draining
-  it; choose one delivery owner or subscribers receive both sends.
-- **Assuming strict stream ordering across relay replicas.** A waiting retry holds its entity
-  (or everything) pass after pass, but two replicas can take two events of one entity at once;
-  see `references/outbox.md`.
+  `map_events`; delivery is metadata on that event (`delivered_at`, `delivery`).
+- **Publishing by hand what `publish_on_commit` already sends.** It pulls the events it hands
+  on; a Feature that also publishes them some other way sends them twice. Choose one owner per
+  fact; see `references/publishing.md`.
+- **A typed publish through a forwarding.** `publish(event, Response)` on a
+  `Publisher(queue, forwarding=...)` raises `ProgrammingError`: it returns before the message went out.
 - **Channel mismatch.** A producer using `channel_of=` and a consumer calling `subscribe` without
   the matching `channel_of_name=` never meet.
 - **Two services on one event over RabbitMQ.** Both consume the queue named after the channel and
   *compete*: each sees part of the events. Use `QueueOptions(subscription_of=...)` with an exchange
   per group, or Kafka/NATS consumer groups.
 - **Trusting `BackgroundQueue`, Redis Pub/Sub or core NATS with a fact that matters.** All are at
-  most once; a `BackgroundQueue` failure is logged in its child process only. Driving an outbox
-  is a cron or a `Poll` (`sincpro-framework-operations`), not this child.
+  most once; a `BackgroundQueue` failure is logged in its child process only.
 
 ## The rule that shapes everything
 
-**The aggregate records; storage and delivery are separate.** The Feature saves, the repository
-persists mapped events, and a relay delivers durable facts. Manual publication is an explicit
-post-commit alternative. The aggregate never publishes: a rollback could undo that fact.
+**The aggregate records; storage and publishing are separate.** The Feature saves, the repository
+persists mapped events, and a publisher sends — the Feature's own, or the repository's
+`publish_on_commit=` after the commit. The aggregate never publishes: a rollback could undo that fact.
 
 ```python
 from dataclasses import dataclass
@@ -202,9 +208,9 @@ class EmailTheCustomer(Feature):
   module declares its own class under the same `name`; prefer sharing one class.
 - **The typed publish** (`publish(event, Response)`) holds only on a `SyncQueue` with exactly one
   bus for that event; anything else is refused. What a bus raises, `publish` raises.
-- **The outbox is what must be right.** The event row commits in the same transaction as the state
-  change; a separate relay publishes. Before commit announces what may not happen; after commit
-  loses it on a crash.
+- **Publish after the commit.** Before it announces what may not happen. `publish_on_commit`
+  waits for `after_commit` and stamps the stored row; `forwarding` waits a broker out. Neither
+  survives the process dying with a message in memory — the stored row says what never went out.
 - **Event storage ≠ event sourcing.** For an audit trail map a context base `DomainEvent`
   with `event_table` / `map_events`. Save the row-backed aggregate normally; query the base
   for the context's history or a subclass for one event type. Use `EventSourcedMixin` only
@@ -256,7 +262,7 @@ __all__ = ["IssueOpened", "IssueClosed", "PUBLISHED"]   # explicit: readable as 
 - [references/recording-and-publishing.md](references/recording-and-publishing.md) — record/pull, Publisher, Sync/Background queues, wiring, tests
 - [references/change-tracking.md](references/change-tracking.md) — `ChangeTrackingMixin`, `EntityUpdated`, labels, `caused_by`
 - [references/event-sourcing.md](references/event-sourcing.md) — `EventSourcedMixin`, `happened`/`apply`, replay, concurrent writers
-- [references/outbox.md](references/outbox.md) — `DeliverableEventMixin`, event table, `EventRelay`, retry policies
+- [references/publishing.md](references/publishing.md) — `Publisher`, `Forwarding`, `publish_on_commit` / `PublishOnCommit`, delivery stamps, who guarantees what
 - [references/brokers.md](references/brokers.md) — FastStream: channels, keys, delivery guarantees
 
 Deep docs in the framework repo (not shipped with the package): `docs/events/README.md`,

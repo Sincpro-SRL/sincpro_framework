@@ -71,8 +71,9 @@ outcome after them, so it says what the caller received. An interceptor that ans
 cache for one, still leaves its income and its completion.
 
 Observation is never the place to hold state a use case or a process depends on: a listener may
-fail, be slow or not run, and the execution neither knows nor waits. What must follow a commit goes
-through the context's event table and its relay ([events](../events/README.md)).
+fail, be slow or not run, and the execution neither knows nor waits. What must follow a commit is
+stored in the context's event table and published by its repository on commit
+([events](../events/README.md)).
 
 ## Who owns what
 
@@ -83,7 +84,7 @@ through the context's event table and its relay ([events](../events/README.md)).
 | `bus_pipeline` | the three layers on the path of a call: interceptors (control), incomes and outcomes (observation) |
 | `pipelines` | an ApplicationService that is the order of its steps, and the interceptor the bus attaches to store each run in the context |
 | `observability` | the signals sent to external backends: traces, errors, logs, metrics |
-| `event_driven` | delivering events: `Publisher`, queues, `Subscriber`, the relay |
+| `event_driven` | delivering events: `Publisher`, `Forwarding`, queues, `Subscriber` |
 | `entrypoints` | everything that starts the application layer from outside: wires, the clock, workers |
 | `remote_execution` | a bounded context executed by another service that runs the same code |
 

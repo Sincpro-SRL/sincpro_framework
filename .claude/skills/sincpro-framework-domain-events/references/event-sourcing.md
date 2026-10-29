@@ -86,7 +86,8 @@ rows unless their completeness and ordering have been established.
 
 - The normal save path appends new events; it is not a database-wide immutability policy.
     Restrict direct event updates/deletes separately. A blanket no-update hook on all events
-    would also prevent a relay from saving delivery metadata.
+    would also prevent `publish_on_commit` from stamping delivery metadata (`delivered_at`,
+    `delivery`).
 - No automatic snapshots or projection rebuild worker ships here. `get` replays the history;
     use ordinary row-backed read models for listing and analysis when needed.
 - Subclass payload fields are JSON, not individually mapped columns. Do not assume an
@@ -94,8 +95,9 @@ rows unless their completeness and ordering have been established.
 - Version wire names for breaking shapes. Leave historical classes imported and mappable
     while their rows exist; retaining JSON alone does not let the polymorphic ORM load an
     unknown discriminator. Plan an explicit data migration before removing a class.
-- A persisted event is not automatically deliverable. Add `DeliverableEventMixin` only to
-    events a relay must send; see [outbox.md](outbox.md).
+- A persisted event is not automatically published. `DeliverableEventMixin` marks the events
+    `publish_on_commit` sends by default; see [publishing.md](publishing.md).
 
 Framework evidence: `docs/persistence/guide.md` sections 10-12,
-`tests/data_layer/orm/test_events_table.py`, `tests/event_driven/test_relay.py`.
+`tests/data_layer/orm/test_events_table.py`, `tests/ddd/repositories/test_publish_on_commit.py`,
+`tests/event_driven/test_forwarding.py`.

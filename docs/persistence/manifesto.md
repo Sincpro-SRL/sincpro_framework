@@ -73,8 +73,8 @@ options of `context()`, not of the process. A Feature that needs `serializable` 
 line that opens its unit of work.
 
 **13. Nothing leaves before the commit.** A fact is published, a message sent, a cache let go of
-only after the transaction that caused it committed — through the outbox or an after-commit hook
-of that transaction. A hook that publishes inside a commit publishes what a rollback undoes.
+only after the transaction that caused it committed — through `publish_on_commit=` or an
+`after_commit` callback of that transaction. A hook that publishes inside a commit publishes what a rollback undoes.
 
 **14. Errors name the fact.** The engine's error is translated into what happened — a duplicate,
 a broken rule of the table, a conflict between transactions, a bound the caller set — in the
@@ -109,8 +109,8 @@ Consistency across databases is eventual and built from three parts, each with i
 
 | Part | Guarantee |
 |---|---|
-| **Outbox** — the fact saved in the same transaction as the change | the fact exists if and only if the change does |
-| **Relay** — pending facts claimed with `for_update` + `skip_locked` | one replica delivers each fact |
+| **Event table** — the fact saved in the same transaction as the change | the fact exists if and only if the change does, and its row says whether it went out |
+| **Publish on commit** — the fact handed to a publisher after the commit, forwarded in order while the broker is down | nothing leaves before the commit; a message still in the line when the process dies is lost, and the framework ships no outbox that resends it |
 | **Inbox + idempotent handler** — delivery at least once, effect once | a redelivery changes nothing |
 
 At-least-once delivery plus an idempotent effect is the only "exactly once" this framework
@@ -149,7 +149,7 @@ The use cases, from the simplest to the advanced, and where each is answered:
 |---|---|
 | 1–5, 7–12, 14–22 | built — the cascade, the transaction options, the named errors, `retrying`, `upsert` and the writes by criteria are [PRD_17](../prd/PRD_17_transactional-persistence.md) |
 | 6 | built: the commit writes what was saved; `Writes.CHANGED` for a block that wants the session's tracking (decisions §25) |
-| 13 | built: the outbox, and `after_commit` per unit of work |
+| 13 | built: `publish_on_commit=`, and `after_commit` per unit of work |
 | 23 | not built: workflows compose Commands, but have no compensating step |
 | 24 | built: `unit.session`, `statement()` → `run()`, plain mappings |
 | 25 | partial: the writing of relations is still rebuilt beside `relationship()` — the spike of PRD_18 |

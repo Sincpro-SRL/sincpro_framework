@@ -147,8 +147,8 @@ with repository.context() as unit:
     unit.save(locked)
 ```
 
-`for_update` takes the row lock; `skip_locked` passes over rows another worker holds — the relay
-of an outbox — and `nowait` fails at once instead of waiting. The two cannot both be asked.
+`for_update` takes the row lock; `skip_locked` passes over rows another worker holds — workers
+claiming rows from one table — and `nowait` fails at once instead of waiting. The two cannot both be asked.
 SQLite has no row locks and ignores all three; on Postgres a held row under `nowait` is a
 `TimedOut`. The other tool is `isolation=Isolation.SERIALIZABLE` with `retrying` (§4): no lock is taken,
 and the transaction that loses is run again.
@@ -362,7 +362,8 @@ assert repository.get_by(Account, holder="dan").balance == 40     # the credit w
 
 **Opened explicitly, joined implicitly, and only on the same `Database`** — the propagation
 Spring calls `REQUIRED`. A repository on another `Database` never joins: two engines share no
-transaction, and that is the outbox's and the saga's job. A Feature called on its own still
+transaction: what crosses is a fact published on commit, and undoing steps across
+them is a saga's job. A Feature called on its own still
 commits on its own. `context(separate=True)` opens a transaction of its own even inside another —
 an audit of the attempt that must outlive the rollback; it needs a database with a connection pool.
 The unit of work belongs to its thread or task: a worker thread started inside the block does not

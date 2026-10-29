@@ -33,7 +33,7 @@ so read it only when the framework repo is at hand.
 | Domain events (record/publish/subscribe) | `ddd/events/`, `event_driven/` | `sincpro-framework-domain-events` | `docs/events/README.md` |
 | Change tracking | `ddd/entity/mixins/` | `sincpro-framework-domain-events` | `docs/events/change-tracking.md` |
 | Event sourcing + event store | `ddd/entity/mixins/event_sourced.py`, `data_layer/orm/` (`template_table.event_table`, `map_events`) | `sincpro-framework-domain-events` | `docs/shapes.md` §3 |
-| Outbox + relay | `ddd/events/mixins/`, `event_driven/entrypoint/relay.py` (facade), `event_driven/services/relaying.py`, `entrypoints/adapters/cron/registry.py` | `sincpro-framework-domain-events` | `docs/events/change-tracking.md` |
+| Publisher, forwarding, publish on commit | `ddd/events/mixins/`, `ddd/repositories/publication.py`, `event_driven/entrypoint/publisher.py` (facade), `event_driven/services/forwarding.py`, `event_driven/domain/forwarding.py` | `sincpro-framework-domain-events` | `docs/events/README.md` |
 | Brokers (Kafka/RabbitMQ/Redis/NATS) | `event_driven/adapters/faststream/`, `entrypoints/adapters/queue/` | `sincpro-framework-domain-events` | `docs/events/brokers.md` |
 | Cache + idempotency | `data_layer/caching/` | `sincpro-framework-caching` | `docs/caching/README.md` |
 | Traces / errors / logs / metrics | `observability/` | `sincpro-framework-observability` | `docs/observability/` |

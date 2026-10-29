@@ -9,7 +9,8 @@ from sincpro_framework.context import Chain, Execution
 from sincpro_framework.context.services.executions import current_execution
 from sincpro_framework.data_layer.repositories import MemoryRepository
 from sincpro_framework.ddd import DomainEvent, Entity
-from sincpro_framework.event_driven import Publisher, RepositoryQueue
+from sincpro_framework.ddd.repositories import PublishOnCommit
+from sincpro_framework.event_driven import Publisher
 
 
 @dataclass(kw_only=True)
@@ -89,12 +90,23 @@ def test_an_event_saved_on_its_own_joins_the_chain():
     assert kept.causation_id == execution.execution_id
 
 
-def test_an_event_kept_through_the_outbox_queue_joins_the_chain():
-    repository = MemoryRepository()
-    execution = _run(lambda: Publisher(RepositoryQueue(repository)).publish(InvoiceIssued()))
+def test_an_event_published_on_commit_goes_out_in_the_flow_that_recorded_it():
+    class EveryEvent(PublishOnCommit):
+        def publishes(self, event: DomainEvent) -> bool:
+            return True
 
-    [kept] = repository.fetch_all(InvoiceIssued).items
-    assert kept.correlation_id == execution.correlation_id
+    sink = Sink()
+    repository = MemoryRepository(publish_on_commit=EveryEvent(Publisher(sink)))
+
+    def issued() -> None:
+        invoice = Invoice()
+        invoice.issue()
+        repository.save(invoice)
+
+    execution = _run(issued)
+
+    [sent] = sink.sent
+    assert sent.correlation_id == execution.correlation_id
 
 
 def test_what_an_event_already_says_is_kept():

@@ -1,9 +1,10 @@
 """A bounded context's domain events are entities in one table: saved and found through the
-repository like any other, kept with the change that made them true, delivered by a relay, and
-— for an entity whose state is its events — rebuilt and guarded by version."""
+repository like any other, kept with the change that made them true, published once it committed
+and stamped with how their delivery went, and — for an entity whose state is its events — rebuilt
+and guarded by version."""
 
+import time
 import warnings
-from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from datetime import timedelta
 
@@ -28,22 +29,9 @@ from sincpro_framework.ddd import (
     exceptions,
 )
 from sincpro_framework.ddd.criteria import (
-    Operator,
     Sort,
 )
-from sincpro_framework.entrypoints.adapters.cron import Crons
-from sincpro_framework.event_driven import (
-    EventRelay,
-    FixedBackoff,
-    ParkAndContinue,
-    Publisher,
-    RepositoryQueue,
-    RetryInPlace,
-    RetryLater,
-    SkipAndContinue,
-    Subscriber,
-    SyncQueue,
-)
+from sincpro_framework.event_driven import Forwarding, Publisher
 
 from .engines import fresh
 
@@ -121,13 +109,22 @@ class Broker:
         self.sent.append(event)
 
 
+class BrokerQueue:
+    """The broker as a queue, for a publisher that forwards to it."""
+
+    def __init__(self, broker: Broker) -> None:
+        self.broker = broker
+
+    def put(self, message: DomainEvent) -> None:
+        self.broker.publish(message)
+
+    async def aput(self, message: DomainEvent) -> None:
+        self.broker.publish(message)
+
+
 @pytest.fixture
 def repository(engine_url: str) -> Repository:
     return Repository(fresh(engine_url, kept.metadata))
-
-
-def on_sqlite(repository: Repository) -> bool:
-    return repository.database.engine.dialect.name == "sqlite"
 
 
 def a_paid_bill(repository: Repository, *amounts: int) -> Bill:
@@ -208,26 +205,14 @@ def test_the_aggregate_keeps_its_events_for_whoever_pulls_them(repository):
     assert repository.count(Paid).value == 1
 
 
-def test_publishing_through_the_repository_keeps_the_event(repository):
-    with repository.context():
-        Publisher(RepositoryQueue(repository)).publish(DayClosed())
-    assert repository.count(DayClosed).value == 1
-
-
 # ── deliverable ───────────────────────────────────────────────────────────────────────
 
 
-def test_a_deliverable_event_is_due_at_once_and_what_it_sends_leaves_its_delivery_out(
-    repository,
-):
-    repository.save([Paid(amount=1), DayClosed()])
-    deliverable = Criteria(where=Condition(field="is_deliverable", value=True))
+def test_what_a_deliverable_event_sends_leaves_its_delivery_out(repository):
+    repository.save([Paid(amount=1)])
 
-    assert [type(one) for one in repository.fetch_all(LedgerEvent, deliverable).items] == [
-        Paid
-    ]
     [paid] = repository.fetch_all(Paid).items
-    assert paid.next_delivery_at is not None and paid.delivered_at is None
+    assert paid.delivered_at is None
     assert "delivered_at" not in paid.as_json() and "delivery" not in paid.as_json()
 
 
@@ -242,109 +227,62 @@ def test_a_deliverable_class_without_a_versioned_name_is_warned_about():
     assert any("versioned name" in str(one.message) for one in heard)
 
 
-# ── the relay ─────────────────────────────────────────────────────────────────────────
+# ── published on commit ─────────────────────────────────────────────────────────────────
 
 
-def test_the_relay_delivers_each_event_once_and_marks_it(repository):
-    a_paid_bill(repository, 10, 20)
+def test_what_a_write_recorded_goes_out_after_the_commit_and_its_row_says_when(engine_url):
     broker = Broker()
-    relay = EventRelay(repository, LedgerEvent, broker)
+    repository = Repository(fresh(engine_url, kept.metadata), publish_on_commit=broker)
 
-    first = relay.run_once()
-    assert (first.read, first.delivered) == (2, 2)
-    assert relay.run_once().read == 0
-    assert [getattr(one, "amount") for one in broker.sent] == [10, 20]
-    undelivered = Criteria(
-        where=Condition(field="delivered_at", operator=Operator.IS_NULL, value=True)
-    )
-    assert repository.count(Paid, undelivered).value == 0
+    with repository.context() as unit:
+        bill = Bill(total=100)
+        bill.pay(30)
+        unit.save(bill)
+        assert broker.sent == []
 
-
-def test_a_failed_delivery_waits_its_backoff_then_parks(repository):
-    a_paid_bill(repository, 10)
-    broker = Broker()
-    broker.down = True
-    policy = RetryInPlace(
-        attempts=2, backoff=FixedBackoff(timedelta(0)), then=ParkAndContinue()
-    )
-    relay = EventRelay(repository, LedgerEvent, broker, policy)
-
-    assert relay.run_once().retried == 1
-    assert relay.run_once().parked == 1
-    assert relay.run_once().read == 0  # parked: never tried again
+    assert [getattr(one, "amount") for one in broker.sent] == [30]
     [paid] = repository.fetch_all(Paid).items
-    assert paid.delivery["parked"] and "ConnectionError" in paid.delivery["last_error"]
+    assert paid.delivered_at is not None and paid.delivery_attempts == 1
 
 
-def test_a_retry_later_holds_the_later_events_of_its_entity(repository):
-    bill = a_paid_bill(repository, 10, 20)
-    other = a_paid_bill(repository, 5)
-
-    class DownForTheFirstBill(Broker):
-        failing = True
-
-        def publish(self, event: DomainEvent) -> None:
-            if event.entity_id == bill.id and getattr(event, "amount") == 10 and self.failing:
-                raise ConnectionError("down for 10")
-            super().publish(event)
-
-    broker = DownForTheFirstBill()
-    relay = EventRelay(
-        repository,
-        LedgerEvent,
-        broker,
-        RetryLater(attempts=3, backoff=FixedBackoff(timedelta(0))),
-    )
-
-    done = relay.run_once()
-    assert (done.retried, done.held, done.delivered) == (1, 1, 1)
-    assert [one.entity_id for one in broker.sent] == [other.id]
-    broker.failing = False
-    relay.run_once()
-    assert [getattr(one, "amount") for one in broker.sent if one.entity_id == bill.id] == [
-        10,
-        20,
-    ]
-
-
-def test_a_destination_that_can_lose_one_skips_it(repository):
-    a_paid_bill(repository, 10)
+def test_a_row_says_why_its_event_did_not_go_out(engine_url):
     broker = Broker()
     broker.down = True
-    done = EventRelay(repository, LedgerEvent, broker, SkipAndContinue()).run_once()
-    assert done.skipped == 1
-    assert EventRelay(repository, LedgerEvent, Broker()).run_once().read == 0
+    repository = Repository(fresh(engine_url, kept.metadata), publish_on_commit=broker)
+    bill = Bill(total=100)
+    bill.pay(30)
+
+    repository.save(bill)
+
+    [paid] = repository.fetch_all(Paid).items
+    assert paid.delivered_at is None
+    assert "the broker is down" in paid.delivery["last_error"]
 
 
-def test_replicas_running_one_relay_never_deliver_an_event_twice(repository):
-    if on_sqlite(repository):
-        pytest.skip("an in-memory SQLite has one connection: there is no second replica")
-    repository.save([Paid(amount=n) for n in range(1, 121)])
-    delivered: list[int] = []
-
-    class Collect:
-        def publish(self, event: DomainEvent) -> None:
-            delivered.append(event.amount)  # type: ignore[attr-defined]
-
-    def replica() -> None:
-        relay = EventRelay(repository, LedgerEvent, Collect(), batch=7)
-        for _ in range(200):
-            if relay.run_once().read == 0:
-                return
-
-    with ThreadPoolExecutor(max_workers=4) as pool:
-        list(pool.map(lambda _: replica(), range(4)))
-
-    assert sorted(delivered) == list(range(1, 121))
-
-
-def test_a_cron_drives_the_relay(repository):
-    crons = Crons("delivery")
-    relay = crons.relay_deliverable_events(
-        repository=repository, source=LedgerEvent, to=Publisher(SyncQueue(Subscriber()))
+def test_a_forwarded_event_s_row_is_stamped_once_the_broker_took_it(engine_url):
+    if engine_url.startswith("sqlite"):
+        pytest.skip(
+            "an in-memory SQLite is another empty database on the forwarding's thread"
+        )
+    broker = Broker()
+    broker.down = True
+    quickly = timedelta(milliseconds=5)
+    publisher = Publisher(
+        BrokerQueue(broker), forwarding=Forwarding(wait=quickly, longest_wait=quickly)
     )
-    assert relay.source is LedgerEvent
-    assert [one.name for one in crons.definitions] == ["delivery.relay"]
+    repository = Repository(fresh(engine_url, kept.metadata), publish_on_commit=publisher)
+    bill = Bill(total=100)
+    bill.pay(30)
+
+    repository.save(bill)
+    assert repository.fetch_all(Paid).items[0].delivered_at is None
+    broker.down = False
+
+    deadline = time.monotonic() + 5
+    while repository.fetch_all(Paid).items[0].delivered_at is None:
+        assert time.monotonic() < deadline, "the forwarded event was never stamped"
+        time.sleep(0.01)
+    assert repository.fetch_all(Paid).items[0].delivery_attempts > 1
 
 
 # ── event sourced ───────────────────────────────────────────────────────────────────────

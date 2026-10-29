@@ -118,8 +118,8 @@ if event is not None:
     self.publisher.publish(event)          # or hand it to a queue
 ```
 
-For an event marked `DeliverableEventMixin`, omit that manual publication and let `EventRelay`
-own delivery. Saving the same fact in a separate transaction is not an atomic outbox.
+For an event marked `DeliverableEventMixin` on a repository that publishes on commit, omit that
+manual publication: the repository hands it on once the unit committed.
 
 **On the store, not on the aggregate**, because the diff is the store's answer: one that has an
 engine asks it, one that does not compares against what it handed out, and an aggregate cannot
@@ -275,15 +275,13 @@ history = self.repository.search(
 ```
 
 Written in the same unit of work that changed the row, the event and the change commit or roll
-back together — which is the whole point of an outbox, without a second abstraction. The event
-stays on the aggregate too: `pull_events()` still hands it to whoever publishes by hand.
+back together, without a second abstraction. The event stays on the aggregate too:
+`pull_events()` still hands it to whoever publishes by hand.
 
 ## Sent on, without a second abstraction
 
-Mark the update event `DeliverableEventMixin` and an `EventRelay` sends it on, at least once.
-Row locks prevent concurrent claims of the same row on supporting backends; a crash after
-publication and before commit can still cause duplicates. Memory and SQLite do not establish
-multi-replica exclusion:
+Mark the update event `DeliverableEventMixin` and give the repository a publisher: once the
+write committed, the event goes to it, and a rollback drops it:
 
 ```python
 @dataclass(kw_only=True)
@@ -291,11 +289,10 @@ class InvoiceUpdated(DeliverableEventMixin, EntityUpdated, SalesDomainEvent):
     name = "sales.invoice.v1.updated"
 
 
-EventRelay(repository, SalesDomainEvent, publisher).run_once()
+repository = Repository(database, publish_on_commit=Publisher(queue, forwarding=True))
 ```
 
-Where its delivery stands — `delivered_at`, `next_delivery_at`, `delivery` — is stored on its
-row and never sent. See
+When it went out and how — `delivered_at`, `delivery` — is stamped on its row and never sent. See
 [persistence guide §12](../persistence/guide.md#12-delivering-events).
 
 ## What to know before it bites you

@@ -227,8 +227,8 @@ A bus that executes an `ExecutionCompleted` or an `ExecutionFailed` announces no
 listener handing outcomes to a bus would otherwise hear its own hearing without end.
 
 **Announced when the use case answered**, not when a transaction commits: a completion inside a unit
-of work that its caller rolls back afterwards was still announced. What must follow the commit goes
-through the context's event table and its relay.
+of work that its caller rolls back afterwards was still announced. What must follow the commit is
+recorded by the aggregate and published by its repository on commit (`publish_on_commit=`).
 
 ## Hearing less
 
@@ -279,6 +279,7 @@ the bus (`fresh`) hears what the bus does.
 - To **change** what a call answers — veto it, adjust it, answer instead — use an
   [interceptor](interceptors.md) or an error handler.
 - To persist **state** a process depends on, or what must follow a commit, use the context's event
-  table and its relay ([events](../events/README.md)); a listener may not run.
+  table and a repository that publishes on commit ([events](../events/README.md)); a listener may
+  not run.
 - To send them **out of the process**, hand them to a `Publisher` (`publish_completions`,
   `publish_failures`): from there on they travel as any event, by `event_driven`.

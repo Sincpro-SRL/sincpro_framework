@@ -56,6 +56,7 @@ from sincpro_framework.ddd.repositories.capabilities import (
     WritesAggregates,
 )
 from sincpro_framework.ddd.repositories.hooks import Hook, HookChain, Hooks
+from sincpro_framework.ddd.repositories.publication import Publishes, PublishOnCommit
 
 
 def records_of(given: Any) -> list[Any]:
@@ -187,13 +188,30 @@ class IRepository(ReadsAggregates, WritesAggregates):
         return StoreCapabilities()
 
     def __init__(
-        self, hooks: Hooks | None = None, guard: "IRepository | None" = None
+        self,
+        hooks: Hooks | None = None,
+        guard: "IRepository | None" = None,
+        publish_on_commit: PublishOnCommit | Publishes | None = None,
     ) -> None:
         """`hooks` is the bounded context's collection; `guard` is the repository this one is a
         view of — a unit of work, a narrowing — which runs the chain of the one it came from
-        and counts as it when a hook writes."""
+        and counts as it when a hook writes, and publishes on commit as it does.
+        `publish_on_commit` hands what a write recorded to a publisher once it committed: a
+        publisher for every deliverable event, a `PublishOnCommit` to narrow or route them."""
         self._guard: "IRepository" = guard if guard is not None else self
         self._chain: HookChain = guard._chain if guard is not None else HookChain(hooks)
+        self._publication: PublishOnCommit | None = None
+        if guard is not None:
+            self._publication = guard._publication
+        elif isinstance(publish_on_commit, PublishOnCommit):
+            self._publication = publish_on_commit
+        elif publish_on_commit is not None:
+            self._publication = PublishOnCommit(publish_on_commit)
+
+    def _keeps(self, kind: type) -> bool:
+        """Whether this store holds records of `kind` — every kind here; an engine that stores an
+        event only when its class has a table says otherwise."""
+        return True
 
     def _running_hooks(self) -> "_Hooks":
         """The window a hook runs in for this store — a write through it inside is refused."""
@@ -280,10 +298,14 @@ class IRepository(ReadsAggregates, WritesAggregates):
 
     def _after_writes(self, records: list[Any], newness: list[bool]) -> None:
         """Every after-moment for a batch, told new from stored by what `_before_writes`
-        worked out — never asked again, since the write has raised the version by now."""
+        worked out — never asked again, since the write has raised the version by now — and
+        what the batch recorded handed to the publication, when the store publishes on commit.
+        """
         for one, is_new in zip(records, newness):
             self._fire("after_save", one)
             self._fire("after_create" if is_new else "after_update", one)
+        if self._publication is not None:
+            self._publication.saved(self, records, newness)
 
     def _before_archive(self, record: Any) -> None:
         """`before_archive`, the chain's hooks then the store's own."""

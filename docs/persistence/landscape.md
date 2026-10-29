@@ -85,9 +85,11 @@ daemon), both rebuildable; snapshots for long streams; versioned events with upc
 the publisher and queues, FastStream brokers with an inbox, `EntityUpdated`, `after_commit` — and
 the model the mature stores share (PRD_19, [decision 31](decisions.md#31-a-bounded-contexts-events-are-entities-in-one-table)):
 a domain event as an entity in one table per bounded context, stored by the repository in the
-transaction of the change; `DeliverableEventMixin` with the delivery state on the row, delivered
-by an `EventRelay` with `FOR UPDATE SKIP LOCKED` and failures decided by a strategy — the outbox's
-polling publisher, with no checkpoint and so no Postgres visibility gap; and `EventSourcedMixin`,
+transaction of the change; `DeliverableEventMixin` marking what other contexts hear, handed to a
+publisher once the write committed (`publish_on_commit=`) and stamped on its row with when it went
+out; a `Publisher` that forwards (`forwarding=True`) holds the message in a line in memory and sends
+it in order while the broker is down. The framework ships no polling outbox: a message still in the
+line when the process dies is lost, and the row says it never went out. And `EventSourcedMixin`,
 rebuilt from the same table, two writers separated by a unique `entity_version`. Replay and
 fan-out to other systems are the broker's. Snapshots and sagas are not built.
 
@@ -188,7 +190,7 @@ needs to be — answered in the same envelope.
 
 **What is left.** A lock asked of an engine whose `capabilities.row_locks` is false — SQLite, which
 drops `FOR UPDATE` — is still taken silently; per the rule *facilitate, never cage*, the next step
-is a warning, not a refusal. A shared component (outbox, cron runs, auth) can now ask for exactly
+is a warning, not a refusal. A shared component (cron runs, auth) can now ask for exactly
 the capabilities it calls; moving each to that is the work of each component.
 
 ---
@@ -202,7 +204,7 @@ the capabilities it calls; moving each to that is the work of each component.
 | Relations: reading | **Mature** — per page, per parent, across contexts |
 | Relations: writing | **Partial** — safe and declared, but rebuilt beside `relationship()`; PRD_18 open |
 | Collections in memory | **Mature** as an answer; the question side lacks sugar |
-| Events and event sourcing | **Partial** — events as entities, the relay and event-sourced entities are built; snapshots, projection rebuilds and sagas are not |
+| Events and event sourcing | **Partial** — events as entities, publishing on commit, forwarding and event-sourced entities are built; snapshots, projection rebuilds and sagas are not |
 | Volume and analytics | **Partial** — SQL-side solid, client-side hydrates |
 | Many stores | **Started** — the baseline and capabilities are declared (§5); access plans and a second adapter are missing |
 | Enterprise record concerns | **Partial** — the common ones built; fiscal numbering, money, request-bound rules missing |
@@ -218,8 +220,8 @@ Ordered by what protects data first, then what removes the most hand-written cod
 2. ~~Gapless numbering.~~ Built: `DatabaseNumbering.take(series, count, scope)` in the unit of work, and
    every repository on one `Database` joins the unit of work in play, so several Features commit
    together ([decisions 29–30](decisions.md#29-a-unit-of-work-is-joined-by-every-repository-on-its-database)).
-3. ~~The outbox relay as a component.~~ Built as the context's event table and `EventRelay` —
-   per-row delivery state, `SKIP LOCKED`, failure policies
+3. ~~Publishing only what committed.~~ Built: the context's event table, `publish_on_commit=` per
+   repository with the delivery stamped on the row, and `Forwarding` in the process
    ([decision 31](decisions.md#31-a-bounded-contexts-events-are-entities-in-one-table), PRD_19).
 4. ~~Event sourcing: an expected version on append.~~ Built: `EventSourcedMixin`, `entity_version`
    unique per entity; snapshots are next.
@@ -249,8 +251,8 @@ Ordered by what protects data first, then what removes the most hand-written cod
     access patterns and a planner; then a Mongo adapter, Elasticsearch as a read projection,
     Dynamo last.
 
-Snapshots, crypto-shredding, a database inbox, temporal tables, attachments, CDC-shaped outbox
-columns, Ibis and lakehouse sinks wait for a case that needs them.
+Snapshots, crypto-shredding, a database inbox, temporal tables, attachments, change data capture,
+Ibis and lakehouse sinks wait for a case that needs them.
 
 ## Sources
 

@@ -19,7 +19,7 @@ The other pages explain *why* each piece is the way it is. This one is *how*.
 | Say what happened, and react to it | [9. Domain events](#9-domain-events) |
 | Record every field that changed, store the events | [10. Change tracking, and the context's event table](#10-change-tracking-and-the-contexts-event-table) |
 | Store the facts as the state | [11. Event sourcing](#11-event-sourcing) |
-| Deliver events to other contexts reliably | [12. Delivering events](#12-delivering-events) |
+| Publish what a write recorded once it committed | [12. Delivering events](#12-delivering-events) |
 | Test a Feature without a database | [13. Testing](#13-testing) |
 | Extend an aggregate with fields of its own | [14. Extending an aggregate](#14-extending-an-aggregate) |
 
@@ -548,8 +548,9 @@ ordering hooks — and why they work the way they do — are in [hooks.md](hooks
 
 ## 9. Domain events
 
-The aggregate **records** what happened; the Feature that saved it **publishes**. The
-aggregate never publishes itself — a rollback would then undo a fact the world already heard.
+The aggregate **records** what happened; the Feature that saved it **publishes** — or its
+repository, once the write committed (§12). The aggregate never publishes itself — a rollback
+would then undo a fact the world already heard.
 
 ```python
 from sincpro_framework.ddd import DomainEvent
@@ -685,14 +686,15 @@ assert [type(one) for one in repository.fetch_all(BillingEvent, about_the_paymen
 | `entity_type`, `entity_id`, `entity_version` | what it is about — empty for an event about no entity |
 | `correlation_id`, `causation_id`, `label` | the envelope every `DomainEvent` carries |
 | `payload` | what the subclass declares, as JSON, typed back on load |
-| `is_deliverable`, `delivered_at`, `next_delivery_at`, `delivery` | where a deliverable event's delivery stands (§12) |
+| `delivered_at`, `delivery` | when a deliverable event went out, and how its delivery went (§12) |
 
 What this gives, with nothing else to learn:
 
 - **Stored with the change.** `save(aggregate)` writes the events it recorded in the same
   transaction; a rollback writes neither. A save repeated stores an event once.
 - **Read, never taken.** The aggregate still has them: `pull_events()` hands them to whoever
-  publishes by hand (§9).
+  publishes by hand (§9) — unless the repository publishes on commit, which takes the ones it
+  hands on (§12).
 - **An event about nothing** — `repository.save([DayClosed()])` — is stored the same way, with
   `entity_type` and `entity_id` empty.
 - **Queried like any entity.** `fetch_all(PaymentUpdated, criteria)` answers that class;
@@ -784,28 +786,20 @@ broker's job (Kafka retains it), not a second store. See
 
 ## 12. Delivering events
 
-Publishing after the commit can lose an event: the process can die between the two. The
-transactional outbox closes that gap, and here it is the event table itself: an event marked
-`DeliverableEventMixin` is stored with the change, in the same transaction, with where its
-delivery stands beside it; an `EventRelay` reads the ones not delivered yet, hands each one on,
-and marks it.
+The event table records the facts in the commit; publishing them is the publisher's. A Feature
+publishes what it decides, when it decides (§9). A repository does it for every write when it is
+asked to: `publish_on_commit=` hands the events a write recorded to a publisher **once the write
+committed**, and stamps the stored event with how its delivery went.
 
 ```python
 from sincpro_framework.ddd import DeliverableEventMixin
-from sincpro_framework.event_driven import EventRelay
 
 
 @dataclass(kw_only=True)
-class InvoiceSent(DeliverableEventMixin, BillingEvent):    # it leaves the context
+class InvoiceSent(DeliverableEventMixin, BillingEvent):    # heard beyond the context
     name = "billing.invoice.v1.sent"                        # a contract: explicit, versioned
     invoice_id: str = ""
 
-
-with repository.context() as unit:
-    invoice = unit.get_by(Invoice, number="F-003")
-    invoice.state = "sent"
-    invoice.record(InvoiceSent(invoice_id=invoice.id))
-    unit.save(invoice)                                 # the invoice and its event, one commit
 
 shipping = UseFramework("shipping", log_after_execution=False)
 shipped: list[str] = []
@@ -817,89 +811,80 @@ class ShipTheInvoice(Feature):
         shipped.append(dto.invoice_id)
 
 
-relay = EventRelay(
-    repository,
-    BillingEvent,                                       # the context's events …
-    Publisher(SyncQueue(Subscriber(shipping))),         # … to a queue: or FastStreamQueue(kafka)
-)
-done = relay.run_once()
+to_shipping = Publisher(SyncQueue(Subscriber(shipping)))   # or FastStreamQueue(kafka)
+delivering = Repository(database, publish_on_commit=to_shipping)
 
-assert (done.read, done.delivered) == (1, 1)
-assert shipped == [invoice.id]
-assert relay.run_once().read == 0                       # delivered once
+with delivering.context() as unit:
+    invoice = unit.get_by(Invoice, number="F-003")
+    invoice.state = "sent"
+    invoice.record(InvoiceSent(invoice_id=invoice.id))
+    unit.save(invoice)                                 # the invoice and its event, one commit
+    assert shipped == []                               # nothing goes out before the commit
 
-[sent] = repository.fetch_all(InvoiceSent).items
-assert sent.delivered_at is not None
-assert "delivered_at" not in sent.as_json()             # its delivery is never sent with it
+assert shipped == [invoice.id]                         # once it committed
+assert invoice.pull_events() == []                     # taken: never handed on twice
+
+[sent] = delivering.fetch_all(InvoiceSent).items
+assert sent.delivered_at is not None and sent.delivery_attempts == 1
+assert "delivered_at" not in sent.as_json()            # its delivery is never sent with it
 ```
 
-**Delivery is the event's own state**, not a reader's checkpoint: three fields the mixin adds.
+**Delivery is the event's own state**: two fields the mixin adds, stamped by the repository that
+published it, in a unit of work of its own.
 
 | Field | Stored as | What it says |
 |---|---|---|
-| `delivered_at` | column | when it went out — empty while it has not |
-| `next_delivery_at` | column | when the relay may try it — at once when it is made, later after a failure, empty once parked |
-| `delivery` | JSON | for people: `{"attempts": 2, "last_error": "…", "parked": true}` |
+| `delivered_at` | column | when it went out — empty while it has not; `created_at` is when it happened |
+| `delivery` | JSON | for people: `{"attempts": 2, "last_error": "…"}` |
 
-`is_deliverable` is a column too, so every question is a `Criteria` over the same repository —
-what is pending, what was parked, what one invoice sent:
+Both are on the row, so what never went out is a `Criteria` over the same repository:
 
 ```python
-pending = Criteria(
-    where=Node.combined(
-        Condition(field="is_deliverable", value=True),
-        Condition(field="delivered_at", operator=Operator.IS_NULL, value=True),
-    )
+never_sent = Criteria(where=Condition(field="delivered_at", operator=Operator.IS_NULL, value=True))
+assert delivering.count(InvoiceSent, never_sent).value == 0
+```
+
+**What goes out** is every `DeliverableEventMixin` event the write recorded; the rest stay on
+the aggregate for whoever pulls them. `PublishOnCommit` narrows it — `entities` by the class of
+the aggregate that recorded the event, `when` on top of the mark — and a subclass says it
+another way:
+
+```python
+from sincpro_framework.ddd.repositories import PublishOnCommit
+
+invoices_only = Repository(
+    database, publish_on_commit=PublishOnCommit(to_shipping, entities=[Invoice])
 )
-assert repository.count(BillingEvent, pending).value == 0
+
+
+class InvoiceEvents(PublishOnCommit):
+    def publishes(self, event: DomainEvent) -> bool:        # what goes out
+        return isinstance(event, InvoiceSent)
+
+    def publisher_of(self, event: DomainEvent) -> Publisher:  # and to which publisher
+        return to_shipping
+
+
+measured = Repository(database, publish_on_commit=InvoiceEvents(to_shipping))
 ```
 
-What one pass does:
-
-| Step | What happens |
+| Rule | What it means |
 |---|---|
-| claim | the deliverable events of `source` not delivered and due, oldest first, at most `batch`, in one query — inside a unit of work, `FOR UPDATE SKIP LOCKED` where the database has it, so replicas never take the same event |
-| hold | what an event waiting for its retry holds back: everything after it (`RetryInPlace`) or the later events of its entity (`RetryLater`) — counted as `held` |
-| hand on | each one to the publisher, in order; a failure is the policy's to decide |
-| mark | `delivered_at`, or the retry, park or skip — saved in the same transaction |
+| after the commit, never before | inside a unit of work the events wait for its `after_commit`, and a rollback drops them; outside one each `save` commits on its own, so they go out as it returns |
+| taken once | what goes out is pulled from the aggregate and the rest recorded back, so a later save — or the Feature's own `pull_events()` — never hands the same event on twice |
+| a record of its own | an event saved by itself (`save([DayClosed()])`) goes out when it was never tried |
+| the commit stands | a publisher that raises never undoes it: the error is logged and stamped in `delivery["last_error"]` |
+| stamped when it is known | at once for a publisher that sends in the call; when its `Future` resolves for one that forwards |
 
-**What a failure does is a strategy.** The default, `RetryInPlace(attempts=5)`, tries the event
-again with exponential backoff, holding everything after it — in this pass and in the ones
-before its retry is due — then parks it after the cap:
-
-| Policy | An event that fails |
-|---|---|
-| `RetryInPlace(attempts, backoff, then=…, never_retry=…)` | schedules a retry; nothing after it goes out until it did, or was parked |
-| `RetryLater(attempts, backoff, then=…, holds_stream=True)` | schedules a retry; later events of its entity wait until it went out, or was parked; other entities go on |
-| `ParkAndContinue()` | set aside with its reason; `event.replayed()` and a save put it back |
-| `SkipAndContinue()` | marked delivered with a log line and the reason in `delivery` |
-
-`ExponentialBackoff` and `FixedBackoff` space the attempts. An error that fails the same way every
-time — the kinds a queue consumer dead-letters (`common.failures.PERMANENT`: invalid, a domain
-refusal, not found…) — is parked at once, and so is any error in `never_retry=(ValueError, …)`.
-An error that says how long to wait (`retry_after`) is not tried before that.
-
-**A parked event holds nothing.** Like a dead-letter queue, its entity's later events go on
-without it; replayed, it goes out after them. Row locks prevent two replicas from taking the same event, not an entity's whole stream: two replicas can each take a different event of one entity in the same instant. Where that matters, run one relay per context, or key the broker by entity (`keyed_by_entity`).
-
-**At least once, never lost.** A relay that dies after handing an event on and before the commit
-leaves it unmarked, and the next pass sends it again — a consumer is idempotent (the
-[inbox](../events/brokers.md)). An event no aggregate records is stored the same way through
-`Publisher(RepositoryQueue(repository))`. Run the relay from a cron:
-
-```python
-from datetime import timedelta
-
-from sincpro_framework.entrypoints.adapters.cron import Crons
-
-delivery = Crons("delivery")
-delivery.run_relay(relay, every=timedelta(seconds=5))
-```
-
-`delivery.relay_deliverable_events(repository=…, source=BillingEvent, to=Publisher(…))` builds
-the relay and schedules it in one line. The model and why it is this way are in
-[PRD_19](../prd/PRD_19_events-as-entities.md) and
-[decision 31](decisions.md#31-a-bounded-contexts-events-are-entities-in-one-table).
+**A broker that is down.** `Publisher(queue)` sends in the call: a broker that is down fails the
+attempt, and the row says why. `Publisher(queue, forwarding=True)` holds each message in a line
+in memory instead and returns a `Future` at once; one thread of its own sends the line in order,
+waits the broker out and stops trying through a `CircuitBreaker` while it keeps failing — the
+row is stamped when the message went out. Nothing runs beside the service: no cron, no worker.
+The line lives in the process, so a message still in it when the process dies is not sent — its
+row says it never went out. A consumer is idempotent all the same: a broker delivers at least
+once (the [inbox](../events/brokers.md)). The publisher, the forwarding and who guarantees what
+on each stretch are in [events](../events/README.md).
 
 ## 13. Testing
 

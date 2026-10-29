@@ -10,11 +10,14 @@ works from any synchronous caller and waits until the broker took the message �
 surfaces where it was published. Never started, the queue is for a service that is already
 async and connected the broker itself: `aput` publishes on the caller's loop.
 
-What travels is the event as JSON, on the channel named after it, with its envelope
+What travels is the message as JSON, on the channel named after it, with its envelope
 (`Envelope.headers_for`: its id, wire name, chain, the publishing trace and the publishing
-execution's context) as headers — read where the event is published, before it is handed to the
+execution's context) as headers — read where the message is published, before it is handed to the
 queue's loop. `source` names this service in the envelope, what a consumer's `producers=` checks.
 Topics, partitions, exchanges, retries and acks are the broker's configuration, not this queue's.
+
+**Any message.** A `DomainEvent` or a `DataTransferObject` is written as its own JSON; a message
+of the project's own is written by `serializer=`, on the channel `channel_of=` names.
 """
 
 import asyncio
@@ -26,19 +29,45 @@ from sincpro_framework import exceptions
 from sincpro_framework.ddd.events import DomainEvent
 from sincpro_framework.event_driven.domain.broker import Broker
 from sincpro_framework.event_driven.domain.envelope import Envelope
+from sincpro_framework.sincpro_abstractions import DataTransferObject
 
-type ChannelOf = Callable[[DomainEvent], str]
-type OptionsOf = Callable[[DomainEvent], dict[str, Any]]
+type ChannelOf = Callable[[Any], str]
+type OptionsOf = Callable[[Any], dict[str, Any]]
+type Serializer = Callable[[Any], str | bytes]
 
 
-def by_event_name(event: DomainEvent) -> str:
-    """The default channel: the event's wire name — `billing.InvoicePaid` on its own topic."""
-    return event.name
+def by_event_name(message: Any) -> str:
+    """The default channel: the message's wire name — `billing.InvoicePaid` on its own topic;
+    refused, naming `channel_of=`, for a message that has none."""
+    name = getattr(message, "name", None)
+    if not isinstance(name, str) or not name:
+        raise exceptions.ProgrammingError(
+            f"{type(message).__name__} has no wire name to choose its channel by: give the "
+            "FastStreamQueue channel_of="
+        )
+    return name
 
 
 def keyed_by_entity(event: DomainEvent) -> dict[str, Any]:
     """Kafka: the event's entity as the message key, so one entity's events stay in order."""
     return {"key": event.entity_id.encode()} if event.entity_id else {}
+
+
+def as_json(message: Any) -> str:
+    """The default body: a `DomainEvent`'s or a `DataTransferObject`'s own JSON; refused,
+    naming `serializer=`, for anything else.
+
+        as_json(InvoicePaid(…))             ->  '{"name":"billing.InvoicePaid",…}'
+        as_json({"ticket": "T-1"})          ->  raises ProgrammingError("… serializer= …")
+    """
+    if isinstance(message, DomainEvent):
+        return message.as_json()
+    if isinstance(message, DataTransferObject):
+        return message.model_dump_json()
+    raise exceptions.ProgrammingError(
+        f"FastStreamQueue writes a DomainEvent or a DataTransferObject as JSON; "
+        f"{type(message).__name__} needs the queue's serializer="
+    )
 
 
 class FastStreamQueue:
@@ -50,16 +79,21 @@ class FastStreamQueue:
         channel_of: ChannelOf = by_event_name,
         options_of: OptionsOf | None = None,
         source: str = "",
+        serializer: Serializer = as_json,
     ) -> None:
-        """`channel_of` names where an event goes — its wire name by default; `options_of` adds
+        """`channel_of` names where a message goes — its wire name by default; `options_of` adds
         what one broker takes and another does not, such as Kafka's `key` — nothing by
-        default; `source` is this service in the envelope.
+        default; `source` is this service in the envelope; `serializer` writes the body — a
+        `DomainEvent`'s or a `DataTransferObject`'s JSON by default.
 
             FastStreamQueue(KafkaBroker("localhost:9092"), options_of=keyed_by_entity,
                             source="billing")
                 ->  InvoicePaid on topic "billing.InvoicePaid", keyed by its entity
             FastStreamQueue(broker, channel_of=lambda event: "billing-events")
                 ->  every event on one channel, told apart by its `sincpro-event` header
+            FastStreamQueue(broker, channel_of=lambda message: "tickets",
+                            serializer=lambda message: json.dumps(message))
+                ->  a message of the project's own, written as it says
 
         Nothing connects here: `start()` gives the queue its loop and connects the broker.
         """
@@ -67,6 +101,7 @@ class FastStreamQueue:
         self.source = source
         self.channel_of = channel_of
         self.options_of = options_of
+        self.serializer = serializer
         self._loop: asyncio.AbstractEventLoop | None = None
         self._thread: threading.Thread | None = None
 
@@ -121,34 +156,35 @@ class FastStreamQueue:
         self._loop.close()
         self._loop, self._thread = None, None
 
-    def _headers(self, event: DomainEvent) -> dict[str, str]:
-        """Read where the event is published: the queue's loop runs in a thread of its own, where
-        neither the trace nor the execution's context is."""
-        return Envelope.headers_for(event, source=self.source)
+    def _headers(self, message: Any) -> dict[str, str]:
+        """Read where the message is published: the queue's loop runs in a thread of its own,
+        where neither the trace nor the execution's context is."""
+        return Envelope.headers_for(message, source=self.source)
 
-    async def _publish(self, event: DomainEvent, headers: dict[str, str]) -> None:
-        """Publish the event's JSON on its channel, with `headers` and the broker's options.
+    async def _publish(self, message: Any, headers: dict[str, str]) -> None:
+        """Publish the written message on its channel, with `headers` and the broker's options.
 
-        Context: the event is written and its channel chosen here, before the broker is
+        Context: the message is written and its channel chosen here, before the broker is
         reached — what fails after that is the broker not taking it, `ServiceUnavailableError`:
         retry later."""
-        written = event.as_json().encode()
-        channel = self.channel_of(event)
-        options = self.options_of(event) if self.options_of else {}
+        written = self.serializer(message)
+        body = written.encode() if isinstance(written, str) else written
+        channel = self.channel_of(message)
+        options = self.options_of(message) if self.options_of else {}
         try:
-            await self.broker.publish(written, channel, headers=headers, **options)
+            await self.broker.publish(body, channel, headers=headers, **options)
         except Exception as error:
             raise exceptions.ServiceUnavailableError(
-                f"the broker did not take {event.name} on {channel}: "
-                f"{type(error).__name__}: {error}"
+                f"the broker did not take {getattr(message, 'name', type(message).__name__)} "
+                f"on {channel}: {type(error).__name__}: {error}"
             ) from error
 
-    def put(self, event: DomainEvent) -> None:
+    def put(self, message: Any) -> None:
         """Publish from synchronous code and wait until the broker took it."""
-        headers = self._headers(event)
-        self._on_own_loop(lambda: self._publish(event, headers), None)
+        headers = self._headers(message)
+        self._on_own_loop(lambda: self._publish(message, headers), None)
 
-    async def aput(self, event: DomainEvent) -> None:
+    async def aput(self, message: Any) -> None:
         """Publish from async code — on the queue's loop when it was started, else on this
         one.
 
@@ -159,9 +195,9 @@ class FastStreamQueue:
         Context: the headers are read here, on the caller's side, where the trace and the
         execution's context are — the queue's thread has neither.
         """
-        headers = self._headers(event)
+        headers = self._headers(message)
         if self._loop is None:
-            await self._publish(event, headers)
+            await self._publish(message, headers)
             return
-        future = asyncio.run_coroutine_threadsafe(self._publish(event, headers), self._loop)
+        future = asyncio.run_coroutine_threadsafe(self._publish(message, headers), self._loop)
         await asyncio.wrap_future(future)

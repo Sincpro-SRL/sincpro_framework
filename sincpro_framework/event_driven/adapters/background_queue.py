@@ -4,8 +4,8 @@ spawned, which builds its own subscriber because a bus does not cross a process.
     queue = BackgroundQueue(build_subscriber).start()
 
 **Not durable.** What is in the queue when the process dies is gone. A fact that must survive a
-crash is saved by the repository in the transaction of the change, marked
-`DeliverableEventMixin`, and handed on by an `EventRelay`.
+crash is stored by the repository in the transaction of the change — its event table says whether
+it went out.
 """
 
 import json

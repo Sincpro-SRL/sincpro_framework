@@ -184,9 +184,9 @@ def test_the_order_its_line_and_the_fact_commit_together(one_database: Shop):
 
 
 def test_nothing_is_announced_from_inside_the_write(one_database: Shop):
-    """`billing` writes its invoice and its outbox row together and publishes nothing. Until
-    the relay runs, no other context has heard of the invoice — which is exactly the window a
-    crash would otherwise lose."""
+    """`billing` writes its invoice and its fact together and publishes nothing from inside the
+    write: its repository hands the fact on once the commit happened. Until the consumers take it
+    from the broker, no other context has heard of the invoice."""
     stocked(one_database)
     placed = an_order(one_database)
 
@@ -252,8 +252,8 @@ def test_a_synchronous_queue_delivers_depth_first_and_the_order_shows_it(
 
     A projection that folds by order needs the facts in the order they happened. Two ways to
     get it, both used in this package: **write the fact down where it happened**, as `orders`
-    does, or **go through an outbox**, as `billing` does — a relay delivers what is pending, in
-    `id` order, outside anybody's call stack.
+    does, or **publish once the write committed**, as `billing` does — its repository hands on
+    what it recorded, in the order it was recorded, outside anybody's call stack.
     """
     stocked(one_database)
     placed = an_order(one_database)

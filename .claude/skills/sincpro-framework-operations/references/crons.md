@@ -86,7 +86,7 @@ process. The service's requests and its crons share no thread, pool or crash.
 CronGateway([cron_payments, cron_billing], runs=shared_runs).run()   # blocks on the clock
 ```
 
-The same gateway is a loop. A deployment that also polls a table or a relay hosts it in
+The same gateway is a loop. A deployment that also polls a table hosts it in
 `Process` (`sincpro_framework.entrypoints.entrypoint.workers`, `docs/process/README.md`):
 
 ```python
@@ -150,27 +150,9 @@ record of runs and alerts go on) with the schedule given there; `crons.without(R
 one off. Replacing or switching off a cron the registry does not have only logs a warning; both
 raise `BusAlreadyBuilt` once the registry is built.
 
-## Driving an event relay
-
-```python
-relay = crons.relay_deliverable_events(
-  repository=repository,
-  source=BillingEvent,
-  to=publisher,
-  every=timedelta(seconds=2),
-)
-```
-
-Or register an existing `EventRelay` with `crons.run_relay(relay, every=...)`. Both schedule
-`run_once`; the relay itself has no timer. A `Poll` that calls `relay.run_once` is the same
-pass on an interval, inside a `Process` with other loops. Register a cron relay before
-building the gateway.
-This does not create an event table or make an event deliverable: map the context base and
-use `DeliverableEventMixin` first (`sincpro-framework-domain-events`).
-
-Replica exclusion for rows depends on database lock capabilities, independently of the cron's
-shared `CronRuns`. Delivery remains at least once. Strict ordering across backoff intervals
-and replicas is not currently guaranteed by `EventRelay`.
+Delivering events needs no cron: a repository's `publish_on_commit=` publishes after the commit,
+and `Publisher(queue, forwarding=True)` retries a broker that is down on a thread of its own
+(`sincpro-framework-domain-events`).
 
 ## Testing
 

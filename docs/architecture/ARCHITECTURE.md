@@ -41,7 +41,7 @@ The previous text of this page described version 2.4.1. Its history is in git.
 | `error_handler.py` | The error chains of the three layers | [error handlers](../core/error-handlers.md), [exceptions](../core/exceptions.md) |
 | `observability/` | The signals sent to external backends: traces, errors, logs, metrics | [observability](../observability/README.md) |
 | `ddd/`, `data_layer/orm` | The domain vocabulary — entities, `Criteria`, relations, `DomainEvent` — and the stores that persist it | [persistence](../persistence/README.md) |
-| `event_driven/` | Delivering events: `Publisher`, queues, `Subscriber`, the relay | [events](../events/README.md) |
+| `event_driven/` | Delivering events: `Publisher`, `Forwarding`, queues, `Subscriber` | [events](../events/README.md) |
 | `entrypoints/` | Everything that starts the application layer from outside: the wires, the clock, workers | [entrypoints](../entrypoints/README.md), [cron](../cron/README.md), [process](../process/README.md) |
 | `remote_execution/` | A bounded context executed by another service that runs the same code | [entrypoints](../entrypoints/README.md) |
 | `auth/` | Permissions declared on use cases, the provider contract | [auth](../auth/README.md) |
