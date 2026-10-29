@@ -3,6 +3,7 @@ repository like any other, kept with the change that made them true, published o
 and stamped with how their delivery went, and — for an entity whose state is its events — rebuilt
 and guarded by version."""
 
+import threading
 import time
 import warnings
 from dataclasses import dataclass
@@ -31,7 +32,12 @@ from sincpro_framework.ddd import (
 from sincpro_framework.ddd.criteria import (
     Sort,
 )
-from sincpro_framework.event_driven import Forwarding, Publisher
+from sincpro_framework.event_driven import (
+    Forwarded,
+    Forwarding,
+    ForwardingHook,
+    Publisher,
+)
 
 from .engines import fresh
 
@@ -264,11 +270,21 @@ def test_a_forwarded_event_s_row_is_stamped_once_the_broker_took_it(engine_url):
         pytest.skip(
             "an in-memory SQLite is another empty database on the forwarding's thread"
         )
+
+    class FirstFailure(ForwardingHook):
+        def __init__(self) -> None:
+            self.seen = threading.Event()
+
+        def after_failure(self, message: DomainEvent, forwarded: Forwarded) -> None:
+            self.seen.set()
+
     broker = Broker()
     broker.down = True
+    failed = FirstFailure()
     quickly = timedelta(milliseconds=5)
     publisher = Publisher(
-        BrokerQueue(broker), forwarding=Forwarding(wait=quickly, longest_wait=quickly)
+        BrokerQueue(broker),
+        forwarding=Forwarding(hooks=[failed], wait=quickly, longest_wait=quickly),
     )
     repository = Repository(fresh(engine_url, kept.metadata), publish_on_commit=publisher)
     bill = Bill(total=100)
@@ -276,6 +292,7 @@ def test_a_forwarded_event_s_row_is_stamped_once_the_broker_took_it(engine_url):
 
     repository.save(bill)
     assert repository.fetch_all(Paid).items[0].delivered_at is None
+    assert failed.seen.wait(5)
     broker.down = False
 
     deadline = time.monotonic() + 5

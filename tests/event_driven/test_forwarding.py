@@ -67,11 +67,13 @@ def forwarding(*hooks: ForwardingHook) -> Forwarding:
 def test_publish_returns_while_the_broker_is_down_and_everything_goes_in_order_once_it_is_back():
     broker = Broker()
     broker.down = True
-    publisher = Publisher(broker, forwarding=forwarding())
+    heard = Heard()
+    publisher = Publisher(broker, forwarding=forwarding(heard))
 
     pending = [publisher.publish(TicketClosed(ticket=f"T-{n}")) for n in range(3)]
     assert not any(one.done() for one in pending)
 
+    assert heard.first_failure.wait(WAIT)
     broker.down = False
     answered = [one.result(timeout=WAIT) for one in pending]
 
