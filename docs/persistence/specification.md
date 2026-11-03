@@ -171,17 +171,19 @@ class Invoice(Entity):
         visible_when=lambda i: When(
             Condition.on(i.payment, Operator.EQ, Payment.CARD), i.card_reference
         ),
+        totals=lambda i: {i.amount: "sum"},
     )
 ```
 
 | `FieldMeta` | A form | Left alone |
 |---|---|---|
-| `readonly` | shows the field read-only | the fields the framework writes: `id`, `created_at`, `updated_at`, `version`, a mixin's |
+| `readonly` | shows the field read-only | the fields the framework writes or computes: `id`, `created_at`, `updated_at`, `version`, a mixin's, a `computed` one, one a `Derive` computes |
 | `required` | asks for it | a field with no default that cannot be `None` |
 | `default` | starts a new record with it | the dataclass default, as JSON; nothing for a `default_factory` |
 | `readonly_when` | shows it read-only while the condition holds over the record | — |
 | `required_when` | asks for it while the condition holds | — |
 | `visible_when` | shows it only while the condition holds | always shown |
+| `total` | adds it up at the foot of a list with that function — one of the field's `aggregates` | nothing is added up |
 
 A condition is the one a criteria carries, written through the entity:
 `Condition.on(i.state, Operator.NE, InvoiceState.DRAFT)` is published as

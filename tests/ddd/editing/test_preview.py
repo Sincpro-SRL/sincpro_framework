@@ -13,6 +13,7 @@ from enum import StrEnum
 import pytest
 
 from sincpro_framework import UseFramework, exceptions
+from sincpro_framework.common.failures import problem_of
 from sincpro_framework.data_layer.repositories import MemoryNumbering, MemoryRepository
 from sincpro_framework.ddd import (
     ArchivableMixin,
@@ -285,6 +286,54 @@ def test_a_line_typed_in_a_new_form_brings_back_the_totals():
 
     assert answer.values == {"subtotal": "29.70", "total": "29.70"}
     assert repository.count(Invoice).value == 0
+
+
+def test_a_wrong_cell_of_a_line_is_answered_pointing_at_that_line_and_that_cell():
+    bus, _ = billing()
+    lines = [
+        {"product": "cuaderno", "qty": 10, "price": "12.50"},
+        {"product": "lapiz", "qty": "dos", "price": "2"},
+    ]
+
+    with pytest.raises(ddd_exceptions.InvalidValue) as refused:
+        bus(
+            QueryPreviewInvoice(values={"partner_id": "p1", "lines": lines}),
+            ResponsePreviewInvoice,
+        )
+
+    [error] = problem_of(refused.value).errors
+    assert error.pointer == "#/values/lines/1/qty"
+    assert "InvoiceLine.qty cannot take 'dos'" in error.detail
+
+
+def test_a_line_with_a_field_it_does_not_have_points_at_that_line():
+    invoice = Invoice(partner_id="p1")
+
+    with pytest.raises(ddd_exceptions.InvalidValue) as refused:
+        assign(
+            invoice, {"lines": [{"product": "x", "qty": 1, "price": "1", "colour": "red"}]}
+        )
+
+    assert problem_of(refused.value).errors[0].pointer == "#/values/lines/0/colour"
+
+
+def test_each_line_comes_back_with_how_a_form_shows_its_fields():
+    bus, _ = billing()
+    lines = [
+        {"product": "cuaderno", "qty": 10, "price": "12.50"},
+        {"product": "lapiz", "qty": 4, "price": "2"},
+    ]
+
+    answer = bus(
+        QueryPreviewInvoice(values={"partner_id": "p1", "lines": lines}, changed=["lines"]),
+        ResponsePreviewInvoice,
+    )
+
+    assert [sorted(line) for line in answer.fields["lines"].items] == [
+        ["price", "product", "qty"],
+        ["price", "product", "qty"],
+    ]
+    assert answer.fields["discount"].items == []
 
 
 def test_editing_a_stored_invoice_answers_what_moved_and_leaves_the_stored_one_alone():

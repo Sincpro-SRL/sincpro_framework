@@ -72,21 +72,23 @@ def assign(record: Any, values: Mapping[str, Any], adopt: bool = False) -> tuple
        says so.
     Final: the fields whose value changed, in the order the values came.
 
-    Each refusal of the values is a `ClientError`: they came from whoever sent the form, and
-    every wire answers it as a request to fix. Relations the code never read are the code's
+    Each refusal of the values is an `InvalidValue` — a `ClientError`: they came from whoever
+    sent the form, and every wire answers it as a request to fix — carrying where the value is
+    in the form, a line's cell included (`lines.3.quantity` → `#/values/lines/3/quantity`). Relations the code never read are the code's
     (`ProgrammingError`).
     """
     owner = type(record)
     annotations = annotations_of(owner)
     unknown = [name for name in values if name not in annotations]
     if unknown:
-        raise exceptions.ClientError(
-            f"{owner.__name__} has no field {', '.join(unknown)} to assign"
+        raise exceptions.InvalidValue(
+            f"{owner.__name__} has no field {', '.join(unknown)} to assign", (unknown[0],)
         )
     written = sorted(set(values) & framework_fields(owner))
     if written:
-        raise exceptions.ClientError(
-            f"{owner.__name__}.{', '.join(written)} is written by the framework, not assigned"
+        raise exceptions.InvalidValue(
+            f"{owner.__name__}.{', '.join(written)} is written by the framework, not assigned",
+            (written[0],),
         )
     changed: list[str] = []
     for name, value in values.items():
@@ -217,22 +219,31 @@ def _read(record: Any, name: str, annotation: Any, value: Any, adopt: bool) -> A
         kind = members[0]
         held = _held_by_identity(record, name, kind, value)
         tied = _tied_to(record, name, kind)
-        return [
-            (
-                _edited_or_built(kind, {**one, **tied}, held, adopt)
-                if isinstance(one, Mapping)
-                else one
-            )
-            for one in value
-        ]
+        lines: list[Any] = []
+        for index, one in enumerate(value):
+            try:
+                lines.append(
+                    _edited_or_built(kind, {**one, **tied}, held, adopt)
+                    if isinstance(one, Mapping)
+                    else one
+                )
+            except exceptions.InvalidValue as error:
+                raise exceptions.InvalidValue(
+                    str(error), (name, index, *error.path)
+                ) from error
+        return lines
     if _is_record_class(base) and isinstance(value, Mapping):
         held = _held_by_identity(record, name, base, [value])
-        return _edited_or_built(base, value, held, adopt)
+        try:
+            return _edited_or_built(base, value, held, adopt)
+        except exceptions.InvalidValue as error:
+            raise exceptions.InvalidValue(str(error), (name, *error.path)) from error
     try:
         return adapter_of(annotation).validate_python(value)
     except ValidationError as error:
-        raise exceptions.ClientError(
-            f"{owner.__name__}.{name} cannot take {value!r}: {error.errors()[0]['msg']}"
+        raise exceptions.InvalidValue(
+            f"{owner.__name__}.{name} cannot take {value!r}: {error.errors()[0]['msg']}",
+            (name,),
         ) from error
 
 
@@ -246,13 +257,14 @@ def _built(kind: type, values: Mapping[str, Any], adopt: bool) -> Any:
     annotations = annotations_of(kind)
     unknown = [name for name in values if name not in annotations]
     if unknown:
-        raise exceptions.ClientError(
-            f"{kind.__name__} has no field {', '.join(unknown)} to assign"
+        raise exceptions.InvalidValue(
+            f"{kind.__name__} has no field {', '.join(unknown)} to assign", (unknown[0],)
         )
     written = sorted(set(values) & framework_fields(kind))
     if written:
-        raise exceptions.ClientError(
-            f"{kind.__name__}.{', '.join(written)} is written by the framework, not assigned"
+        raise exceptions.InvalidValue(
+            f"{kind.__name__}.{', '.join(written)} is written by the framework, not assigned",
+            (written[0],),
         )
     read = {
         name: _plain(kind, name, annotations[name], one, adopt)
@@ -261,9 +273,9 @@ def _built(kind: type, values: Mapping[str, Any], adopt: bool) -> Any:
     try:
         built = kind(**read)
     except TypeError as error:
-        raise exceptions.ClientError(
-            f"{kind.__name__} cannot be built from {dict(values)!r}: {error}"
-        )
+        raise exceptions.InvalidValue(
+            f"{kind.__name__} cannot be built from {dict(values)!r}: {error}", ()
+        ) from error
     if adopted:
         setattr(built, identity, adopted)
     return built
@@ -280,9 +292,10 @@ def _edited_or_built(
         if found is None and adopt:
             return _built(kind, values, adopt)
         if found is None:
-            raise exceptions.ClientError(
+            raise exceptions.InvalidValue(
                 f"{kind.__name__} {values[identity]} is not held here: an edited record is one "
-                "the field already holds, and a new one comes without its identity"
+                "the field already holds, and a new one comes without its identity",
+                (identity,),
             )
         assign(found, {name: one for name, one in values.items() if name != identity}, adopt)
         return found
@@ -295,17 +308,28 @@ def _plain(kind: type, name: str, annotation: Any, value: Any, adopt: bool) -> A
     members = get_args(base)
     if get_origin(base) is list and members and _is_record_class(members[0]):
         if isinstance(value, list):
-            return [
-                _built(members[0], one, adopt) if isinstance(one, Mapping) else one
-                for one in value
-            ]
+            lines: list[Any] = []
+            for index, one in enumerate(value):
+                try:
+                    lines.append(
+                        _built(members[0], one, adopt) if isinstance(one, Mapping) else one
+                    )
+                except exceptions.InvalidValue as error:
+                    raise exceptions.InvalidValue(
+                        str(error), (name, index, *error.path)
+                    ) from error
+            return lines
     if _is_record_class(base) and isinstance(value, Mapping):
-        return _built(base, value, adopt)
+        try:
+            return _built(base, value, adopt)
+        except exceptions.InvalidValue as error:
+            raise exceptions.InvalidValue(str(error), (name, *error.path)) from error
     try:
         return adapter_of(annotation).validate_python(value)
     except ValidationError as error:
-        raise exceptions.ClientError(
-            f"{kind.__name__}.{name} cannot take {value!r}: {error.errors()[0]['msg']}"
+        raise exceptions.InvalidValue(
+            f"{kind.__name__}.{name} cannot take {value!r}: {error.errors()[0]['msg']}",
+            (name,),
         ) from error
 
 

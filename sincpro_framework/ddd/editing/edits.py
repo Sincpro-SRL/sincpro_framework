@@ -124,8 +124,9 @@ class EntityEdits[T](EntityReads[T]):
 
     def change(self, record: Any, dto: Any, /) -> None:
         """What the edit does to the record: the form's values put on it, each read as its field's
-        type. A command of the project's changes it with the domain's methods instead."""
-        assign(record, dto.values)
+        type, a many-to-many named by ids as the records they name (`referenced`). A command of
+        the project's changes it with the domain's methods instead."""
+        assign(record, self.referenced(type(record), dto.values))
 
     def answered(
         self,
@@ -207,7 +208,7 @@ class EntityEdits[T](EntityReads[T]):
                 dto.values,
             )
             if existing is not None:
-                assign(record, existing.values, True)
+                assign(record, self.referenced(type(record), existing.values), True)
             self.change(record, dto)
             recompute(record, dto.changed)
             pull = getattr(record, "pull_events", None)
@@ -286,7 +287,7 @@ class EntityEdits[T](EntityReads[T]):
                 dto.values,
             )
         if existing is not None:
-            assign(record, existing.values, True)
+            assign(record, self.referenced(type(record), existing.values), True)
         self.change(record, dto)
         self.reads_from().save(record)
         if existing is not None:

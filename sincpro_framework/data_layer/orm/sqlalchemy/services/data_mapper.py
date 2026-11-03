@@ -184,10 +184,24 @@ class RelatedAttribute:
             return None
         return key_pair(identity_name(type(record)), self.relation, True)
 
+    def named_by_id(self) -> bool:
+        """Whether a form names this relation's records by id: a many-to-many, whose pairs the
+        root writes and whose records it never does.
+
+            Ticket.labels    →  True     the pairs live in the table in between
+            Sale.lines       →  False    the lines are parts, sent whole
+            Run.dataset      →  False
+
+        What `EntityReads.referenced` asks before `assign`: the ids a form sends are read as the
+        records they name.
+        """
+        return self.relation.kind == "many_to_many"
+
     def __set__(self, record: Any, value: Any) -> None:
         """An assignment replaces the set. Context: inside a unit of work, a stored record whose
         relation was not read whole reads it first — as Rails' `collection=` does — so what it
-        replaced is known; anywhere else that is not possible, and the assignment is blind."""
+        replaced is known, the parts it owns and the pairs of a many-to-many alike; anywhere
+        else that is not possible, and the assignment is blind."""
         state = sqlalchemy.inspect(record, raiseerr=False)
         stored = state is not None and state.has_identity
         relations = HeldRelations(record)
@@ -196,7 +210,7 @@ class RelatedAttribute:
             stored
             and before is not Held.WHOLE
             and before is not Held.ASSIGNED
-            and self._written_by_root(record)
+            and (self._written_by_root(record) or self.named_by_id())
         ):
             session = object_session(record)
             repository = session.info.get(REPOSITORY) if session is not None else None

@@ -51,8 +51,10 @@ billing.store_context_in(KeyValueContexts(RedisKeyValue(redis)))   # where draft
 | `QueryListInvoices(criteria=…, drafts=True)` | the caller's drafts, by the same criteria | a page of them |
 
 **The form sends the record whole**, as it holds it: every field it shows, as JSON — the lines
-included, each line it got back named by its `id`, a new line without one. `changed` names what
-moved, so only the derivations it reaches run; none runs them all.
+included, each line it got back named by its `id`, a new line without one; a many-to-many as the
+ids of the records it references (`{"labels": ["0192…"]}`), read before they are put on the
+record and stored as the pairs of the table in between ([relations](relations.md#8-an-aggregate-is-saved-whole)).
+`changed` names what moved, so only the derivations it reaches run; none runs them all.
 
 **The id is the client's**: a new record is created under the `id` the client names — a UUID v7 it
 mints — or one minted for it when it names none, answered back. The draft and the stored record
@@ -82,8 +84,15 @@ class InvoiceForms(EntityEdits[Invoice]):
 ## What the form sent wrong
 
 A field the record does not have, a value its type cannot read, a field the framework writes, a
-line named by an id the record does not hold: the request is wrong, and `assign` refuses it with a
-`ClientError` naming the field — 400 on every wire, its message told to the caller.
+line named by an id the record does not hold: the request is wrong, and `assign` refuses it with
+`InvalidValue` — a `ClientError` — naming the field, 422 on every wire, its message told to the
+caller. It carries where the value is, a line's cell included, so the `Problem` points at it and a
+screen marks that cell:
+
+```json
+{"kind": "invalid", "reason": "INVALID_VALUE", "status": 422,
+ "errors": [{"pointer": "#/values/lines/1/qty", "detail": "InvoiceLine.qty cannot take 'dos': …"}]}
+```
 
 ## Two tabs, and someone who saved meanwhile
 

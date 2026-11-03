@@ -90,7 +90,8 @@ changed = assign(invoice, {"discount": "12.50", "lines": [{"product": "x", "qty"
 ```
 
 Each value is read as its field's type, so the JSON a form sends becomes the record's own
-values. A name that is not a field, or a value the type cannot read, is refused naming it. A
+values. A name that is not a field, or a value the type cannot read, is refused naming it with
+`InvalidValue`, whose `path` says where it is — `("lines", 1, "qty")` for a line's cell. A
 form hint refuses nothing: `assign(invoice, {"number": "F-9"})` sets a field the form shows
 read-only — a hint is the client's default, never a rule. A hand-written edit Command uses it
 the same way: `assign`, then `save`.
@@ -141,7 +142,7 @@ bus(QueryPreviewInvoice(id=invoice_id, values={"discount": "50"}, changed=["disc
 | `ResponsePreview` | What it holds |
 |---|---|
 | `values` | every value that differs from what the form sent, derived fields included, as JSON — `{"total": "83.00"}` |
-| `fields` | each field's form hints evaluated over the new record: `{"card_reference": {"readonly": false, "required": true, "visible": true}}` |
+| `fields` | each field's form hints evaluated over the new record: `{"card_reference": {"readonly": false, "required": true, "visible": true}}`; a list of records carries each one's own in `items`, in order: `{"lines": {"items": [{"qty": {…}, "price": {…}}, …]}}` |
 | `advice` | what the domain said through `advise(...)`, field by field |
 
 1. With `id` (the record's `DEFAULT_GET_ID`), the preview starts from the stored record,

@@ -19,11 +19,14 @@ from sincpro_framework.data_layer.repositories import MemoryRepository
 from sincpro_framework.ddd import (
     All,
     Condition,
+    Derivations,
+    Derive,
     EntityReads,
     Get,
     Presentation,
     ResponseRecord,
     When,
+    computed,
 )
 from sincpro_framework.ddd import exceptions as ddd_exceptions
 from sincpro_framework.ddd import presentation_of
@@ -37,6 +40,7 @@ from sincpro_framework.ddd.criteria.domain.expression import (
 )
 from sincpro_framework.ddd.entity import Entity
 from sincpro_framework.ddd.entity.entity_meta import Meta, describe_class
+from sincpro_framework.ddd.reads.reads import states_of
 from sincpro_framework.ddd.repositories import Hook, Hooks
 
 
@@ -145,6 +149,96 @@ def test_the_defaults_a_new_invoice_form_starts_with():
         "amount": "0",
     }
     assert fields["notes"]["default"] is None
+
+
+@dataclass
+class SaleOrder(Entity):
+    customer_id: str
+    customer_name: str
+    total: Decimal = Decimal("0")
+    paid: Decimal = Decimal("0")
+    balance: Decimal = computed(
+        sql=lambda t: t.total - t.paid,
+        python=lambda self: self.total - self.paid,
+        default=Decimal("0"),
+    )
+
+    def customer_name_of(self) -> str:
+        return f"customer {self.customer_id}"
+
+    derivations = Derivations["SaleOrder"](
+        lambda o: Derive(
+            o.customer_name, depends=o.customer_id, by=SaleOrder.customer_name_of
+        )
+    )
+
+
+def test_what_the_framework_computes_is_published_read_only_and_never_asked_for():
+    fields = as_the_client_reads(describe_class(SaleOrder, "id"))
+    states = states_of(SaleOrder(customer_id="c1", customer_name="customer c1"))
+
+    computed_by_the_framework = ["customer_name", "balance"]
+    assert all(fields[name]["readonly"] for name in computed_by_the_framework)
+    assert all(states[name].readonly for name in computed_by_the_framework)
+    assert not fields["customer_name"]["required"]
+    assert not fields["customer_id"]["readonly"] and not states["customer_id"].readonly
+
+
+@dataclass
+class StockMove(Entity):
+    product: str
+    quantity: int = 0
+    unit_cost: Decimal = Decimal("0")
+    amount: Decimal = Decimal("0")
+
+    presentation = Presentation["StockMove"](
+        totals=lambda m: {m.quantity: "sum", m.amount: "sum"}
+    )
+
+
+def test_a_list_adds_up_what_the_entity_says_and_nothing_else():
+    fields = as_the_client_reads(describe_class(StockMove, "id"))
+
+    assert {name: one["total"] for name, one in fields.items() if one["total"]} == {
+        "quantity": "sum",
+        "amount": "sum",
+    }
+    assert fields["unit_cost"]["total"] is None
+    assert "sum" in fields["unit_cost"]["aggregates"]
+
+
+def test_nothing_is_added_up_when_the_entity_declares_nothing():
+    fields = as_the_client_reads(describe_class(Partner, "id"))
+
+    assert all(one["total"] is None for one in fields.values())
+
+
+def test_a_total_the_field_cannot_be_folded_with_is_refused_naming_what_it_takes():
+    @dataclass
+    class Shipment(Entity):
+        carrier: str = ""
+        weight: Decimal = Decimal("0")
+
+        presentation = Presentation["Shipment"](
+            totals=lambda s: {s.carrier: "sum", s.weight: "avg"}
+        )
+
+    with pytest.raises(
+        exceptions.ProgrammingError,
+        match="Shipment.presentation adds up carrier by sum; a text adds up by min, max",
+    ):
+        describe_class(Shipment, "id")
+
+
+def test_totals_are_written_as_a_mapping_of_field_to_function():
+    @dataclass
+    class Shipment(Entity):
+        weight: Decimal = Decimal("0")
+
+        presentation = Presentation["Shipment"](totals=lambda s: [s.weight])  # type: ignore[arg-type]
+
+    with pytest.raises(exceptions.ProgrammingError, match='lambda i: {i.amount: "sum"}'):
+        presentation_of(Shipment)
 
 
 # ---------------------------------------------------------------------------------------------

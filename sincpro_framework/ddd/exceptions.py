@@ -6,6 +6,7 @@
       TransactionConflict   the transaction lost to another one              (conflict, 409)
       ConstraintViolation   the database refused the write by a rule of its own
     InvalidCriteria       the caller asked what cannot be answered          (invalid, 400)
+    InvalidValue          a form's value its field cannot take, and where   (invalid, 422)
     CurrencyMismatch      two currencies added, subtracted or compared      (invalid, 422)
     AggregateNotFound     the record the caller named is not there          (not found, 404)
     TimedOut              the engine stopped at a bound it was given        (unavailable, 503)
@@ -15,7 +16,7 @@ A stale version and a lost transaction are the ones worth running again. A proje
 declares another kind with `failure_kind = FailureKind...` on its class.
 """
 
-from sincpro_framework.common.failures.problem import NextStep
+from sincpro_framework.common.failures.problem import FieldError, NextStep, Problem, pointer
 from sincpro_framework.context import DraftConflict
 from sincpro_framework.exceptions import (
     ClientError,
@@ -37,6 +38,32 @@ class DomainError(FrameworkError):
 class InvalidCriteria(ClientError):
     """What was asked cannot be answered: an ordering that would lose rows, a cursor from
     another ordering, a field that is not there."""
+
+
+class InvalidValue(ClientError):
+    """A value of a form its field cannot take, with where it is in the form's `values` — a line
+    of an invoice included — so the answer points at it and a screen marks that cell.
+
+        InvalidValue("InvoiceLine.quantity cannot take 'two': …", ("lines", 3, "quantity"))
+        ->  Problem(errors=[FieldError(pointer="#/values/lines/3/quantity", detail="…")])
+
+    `path` is empty when the value is wrong as a whole — a line that cannot be built from what
+    came — and then the pointer is the line itself.
+    """
+
+    def __init__(self, message: str, path: tuple[str | int, ...]) -> None:
+        super().__init__(message)
+        self.path = path
+
+    def refine_problem(self, problem: Problem) -> Problem:
+        """The problem with the value it points at: `#/values/<path>`."""
+        return problem.model_copy(
+            update={
+                "errors": [
+                    FieldError(pointer=pointer(("values", *self.path)), detail=str(self))
+                ]
+            }
+        )
 
 
 class StaleAggregate(DomainError):
