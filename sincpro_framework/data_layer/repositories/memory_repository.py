@@ -61,6 +61,7 @@ from sincpro_framework.ddd.criteria import (
     Grouping,
     GroupingLevel,
     Measure,
+    MeasureFunction,
     Node,
     Operator,
     Resolution,
@@ -132,25 +133,25 @@ def _percentile(values: list[Any], fraction: float) -> Any:
     return ordered[below] + (ordered[above] - ordered[below]) * reach
 
 
-MEASURES: dict[str, Callable[..., Any]] = {
-    "count": lambda values: len(values),
-    "count_distinct": lambda values: len(set(values)),
-    "sum": lambda values: sum(values),
-    "min": lambda values: min(values, default=None),
-    "max": lambda values: max(values, default=None),
-    "avg": lambda values: (sum(values) / len(values)) if values else None,
-    "percentile": _percentile,
-    "median": lambda values: _percentile(values, 0.5),
-    "bool_and": lambda values: all(values) if values else None,
-    "bool_or": lambda values: any(values) if values else None,
+MEASURES: dict[MeasureFunction, Callable[..., Any]] = {
+    MeasureFunction.COUNT: lambda values: len(values),
+    MeasureFunction.COUNT_DISTINCT: lambda values: len(set(values)),
+    MeasureFunction.SUM: lambda values: sum(values),
+    MeasureFunction.MIN: lambda values: min(values, default=None),
+    MeasureFunction.MAX: lambda values: max(values, default=None),
+    MeasureFunction.AVG: lambda values: (sum(values) / len(values)) if values else None,
+    MeasureFunction.PERCENTILE: _percentile,
+    MeasureFunction.MEDIAN: lambda values: _percentile(values, 0.5),
+    MeasureFunction.BOOL_AND: lambda values: all(values) if values else None,
+    MeasureFunction.BOOL_OR: lambda values: any(values) if values else None,
 }
 
 
 def _measure_of(values: list[Any], measure: Measure) -> Any:
     """One measure over the values a group holds. The only place that knows a percentile takes
     its fraction and every other function takes nothing."""
-    if measure.function == "percentile":
-        return MEASURES["percentile"](values, measure.argument)
+    if measure.function is MeasureFunction.PERCENTILE:
+        return MEASURES[MeasureFunction.PERCENTILE](values, measure.argument)
     return MEASURES[measure.function](values)
 
 

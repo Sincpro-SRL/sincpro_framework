@@ -127,6 +127,24 @@ class TaxAuthorityDown(exceptions.ServiceUnavailableError):
     pass
 ```
 
+**A value the caller sent wrong, pointed at.** `InvalidValue` says where the value is, so the
+`Problem` carries a pointer and a screen marks that field — or that cell of a line. It is what
+`assign` raises for a form's values, and a project's own rule raises it the same way:
+
+```python
+from sincpro_framework.ddd import exceptions as ddd_exceptions
+
+raise ddd_exceptions.InvalidValue("the quantity exceeds the stock", ("lines", 2, "qty"))
+# errors=[{"pointer": "#/values/lines/2/qty", "detail": "the quantity exceeds the stock"}]
+
+raise ddd_exceptions.InvalidValue("not a valid tax id", ("tax_id",), field="customer")
+# errors=[{"pointer": "#/customer/tax_id", …}] — the field of its own request
+```
+
+`field` is the request's field that carries the record — `values` by default, as in an `Edit` and
+a `Preview`. `error.within("lines", 2)` is the same refusal seen from the record that holds the
+line.
+
 ## What the framework raises
 
 A subclass exists only when someone catches it by name, when it carries data, or when it changes
@@ -135,7 +153,7 @@ what to do; anything else is its base with a clear message.
 | Base | Subclasses | Kind |
 |---|---|---|
 | `ProgrammingError` | `DTOAlreadyRegistered`, `DependencyAlreadyRegistered`, `DependencyNotRegistered`, `UnknownDTOToExecute`, `BusAlreadyBuilt`, `SincproFrameworkNotBuilt`, `ContextRequired` (`missing`), `BusAlreadyRegistered`, `BusNotRegistered`, `RelationNotResolved`, `MigrationRefused`, `InvalidAddress` | internal |
-| `ClientError` | `InvalidCriteria`, `DTODoesNotFit` (`fields`), `UseCaseRefused`, `InvalidValue` (`path`) — a form's value `assign` cannot take | invalid |
+| `ClientError` | `InvalidCriteria`, `DTODoesNotFit` (`fields`), `UseCaseRefused`, `InvalidValue` (`path`, `field`) — a value the caller sent that its field cannot take | invalid |
 | | `DraftConflict` (`current`) | conflict |
 | | `AggregateNotFound` | not_found |
 | | `AuthError` → `Unauthenticated`, `PermissionDenied` | unauthenticated, permission_denied |

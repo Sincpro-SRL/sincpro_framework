@@ -327,8 +327,23 @@ side's `Meta` inside either of the first two and it travels as the relation's `d
 writes nothing special: a Feature that takes a `Query` and answers with `ResponsePaginatedQuery.of`.
 
 **A new database kind** (say, a polymorphic key, or a relation through two tables) is a new
-`kind` on the adapter's `Relation` and a new branch in `relation_resolver._resolve`, reusing
-`_partitioned` and `_grouped`. Preserve the invariant: one statement for the whole page.
+member of `RelationKind`, a constructor on the adapter's `Relation` and a new branch in
+`relation_resolver._resolve`, reusing `_partitioned` and `_grouped`. Preserve the invariant: one
+statement for the whole page. A kind is never compared as text: `relation.kind is
+RelationKind.MANY_TO_MANY`.
+
+**Another store that manages relations** puts a `RelationAttribute` on the entity's class for
+each one — the contract the vocabulary asks, every answer given without reading anything:
+
+| Method | Who asks | What it answers |
+|---|---|---|
+| `joined_by(record)` | `assign`, building a line a form sent without its key | `("id", "sale_id")` when a save of `record` writes the relation, else `None` |
+| `holds_whole(record)` | `recompute`, before a total over the lines | whether the relation was read whole or assigned over a whole reading |
+| `held_in_part(record)` | the warning of a total a save skipped | `"cut"`, `"blind"` or `""` |
+| `named_by_id()` | `EntityReads.referenced`, `states_of` | `True` for a many-to-many: a form names its records by id |
+
+`relation_attribute(Entity, "lines")` finds it, `None` for a plain field. A store with none —
+`MemoryRepository` — holds its relations as plain fields: whole, tied by nobody, named by nobody.
 
 **A new transport for the same idea** in another backend reuses everything in
 `ddd/entity/relations.py`: `Relation`, `Resolver`, `resolve_elsewhere`, `cut`, `limit_of`. Only the

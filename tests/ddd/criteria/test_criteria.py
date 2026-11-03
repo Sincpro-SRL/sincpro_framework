@@ -11,14 +11,15 @@ from decimal import Decimal
 import pytest
 
 from sincpro_framework.ddd import exceptions
-from sincpro_framework.ddd.criteria import Grain, Measure
+from sincpro_framework.ddd.criteria import Grain, Measure, MeasureFunction
 
 
 def test_a_fold_only_takes_a_known_aggregate():
     """The function name reaches SQL: anything outside the closed list is refused here."""
-    assert Measure(function="sum", field="row_count").function == "sum"
+    assert Measure(function=MeasureFunction.SUM, field="row_count").function == "sum"
     with pytest.raises(exceptions.InvalidCriteria, match="not a measure"):
-        Measure(function="pg_sleep", field="row_count")
+        # Text from outside, as a caller's JSON sends it: what the closed list refuses.
+        Measure(function="pg_sleep", field="row_count")  # type: ignore[arg-type]
 
 
 from sincpro_framework import ddd
@@ -169,7 +170,9 @@ def test_the_grouping_declares_its_levels_and_its_folds():
         GroupingLevel(field="produced_by"),
         GroupingLevel(field="registered_at", grain=Grain.MONTH),
     )
-    assert asked.grouping.measures == {"rows": Measure(function="sum", field="row_count")}
+    assert asked.grouping.measures == {
+        "rows": Measure(function=MeasureFunction.SUM, field="row_count")
+    }
 
 
 def test_a_misspelt_level_or_fold_is_refused():

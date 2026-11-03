@@ -42,6 +42,7 @@ from sincpro_framework.ddd.criteria.domain.grouping import (
     Grouping,
     GroupingLevel,
     Measure,
+    MeasureFunction,
     Pivot,
     PivotCell,
 )
@@ -98,6 +99,7 @@ __all__ = [
     "Grouping",
     "GroupingLevel",
     "Measure",
+    "MeasureFunction",
     "Node",
     "Not",
     "Now",

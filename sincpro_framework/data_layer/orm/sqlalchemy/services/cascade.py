@@ -52,7 +52,7 @@ from sincpro_framework.data_layer.orm.sqlalchemy.services.model_introspection im
 )
 from sincpro_framework.data_layer.orm.sqlalchemy.services.upsert import unique_on
 from sincpro_framework.ddd.entity.entity_collection import identity_name, identity_of
-from sincpro_framework.ddd.entity.relations import key_pair
+from sincpro_framework.ddd.entity.relations import RelationKind, key_pair
 from sincpro_framework.sincpro_logger import logger
 
 WRITTEN = {Held.ASSIGNED: Held.WHOLE, Held.BLIND: Held.CUT}
@@ -228,7 +228,11 @@ def owned_by(model: type) -> list[Owned]:
     owned: list[Owned] = []
     for name, relation in mapping_registry.relations_of(model).items():
         declared = meta.fields.get(name)
-        to_many = declared is not None and declared.many and relation.kind == "foreign_key"
+        to_many = (
+            declared is not None
+            and declared.many
+            and relation.kind is RelationKind.FOREIGN_KEY
+        )
         if not to_many or getattr(relation, "owned", True) is False:
             continue
         here, there = key_pair(meta.identity, relation, many=True)
@@ -258,7 +262,7 @@ def linked_by(model: type) -> list[Linked]:
     for name, relation in mapping_registry.relations_of(model).items():
         through = getattr(relation, "through", None)
         related_key = getattr(relation, "related_key", None)
-        if relation.kind == "many_to_many" and through is not None and related_key:
+        if relation.kind is RelationKind.MANY_TO_MANY and through is not None and related_key:
             linked.append(Linked(name, through, relation.identified_by, related_key))
     return linked
 
@@ -357,6 +361,29 @@ def _refuse_a_child_removed_before(records: list[Any]) -> None:
             )
 
 
+def _refuse_a_reference_not_stored(plan: Plan, saved: set[int]) -> None:
+    """A many-to-many that references a record never stored is refused before any statement:
+    a pair points at a row, and a reference never writes the record it names — so the pair
+    would point at nothing, silently on an engine that does not check its foreign keys.
+
+        Ticket(labels=[Label(name="new")]); save(ticket)
+            ->  ProgrammingError: Ticket.labels references Label 0192…, which is not stored …
+        save([label, ticket])       ->  written: the label is part of this save
+
+    Context: a form never reaches here with one — the ids it sends are read from the store
+    (`EntityReads.referenced`); it is the domain building a reference by hand.
+    """
+    for record, name in plan.linked:
+        for one in HeldRelations(record).value(name) or ():
+            if getattr(one, "is_new", False) and id(one) not in saved:
+                raise exceptions.ProgrammingError(
+                    f"{type(record).__name__}.{name} references {type(one).__name__} "
+                    f"{identity_of(one)}, which is not stored: a many-to-many links stored "
+                    f"records — save the {type(one).__name__} first, or in the same call: "
+                    f"save([{type(one).__name__.lower()}, {type(record).__name__.lower()}])"
+                )
+
+
 def _paired(session: Session, plan: Plan, record: Any, linked: Linked, how: Held) -> bool:
     """The pairs one many-to-many of `record` inserts and deletes, put on the plan; whether it
     changes any.
@@ -420,7 +447,8 @@ def planned_save(session: Session, records: list[Any]) -> Plan:
             ->  Plan(writes=[invoice, l1], moved=[]): a new root has no version to raise
 
     1. Walk each root and, through every relation it writes, its children, depth first: the
-       roots are always written, a child only when it is new or changed.
+       roots are always written, a child only when it is new or changed; a many-to-many may
+       reference only stored records, or records of this same save.
        1.1 Each child gets the root's key on the field that holds it.
        1.2 A relation nobody read is skipped; a read one only saves what it holds; a blind
            assignment does the same and is logged.
@@ -490,6 +518,7 @@ def planned_save(session: Session, records: list[Any]) -> Plan:
     for one in records:
         visit(one, explicit=True, root=one)
     _refuse_a_child_removed_before(plan.writes)
+    _refuse_a_reference_not_stored(plan, seen)
 
     orphans: list[Any] = []
     for (owner, name), (owned, read_by_key) in settling.items():

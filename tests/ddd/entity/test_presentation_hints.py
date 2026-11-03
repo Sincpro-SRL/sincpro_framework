@@ -32,6 +32,7 @@ from sincpro_framework.ddd import exceptions as ddd_exceptions
 from sincpro_framework.ddd import presentation_of
 from sincpro_framework.ddd.criteria import (
     Evaluation,
+    MeasureFunction,
     Node,
     Operator,
 )
@@ -192,7 +193,7 @@ class StockMove(Entity):
     amount: Decimal = Decimal("0")
 
     presentation = Presentation["StockMove"](
-        totals=lambda m: {m.quantity: "sum", m.amount: "sum"}
+        totals=lambda m: {m.quantity: MeasureFunction.SUM, m.amount: MeasureFunction.SUM}
     )
 
 
@@ -237,7 +238,9 @@ def test_totals_are_written_as_a_mapping_of_field_to_function():
 
         presentation = Presentation["Shipment"](totals=lambda s: [s.weight])  # type: ignore[arg-type]
 
-    with pytest.raises(exceptions.ProgrammingError, match='lambda i: {i.amount: "sum"}'):
+    with pytest.raises(
+        exceptions.ProgrammingError, match="lambda i: {i.amount: MeasureFunction.SUM}"
+    ):
         presentation_of(Shipment)
 
 
@@ -530,3 +533,27 @@ def test_the_screen_gets_the_record_and_its_hints_in_one_answer():
         "operator": "=",
         "value": "card",
     }
+
+
+def test_a_total_that_is_no_measure_fails_when_the_class_is_read():
+    @dataclass
+    class Shipment(Entity):
+        weight: Decimal = Decimal("0")
+
+        presentation = Presentation["Shipment"](totals=lambda s: {s.weight: "total"})
+
+    with pytest.raises(exceptions.ProgrammingError, match="adds up weight by 'total'"):
+        presentation_of(Shipment)
+
+
+def test_a_percentile_is_no_total_it_needs_a_fraction():
+    @dataclass
+    class Shipment(Entity):
+        weight: Decimal = Decimal("0")
+
+        presentation = Presentation["Shipment"](
+            totals=lambda s: {s.weight: MeasureFunction.PERCENTILE}
+        )
+
+    with pytest.raises(exceptions.ProgrammingError, match="takes a fraction"):
+        presentation_of(Shipment)

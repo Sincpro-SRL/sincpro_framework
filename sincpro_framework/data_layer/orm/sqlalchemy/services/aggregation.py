@@ -20,6 +20,7 @@ from sincpro_framework.ddd.criteria import (
     Grouping,
     GroupingLevel,
     Measure,
+    MeasureFunction,
     PivotCell,
     Resolution,
 )
@@ -50,7 +51,7 @@ NATIVE_BOOLEAN_FOLDS = frozenset({"postgresql", "duckdb"})
 them» is a minimum of 1 and «any of them» a maximum of 1."""
 
 
-def _boolean_fold(function: str, column: Any, dialect: str) -> Any:
+def _boolean_fold(function: MeasureFunction, column: Any, dialect: str) -> Any:
     """`bool_and` / `bool_or` over a boolean column, in the dialect's own words.
 
     in      bool_and, Invoice.paid, "postgresql"   →  out  bool_and(invoice.paid)
@@ -58,7 +59,9 @@ def _boolean_fold(function: str, column: Any, dialect: str) -> Any:
     """
     if dialect in NATIVE_BOOLEAN_FOLDS:
         return getattr(func, function)(column)
-    return (func.min(column) if function == "bool_and" else func.max(column)) == 1
+    return (
+        func.min(column) if function is MeasureFunction.BOOL_AND else func.max(column)
+    ) == 1
 
 
 def measure_columns(
@@ -99,19 +102,19 @@ def measure_columns(
         meta.field(measure.field)
         column = sql_translator.column_attribute(model, measure.field)
 
-        if measure.function == "count_distinct":
+        if measure.function is MeasureFunction.COUNT_DISTINCT:
             columns.append(func.count(distinct(column)).label(name))
-        elif measure.function in ("percentile", "median"):
+        elif measure.function in (MeasureFunction.PERCENTILE, MeasureFunction.MEDIAN):
             if dialect in WITHOUT_PERCENTILES:
                 raise exceptions.InvalidCriteria(
                     f"'{dialect}' does not compute percentiles; ask for one over a database "
                     "that does, or answer it in memory"
                 )
-            fraction = 0.5 if measure.function == "median" else measure.argument
+            fraction = 0.5 if measure.function is MeasureFunction.MEDIAN else measure.argument
             columns.append(
                 func.percentile_cont(fraction).within_group(column.asc()).label(name)
             )
-        elif measure.function in ("bool_and", "bool_or"):
+        elif measure.function in (MeasureFunction.BOOL_AND, MeasureFunction.BOOL_OR):
             Grouping(measures={name: measure}).check_measures(
                 {measure.field: meta.field(measure.field).type.value}
             )

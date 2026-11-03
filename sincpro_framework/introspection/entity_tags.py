@@ -12,8 +12,8 @@ wire, the commands a screen offers next to a record, what an agent may do with a
 dispatches by the Command as it always did, and a use case that declares none belongs to its
 context alone. A use case may concern several entities — a command reached from two screens, a
 wizard between two of them — so the order means nothing and an entity named twice counts once.
-A framework DTO that names its entity in its type (`Get`, `GetMany`, `LiteralSearch`, `Search`,
-`DomainEvents`, `Preview`, `Edit`) concerns it without saying so.
+A DTO that names its entity in its type concerns it without saying so — every framework DTO of
+one entity does (`Get[Issue, ResponseIssue]`, `Search`, `Edit`, …), read by `named_in_type`.
 
 Context: stored apart from the class, as an exposure decorator stores its binding, so the class is
 returned as it is, a subclass inherits nothing by accident and the order the decorators are
@@ -24,19 +24,7 @@ from collections.abc import Callable
 from weakref import WeakKeyDictionary
 
 from sincpro_framework import exceptions
-from sincpro_framework.ddd import (
-    DomainEvents,
-    Edit,
-    Get,
-    GetMany,
-    LiteralSearch,
-    Preview,
-    Search,
-)
-from sincpro_framework.ddd.reads.reads import declared_by
-
-ENTITY_DTOS = (Get, GetMany, LiteralSearch, Search, DomainEvents, Preview, Edit)
-"""The framework DTOs that name their entity in their type: `Get[Issue, ResponseIssue]`."""
+from sincpro_framework.ddd.reads.reads import named_in_type
 
 _declared: WeakKeyDictionary[type, tuple[type, ...]] = WeakKeyDictionary()
 """The entities each Feature, ApplicationService or Command declared, by class."""
@@ -88,6 +76,7 @@ def entities_of(*classes: type | None) -> tuple[type, ...]:
         if one is None:
             continue
         found.extend(_declared.get(one, ()))
-        if issubclass(one, ENTITY_DTOS):
-            found.append(declared_by(one)[0])
+        named = named_in_type(one)
+        if named is not None:
+            found.append(named[0])
     return tuple(dict.fromkeys(found))

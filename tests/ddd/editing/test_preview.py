@@ -619,3 +619,31 @@ def test_the_advice_of_a_preview_inside_another_reaches_the_outer_one():
 
     assert [one.message for one in inner] == ["revisar el descuento"]
     assert [one.message for one in outer] == ["revisar el descuento"]
+
+
+def test_a_line_given_as_a_bare_value_is_refused_pointing_at_it():
+    invoice = Invoice(partner_id="p1")
+
+    with pytest.raises(
+        ddd_exceptions.InvalidValue, match="holds InvoiceLine records"
+    ) as refused:
+        assign(invoice, {"lines": [{"product": "x", "qty": 1, "price": "1"}, "l9"]})
+
+    assert problem_of(refused.value).errors[0].pointer == "#/values/lines/1"
+    assert invoice.lines == []
+
+
+def test_a_line_given_as_the_record_itself_is_held_as_it_is():
+    invoice = Invoice(partner_id="p1")
+    line = InvoiceLine("cuaderno", 2, Decimal("3"))
+
+    assign(invoice, {"lines": [line]})
+
+    assert invoice.lines == [line] and invoice.lines[0] is line
+
+
+def test_a_rule_of_the_project_points_at_the_field_of_its_own_request():
+    refused = ddd_exceptions.InvalidValue("not a valid RUC", ("tax_id",), field="customer")
+
+    assert problem_of(refused).errors[0].pointer == "#/customer/tax_id"
+    assert refused.within("billing").path == ("billing", "tax_id")

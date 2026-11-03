@@ -200,8 +200,8 @@ class Writing(RepositoryState, Extends):
         for batch in _by_dependency(plan.detached):
             session.add_all(batch)
             self._written(session, batch)
-        with session.no_autoflush:
-            for statement in plan.unlinks:
+        for statement in plan.unlinks:
+            with session.no_autoflush, named(f"a pair of {statement.table.name}"):
                 session.execute(statement)
         for level in reversed(plan.removals):
             for one in level:
@@ -210,8 +210,8 @@ class Writing(RepositoryState, Extends):
         for batch in _by_dependency(plan.writes):
             session.add_all(batch)
             self._written(session, batch)
-        with session.no_autoflush:
-            for statement in plan.links:
+        for statement in plan.links:
+            with session.no_autoflush, named(f"a pair of {statement.table.name}"):
                 session.execute(statement)
         plan.written()
         self._store_facts(session, [*plan.stored, *plan.removed])

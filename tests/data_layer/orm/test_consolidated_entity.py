@@ -16,7 +16,7 @@ from sincpro_framework.data_layer.orm import Consolidated, map_aggregates
 from sincpro_framework.data_layer.orm.sqlalchemy.entrypoint.repository import Repository
 from sincpro_framework.data_layer.orm.sqlalchemy.entrypoint.template_table import entity_table
 from sincpro_framework.ddd import Entity
-from sincpro_framework.ddd.criteria import Condition, Criteria
+from sincpro_framework.ddd.criteria import Condition, Criteria, MeasureFunction
 
 from .engines import fresh
 
@@ -178,7 +178,7 @@ def test_a_report_over_the_consolidated_record_groups_by_a_field_of_an_extension
     criteria = Criteria(
         grouping=Grouping(
             group_by=(GroupingLevel(field="route"),),
-            measures={"total": Measure(function="sum", field="total")},
+            measures={"total": Measure(function=MeasureFunction.SUM, field="total")},
         )
     )
 

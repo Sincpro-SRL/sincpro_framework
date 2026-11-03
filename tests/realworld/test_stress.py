@@ -14,6 +14,7 @@ from sincpro_framework.ddd.criteria import (
     Grouping,
     GroupingLevel,
     Measure,
+    MeasureFunction,
     Operator,
     Pagination,
     Sort,
@@ -95,7 +96,7 @@ def test_the_heaviest_accounts_over_everything(ledger: Repository, census: Censu
         where=POPULATION,
         grouping=Grouping(
             group_by=(GroupingLevel(field="account_id"),),
-            measures={"debit": Measure(function="sum", field="debit")},
+            measures={"debit": Measure(function=MeasureFunction.SUM, field="debit")},
             order=Sort.parse("-debit"),
             pagination=Pagination(limit=10),
         ),

@@ -1,9 +1,10 @@
 """How a result set is split and counted: levels, measures, the groups and the pivot they make."""
 
 from collections.abc import Mapping, Sequence
-from typing import Any
+from enum import StrEnum
+from typing import Annotated, Any
 
-from pydantic import Field, field_validator, model_validator
+from pydantic import WithJsonSchema, field_validator, model_validator
 
 from sincpro_framework.ddd import exceptions
 from sincpro_framework.ddd.criteria.domain.expression import Expression
@@ -13,21 +14,24 @@ from sincpro_framework.ddd.criteria.domain.strict import Strict
 from sincpro_framework.ddd.criteria.domain.values import Grain, Part
 from sincpro_framework.sincpro_abstractions import DataTransferObject
 
-MEASURE_FUNCTIONS: tuple[str, ...] = (
-    "sum",
-    "avg",
-    "min",
-    "max",
-    "count",
-    "count_distinct",
-    "percentile",
-    "median",
-    "bool_and",
-    "bool_or",
-)
-"""The functions a measure may ask for. A closed list, because the name reaches SQL:
-anything outside it is refused before a statement exists. Adding one is a change here, not a
-string a caller can invent."""
+
+class MeasureFunction(StrEnum):
+    """The functions a measure may ask for — and a list adds a column up with
+    (`Presentation.totals`). A closed set, because the name reaches SQL: anything outside it is
+    refused before a statement exists. Adding one is a change here, not a string a caller can
+    invent."""
+
+    SUM = "sum"
+    AVG = "avg"
+    MIN = "min"
+    MAX = "max"
+    COUNT = "count"
+    COUNT_DISTINCT = "count_distinct"
+    PERCENTILE = "percentile"
+    """Cut at a fraction the measure carries (`argument`): `0.95` for a P95."""
+    MEDIAN = "median"
+    BOOL_AND = "bool_and"
+    BOOL_OR = "bool_or"
 
 
 class Measure(Strict):
@@ -46,7 +50,18 @@ class Measure(Strict):
     sentence is how a reader loses an afternoon.
     """
 
-    function: str = Field(json_schema_extra={"enum": list(MEASURE_FUNCTIONS)})
+    # Published as the plain list of words, as it always was: the criteria's JSON contract —
+    # what `@sincpro/criteria` is generated from — never sees the enum's name.
+    function: Annotated[
+        MeasureFunction,
+        WithJsonSchema(
+            {
+                "enum": [one.value for one in MeasureFunction],
+                "title": "Function",
+                "type": "string",
+            }
+        ),
+    ]
     field: str
 
     argument: float | None = None
@@ -56,19 +71,20 @@ class Measure(Strict):
     and takes none. Every other measure refuses one rather than ignoring it, because a number
     that is quietly dropped is a report that is quietly wrong."""
 
-    @field_validator("function")
+    @field_validator("function", mode="before")
     @classmethod
-    def _one_of_the_known_aggregates(cls, function: str) -> str:
-        """Refuses a function outside `MEASURE_FUNCTIONS` before it can reach a statement.
+    def _one_of_the_known_aggregates(cls, function: Any) -> MeasureFunction:
+        """Refuses a function outside `MeasureFunction` before it can reach a statement — as
+        the criteria's own refusal, not a validation error, so every wire answers it the same.
 
-        "sum"     ->  "sum"
+        "sum"     ->  MeasureFunction.SUM
         "stddev"  ->  InvalidCriteria: 'stddev' is not a measure; use one of sum, avg, …
         """
-        if function not in MEASURE_FUNCTIONS:
+        if function not in tuple(MeasureFunction):
             raise exceptions.InvalidCriteria(
-                f"'{function}' is not a measure; use one of {', '.join(MEASURE_FUNCTIONS)}"
+                f"'{function}' is not a measure; use one of {', '.join(MeasureFunction)}"
             )
-        return function
+        return MeasureFunction(function)
 
     @model_validator(mode="after")
     def _the_argument_belongs_to_the_function(self) -> "Measure":
@@ -79,7 +95,7 @@ class Measure(Strict):
         >>> Measure(function="sum", field="debit", argument=0.95)
         InvalidCriteria: 'sum' takes no argument
         """
-        if self.function == "percentile":
+        if self.function is MeasureFunction.PERCENTILE:
             if self.argument is None or not 0 < self.argument < 1:
                 raise exceptions.InvalidCriteria(
                     "a percentile is cut at a fraction between 0 and 1, e.g. 0.5 for the "
@@ -122,7 +138,11 @@ class Measure(Strict):
         in      Measure(count, id)        →  out  0
         in      Measure(sum, total)       →  out  None
         """
-        return 0 if self.function in ("count", "count_distinct") else None
+        return (
+            0
+            if self.function in (MeasureFunction.COUNT, MeasureFunction.COUNT_DISTINCT)
+            else None
+        )
 
 
 class GroupingLevel(Strict):
@@ -304,7 +324,7 @@ class Grouping(Strict):
         """
         for measure in self.measures.values():
             if (
-                measure.function in ("bool_and", "bool_or")
+                measure.function in (MeasureFunction.BOOL_AND, MeasureFunction.BOOL_OR)
                 and types.get(measure.field) != "boolean"
             ):
                 raise exceptions.InvalidCriteria(

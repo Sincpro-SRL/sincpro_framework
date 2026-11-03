@@ -47,18 +47,19 @@ from sincpro_framework.ddd.entity.entity_meta import (
     with_computed,
     without_optional,
 )
-from sincpro_framework.ddd.entity.relations import key_pair
+from sincpro_framework.ddd.entity.relations import RelationKind, key_pair
 from sincpro_framework.ddd.multi_language import MultiLanguage
 
 
-def _relational_type(kind: str, many: bool) -> FieldType:
-    """The field type a relation is described as.
+def _relational_type(kind: RelationKind | None, many: bool) -> FieldType:
+    """The field type a relation is described as; one nothing declared (`None`) is read by its
+    cardinality, as a foreign key is.
 
-    ("many_to_many", _)       ->  MANY2MANY
-    ("foreign_key", True)     ->  ONE2MANY
-    ("foreign_key", False)    ->  MANY2ONE
+    (MANY_TO_MANY, _)         ->  MANY2MANY
+    (FOREIGN_KEY, True)       ->  ONE2MANY
+    (None, False)             ->  MANY2ONE
     """
-    if kind == "many_to_many":
+    if kind is RelationKind.MANY_TO_MANY:
         return FieldType.MANY2MANY
     return FieldType.ONE2MANY if many else FieldType.MANY2ONE
 
@@ -230,7 +231,7 @@ class ModelIntrospection:
             if relation is None and (related is None or not is_mapped(related)):
                 continue
             related_name = relation.related.__name__ if relation is not None else related.__name__  # type: ignore[union-attr]
-            logical = _relational_type(relation.kind if relation else "", many)
+            logical = _relational_type(relation.kind if relation else None, many)
             identified_by = relation.identified_by if relation is not None else None
             # The pair is published expanded, whichever way it was declared, so a client reads how
             # the two sides meet without knowing the cardinality convention `identified_by` obeys.
