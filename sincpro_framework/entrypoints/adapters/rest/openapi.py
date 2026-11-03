@@ -192,7 +192,7 @@ def _operation(route: RestRoute, method: str, components: _Components) -> dict[s
     1. The DTO's schema and the answer's registered in `components` — qualified by the alias when
        another bus published a model of the same name and another shape.
     2. `operationId` — `_by_body` on the `POST` twin of a `GET` — summary (the description's
-       first line), tags (alias and layer), a 200 and every failure as `Error`, the DTO and
+       first line), tags (alias, layer and the entities it concerns), a 200 and every failure as `Error`, the DTO and
        the layer as `x-sincpro-*`, and the operation's security.
     3. The path fields as path parameters.
     Final: on `GET` the other fields as query parameters, on any other method the DTO as an
@@ -221,7 +221,7 @@ def _operation(route: RestRoute, method: str, components: _Components) -> dict[s
         ),
         "summary": operation.description.split("\n", 1)[0],
         "description": operation.description,
-        "tags": [route.alias, operation.layer],
+        "tags": [route.alias, operation.layer, *(one.__name__ for one in operation.entities)],
         "responses": {
             "200": {
                 "description": "Answered",

@@ -7,8 +7,10 @@ needs to read the registries. Nobody owns this; everybody reads it.
     describe(billing, CommandIssue).interceptors          ->  ("billing.audit.logged",)
     dtos(billing)["CommandIssue"].type                    ->  CommandIssue
     operations_of(billing)["CommandIssue"].required_input ->  {"invoice_id"}
+    operations_of(forge)["CommandMoveIssue"].entities     ->  (Issue, Project)
 """
 
+from sincpro_framework.introspection.entity_tags import entity_tags
 from sincpro_framework.introspection.inspector import (
     DtoMetadata,
     DtoName,
@@ -30,6 +32,7 @@ __all__ = [
     "built_bus",
     "describe",
     "dtos",
+    "entity_tags",
     "features",
     "operations_of",
 ]

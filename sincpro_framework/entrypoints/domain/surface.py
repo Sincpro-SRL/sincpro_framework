@@ -80,6 +80,8 @@ class Operation(DataTransferObject):
     run: RunFn
     call: CallFn
     """`run` inside the context, the trace and the identity a wire carried — what a wire calls."""
+    entities: tuple[type, ...] = ()
+    """The entities it concerns (`entity_tags`) — a wire adds their names to its tags."""
 
 
 class Resolved[B: Binding](DataTransferObject):

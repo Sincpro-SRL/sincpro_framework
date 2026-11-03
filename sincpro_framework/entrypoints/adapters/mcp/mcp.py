@@ -202,7 +202,7 @@ def catalog_server(
             fastmcp_callable(operation, bus),
             name=operation.name,
             description=operation.description,
-            tags={operation.layer},
+            tags={operation.layer, *(one.__name__ for one in operation.entities)},
             annotations=catalog_hints(operation),
         )
     return mcp
@@ -221,7 +221,7 @@ def surface_server(
 
     1. Import FastMCP or raise with the extra-install hint.
     2. Each tool registered as a typed function over its Command, with its name, title,
-       description (deprecation first), layer tag and hints; each call acts as whoever
+       description (deprecation first), tags (its layer and the entities it concerns) and hints; each call acts as whoever
        called, through its own bus.
     Final: the server — with `auth`, FastMCP verifies bearer tokens itself, and with
     `base_url` publishes the resource metadata.
@@ -246,7 +246,7 @@ def surface_server(
             name=tool.name,
             title=tool.title,
             description=tool.description,
-            tags={str(operation.layer)},
+            tags={str(operation.layer), *(one.__name__ for one in operation.entities)},
             annotations=tool.annotations,
         )
     return mcp

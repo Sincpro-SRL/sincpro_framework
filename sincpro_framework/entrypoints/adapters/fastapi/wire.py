@@ -473,7 +473,10 @@ class FastApiWire(Wire[RestBinding]):
                 None if operation.response in (None, type(None)) else operation.response
             ),
             "responses": problem_responses(operation.bus, command, binding.responses),
-            "tags": list(binding.tags or resolved.group.tags or (operation.alias,)),
+            "tags": [
+                *(binding.tags or resolved.group.tags or (operation.alias,)),
+                *(one.__name__ for one in operation.entities),
+            ],
             "summary": binding.summary or description.split("\n", 1)[0] or None,
             "description": description or None,
             "deprecated": binding.deprecated is not None or None,

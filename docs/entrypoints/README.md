@@ -6,6 +6,7 @@ publish that catalog over a transport without the domain learning about the tran
 | Page | What it answers |
 |---|---|
 | [Integration](integration.md) | what every wire shares: N buses automatically, `include` / `exclude` / `layers` / `internal`, the app or server handed back for the project's middleware |
+| [Entity tags](entity-tags.md) | `@entity_tags(Issue, Project)`: the entities a use case concerns, a category every wire adds to its tags and every reader of the catalog groups by — nothing runs differently |
 | [Liveness and readiness](readiness.md) | `/healthz` and `/readyz` on every wire: checks a service registers by name — a binary, a key, a store — each bounded in time, a failing one answered 503 naming it |
 | [REST on FastAPI](fastapi.md) | `FastApiGateway`, the REST host: `@rest...` on the existing handlers, one `app.py`, RFC 9457 problems, hand-written routes through `bus_call`, files as base64 |
 | [REST (Starlette, frozen)](rest.md) | `RestGateway`: the minimal host older services use; no new features |
