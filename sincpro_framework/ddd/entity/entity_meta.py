@@ -490,6 +490,9 @@ class FieldMeta(DataTransferObject):
     """While this holds over the record, a form asks for the field. A hint."""
     visible_when: Expression | None = None
     """A form shows the field only while this holds over the record. A hint."""
+    total: str | None = None
+    """The function a list folds this field with at its foot — one of `aggregates`, as the
+    entity's `presentation` declared it (`totals`). `None`: nothing is added up. A hint."""
 
     sortable: bool
     """False for every nullable column: a keyset comparison omits rows holding NULL, so
@@ -1040,6 +1043,7 @@ class Presented:
     readonly_when: dict[str, Expression] = dataclasses.field(default_factory=dict)
     required_when: dict[str, Expression] = dataclasses.field(default_factory=dict)
     visible_when: dict[str, Expression] = dataclasses.field(default_factory=dict)
+    totals: dict[str, str] = dataclasses.field(default_factory=dict)
 
 
 def _entries(answered: object) -> tuple[object, ...]:
@@ -1227,6 +1231,26 @@ def _named(answered: object, form: str) -> frozenset[str]:
     return frozenset(field_name(one, form) for one in _entries(answered))
 
 
+def _totals_checked(owner: str, answered: object) -> dict[str, str]:
+    """The function each field is added up with, by field name.
+
+        {i.amount: "sum", i.weight: "avg"}   ->  {"amount": "sum", "weight": "avg"}
+        [i.amount]                           ->  ProgrammingError: takes a mapping …
+
+    Which functions a field takes depends on how it is stored, so that is checked when the
+    class is described (`hinted`), not here.
+    """
+    if not isinstance(answered, Mapping):
+        raise exceptions.ProgrammingError(
+            f"{owner}.presentation totals takes a mapping of field to function, as in "
+            f'lambda i: {{i.amount: "sum"}}; it was given {answered!r}'
+        )
+    return {
+        field_name(one, '{i.amount: "sum"}'): str(function)
+        for one, function in answered.items()
+    }
+
+
 def framework_fields(declared: type) -> frozenset[str]:
     """The fields a framework class declares — `Entity`'s, a mixin's: written by the framework,
     so a form shows them read-only. Found by the class that declares each one, never by name.
@@ -1261,125 +1285,6 @@ def _required_by_structure(declared: type, system: frozenset[str]) -> frozenset[
         and one.default_factory is dataclasses.MISSING
         and annotations[one.name] == without_optional(annotations[one.name])
     )
-
-
-@cache
-def defaults_of(declared: type) -> dict[str, Any]:
-    """What a new record of `declared` starts with, as JSON: each plain dataclass default.
-
-        # class Invoice(Entity): currency_id = "BOB"; state = InvoiceState.DRAFT;
-        #                        lines = field(default_factory=list); note: str | None = None
-        defaults_of(Invoice)   ->  {"version": 0, "currency_id": "BOB", "state": "draft"}
-        defaults_of(dict)      ->  {}     # not a dataclass
-
-    1. A class that is not a dataclass has no defaults to offer.
-    2. Each field, in declaration order:
-       2.1 no plain default, or `None` — skipped; a factory is never run here;
-       2.2 the default written as JSON by its field's annotation;
-       2.3 a default nothing can write as JSON is skipped, left for the client.
-    Final: the defaults, by field name — read once per class.
-    """
-    if not dataclasses.is_dataclass(declared):
-        return {}
-    annotations = annotations_of(declared)
-    found: dict[str, Any] = {}
-    for one in dataclasses.fields(declared):
-        if one.default is dataclasses.MISSING or one.default is None:
-            continue
-        try:
-            found[one.name] = TypeAdapter(annotations.get(one.name, Any)).dump_python(
-                one.default, mode="json", warnings=False
-            )
-        except (PydanticSerializationError, PydanticSchemaGenerationError, ValueError):
-            continue  # a default nothing can write as JSON is left for the client
-    return found
-
-
-@cache
-def presentation_of(declared: type) -> Presented:
-    """What the class answers about how it is read and shown, read once and checked against
-    its fields.
-
-        presentation_of(Account)    # DEFAULT_GET_ID "code", presentation required=[a.name]
-            ->  Presented(get_id="code", display="name", order=(Sort(code),), …,
-                          readonly={"id", "created_at", "updated_at", "version"},
-                          required={"name", …})
-        presentation_of(Money)      # a value object: no DEFAULT_*, no presentation
-            ->  Presented()
-
-    1. How it is read comes from its `DEFAULT_*` class methods (every `Entity` has them, with
-       their defaults); a class without them — a value object, a plain model — answers none.
-    2. Each answer is checked: a key, a display and an order over fields of its own, a reading
-       that is a `Specification`, a literal search that is a template holding `TEXT`.
-    3. The form hints come from its `presentation`, each lambda run once over `Fields`; an
-       unknown name is refused, naming it. Left alone, the fields the framework writes are
-       read-only and a field with no default that cannot be `None` is required.
-    Final: the names, ready for `Meta`, `matching` and `detail_of`.
-    """
-    owner = declared.__name__
-    annotations = annotations_of(declared)
-    read: dict[str, Any] = {}
-    if callable(getattr(declared, "DEFAULT_GET_ID", None)):
-        read = {
-            "get_id": _get_id_checked(owner, declared.DEFAULT_GET_ID(), annotations),
-            "display": _display_checked(owner, declared.DEFAULT_DISPLAY(), annotations),
-            "search": _search_checked(owner, declared.DEFAULT_LITERAL_SEARCH(), annotations),
-            "order": _order_checked(owner, declared.DEFAULT_ORDER(), annotations),
-            "detail": _reading_checked(owner, declared.DEFAULT_READING(), annotations),
-        }
-    presentation = getattr(declared, "presentation", None)
-    if not isinstance(presentation, Presentation):
-        return Presented(**read)
-    fields = Fields(owner, annotations)
-    system = framework_fields(declared)
-
-    readonly = system & frozenset(annotations)
-    if presentation.readonly is not None:
-        readonly |= _named(presentation.readonly(fields), "a.number")
-    required = _required_by_structure(declared, system)
-    if presentation.required is not None:
-        required |= _named(presentation.required(fields), "a.partner_id")
-
-    return Presented(
-        **read,
-        readonly=readonly,
-        required=required,
-        readonly_when=(
-            _while(owner, presentation.readonly_when(fields), "readonly_when", annotations)
-            if presentation.readonly_when
-            else {}
-        ),
-        required_when=(
-            _while(owner, presentation.required_when(fields), "required_when", annotations)
-            if presentation.required_when
-            else {}
-        ),
-        visible_when=(
-            _while(owner, presentation.visible_when(fields), "visible_when", annotations)
-            if presentation.visible_when
-            else {}
-        ),
-    )
-
-
-def hinted(fields: dict[str, "FieldMeta"], declared: type) -> dict[str, "FieldMeta"]:
-    """`fields`, each carrying the form hints the class declared or its structure implies:
-    read-only, required, the default and the three conditions."""
-    presented = presentation_of(declared)
-    defaults = defaults_of(declared)
-    return {
-        name: meta.model_copy(
-            update={
-                "readonly": name in presented.readonly or meta.computed,
-                "required": name in presented.required,
-                "default": None if meta.computed else defaults.get(name),
-                "readonly_when": presented.readonly_when.get(name),
-                "required_when": presented.required_when.get(name),
-                "visible_when": presented.visible_when.get(name),
-            }
-        )
-        for name, meta in fields.items()
-    }
 
 
 @dataclasses.dataclass(frozen=True)
@@ -1476,6 +1381,153 @@ def derivations_of(declared: type) -> tuple[Derivation, ...]:
             by=entry.by,
         )
     return tuple(read[name] for name in _derivation_order(owner, read))
+
+
+@cache
+def defaults_of(declared: type) -> dict[str, Any]:
+    """What a new record of `declared` starts with, as JSON: each plain dataclass default.
+
+        # class Invoice(Entity): currency_id = "BOB"; state = InvoiceState.DRAFT;
+        #                        lines = field(default_factory=list); note: str | None = None
+        defaults_of(Invoice)   ->  {"version": 0, "currency_id": "BOB", "state": "draft"}
+        defaults_of(dict)      ->  {}     # not a dataclass
+
+    1. A class that is not a dataclass has no defaults to offer.
+    2. Each field, in declaration order:
+       2.1 no plain default, or `None` — skipped; a factory is never run here;
+       2.2 the default written as JSON by its field's annotation;
+       2.3 a default nothing can write as JSON is skipped, left for the client.
+    Final: the defaults, by field name — read once per class.
+    """
+    if not dataclasses.is_dataclass(declared):
+        return {}
+    annotations = annotations_of(declared)
+    found: dict[str, Any] = {}
+    for one in dataclasses.fields(declared):
+        if one.default is dataclasses.MISSING or one.default is None:
+            continue
+        try:
+            found[one.name] = TypeAdapter(annotations.get(one.name, Any)).dump_python(
+                one.default, mode="json", warnings=False
+            )
+        except (PydanticSerializationError, PydanticSchemaGenerationError, ValueError):
+            continue  # a default nothing can write as JSON is left for the client
+    return found
+
+
+@cache
+def presentation_of(declared: type) -> Presented:
+    """What the class answers about how it is read and shown, read once and checked against
+    its fields.
+
+        presentation_of(Account)    # DEFAULT_GET_ID "code", presentation required=[a.name]
+            ->  Presented(get_id="code", display="name", order=(Sort(code),), …,
+                          readonly={"id", "created_at", "updated_at", "version"},
+                          required={"name", …})
+        presentation_of(Money)      # a value object: no DEFAULT_*, no presentation
+            ->  Presented()
+
+    1. How it is read comes from its `DEFAULT_*` class methods (every `Entity` has them, with
+       their defaults); a class without them — a value object, a plain model — answers none.
+    2. Each answer is checked: a key, a display and an order over fields of its own, a reading
+       that is a `Specification`, a literal search that is a template holding `TEXT`.
+    3. The form hints come from its `presentation`, each lambda run once over `Fields`; an
+       unknown name is refused, naming it. Left alone, the fields the framework writes are
+       read-only — its own (`id`, `version`, …), a `computed` one and one a `Derive` computes,
+       which the next change would compute again over whatever was typed — and a field with no
+       default that cannot be `None` is required.
+    Final: the names, ready for `Meta`, `matching` and `detail_of`.
+    """
+    owner = declared.__name__
+    annotations = annotations_of(declared)
+    read: dict[str, Any] = {}
+    if callable(getattr(declared, "DEFAULT_GET_ID", None)):
+        read = {
+            "get_id": _get_id_checked(owner, declared.DEFAULT_GET_ID(), annotations),
+            "display": _display_checked(owner, declared.DEFAULT_DISPLAY(), annotations),
+            "search": _search_checked(owner, declared.DEFAULT_LITERAL_SEARCH(), annotations),
+            "order": _order_checked(owner, declared.DEFAULT_ORDER(), annotations),
+            "detail": _reading_checked(owner, declared.DEFAULT_READING(), annotations),
+        }
+    presentation = getattr(declared, "presentation", None)
+    if not isinstance(presentation, Presentation):
+        return Presented(**read)
+    fields = Fields(owner, annotations)
+    system = framework_fields(declared)
+
+    computes = {one.field for one in derivations_of(declared)} | set(
+        computations_of(declared)
+    )
+    readonly = (system & frozenset(annotations)) | computes
+    if presentation.readonly is not None:
+        readonly |= _named(presentation.readonly(fields), "a.number")
+    required = _required_by_structure(declared, system | computes)
+    if presentation.required is not None:
+        required |= _named(presentation.required(fields), "a.partner_id")
+
+    return Presented(
+        **read,
+        readonly=readonly,
+        required=required,
+        readonly_when=(
+            _while(owner, presentation.readonly_when(fields), "readonly_when", annotations)
+            if presentation.readonly_when
+            else {}
+        ),
+        required_when=(
+            _while(owner, presentation.required_when(fields), "required_when", annotations)
+            if presentation.required_when
+            else {}
+        ),
+        visible_when=(
+            _while(owner, presentation.visible_when(fields), "visible_when", annotations)
+            if presentation.visible_when
+            else {}
+        ),
+        totals=(
+            _totals_checked(owner, presentation.totals(fields)) if presentation.totals else {}
+        ),
+    )
+
+
+def hinted(fields: dict[str, "FieldMeta"], declared: type) -> dict[str, "FieldMeta"]:
+    """`fields`, each carrying the form hints the class declared or its structure implies:
+    read-only, required, the default, the three conditions and the total.
+
+        # Invoice: totals={i.amount: "sum"}
+        hinted({"amount": NUMBER, …}, Invoice)["amount"].total    ->  "sum"
+        # totals={i.partner_id: "sum"}
+        hinted(…)   ->  ProgrammingError: Invoice.presentation adds up partner_id by sum;
+                        a text adds up by min, max, count, count_distinct
+
+    1. A total the field cannot be folded with — not one of its `aggregates`, or `percentile`,
+       which needs a fraction a total does not carry — is refused, naming what it takes.
+    Final: each field with its hints.
+    """
+    presented = presentation_of(declared)
+    defaults = defaults_of(declared)
+    for name, function in presented.totals.items():
+        meta = fields.get(name)
+        if meta is not None and (function not in meta.aggregates or function == "percentile"):
+            offered = [one for one in meta.aggregates if one != "percentile"]
+            raise exceptions.ProgrammingError(
+                f"{declared.__name__}.presentation adds up {name} by {function}; "
+                f"a {meta.type} adds up by {', '.join(offered) or 'nothing'}"
+            )
+    return {
+        name: meta.model_copy(
+            update={
+                "readonly": name in presented.readonly,
+                "required": name in presented.required,
+                "default": None if meta.computed else defaults.get(name),
+                "readonly_when": presented.readonly_when.get(name),
+                "required_when": presented.required_when.get(name),
+                "visible_when": presented.visible_when.get(name),
+                "total": presented.totals.get(name),
+            }
+        )
+        for name, meta in fields.items()
+    }
 
 
 def default_order_of(declared: type, identity: str) -> str:

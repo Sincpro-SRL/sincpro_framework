@@ -274,6 +274,33 @@ A child that is unchanged is not written again; one that changed is written with
 in one call** — `save([old_root, new_root])`: saved apart, the first save removes it as an
 orphan and the second is refused, saying so.
 
+**A many-to-many writes its pairs, never the other aggregate.** The labels a ticket carries are
+an aggregate of their own; the ticket holds only which ones, and those pairs live in the table in
+between. `save(ticket)` inserts the pairs it holds and the table lacks, and deletes the ones its
+last whole reading saw and it no longer holds — the same rule as an orphan, so a pair another
+writer linked after the reading, or one a filter hid, is never deleted. `remove(ticket)` deletes
+its pairs first and leaves the labels. A label is never inserted nor updated from the ticket,
+whatever its fields hold in memory.
+
+```python
+with repository.context() as unit:
+    ticket = unit.get(Ticket, ticket_id)              # labels {urgent, billing}
+    ticket.labels = [billing, network]
+    unit.save(ticket)        # (ticket, urgent) deleted, (ticket, network) inserted; version 1 → 2
+```
+
+| The relation | `save(root)` writes the pairs |
+|---|---|
+| never read nor assigned | none |
+| read whole, or assigned over a whole reading | inserts the new ones, deletes the ones the reading saw and it no longer holds |
+| assigned blind, or read cut | inserts the new ones, deletes none, logs a warning when blind |
+
+A form names the related records by id — `{"labels": ["0192…", "0193…"]}`, or mappings carrying
+the id, as a form reads them back — and `EntityReads` reads them in one search before `assign`
+puts them on the record: an id with no record is an `InvalidValue` pointing at it
+(`#/values/labels/1`), and a mapping without one is refused — a reference never creates the
+record it names.
+
 The cascade lives in `orm/sqlalchemy/services/cascade.py`: the relations are the framework's own
 descriptors, not SQLAlchemy relationships, so it is planned before the flush and handed to the
 same write path. `MemoryRepository` stores the root as the object it is, children inside, so the

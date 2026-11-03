@@ -12,6 +12,7 @@
             visible_when=lambda i: When(
                 Condition.on(i.payment, Operator.EQ, Payment.CARD), i.card_reference
             ),
+            totals=lambda i: {i.amount: "sum", i.weight: "avg"},
         )
 
 Each lambda names its fields through the entity, so a type checker reads `i.number` against
@@ -19,7 +20,7 @@ Each lambda names its fields through the entity, so a type checker reads `i.numb
 a stand-in whose attributes are the field names. It never sees a record.
 
 **These are hints, never rules.** `Meta` publishes them so a screen shows an asterisk, greys
-a field or hides it without being told twice; a component that says otherwise wins. The
+a field, hides it or adds it up at the foot of a list without being told twice; a component that says otherwise wins. The
 framework checks none of them: a save of a confirmed invoice with another partner goes
 through. A rule the server enforces is the project's own hook (`before_save`), which may read
 the same condition from `presentation_of(Invoice)`.
@@ -28,7 +29,7 @@ How the entity is read — its key, what a record brings, the order, the display
 finds it — is not here: it is the entity's own `DEFAULT_*` class methods (`Entity`).
 """
 
-from collections.abc import Callable, Iterable, Sequence
+from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass
 
 from sincpro_framework.ddd import exceptions
@@ -108,9 +109,12 @@ class Presentation[T]:
     """How a form shows each field: hints a client may override, none of them checked.
 
     `readonly` and `required` always; `readonly_when`, `required_when` and `visible_when`
-    while a condition holds over the record (`When(...)`). Left alone, the fields the framework
-    writes (`id`, `version`, …) are read-only and a field with no default that cannot be
-    `None` is required.
+    while a condition holds over the record (`When(...)`); `totals`, the function a list folds
+    each field with at its foot — one of the field's own `aggregates` (`sum`, `avg`, …). Left
+    alone, the fields the framework writes or computes (`id`, `version`, a `computed` one, one
+    a `Derive` computes) are read-only, a field with no default that cannot be `None` is
+    required, and nothing is added up: an amount is summed, a unit price is not, and only the
+    entity knows which is which.
     """
 
     readonly: Callable[[T], object] | None = None
@@ -118,3 +122,4 @@ class Presentation[T]:
     readonly_when: Callable[[T], When | Sequence[When]] | None = None
     required_when: Callable[[T], When | Sequence[When]] | None = None
     visible_when: Callable[[T], When | Sequence[When]] | None = None
+    totals: Callable[[T], Mapping[object, str]] | None = None

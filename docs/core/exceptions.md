@@ -135,7 +135,7 @@ what to do; anything else is its base with a clear message.
 | Base | Subclasses | Kind |
 |---|---|---|
 | `ProgrammingError` | `DTOAlreadyRegistered`, `DependencyAlreadyRegistered`, `DependencyNotRegistered`, `UnknownDTOToExecute`, `BusAlreadyBuilt`, `SincproFrameworkNotBuilt`, `ContextRequired` (`missing`), `BusAlreadyRegistered`, `BusNotRegistered`, `RelationNotResolved`, `MigrationRefused`, `InvalidAddress` | internal |
-| `ClientError` | `InvalidCriteria`, `DTODoesNotFit` (`fields`), `UseCaseRefused`, a form's value `assign` cannot take | invalid |
+| `ClientError` | `InvalidCriteria`, `DTODoesNotFit` (`fields`), `UseCaseRefused`, `InvalidValue` (`path`) — a form's value `assign` cannot take | invalid |
 | | `DraftConflict` (`current`) | conflict |
 | | `AggregateNotFound` | not_found |
 | | `AuthError` → `Unauthenticated`, `PermissionDenied` | unauthenticated, permission_denied |

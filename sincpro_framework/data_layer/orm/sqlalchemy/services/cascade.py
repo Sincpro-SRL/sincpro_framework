@@ -9,6 +9,11 @@
                                                  aggregate go with it (`owned=False` excepted)
     invoice.lines[0].amount = 5; save(invoice)   →  the line written, and the invoice's version
                                                  raised with it: a part moves its aggregate
+    ticket.labels = [urgent, billing]         a many-to-many: the pairs in the table in between
+    repository.save(ticket)                   →  the pairs it now holds inserted, the ones the
+                                                 last reading saw and it no longer holds deleted;
+                                                 a label itself is never written
+    repository.remove(ticket)                 →  its pairs deleted first, the labels left alone
 
 The framework's relations are its own descriptors, not SQLAlchemy relationships, so the cascade
 is planned here, before the flush, and handed to the write path every aggregate takes — hooks,
@@ -26,7 +31,7 @@ from dataclasses import dataclass, field
 from typing import Any, cast
 
 import sqlalchemy
-from sqlalchemy import Table, select
+from sqlalchemy import Table, delete, insert, select
 from sqlalchemy.orm import Session
 from sqlalchemy.orm.attributes import flag_modified
 
@@ -66,16 +71,34 @@ class Owned:
     orphans: Orphans
 
 
+@dataclass(frozen=True)
+class Linked:
+    """One many-to-many a root writes the pairs of, read off its declaration: the root's field,
+    the table in between and its two keys. The pairs are the root's; the aggregate on the other
+    side has a life of its own and is never written from here (Vernon: reference it by id)."""
+
+    name: str
+    through: Table
+    this_key: str
+    related_key: str
+
+
 @dataclass
 class Plan:
     """What one `save` or `remove` writes: the children detached (their key set to NULL), the
-    levels to delete — the records first, their descendants after — the records to insert or
-    update, the assignments it carries out, and the stored roots whose parts it writes."""
+    pairs unlinked, the levels to delete — the records first, their descendants after — the
+    records to insert or update, the pairs linked, the assignments it carries out, the
+    many-to-manys it writes, and the stored roots whose parts it writes."""
 
     detached: list[Any] = field(default_factory=list)
+    unlinks: list[Any] = field(default_factory=list)
+    """`DELETE`s of pairs, run before the removals: a pair points at the root it leaves with."""
     removals: list[list[Any]] = field(default_factory=list)
     writes: list[Any] = field(default_factory=list)
+    links: list[Any] = field(default_factory=list)
+    """`INSERT`s of pairs, run after the writes: a new root's row exists before its pairs."""
     carried_out: list[tuple[Any, str]] = field(default_factory=list)
+    linked: list[tuple[Any, str]] = field(default_factory=list)
     moved: list[Any] = field(default_factory=list)
 
     @property
@@ -132,6 +155,16 @@ class Plan:
                 relations.hold(
                     name, value, after, frozenset(identity_of(child) for child in value or ())
                 )
+        for record, name in self.linked:
+            relations = HeldRelations(record)
+            how = relations.held(name)
+            value = relations.value(name)
+            relations.hold(
+                name,
+                value,
+                WRITTEN.get(how, how) if how is not None else Held.WHOLE,
+                frozenset(identity_of(one) for one in value or ()),
+            )
 
 
 def _plain_column(mapper: Any) -> str | None:
@@ -214,6 +247,22 @@ def owned_by(model: type) -> list[Owned]:
     return owned
 
 
+def linked_by(model: type) -> list[Linked]:
+    """The many-to-manys this aggregate writes the pairs of. Context: read on every write, as
+    `owned_by` is.
+
+        linked_by(Ticket)   ->  [Linked("labels", ticket_label, "ticket_id", "label_id")]
+        linked_by(Label)    ->  []
+    """
+    linked: list[Linked] = []
+    for name, relation in mapping_registry.relations_of(model).items():
+        through = getattr(relation, "through", None)
+        related_key = getattr(relation, "related_key", None)
+        if relation.kind == "many_to_many" and through is not None and related_key:
+            linked.append(Linked(name, through, relation.identified_by, related_key))
+    return linked
+
+
 def _read_without_flushing(session: Session, statement: Any) -> list[Any]:
     """Context: the roots' changes are not written yet and their hooks have not run; a flush
     here would write them before the rules saw them."""
@@ -246,6 +295,8 @@ def planned_removal(session: Session, records: list[Any]) -> Plan:
        what depends on the root.
     3. What the relation's `orphans` says: `REFUSE` raises naming it, `DETACH` sets the
        child's key to NULL, `DELETE` makes the child part of the next level.
+       3.1 Every pair of a many-to-many of the level is unlinked: the pairs go with the
+           record, the aggregate on the other side stays.
     4. Final: repeat until a level owns nothing. A reference (`owned=False`) is left to its
        foreign key, which refuses the delete while children point at the root.
     """
@@ -260,6 +311,10 @@ def planned_removal(session: Session, records: list[Any]) -> Plan:
         plan.removals.append(level)
         below: list[Any] = []
         for model, roots in _by_model(level).items():
+            for linked in linked_by(model):
+                this_key = linked.through.c[linked.this_key]
+                keys = [identity_of(root) for root in roots]
+                plan.unlinks.append(delete(linked.through).where(this_key.in_(keys)))
             for owned in owned_by(model):
                 keys = {getattr(root, owned.here) for root in roots} - {None}
                 if not keys:
@@ -302,6 +357,58 @@ def _refuse_a_child_removed_before(records: list[Any]) -> None:
             )
 
 
+def _paired(session: Session, plan: Plan, record: Any, linked: Linked, how: Held) -> bool:
+    """The pairs one many-to-many of `record` inserts and deletes, put on the plan; whether it
+    changes any.
+
+        ticket read whole with labels {a, b}; ticket.labels = [b, c]
+            ->  DELETE (ticket, a); INSERT (ticket, c); True
+        a new ticket with labels [a]                ->  INSERT (ticket, a); True
+        ticket.labels assigned blind to [c]         ->  INSERT (ticket, c), nothing deleted;
+                                                        logged
+        ticket read whole and saved as it was       ->  nothing; False
+
+    1. What it holds now, and what its last whole reading or write saw.
+    2. Only a stored record whose relation was read whole — assigned over that reading or
+       changed in place — settles the pairs it no longer holds: a cut or blind one never
+       deletes what it did not see.
+    3. Each pair it holds that the reading did not see, minus the ones already in the table —
+       another writer may have linked it since — is inserted.
+    Final: the relation noted as written, so its reading is what it holds now.
+    """
+    relations = HeldRelations(record)
+    key = identity_of(record)
+    held = {identity_of(one) for one in relations.value(linked.name) or ()}
+    stored = not getattr(record, "is_new", False)
+    settles = stored and how in (Held.ASSIGNED, Held.WHOLE)
+    before = relations.read_before(linked.name) if settles else frozenset()
+    this_key = linked.through.c[linked.this_key]
+    related_key = linked.through.c[linked.related_key]
+    dropped = before - held
+    added = held - before
+    if added and stored:
+        statement = select(related_key).where(this_key == key, related_key.in_(added))
+        added -= set(_read_without_flushing(session, statement))
+    if dropped:
+        plan.unlinks.append(
+            delete(linked.through).where(this_key == key, related_key.in_(dropped))
+        )
+    if added:
+        plan.links.append(
+            insert(linked.through).values(
+                [{linked.this_key: key, linked.related_key: one} for one in sorted(added)]
+            )
+        )
+    if how is Held.BLIND:
+        logger.warning(
+            f"{type(record).__name__}.{linked.name} was assigned with no whole reading behind "
+            "it (a page, a filter, or outside context()): the pairs it holds were linked and "
+            "none was unlinked — assign it inside context() to replace them"
+        )
+    plan.linked.append((record, linked.name))
+    return bool(added or dropped)
+
+
 def planned_save(session: Session, records: list[Any]) -> Plan:
     """Everything one `save` of these roots writes.
 
@@ -322,8 +429,9 @@ def planned_save(session: Session, records: list[Any]) -> Plan:
        the orphans.
     3. A detached orphan has its key set to NULL; a deleted one is a removal and takes what it
        owns with it.
-    4. Final: every stored root of this save whose parts are written, detached or removed is
-       marked moved — its version is raised with them (`Plan.version_moves`).
+    4. Final: every stored root of this save whose parts are written, detached or removed — or
+       whose pairs of a many-to-many are linked or unlinked (`_paired`) — is marked moved: its
+       version is raised with them (`Plan.version_moves`).
     """
     plan = Plan()
     seen: set[int] = set()
@@ -339,7 +447,7 @@ def planned_save(session: Session, records: list[Any]) -> Plan:
         2. Written when it is a root (`explicit`) or has changed; a changed child marks
            its root moved.
         3. Per relation it owns that holds a value: each child given the record's key, then
-           visited.
+           visited. Per many-to-many that holds a value, its pairs (`_paired`).
            3.1 An assignment it carries out is noted, to mark it written afterwards.
            3.2 Blind: logged, nothing settled. Assigned over a whole reading on a stored
                record: what that reading saw is stored to find the orphans (step 2).
@@ -374,6 +482,10 @@ def planned_save(session: Session, records: list[Any]) -> Plan:
                 _, read_by_key = settling.setdefault((type(record), owned.name), (owned, {}))
                 read_by_key.setdefault(key, set()).update(relations.read_before(owned.name))
                 root_by_key.setdefault((type(record), owned.name, key), []).append(root)
+        for linked in linked_by(type(record)):
+            how = relations.held(linked.name)
+            if how is not None and _paired(session, plan, record, linked, how):
+                moved[id(root)] = root
 
     for one in records:
         visit(one, explicit=True, root=one)
@@ -413,5 +525,6 @@ def planned_save(session: Session, records: list[Any]) -> Plan:
         taken = planned_removal(session, orphans)
         plan.removals = taken.removals
         plan.detached.extend(taken.detached)
+        plan.unlinks.extend(taken.unlinks)
     plan.moved = [root for root in moved.values() if not getattr(root, "is_new", False)]
     return plan

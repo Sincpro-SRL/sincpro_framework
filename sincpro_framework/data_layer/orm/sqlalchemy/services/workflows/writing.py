@@ -181,10 +181,14 @@ class Writing(RepositoryState, Extends):
 
         1. Every record is checked against the scope, and the before-moments run for all of them.
         2. The detached first: a child's key is NULL before its root can go.
-        3. The removals, deepest first: an orphan leaves before the child taking its unique
+        3. The pairs of a many-to-many unlinked: a pair points at the root it leaves with.
+        4. The removals, deepest first: an orphan leaves before the child taking its unique
            value arrives.
-        4. Final: the rest, parents before children — a root whose parts move is updated with
-           its version checked and raised; the assignments carried out are marked written.
+        5. The rest, parents before children — a root whose parts move is updated with its
+           version checked and raised.
+        6. The pairs linked, once the roots they point at are rows.
+        Final: the assignments carried out are marked written, and what the records recorded
+        is stored.
         """
         stored, removed = plan.stored, plan.removed
         for one in [*stored, *removed]:
@@ -196,6 +200,9 @@ class Writing(RepositoryState, Extends):
         for batch in _by_dependency(plan.detached):
             session.add_all(batch)
             self._written(session, batch)
+        with session.no_autoflush:
+            for statement in plan.unlinks:
+                session.execute(statement)
         for level in reversed(plan.removals):
             for one in level:
                 session.delete(one)
@@ -203,6 +210,9 @@ class Writing(RepositoryState, Extends):
         for batch in _by_dependency(plan.writes):
             session.add_all(batch)
             self._written(session, batch)
+        with session.no_autoflush:
+            for statement in plan.links:
+                session.execute(statement)
         plan.written()
         self._store_facts(session, [*plan.stored, *plan.removed])
         return newness

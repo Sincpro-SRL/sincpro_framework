@@ -49,6 +49,7 @@ nothing, so it reads exactly what the entity says.
 
 import copy
 import dataclasses
+import inspect
 from collections.abc import Callable, Sequence
 from typing import Any, ClassVar, cast, get_args, get_origin
 
@@ -76,11 +77,13 @@ from sincpro_framework.ddd.entity.entity_collection import (
     Count,
     EntityCollection,
     identity_name,
+    identity_of,
 )
 from sincpro_framework.ddd.entity.entity_meta import (
     annotations_of,
     framework_fields,
     presentation_of,
+    related_class,
 )
 from sincpro_framework.ddd.events import DomainEvent
 from sincpro_framework.ddd.query import (
@@ -183,6 +186,10 @@ class FieldState(DataTransferObject):
     readonly: bool = False
     required: bool = False
     visible: bool = True
+    items: list[dict[str, "FieldState"]] = []
+    """For a list of records — an invoice's lines —, how a form shows each one's fields, in the
+    order the list holds them. Empty for any other field, for a relation nobody read and for
+    the records a many-to-many references."""
 
 
 class ResponsePreview(DataTransferObject):
@@ -393,6 +400,73 @@ class EntityReads[T](Feature):
             ),
         )
 
+    def referenced(self, owner: type, values: dict[str, Any]) -> dict[str, Any]:
+        """The values with each many-to-many the form names by id as the records those ids
+        name — what `assign` puts on a record of `owner`. The other aggregate is referenced,
+        never created nor changed from here.
+
+            # Ticket.labels: a many-to-many to Label
+            referenced(Ticket, {"labels": ["l1", {"id": "l2", "name": "…"}]})
+                ->  {"labels": [<Label l1>, <Label l2>]}
+            referenced(Ticket, {"labels": ["l1", "l9"]})
+                ->  raises InvalidValue("Label l9 does not exist", ("labels", 1))
+            referenced(Invoice, {"lines": [{"qty": 2}]})    ->  as it came: lines are parts
+
+        1. Only a list for a relation the store names by id (`named_by_id`, answered by the
+           persistence adapter without reading anything) is looked at: the lines an aggregate
+           owns are `assign`'s.
+        2. Each item names a record by its identity: the id itself, a mapping holding it —
+           anything else in it is the other aggregate's, and ignored — or the record.
+           2.1 A mapping without the identity is refused, pointing at it: a reference never
+               creates the record it names.
+        3. Every id of the field read in one search, by identity.
+        Final: the values, each reference the record it names; an id with no record refused,
+        pointing at it.
+        """
+        annotations = annotations_of(owner)
+        resolved = dict(values)
+        for name, value in values.items():
+            answers = getattr(inspect.getattr_static(owner, name, None), "named_by_id", None)
+            kind, _ = (
+                related_class(annotations[name]) if name in annotations else (None, False)
+            )
+            if not callable(answers) or not answers() or kind is None:
+                continue
+            if not isinstance(value, list):
+                continue
+            identity = identity_name(kind)
+            ids: list[Any] = []
+            for index, one in enumerate(value):
+                if isinstance(one, dict) and identity not in one:
+                    raise exceptions.InvalidValue(
+                        f"{owner.__name__}.{name} references a {kind.__name__} by its "
+                        f"{identity}, and never creates one: {one!r} names none",
+                        (name, index),
+                    )
+                if isinstance(one, dict):
+                    ids.append(one[identity])
+                elif dataclasses.is_dataclass(one):
+                    ids.append(identity_of(one))
+                else:
+                    ids.append(one)
+            wanted = list(dict.fromkeys(ids))
+            criteria = Criteria(
+                where=Condition(field=identity, value=wanted, operator=Operator.IN),
+                pagination=Pagination(limit=max(len(wanted), 1)),
+                count=CountMode.NONE,
+            )
+            found = {
+                str(identity_of(one)): one
+                for one in self.reads_from().search(kind, criteria).items
+            }
+            for index, one in enumerate(ids):
+                if str(one) not in found:
+                    raise exceptions.InvalidValue(
+                        f"{kind.__name__} {one} does not exist", (name, index)
+                    )
+            resolved[name] = [found[str(one)] for one in ids]
+        return resolved
+
     def previewed(self, entity: type, identity: str | None) -> Any:
         """The record a preview starts from: a copy of the stored one found by its key, read as
         its `DEFAULT_READING` brings it and with the relations its derivations read, or a new
@@ -441,7 +515,7 @@ class EntityReads[T](Feature):
         """
         stored = self.stored(entity, key)
         record = stored if stored is not None else keyed(blank(entity), entity, key)
-        assign(record, draft.values, True)
+        assign(record, self.referenced(type(record), draft.values), True)
         answer = response.of(record, self.described(entity, criteria), criteria)
         answer.draft = DraftState(
             version=draft.version,
@@ -542,7 +616,7 @@ class EntityReads[T](Feature):
             key = subject.removeprefix(prefix)
             stored = self.stored(entity, key)
             record = stored if stored is not None else keyed(blank(entity), entity, key)
-            assign(record, draft.values, True)
+            assign(record, self.referenced(type(record), draft.values), True)
             records.append(record)
         page = EntityCollection(items=tuple(records)).filtered_by(criteria.expression)
         for sort in reversed(criteria.order):
@@ -652,7 +726,7 @@ class EntityReads[T](Feature):
         with previewing() as advice:
             record = self.previewed(entity, dto.id)
             sent = held(record)
-            assign(record, dto.values)
+            assign(record, self.referenced(type(record), dto.values))
             sent.update({name: getattr(record, name) for name in dto.values})
             recompute(record, dto.changed)
             pull = getattr(record, "pull_events", None)
@@ -875,16 +949,40 @@ def _holds(record: Any, condition: Any) -> bool:
 
 def states_of(record: Any) -> dict[str, FieldState]:
     """Each field's hints, evaluated over this record: what a client with no Criteria evaluator
-    shows."""
+    shows.
+
+        Invoice(state=confirmed, lines=[line 1, line 2])
+            ->  {"partner_id": FieldState(readonly=True), …,
+                 "lines": FieldState(items=[{"quantity": FieldState(…), …}, {…}])}
+
+    1. Each field read-only, required and visible as its class declared, the conditions
+       evaluated over this record.
+    2. A list of records it holds, already read — the lines —, each one's own states, by
+       the line's class; a relation nobody read is skipped, as `dumped` does, and so are the
+       records a many-to-many references (`named_by_id`): another aggregate's, not parts.
+    Final: the states by field name.
+    """
     presented = presentation_of(type(record))
-    return {
-        name: FieldState(
+    states: dict[str, FieldState] = {}
+    for name in annotations_of(type(record)):
+        try:
+            value = getattr(record, name)
+        except exceptions.RelationNotResolved:
+            value = None
+        named = getattr(inspect.getattr_static(type(record), name, None), "named_by_id", None)
+        referenced = callable(named) and named()
+        held = (
+            list(value)
+            if isinstance(value, (list, EntityCollection)) and not referenced
+            else []
+        )
+        states[name] = FieldState(
             readonly=name in presented.readonly
             or _holds(record, presented.readonly_when.get(name)),
             required=name in presented.required
             or _holds(record, presented.required_when.get(name)),
             visible=name not in presented.visible_when
             or _holds(record, presented.visible_when[name]),
+            items=[states_of(one) for one in held if dataclasses.is_dataclass(one)],
         )
-        for name in annotations_of(type(record))
-    }
+    return states
