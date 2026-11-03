@@ -41,3 +41,5 @@ class PackedFeatureOrAppService(DataTransferObject):
     its access and its stages from."""
     response: Any = None
     """What `execute` declares it answers, as an annotation — `None` for nothing declared."""
+    entities: tuple[type, ...] = ()
+    """The entities it concerns (`entity_tags`) — what a wire adds to its tags."""

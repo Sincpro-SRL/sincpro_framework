@@ -407,7 +407,10 @@ def method_object(
         "name": name,
         "summary": operation.description.split("\n", 1)[0],
         "description": operation.description,
-        "tags": [{"name": operation.alias}],
+        "tags": [
+            {"name": operation.alias},
+            *({"name": one.__name__} for one in operation.entities),
+        ],
         "paramStructure": "by-name",
         "params": content_descriptors(params),
         "result": {"name": "result", "schema": result},

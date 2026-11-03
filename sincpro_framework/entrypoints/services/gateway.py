@@ -485,6 +485,7 @@ class Gateway:
             access=self._access_of(bus, packed.dto),
             run=packed.run,
             call=packed.call,
+            entities=packed.entities,
         )
 
     def _access_problems(self, operation: Operation, wire: str) -> list[str]:

@@ -30,6 +30,8 @@ class OperationDescription:
     it is not declared."""
 
     description: str
+    entities: tuple[type, ...] = ()
+    """The entities it concerns (`entity_tags`) — a category to group it by."""
 
     @property
     def response_fields(self) -> set[str] | None:
@@ -58,10 +60,11 @@ class OperationDescription:
 
     def to_json(self) -> dict[str, Any]:
         """The operation as JSON Schema, for an agent or a UI — `response` is `None` unless it
-        is a Pydantic model."""
+        is a Pydantic model; `entities` by name."""
         is_model = isinstance(self.response, type) and issubclass(self.response, BaseModel)
         return {
             "description": self.description,
+            "entities": [one.__name__ for one in self.entities],
             "input": self.input.model_json_schema(),
             "response": self.response.model_json_schema() if is_model else None,
         }
@@ -74,7 +77,7 @@ def operations_of(bus: UseFramework) -> dict[str, OperationDescription]:
     described = {**features(bus), **app_services(bus)}
     return {
         name: OperationDescription(
-            name, metadata.dto, metadata.response, metadata.description
+            name, metadata.dto, metadata.response, metadata.description, metadata.entities
         )
         for name, metadata in sorted(described.items())
     }

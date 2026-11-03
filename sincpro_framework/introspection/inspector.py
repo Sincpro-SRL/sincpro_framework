@@ -16,6 +16,7 @@ from typing import Any, get_args, get_origin, get_type_hints
 from sincpro_framework.bus import FrameworkBus
 from sincpro_framework.bus_pipeline.interceptors.interceptor import InterceptorCall
 from sincpro_framework.common.ordering import name_of
+from sincpro_framework.introspection.entity_tags import entities_of
 from sincpro_framework.sincpro_abstractions import (
     ApplicationService,
     DataTransferObject,
@@ -60,6 +61,9 @@ class FeatureOrAppServiceMetadata(DataTransferObject):
     """What wraps it, outermost first, as `module.function`."""
     replaces: tuple[str, ...] = ()
     """The handlers it replaced, oldest first, as `module.Class` — empty for the core's own."""
+    entities: tuple[type, ...] = ()
+    """The entities it concerns (`entity_tags`, or what its DTO names in its type) — a
+    category to group it by, nothing more; empty when it belongs to its context alone."""
 
 
 class DtoMetadata(DataTransferObject):
@@ -161,6 +165,7 @@ def _describe_all(
             response=_resolve_response(feature_or_app_type),
             interceptors=tuple(name_of(one) for one in interceptors.get(dto_type, ())),
             replaces=replacements.get(dto_type, ()),
+            entities=entities_of(feature_or_app_type, dto_type),
         )
     return metadata
 

@@ -126,6 +126,7 @@ class Catalog:
                     call=partial(execution.execute, run),
                     handler=metadata.type,
                     response=metadata.response,
+                    entities=metadata.entities,
                 )
             )
         return result
