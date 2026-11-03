@@ -41,26 +41,44 @@ class InvalidCriteria(ClientError):
 
 
 class InvalidValue(ClientError):
-    """A value of a form its field cannot take, with where it is in the form's `values` — a line
-    of an invoice included — so the answer points at it and a screen marks that cell.
+    """A value the caller sent that its field cannot take, with where it is — a line of an
+    invoice included — so the answer points at it and a screen marks that cell.
 
         InvalidValue("InvoiceLine.quantity cannot take 'two': …", ("lines", 3, "quantity"))
         ->  Problem(errors=[FieldError(pointer="#/values/lines/3/quantity", detail="…")])
+        InvalidValue("not a valid RUC", ("tax_id",), field="customer")
+        ->  Problem(errors=[FieldError(pointer="#/customer/tax_id", detail="…")])
 
-    `path` is empty when the value is wrong as a whole — a line that cannot be built from what
-    came — and then the pointer is the line itself.
+    `path` is where the value is inside the record, empty when the value is wrong as a whole — a
+    line that cannot be built — and then the pointer is the line itself. `field` is the field of
+    the request that carries the record: `values` in an `Edit` and a `Preview`, which is what
+    `assign` refuses into; a project's own rule — a hook, a Feature — raises it with its own.
     """
 
-    def __init__(self, message: str, path: tuple[str | int, ...]) -> None:
+    def __init__(
+        self, message: str, path: tuple[str | int, ...], field: str = "values"
+    ) -> None:
+        """`message` is what the caller reads; `path` and `field` say where it points."""
         super().__init__(message)
         self.path = path
+        self.field = field
+
+    def within(self, *outer: str | int) -> "InvalidValue":
+        """The same refusal seen from the record that holds it: `outer` before its path.
+
+            InvalidValue("…", ("qty",)).within("lines", 3).path    ->  ("lines", 3, "qty")
+
+        What a list of lines raises when one of them refuses a value, so the pointer reaches
+        the cell and the message stays the one the line wrote.
+        """
+        return InvalidValue(str(self), (*outer, *self.path), self.field)
 
     def refine_problem(self, problem: Problem) -> Problem:
-        """The problem with the value it points at: `#/values/<path>`."""
+        """The problem with the value it points at: `#/<field>/<path>`."""
         return problem.model_copy(
             update={
                 "errors": [
-                    FieldError(pointer=pointer(("values", *self.path)), detail=str(self))
+                    FieldError(pointer=pointer((self.field, *self.path)), detail=str(self))
                 ]
             }
         )

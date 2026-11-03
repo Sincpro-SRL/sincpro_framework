@@ -34,6 +34,7 @@ from sincpro_framework.ddd.criteria import (
     Grouping,
     GroupingLevel,
     Measure,
+    MeasureFunction,
     Sort,
     Specification,
 )
@@ -171,7 +172,7 @@ def test_the_core_is_filtered_ordered_and_grouped_with_a_field_of_an_extension_i
         Criteria(
             grouping=Grouping(
                 group_by=(GroupingLevel(field="route"),),
-                measures={"total": Measure(function="sum", field="total")},
+                measures={"total": Measure(function=MeasureFunction.SUM, field="total")},
             )
         ),
     )

@@ -36,6 +36,7 @@ from sincpro_framework.ddd.criteria import (
     Grouping,
     GroupingLevel,
     Measure,
+    MeasureFunction,
     Operator,
     Pagination,
     Part,
@@ -207,7 +208,7 @@ def test_a_computed_field_is_grouped_and_folded_like_a_column(bills: Any):
     buckets = grouped(
         bills,
         GroupingLevel(field="owner"),
-        measures={"owing": Measure(function="sum", field="balance")},
+        measures={"owing": Measure(function=MeasureFunction.SUM, field="balance")},
     )
 
     assert {one.value: one.measures["owing"] for one in buckets} == {
@@ -368,8 +369,8 @@ def test_an_empty_group_folds_to_nothing_and_a_count_to_zero(bills: Any):
         bills,
         GroupingLevel(field="state", fill=True),
         measures={
-            "owing": Measure(function="sum", field="balance"),
-            "owners": Measure(function="count_distinct", field="owner"),
+            "owing": Measure(function=MeasureFunction.SUM, field="balance"),
+            "owners": Measure(function=MeasureFunction.COUNT_DISTINCT, field="owner"),
         },
     )
 
@@ -447,8 +448,8 @@ def test_all_or_any_of_a_boolean(bills: Any):
             bills,
             GroupingLevel(field="owner"),
             measures={
-                "all_settled": Measure(function="bool_and", field="settled"),
-                "any_settled": Measure(function="bool_or", field="settled"),
+                "all_settled": Measure(function=MeasureFunction.BOOL_AND, field="settled"),
+                "any_settled": Measure(function=MeasureFunction.BOOL_OR, field="settled"),
             },
         )
     }
@@ -465,19 +466,19 @@ def test_a_boolean_fold_is_refused_for_anything_that_is_not_a_boolean(bills: Any
         grouped(
             bills,
             GroupingLevel(field="owner"),
-            measures={"x": Measure(function="bool_and", field="total")},
+            measures={"x": Measure(function=MeasureFunction.BOOL_AND, field="total")},
         )
 
 
 def test_the_median_is_the_half_percentile_and_needs_no_argument():
-    assert Measure(function="median", field="total").argument is None
+    assert Measure(function=MeasureFunction.MEDIAN, field="total").argument is None
     with pytest.raises(ddd_exceptions.InvalidCriteria, match="takes no argument"):
-        Measure(function="median", field="total", argument=0.5)
+        Measure(function=MeasureFunction.MEDIAN, field="total", argument=0.5)
 
 
 def test_the_median_is_answered_in_memory_and_refused_where_sql_has_no_percentile():
     memory = MemoryRepository(*(bill(row) for row in ROWS))
-    median = {"mid": Measure(function="median", field="total")}
+    median = {"mid": Measure(function=MeasureFunction.MEDIAN, field="total")}
 
     assert grouped(memory, GroupingLevel(field="owner"), measures=median)[0].measures == {
         "mid": 75.0
@@ -545,7 +546,7 @@ def test_the_boolean_folds_use_the_native_function_where_there_is_one():
         measure_columns,
     )
 
-    folds = {"all": Measure(function="bool_and", field="settled")}
+    folds = {"all": Measure(function=MeasureFunction.BOOL_AND, field="settled")}
 
     on_postgres = measure_columns(
         Bill, ModelIntrospection.describe(Bill), folds, "postgresql"
@@ -664,7 +665,7 @@ def test_the_median_is_the_same_number_in_memory_and_where_the_engine_has_percen
         for one in grouped(
             bills,
             GroupingLevel(field="owner"),
-            measures={"mid": Measure(function="median", field="total")},
+            measures={"mid": Measure(function=MeasureFunction.MEDIAN, field="total")},
         )
     }
 

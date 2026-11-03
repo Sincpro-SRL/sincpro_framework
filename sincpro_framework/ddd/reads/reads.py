@@ -49,8 +49,7 @@ nothing, so it reads exactly what the entity says.
 
 import copy
 import dataclasses
-import inspect
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from typing import Any, ClassVar, cast, get_args, get_origin
 
 from pydantic import field_validator
@@ -85,6 +84,7 @@ from sincpro_framework.ddd.entity.entity_meta import (
     presentation_of,
     related_class,
 )
+from sincpro_framework.ddd.entity.relations import relation_attribute
 from sincpro_framework.ddd.events import DomainEvent
 from sincpro_framework.ddd.query import (
     DraftState,
@@ -233,27 +233,41 @@ def key_of(entity: type) -> str:
     return presentation_of(entity).get_id or identity_name(entity)
 
 
-def declared_by(dto: type) -> tuple[type, type]:
-    """The entity and the response a DTO named in its base.
+def named_in_type(dto: type) -> tuple[type, type] | None:
+    """The entity and the response a DTO names in its type, or `None` when it names none.
 
-        declared_by(QueryGetAccount)       ->  (Account, ResponseAccount)
+        named_in_type(QueryGetAccount)       ->  (Account, ResponseAccount)
         # class QueryGetAccount(Get[Account, ResponseAccount])
-        declared_by(CommandEditInvoice)    ->  (Invoice, ResponseEditInvoice)
-        declared_by(QueryHealth)
-            ->  raises ProgrammingError("QueryHealth does not name its entity and …")
+        named_in_type(CommandEditInvoice)    ->  (Invoice, ResponseEditInvoice)
+        named_in_type(QueryHealth)           ->  None
 
     Context: the first base in the MRO parametrized with two classes is the one read, so a
-    subclass of a declared DTO answers what its parent named.
+    subclass of a declared DTO answers what its parent named — every framework DTO of one
+    entity (`Get`, `Search`, `Edit`, …) is written so, and whoever groups use cases by entity
+    reads it here rather than keeping a list of them.
     """
     for base in dto.__mro__:
         generic = getattr(base, "__pydantic_generic_metadata__", None)
         arguments = generic.get("args", ()) if generic else ()
         if len(arguments) == 2 and all(isinstance(one, type) for one in arguments):
             return arguments[0], arguments[1]
-    raise exceptions.ProgrammingError(
-        f"{dto.__name__} does not name its entity and response: "
-        f"class {dto.__name__}(Get[Account, ResponseAccount])"
-    )
+    return None
+
+
+def declared_by(dto: type) -> tuple[type, type]:
+    """The entity and the response a DTO named in its base — refused when it names none.
+
+    declared_by(QueryGetAccount)       ->  (Account, ResponseAccount)
+    declared_by(QueryHealth)
+        ->  raises ProgrammingError("QueryHealth does not name its entity and …")
+    """
+    named = named_in_type(dto)
+    if named is None:
+        raise exceptions.ProgrammingError(
+            f"{dto.__name__} does not name its entity and response: "
+            f"class {dto.__name__}(Get[Account, ResponseAccount])"
+        )
+    return named
 
 
 def held(record: Any) -> dict[str, Any]:
@@ -400,6 +414,62 @@ class EntityReads[T](Feature):
             ),
         )
 
+    def ids_named(self, kind: type, value: list[Any]) -> list[Any]:
+        """The identity each item of a form's list names, in order: the id itself, a mapping
+        holding it — anything else in it is the other aggregate's, and ignored — or the record.
+
+            ids_named(Label, ["l1", {"id": "l2", "name": "…"}, <Label l3>])
+                ->  ["l1", "l2", "l3"]
+            ids_named(Label, [{"name": "new"}])
+                ->  raises InvalidValue(… never creates one …, (0,))
+
+        A mapping without the identity is refused, pointing at it: a reference never creates
+        the record it names.
+        """
+        identity = identity_name(kind)
+        ids: list[Any] = []
+        for index, one in enumerate(value):
+            if isinstance(one, Mapping) and identity not in one:
+                raise exceptions.InvalidValue(
+                    f"a {kind.__name__} is referenced by its {identity}, and never creates "
+                    f"one: {one!r} names none",
+                    (index,),
+                )
+            if isinstance(one, Mapping):
+                ids.append(one[identity])
+            elif isinstance(one, kind):
+                ids.append(identity_of(one))
+            else:
+                ids.append(one)
+        return ids
+
+    def records_named(self, kind: type, ids: list[Any]) -> list[Any]:
+        """The records of `ids`, in that order, read in one search by identity.
+
+            records_named(Label, ["l1", "l2"])    ->  [<Label l1>, <Label l2>]
+            records_named(Label, ["l1", "l9"])    ->  raises InvalidValue("Label l9 does not
+                                                      exist", (1,))
+
+        An id with no record is refused, pointing at its position.
+        """
+        identity = identity_name(kind)
+        wanted = list(dict.fromkeys(ids))
+        criteria = Criteria(
+            where=Condition(field=identity, value=wanted, operator=Operator.IN),
+            pagination=Pagination(limit=max(len(wanted), 1)),
+            count=CountMode.NONE,
+        )
+        found = {
+            str(identity_of(one)): one
+            for one in self.reads_from().search(kind, criteria).items
+        }
+        for index, one in enumerate(ids):
+            if str(one) not in found:
+                raise exceptions.InvalidValue(
+                    f"{kind.__name__} {one} does not exist", (index,)
+                )
+        return [found[str(one)] for one in ids]
+
     def referenced(self, owner: type, values: dict[str, Any]) -> dict[str, Any]:
         """The values with each many-to-many the form names by id as the records those ids
         name — what `assign` puts on a record of `owner`. The other aggregate is referenced,
@@ -415,56 +485,29 @@ class EntityReads[T](Feature):
         1. Only a list for a relation the store names by id (`named_by_id`, answered by the
            persistence adapter without reading anything) is looked at: the lines an aggregate
            owns are `assign`'s.
-        2. Each item names a record by its identity: the id itself, a mapping holding it —
-           anything else in it is the other aggregate's, and ignored — or the record.
-           2.1 A mapping without the identity is refused, pointing at it: a reference never
-               creates the record it names.
-        3. Every id of the field read in one search, by identity.
-        Final: the values, each reference the record it names; an id with no record refused,
-        pointing at it.
+        2. The identity each item names (`ids_named`), then their records (`records_named`).
+        Final: the values, each reference the record it names; a refusal points at the field
+        and the item.
         """
         annotations = annotations_of(owner)
         resolved = dict(values)
         for name, value in values.items():
-            answers = getattr(inspect.getattr_static(owner, name, None), "named_by_id", None)
+            attribute = relation_attribute(owner, name)
+            if (
+                attribute is None
+                or not attribute.named_by_id()
+                or not isinstance(value, list)
+            ):
+                continue
             kind, _ = (
                 related_class(annotations[name]) if name in annotations else (None, False)
             )
-            if not callable(answers) or not answers() or kind is None:
+            if kind is None:
                 continue
-            if not isinstance(value, list):
-                continue
-            identity = identity_name(kind)
-            ids: list[Any] = []
-            for index, one in enumerate(value):
-                if isinstance(one, dict) and identity not in one:
-                    raise exceptions.InvalidValue(
-                        f"{owner.__name__}.{name} references a {kind.__name__} by its "
-                        f"{identity}, and never creates one: {one!r} names none",
-                        (name, index),
-                    )
-                if isinstance(one, dict):
-                    ids.append(one[identity])
-                elif dataclasses.is_dataclass(one):
-                    ids.append(identity_of(one))
-                else:
-                    ids.append(one)
-            wanted = list(dict.fromkeys(ids))
-            criteria = Criteria(
-                where=Condition(field=identity, value=wanted, operator=Operator.IN),
-                pagination=Pagination(limit=max(len(wanted), 1)),
-                count=CountMode.NONE,
-            )
-            found = {
-                str(identity_of(one)): one
-                for one in self.reads_from().search(kind, criteria).items
-            }
-            for index, one in enumerate(ids):
-                if str(one) not in found:
-                    raise exceptions.InvalidValue(
-                        f"{kind.__name__} {one} does not exist", (name, index)
-                    )
-            resolved[name] = [found[str(one)] for one in ids]
+            try:
+                resolved[name] = self.records_named(kind, self.ids_named(kind, value))
+            except exceptions.InvalidValue as error:
+                raise error.within(name) from error
         return resolved
 
     def previewed(self, entity: type, identity: str | None) -> Any:
@@ -969,8 +1012,8 @@ def states_of(record: Any) -> dict[str, FieldState]:
             value = getattr(record, name)
         except exceptions.RelationNotResolved:
             value = None
-        named = getattr(inspect.getattr_static(type(record), name, None), "named_by_id", None)
-        referenced = callable(named) and named()
+        attribute = relation_attribute(type(record), name)
+        referenced = attribute is not None and attribute.named_by_id()
         held = (
             list(value)
             if isinstance(value, (list, EntityCollection)) and not referenced

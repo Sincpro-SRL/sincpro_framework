@@ -20,6 +20,7 @@ from sincpro_framework.ddd.criteria import (
     Grouping,
     GroupingLevel,
     Measure,
+    MeasureFunction,
     Pagination,
     Sort,
 )
@@ -40,8 +41,8 @@ FOUR_LEVELS = Criteria(
             GroupingLevel(field="posted_at", grain=Grain.MONTH),
         ),
         measures={
-            "debit": Measure(function="sum", field="debit"),
-            "credit": Measure(function="sum", field="credit"),
+            "debit": Measure(function=MeasureFunction.SUM, field="debit"),
+            "credit": Measure(function=MeasureFunction.SUM, field="credit"),
         },
     ),
 )
@@ -275,7 +276,7 @@ def test_the_heaviest_accounts_come_first_and_only_the_top_ones(ledger: Reposito
         where=POSTED,
         grouping=Grouping(
             group_by=(GroupingLevel(field="account_id"),),
-            measures={"debit": Measure(function="sum", field="debit")},
+            measures={"debit": Measure(function=MeasureFunction.SUM, field="debit")},
             where_measures=Condition(field="count", value=10, operator=Operator.GT),
             order=Sort.parse("-debit"),
             pagination=Pagination(limit=5),
@@ -294,7 +295,7 @@ def test_the_heaviest_accounts_come_first_and_only_the_top_ones(ledger: Reposito
             where=POSTED,
             grouping=Grouping(
                 group_by=(GroupingLevel(field="account_id"),),
-                measures={"debit": Measure(function="sum", field="debit")},
+                measures={"debit": Measure(function=MeasureFunction.SUM, field="debit")},
                 order=Sort.parse("-debit"),
             ),
         ),

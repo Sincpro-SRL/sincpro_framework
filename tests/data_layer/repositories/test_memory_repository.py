@@ -21,6 +21,7 @@ from sincpro_framework.ddd.criteria import (
     Grouping,
     GroupingLevel,
     Measure,
+    MeasureFunction,
     Offset,
     Operator,
     Pagination,
@@ -158,7 +159,7 @@ def test_groups_count_fold_filter_and_order_like_the_adapter(ledger, accounts):
     asked = Criteria(
         grouping=Grouping(
             group_by=(GroupingLevel(field="kind"),),
-            measures={"weight": Measure(function="sum", field="balance")},
+            measures={"weight": Measure(function=MeasureFunction.SUM, field="balance")},
             order=(Sort(field="weight", descending=True),),
         )
     )
@@ -281,8 +282,8 @@ def test_the_memory_repository_computes_the_measures_a_database_would():
         None,
         total=("sum", "balance"),
         kinds=("count_distinct", "kind"),
-        middle=Measure(function="percentile", field="balance", argument=0.5),
-        p90=Measure(function="percentile", field="balance", argument=0.9),
+        middle=Measure(function=MeasureFunction.PERCENTILE, field="balance", argument=0.5),
+        p90=Measure(function=MeasureFunction.PERCENTILE, field="balance", argument=0.9),
     )
 
     assert answered["total"] == 140
@@ -303,7 +304,9 @@ def test_a_percentile_interpolates_between_the_two_values_it_falls_between():
         store.measures(
             Accounts,
             None,
-            middle=Measure(function="percentile", field="balance", argument=0.5),
+            middle=Measure(
+                function=MeasureFunction.PERCENTILE, field="balance", argument=0.5
+            ),
         )["middle"]
         == 2.5
     )
@@ -322,7 +325,11 @@ def test_count_distinct_over_a_grouping_counts_within_each_bucket():
         Criteria(
             grouping=Grouping(
                 group_by=(GroupingLevel(field="kind"),),
-                measures={"balances": Measure(function="count_distinct", field="balance")},
+                measures={
+                    "balances": Measure(
+                        function=MeasureFunction.COUNT_DISTINCT, field="balance"
+                    )
+                },
             )
         ),
     )

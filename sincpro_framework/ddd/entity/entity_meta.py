@@ -47,6 +47,7 @@ from sincpro_framework.ddd.criteria import (
     Criteria,
     Expression,
     FromField,
+    MeasureFunction,
     Node,
     Operator,
     Resolution,
@@ -178,32 +179,56 @@ SAME_ROW: tuple[Operator, ...] = tuple(
 )
 """The operators that compare a column with another column of the same row."""
 
-AGGREGATES_BY_TYPE: dict[FieldType, tuple[str, ...]] = {
+AGGREGATES_BY_TYPE: dict[FieldType, tuple[MeasureFunction, ...]] = {
     FieldType.INTEGER: (
-        "sum",
-        "avg",
-        "min",
-        "max",
-        "count",
-        "count_distinct",
-        "percentile",
-        "median",
+        MeasureFunction.SUM,
+        MeasureFunction.AVG,
+        MeasureFunction.MIN,
+        MeasureFunction.MAX,
+        MeasureFunction.COUNT,
+        MeasureFunction.COUNT_DISTINCT,
+        MeasureFunction.PERCENTILE,
+        MeasureFunction.MEDIAN,
     ),
     FieldType.NUMBER: (
-        "sum",
-        "avg",
-        "min",
-        "max",
-        "count",
-        "count_distinct",
-        "percentile",
-        "median",
+        MeasureFunction.SUM,
+        MeasureFunction.AVG,
+        MeasureFunction.MIN,
+        MeasureFunction.MAX,
+        MeasureFunction.COUNT,
+        MeasureFunction.COUNT_DISTINCT,
+        MeasureFunction.PERCENTILE,
+        MeasureFunction.MEDIAN,
     ),
-    FieldType.DATE: ("min", "max", "count", "count_distinct"),
-    FieldType.DATETIME: ("min", "max", "count", "count_distinct"),
-    FieldType.TEXT: ("min", "max", "count", "count_distinct"),
-    FieldType.UUID: ("min", "max", "count", "count_distinct"),
-    FieldType.BOOLEAN: ("bool_and", "bool_or", "count"),
+    FieldType.DATE: (
+        MeasureFunction.MIN,
+        MeasureFunction.MAX,
+        MeasureFunction.COUNT,
+        MeasureFunction.COUNT_DISTINCT,
+    ),
+    FieldType.DATETIME: (
+        MeasureFunction.MIN,
+        MeasureFunction.MAX,
+        MeasureFunction.COUNT,
+        MeasureFunction.COUNT_DISTINCT,
+    ),
+    FieldType.TEXT: (
+        MeasureFunction.MIN,
+        MeasureFunction.MAX,
+        MeasureFunction.COUNT,
+        MeasureFunction.COUNT_DISTINCT,
+    ),
+    FieldType.UUID: (
+        MeasureFunction.MIN,
+        MeasureFunction.MAX,
+        MeasureFunction.COUNT,
+        MeasureFunction.COUNT_DISTINCT,
+    ),
+    FieldType.BOOLEAN: (
+        MeasureFunction.BOOL_AND,
+        MeasureFunction.BOOL_OR,
+        MeasureFunction.COUNT,
+    ),
 }
 """What a field of each type can be folded with. A type that is not here is not folded."""
 
@@ -490,7 +515,7 @@ class FieldMeta(DataTransferObject):
     """While this holds over the record, a form asks for the field. A hint."""
     visible_when: Expression | None = None
     """A form shows the field only while this holds over the record. A hint."""
-    total: str | None = None
+    total: MeasureFunction | None = None
     """The function a list folds this field with at its foot — one of `aggregates`, as the
     entity's `presentation` declared it (`totals`). `None`: nothing is added up. A hint."""
 
@@ -501,7 +526,7 @@ class FieldMeta(DataTransferObject):
     groupable: bool = False
     """Whether a grouping may split by this field (`GroupingLevel(field=…)`): a scalar that is not a list
     or a translation. A date is grouped by a grain or by a part, which the level says."""
-    aggregates: tuple[str, ...] = ()
+    aggregates: tuple[MeasureFunction, ...] = ()
     """The functions this field can be folded with (`Measure(function=…, field=…)`), by its type.
     A client offers exactly these and never carries the table."""
     computed: bool = False
@@ -1043,7 +1068,7 @@ class Presented:
     readonly_when: dict[str, Expression] = dataclasses.field(default_factory=dict)
     required_when: dict[str, Expression] = dataclasses.field(default_factory=dict)
     visible_when: dict[str, Expression] = dataclasses.field(default_factory=dict)
-    totals: dict[str, str] = dataclasses.field(default_factory=dict)
+    totals: dict[str, MeasureFunction] = dataclasses.field(default_factory=dict)
 
 
 def _entries(answered: object) -> tuple[object, ...]:
@@ -1231,24 +1256,37 @@ def _named(answered: object, form: str) -> frozenset[str]:
     return frozenset(field_name(one, form) for one in _entries(answered))
 
 
-def _totals_checked(owner: str, answered: object) -> dict[str, str]:
-    """The function each field is added up with, by field name.
+def _totals_checked(owner: str, answered: object) -> dict[str, MeasureFunction]:
+    """The function each field is added up with, by field name — refused here when it is no
+    total at all, so a typo fails when the class is read.
 
-        {i.amount: "sum", i.weight: "avg"}   ->  {"amount": "sum", "weight": "avg"}
-        [i.amount]                           ->  ProgrammingError: takes a mapping …
+        {i.amount: MeasureFunction.SUM, i.weight: "avg"}   ->  {"amount": SUM, "weight": AVG}
+        {i.amount: "total"}        ->  ProgrammingError: adds up amount by 'total' …
+        {i.rate: "percentile"}     ->  ProgrammingError: … a total takes no fraction
+        [i.amount]                 ->  ProgrammingError: takes a mapping …
 
-    Which functions a field takes depends on how it is stored, so that is checked when the
-    class is described (`hinted`), not here.
+    1. A mapping of field to function, each field read through the entity.
+    2. Each function a `MeasureFunction` that needs nothing but a column — `percentile` needs
+       the fraction a total does not carry.
+    Final: the totals; whether the field's type takes each one depends on how it is stored,
+    so that is checked when the class is described (`hinted`).
     """
     if not isinstance(answered, Mapping):
         raise exceptions.ProgrammingError(
             f"{owner}.presentation totals takes a mapping of field to function, as in "
-            f'lambda i: {{i.amount: "sum"}}; it was given {answered!r}'
+            f"lambda i: {{i.amount: MeasureFunction.SUM}}; it was given {answered!r}"
         )
-    return {
-        field_name(one, '{i.amount: "sum"}'): str(function)
-        for one, function in answered.items()
-    }
+    offered = [one for one in MeasureFunction if one is not MeasureFunction.PERCENTILE]
+    totals: dict[str, MeasureFunction] = {}
+    for one, function in answered.items():
+        name = field_name(one, "{i.amount: MeasureFunction.SUM}")
+        if function not in offered:
+            raise exceptions.ProgrammingError(
+                f"{owner}.presentation adds up {name} by {function!r}; a total is one of "
+                f"{', '.join(offered)} — a percentile takes a fraction a total does not carry"
+            )
+        totals[name] = MeasureFunction(function)
+    return totals
 
 
 def framework_fields(declared: type) -> frozenset[str]:
@@ -1500,16 +1538,18 @@ def hinted(fields: dict[str, "FieldMeta"], declared: type) -> dict[str, "FieldMe
         hinted(…)   ->  ProgrammingError: Invoice.presentation adds up partner_id by sum;
                         a text adds up by min, max, count, count_distinct
 
-    1. A total the field cannot be folded with — not one of its `aggregates`, or `percentile`,
-       which needs a fraction a total does not carry — is refused, naming what it takes.
+    1. A total the field's type cannot be folded with — not one of its `aggregates` — is
+       refused, naming what it takes.
     Final: each field with its hints.
     """
     presented = presentation_of(declared)
     defaults = defaults_of(declared)
     for name, function in presented.totals.items():
         meta = fields.get(name)
-        if meta is not None and (function not in meta.aggregates or function == "percentile"):
-            offered = [one for one in meta.aggregates if one != "percentile"]
+        if meta is not None and function not in meta.aggregates:
+            offered = [
+                one for one in meta.aggregates if one is not MeasureFunction.PERCENTILE
+            ]
             raise exceptions.ProgrammingError(
                 f"{declared.__name__}.presentation adds up {name} by {function}; "
                 f"a {meta.type} adds up by {', '.join(offered) or 'nothing'}"

@@ -15,7 +15,7 @@ from sqlalchemy import Table
 
 from sincpro_framework.ddd.criteria import Criteria
 from sincpro_framework.ddd.entity import relations
-from sincpro_framework.ddd.entity.relations import Resolver
+from sincpro_framework.ddd.entity.relations import RelationKind, Resolver
 
 REPOSITORY = "sincpro_repository"
 """The key under which a unit of work leaves its repository on the session, so a relation
@@ -135,7 +135,7 @@ class TableRelation(relations.Relation):
 
     def __init__(
         self,
-        kind: str,
+        kind: RelationKind | str,
         related: type,
         identified_by: str = "",
         resolver: Resolver | None = None,
@@ -152,7 +152,7 @@ class TableRelation(relations.Relation):
         every kind's options at once. `through` and `related_key` are read by `many_to_many`
         only; `owned` and `orphans` by a to-many `foreign_key` only.
 
-            TableRelation("many_to_many", Tag, "dataset_id", through=dataset_tag,
+            TableRelation(RelationKind.MANY_TO_MANY, Tag, "dataset_id", through=dataset_tag,
                      related_key="tag_id")
                 ->  as TableRelation.many_to_many(Tag, dataset_tag, "dataset_id", "tag_id")
 
@@ -203,7 +203,7 @@ class TableRelation(relations.Relation):
         own its parent, and `owned` is read only on a to-many.
         """
         return cls(
-            "foreign_key",
+            RelationKind.FOREIGN_KEY,
             related,
             identified_by,
             scope=scope,
@@ -226,7 +226,7 @@ class TableRelation(relations.Relation):
         """Same database: the pairs live in `through`, `this_key` pointing here and
         `related_key` pointing at the related aggregate."""
         return cls(
-            "many_to_many",
+            RelationKind.MANY_TO_MANY,
             related,
             this_key,
             through=through,
@@ -239,4 +239,4 @@ class TableRelation(relations.Relation):
         cls, related: type, identified_by: str, scope: Criteria | None = None
     ) -> "TableRelation":
         """Same database, no foreign key: this aggregate holds a list of the related ids."""
-        return cls("id_list", related, identified_by, scope=scope)
+        return cls(RelationKind.ID_LIST, related, identified_by, scope=scope)

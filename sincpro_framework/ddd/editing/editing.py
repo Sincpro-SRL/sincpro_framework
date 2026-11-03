@@ -11,9 +11,9 @@ of it agree.
 
 import dataclasses
 import inspect
-from collections.abc import Iterable, Mapping
+from collections.abc import Callable, Iterable, Mapping
 from functools import cache
-from typing import Any, cast, get_args, get_origin
+from typing import Any, get_args, get_origin
 
 from pydantic import TypeAdapter, ValidationError
 
@@ -27,6 +27,7 @@ from sincpro_framework.ddd.entity.entity_meta import (
     related_class,
     without_optional,
 )
+from sincpro_framework.ddd.entity.relations import relation_attribute
 from sincpro_framework.sincpro_logger import logger
 
 UNREAD = object()
@@ -165,12 +166,11 @@ def _tied_to(record: Any, name: str, kind: type) -> dict[str, Any]:
     (`joined_by`, answered by the persistence adapter without reading anything), and the value
     is always the record's own — one sent by the form is replaced.
     """
-    attribute = inspect.getattr_static(type(record), name, None)
-    answers = getattr(attribute, "joined_by", None)
-    pair = answers(record) if callable(answers) else None
-    if not isinstance(pair, tuple) or len(pair) != 2:
+    attribute = relation_attribute(type(record), name)
+    pair = attribute.joined_by(record) if attribute is not None else None
+    if pair is None:
         return {}
-    mine, theirs = cast(tuple[str, str], pair)
+    mine, theirs = pair
     if theirs not in annotations_of(kind):
         return {}
     return {theirs: getattr(record, mine)}
@@ -200,6 +200,43 @@ def _held_by_identity(record: Any, name: str, kind: type, value: list[Any]) -> d
     return {str(getattr(one, identity)): one for one in held}
 
 
+def _records(
+    owner: type,
+    name: str,
+    kind: type,
+    value: list[Any],
+    made: Callable[[Mapping[str, Any]], Any],
+) -> list[Any]:
+    """Each item of a list of records as the field holds it, in order.
+
+        in      [{"qty": 2}, <InvoiceLine l1>]    →  [InvoiceLine(qty=2), <InvoiceLine l1>]
+        in      ["l1"]                            →  InvalidValue pointing at lines/0
+
+    1. A mapping is a record to make — built, or a held one edited (`made`).
+    2. A record of the line's class is taken as it is.
+    3. Anything else — an id, a number — is refused: a list of records holds records. An id
+       of another aggregate is read as its record before `assign` (`EntityReads.referenced`)
+       only where the store names it by id; here it would be held as a bare value.
+    Final: the records; a refusal inside one points at its position (`within`).
+    """
+    records: list[Any] = []
+    for index, one in enumerate(value):
+        try:
+            if isinstance(one, Mapping):
+                records.append(made(one))
+            elif isinstance(one, kind):
+                records.append(one)
+            else:
+                raise exceptions.InvalidValue(
+                    f"{owner.__name__}.{name} holds {kind.__name__} records, given as a "
+                    f"mapping or as the record; it was given {one!r}",
+                    (),
+                )
+        except exceptions.InvalidValue as error:
+            raise error.within(name, index) from error
+    return records
+
+
 def _read(record: Any, name: str, annotation: Any, value: Any, adopt: bool) -> Any:
     """`value` as the field `name` of `record` holds it.
 
@@ -219,25 +256,19 @@ def _read(record: Any, name: str, annotation: Any, value: Any, adopt: bool) -> A
         kind = members[0]
         held = _held_by_identity(record, name, kind, value)
         tied = _tied_to(record, name, kind)
-        lines: list[Any] = []
-        for index, one in enumerate(value):
-            try:
-                lines.append(
-                    _edited_or_built(kind, {**one, **tied}, held, adopt)
-                    if isinstance(one, Mapping)
-                    else one
-                )
-            except exceptions.InvalidValue as error:
-                raise exceptions.InvalidValue(
-                    str(error), (name, index, *error.path)
-                ) from error
-        return lines
+        return _records(
+            owner,
+            name,
+            kind,
+            value,
+            lambda one: _edited_or_built(kind, {**one, **tied}, held, adopt),
+        )
     if _is_record_class(base) and isinstance(value, Mapping):
         held = _held_by_identity(record, name, base, [value])
         try:
             return _edited_or_built(base, value, held, adopt)
         except exceptions.InvalidValue as error:
-            raise exceptions.InvalidValue(str(error), (name, *error.path)) from error
+            raise error.within(name) from error
     try:
         return adapter_of(annotation).validate_python(value)
     except ValidationError as error:
@@ -308,22 +339,13 @@ def _plain(kind: type, name: str, annotation: Any, value: Any, adopt: bool) -> A
     members = get_args(base)
     if get_origin(base) is list and members and _is_record_class(members[0]):
         if isinstance(value, list):
-            lines: list[Any] = []
-            for index, one in enumerate(value):
-                try:
-                    lines.append(
-                        _built(members[0], one, adopt) if isinstance(one, Mapping) else one
-                    )
-                except exceptions.InvalidValue as error:
-                    raise exceptions.InvalidValue(
-                        str(error), (name, index, *error.path)
-                    ) from error
-            return lines
+            kind = members[0]
+            return _records(kind, name, kind, value, lambda one: _built(kind, one, adopt))
     if _is_record_class(base) and isinstance(value, Mapping):
         try:
             return _built(base, value, adopt)
         except exceptions.InvalidValue as error:
-            raise exceptions.InvalidValue(str(error), (name, *error.path)) from error
+            raise error.within(name) from error
     try:
         return adapter_of(annotation).validate_python(value)
     except ValidationError as error:
@@ -364,17 +386,15 @@ def _holds_whole(record: Any, name: str) -> bool:
     A plain field is held. A relation an adapter manages answers for itself (`holds_whole`):
     not loaded, cut by a specification or assigned blind is not held whole.
     """
-    attribute = inspect.getattr_static(type(record), name, None)
-    answers = getattr(attribute, "holds_whole", None)
-    return bool(answers(record)) if callable(answers) else True
+    attribute = relation_attribute(type(record), name)
+    return attribute.holds_whole(record) if attribute is not None else True
 
 
 def _held_in_part(record: Any, name: str) -> str:
     """How `record` holds part of the relation `name` — `"cut"`, `"blind"` — or `""`, answered
     without reading anything. A plain field, and a relation never read, hold no part."""
-    attribute = inspect.getattr_static(type(record), name, None)
-    answers = getattr(attribute, "held_in_part", None)
-    return str(answers(record)) if callable(answers) else ""
+    attribute = relation_attribute(type(record), name)
+    return attribute.held_in_part(record) if attribute is not None else ""
 
 
 def _warn_stale_derivation(record: Any, derivation: Derivation) -> None:

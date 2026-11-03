@@ -11,7 +11,7 @@ import pytest
 from sqlalchemy import Column, ForeignKey, MetaData, Table, Text, select
 from sqlalchemy.orm import registry
 
-from sincpro_framework import UseFramework
+from sincpro_framework import UseFramework, exceptions
 from sincpro_framework.common.failures import problem_of
 from sincpro_framework.context import InMemoryContexts
 from sincpro_framework.data_layer.orm import TableRelation, map_aggregates
@@ -27,6 +27,11 @@ from sincpro_framework.ddd import (
 )
 from sincpro_framework.ddd import exceptions as ddd_exceptions
 from sincpro_framework.ddd.entity import Entity
+from sincpro_framework.ddd.entity.relations import (
+    RelationAttribute,
+    RelationKind,
+    relation_attribute,
+)
 
 
 @dataclass
@@ -291,3 +296,42 @@ def test_the_labels_a_ticket_references_carry_no_form_state_of_their_own(store, 
     answer = saved(bus, values={"subject": "x", "labels": [labels["urgent"].id]})
 
     assert answer.fields["labels"].items == []
+
+
+def test_a_label_never_stored_is_refused_before_any_pair_is_written(store, labels):
+    ticket = Ticket(subject="x", labels=[Label(name="brand new")])
+
+    with pytest.raises(exceptions.ProgrammingError, match="which is not stored"):
+        with store.context() as repository:
+            repository.save(ticket)
+
+    with store.context() as repository:
+        assert repository.get(Ticket, ticket.id) is None
+
+
+def test_a_label_saved_in_the_same_call_is_linked(store, labels):
+    fresh = Label(name="brand new")
+    ticket = Ticket(subject="x", labels=[fresh])
+
+    with store.context() as repository:
+        repository.save([fresh, ticket])
+
+    assert pairs(store, ticket) == ids(fresh)
+
+
+def test_the_relation_answers_the_domain_through_its_contract():
+    labels_attribute = relation_attribute(Ticket, "labels")
+
+    assert isinstance(labels_attribute, RelationAttribute)
+    assert labels_attribute.named_by_id() is True
+    assert relation_attribute(Ticket, "subject") is None
+
+
+def test_a_relation_kind_is_read_from_its_word_and_an_unknown_one_is_refused():
+    declared = TableRelation(
+        RelationKind.MANY_TO_MANY, Label, "ticket_id", through=ticket_label
+    )
+
+    assert TableRelation("many_to_many", Label, "ticket_id").kind is declared.kind
+    with pytest.raises(ValueError, match="'graph' is not a valid RelationKind"):
+        TableRelation("graph", Label)

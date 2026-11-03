@@ -67,7 +67,13 @@ from sincpro_framework.ddd.entity.presentation import (
     Presentation,
     When,
 )
-from sincpro_framework.ddd.entity.relations import BusResolver, Relation, Resolver
+from sincpro_framework.ddd.entity.relations import (
+    BusResolver,
+    Relation,
+    RelationAttribute,
+    RelationKind,
+    Resolver,
+)
 from sincpro_framework.ddd.events import (
     ChangeTrackingMixin,
     DeliverableEventMixin,
@@ -203,6 +209,8 @@ __all__ = [
     "ReadsAggregates",
     "Relation",
     "RelationNotResolved",
+    "RelationAttribute",
+    "RelationKind",
     "Resolver",
     "ResponseEdit",
     "ResponsePaginatedQuery",

@@ -25,6 +25,7 @@ from sincpro_framework.ddd.criteria import (
     Grouping,
     GroupingLevel,
     Measure,
+    MeasureFunction,
     Now,
     Operator,
     Param,
@@ -605,7 +606,7 @@ def test_a_memory_store_reads_a_group_filter_with_the_servers_context():
         repository.save(Credit(code=number, total=total))
     heavy = Grouping(
         group_by=(GroupingLevel(field="code"),),
-        measures={"total": Measure(function="sum", field="total")},
+        measures={"total": Measure(function=MeasureFunction.SUM, field="total")},
         where_measures=Condition(
             field="total", operator=Operator.GT, value=FromContext(key="floor")
         ),

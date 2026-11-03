@@ -25,7 +25,9 @@ The cardinality itself is always the annotation's: `runs: list[Run]` is a to-man
 decides whether a collection or a single record comes back — nothing else.
 """
 
+import inspect
 from collections.abc import Sequence
+from enum import StrEnum
 from typing import Any, Protocol, runtime_checkable
 
 from sincpro_framework.ddd.criteria import (
@@ -52,6 +54,52 @@ NESTED_LIMIT = 40
 
 Groups = dict[Any, EntityCollection]
 """What every resolution answers: the related records per parent identity."""
+
+
+@runtime_checkable
+class RelationAttribute(Protocol):
+    """What a persistence adapter puts on an entity's class for each relation it manages, and
+    what the domain asks it — every answer given without reading anything.
+
+        attribute = relation_attribute(Sale, "lines")
+        attribute.joined_by(sale)        ->  ("id", "sale_id")    a new line takes the sale's id
+        attribute.holds_whole(sale)      ->  True                 read whole, or assigned over it
+        attribute.held_in_part(sale)     ->  ""                   or "cut", "blind"
+        attribute.named_by_id()          ->  False                lines are parts, sent whole
+
+    Context: the vocabulary cannot import the adapter, so this is the contract between them —
+    `assign` ties a new line by it, `recompute` asks whether a total can be computed, a form's
+    ids of a many-to-many are read as records by it. A store with no such attribute (memory)
+    holds its relations as plain fields: whole, tied by nobody, named by nobody.
+    """
+
+    def joined_by(self, record: Any) -> tuple[str, str] | None:
+        """`record`'s field and the field of a new related record that holds its value, when a
+        save of `record` writes the relation; `None` when it does not."""
+        ...
+
+    def holds_whole(self, record: Any) -> bool:
+        """Whether `record` holds this relation whole."""
+        ...
+
+    def held_in_part(self, record: Any) -> str:
+        """`"cut"`, `"blind"`, or `""` — held whole, or not held at all."""
+        ...
+
+    def named_by_id(self) -> bool:
+        """Whether a form names this relation's records by id — a many-to-many."""
+        ...
+
+
+def relation_attribute(owner: type, name: str) -> RelationAttribute | None:
+    """The attribute an adapter manages the relation `name` of `owner` with; `None` for a plain
+    field, or on a store that manages none. Read off the class without triggering it.
+
+        relation_attribute(Sale, "lines")       ->  the adapter's attribute
+        relation_attribute(Sale, "discount")    ->  None
+    """
+    attribute = inspect.getattr_static(owner, name, None)
+    return attribute if isinstance(attribute, RelationAttribute) else None
 
 
 @runtime_checkable
@@ -86,11 +134,30 @@ class BusResolver:
         return self.bus(self.command(criteria=criteria))
 
 
+class RelationKind(StrEnum):
+    """How a relation is brought — the one word every reader branches on.
+
+        RESOLVER        whatever a function or another context's bus answers (`resolved_by`,
+                        `bus`) — no database
+        FOREIGN_KEY     a column on one side holds the other side's identity
+        MANY_TO_MANY    the pairs live in a table in between
+        ID_LIST         this aggregate holds the related ids in a column
+
+    Context: the vocabulary names all of them so a reader never compares text; only the
+    persistence adapter declares and resolves the three that need a database.
+    """
+
+    RESOLVER = "resolver"
+    FOREIGN_KEY = "foreign_key"
+    MANY_TO_MANY = "many_to_many"
+    ID_LIST = "id_list"
+
+
 class Relation:
     """One relation, declared once beside the aggregate's mapping.
 
-    `kind` names how it is brought. The two kinds here need no database; a persistence adapter
-    subclasses this and adds its own.
+    `kind` names how it is brought (`RelationKind`). The kind here needs no database; a
+    persistence adapter subclasses this and declares its own.
 
     **`scope` is what the relation says before anybody asks.** A `Criteria` like any other: the
     filter every reading of this relation starts from, and the order and page it falls back to.
@@ -108,7 +175,7 @@ class Relation:
 
     def __init__(
         self,
-        kind: str,
+        kind: RelationKind | str,
         related: type,
         identified_by: str = "",
         resolver: Resolver | None = None,
@@ -121,13 +188,16 @@ class Relation:
         brings the relation. Prefer `resolved_by` or `bus` (or an adapter's own kind) to
         calling this directly.
 
-            Relation("resolver", Shelf, identified_by="shelf_id", resolver=shelves_by_ids)
-                ->  .kind == "resolver", .related is Shelf, .many is None, .scope is None
+            Relation(RelationKind.RESOLVER, Shelf, identified_by="shelf_id",
+                     resolver=shelves_by_ids)
+                ->  .kind is RelationKind.RESOLVER, .related is Shelf, .many is None
+            Relation("resolver", …)  ->  the same: the word is read as its kind
+            Relation("graph", …)     ->  ValueError: 'graph' is not a valid RelationKind
             Relation(…, many=True)   # installed by an extension on a class it does not own
 
         `many` stays `None` when the annotation will say it.
         """
-        self.kind = kind
+        self.kind = RelationKind(kind)
         self.many = many
         """To-many (`True`) or to-one (`False`), when the declaration says it. A relation an
         extension installs on a class it does not own cannot be annotated there, so it says it
@@ -151,7 +221,7 @@ class Relation:
     ) -> "Relation":
         """Whatever the provider wrote: `resolver(keys, criteria)` answers the related records."""
         return cls(
-            "resolver",
+            RelationKind.RESOLVER,
             related,
             identified_by,
             resolver,
@@ -175,7 +245,7 @@ class Relation:
         """Another bounded context: the command carries the reflected criteria, the bus answers
         a paged response whose records are the related aggregate."""
         return cls(
-            "resolver",
+            RelationKind.RESOLVER,
             related,
             identified_by,
             BusResolver(bus, command),

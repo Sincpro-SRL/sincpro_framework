@@ -23,6 +23,7 @@ from sincpro_framework.ddd.criteria import (
     Grouping,
     GroupingLevel,
     Measure,
+    MeasureFunction,
 )
 
 from .engines import fresh
@@ -93,7 +94,7 @@ def test_a_key_of_the_slot_is_grouped_and_measured_like_a_column(engine_url):
         Criteria(
             grouping=Grouping(
                 group_by=(GroupingLevel(field="zone"),),
-                measures={"weight": Measure(function="sum", field="weight")},
+                measures={"weight": Measure(function=MeasureFunction.SUM, field="weight")},
             )
         ),
     )

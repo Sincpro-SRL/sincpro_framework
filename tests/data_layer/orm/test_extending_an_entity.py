@@ -51,6 +51,7 @@ from sincpro_framework.ddd.criteria import (
     Grouping,
     GroupingLevel,
     Measure,
+    MeasureFunction,
     Operator,
     Specification,
 )
@@ -325,7 +326,7 @@ def test_a_field_read_out_of_the_json_slot_is_filtered_and_grouped_like_a_column
         Criteria(
             grouping=Grouping(
                 group_by=(GroupingLevel(field="zone"),),
-                measures={"total": Measure(function="sum", field=world.amount)},
+                measures={"total": Measure(function=MeasureFunction.SUM, field=world.amount)},
             )
         ),
     )

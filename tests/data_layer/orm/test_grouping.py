@@ -22,6 +22,7 @@ from sincpro_framework.ddd.criteria import (
     Grouping,
     GroupingLevel,
     Measure,
+    MeasureFunction,
     Not,
     Operator,
     Pagination,
@@ -69,7 +70,7 @@ def test_folds_are_asked_for_by_name(store):
     with_total = Criteria(
         grouping=Grouping(
             group_by=(GroupingLevel(field="owner"),),
-            measures={"weight": Measure(function="sum", field="size")},
+            measures={"weight": Measure(function=MeasureFunction.SUM, field="size")},
         )
     )
 
@@ -138,8 +139,8 @@ def test_a_date_is_grouped_by_quarter(store):
 def test_a_level_and_a_fold_already_built_pass_through():
     """Written this way from Python; reading them from JSON is the other half."""
     assert GroupingLevel.read(GroupingLevel(field="owner")) == GroupingLevel(field="owner")
-    assert Measure.read(Measure(function="sum", field="size")) == Measure(
-        function="sum", field="size"
+    assert Measure.read(Measure(function=MeasureFunction.SUM, field="size")) == Measure(
+        function=MeasureFunction.SUM, field="size"
     )
     assert GroupingLevel.read({"field": "made_at", "grain": "month"}).grain == "month"
     assert Measure.read({"function": "max", "field": "size"}).function == "max"
@@ -340,7 +341,7 @@ def test_having_reads_what_the_groups_folded(store, things):
     heavy = Criteria(
         grouping=Grouping(
             group_by=(GroupingLevel(field="owner"),),
-            measures={"weight": Measure(function="sum", field="size")},
+            measures={"weight": Measure(function=MeasureFunction.SUM, field="size")},
             where_measures=Condition(field="weight", value=15, operator=Operator.GT),
         )
     )
@@ -367,7 +368,7 @@ def test_groups_come_back_in_the_order_asked(store, things):
     asked = Criteria(
         grouping=Grouping(
             group_by=(GroupingLevel(field="owner"),),
-            measures={"weight": Measure(function="sum", field="size")},
+            measures={"weight": Measure(function=MeasureFunction.SUM, field="size")},
             order=Sort.parse("-weight"),
         )
     )
@@ -480,10 +481,10 @@ def test_one_reading_says_everything_at_once(store):
                 GroupingLevel(field="made_at", grain=Grain.MONTH),
             ),
             measures={
-                "total": Measure(function="sum", field="size"),
-                "biggest": Measure(function="max", field="size"),
-                "average": Measure(function="avg", field="size"),
-                "named": Measure(function="count", field="name"),
+                "total": Measure(function=MeasureFunction.SUM, field="size"),
+                "biggest": Measure(function=MeasureFunction.MAX, field="size"),
+                "average": Measure(function=MeasureFunction.AVG, field="size"),
+                "named": Measure(function=MeasureFunction.COUNT, field="name"),
             },
             where_measures=Condition(field="count", operator=Operator.GTE, value=1),
             order=(Sort(field="total", descending=True),),
@@ -536,7 +537,7 @@ def test_the_two_orders_and_the_two_pages_do_not_overrule_each_other(store):
         pagination=Pagination(limit=2),
         grouping=Grouping(
             group_by=(GroupingLevel(field="owner"),),
-            measures={"total": Measure(function="sum", field="size")},
+            measures={"total": Measure(function=MeasureFunction.SUM, field="size")},
             order=(Sort(field="total", descending=True),),
             pagination=Pagination(limit=1),
         ),
@@ -560,8 +561,8 @@ class TestTheTwoMeasuresThatAreNotAPlainFunction:
             grouping=Grouping(
                 group_by=(GroupingLevel(field="owner"),),
                 measures={
-                    "rows": Measure(function="count", field="thing_id"),
-                    "sizes": Measure(function="count_distinct", field="size"),
+                    "rows": Measure(function=MeasureFunction.COUNT, field="thing_id"),
+                    "sizes": Measure(function=MeasureFunction.COUNT_DISTINCT, field="size"),
                 },
             )
         )
@@ -578,7 +579,9 @@ class TestTheTwoMeasuresThatAreNotAPlainFunction:
             grouping=Grouping(
                 group_by=(GroupingLevel(field="owner"),),
                 measures={
-                    "middle": Measure(function="percentile", field="size", argument=0.5)
+                    "middle": Measure(
+                        function=MeasureFunction.PERCENTILE, field="size", argument=0.5
+                    )
                 },
             )
         )
@@ -588,8 +591,8 @@ class TestTheTwoMeasuresThatAreNotAPlainFunction:
 
     def test_a_measure_that_takes_no_argument_refuses_one(self):
         with pytest.raises(exceptions.InvalidCriteria, match="takes no argument"):
-            Measure(function="sum", field="size", argument=0.5)
+            Measure(function=MeasureFunction.SUM, field="size", argument=0.5)
 
     def test_a_percentile_without_its_fraction_is_not_a_percentile(self):
         with pytest.raises(exceptions.InvalidCriteria, match="between 0 and 1"):
-            Measure(function="percentile", field="size")
+            Measure(function=MeasureFunction.PERCENTILE, field="size")

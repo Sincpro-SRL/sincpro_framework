@@ -51,7 +51,7 @@ from sincpro_framework.ddd.entity.entity_meta import (
     related_class,
     without_optional,
 )
-from sincpro_framework.ddd.entity.relations import key_pair
+from sincpro_framework.ddd.entity.relations import RelationKind, key_pair
 from sincpro_framework.ddd.query import serialising
 
 
@@ -64,6 +64,8 @@ class RelatedAttribute:
 
     A data descriptor, so it wins over the value a dataclass `__init__` stores: a record built
     in memory holds what its constructor was given, a record the mapper loaded starts unresolved.
+    It is the vocabulary's `RelationAttribute`: `joined_by`, `holds_whole`, `held_in_part` and
+    `named_by_id` are what the domain asks it, without reading anything.
     """
 
     def __init__(
@@ -163,7 +165,7 @@ class RelatedAttribute:
         """Whether a save of the record writes this relation — the only case its reading is
         worth a query before an assignment."""
         if (
-            self.relation.kind != "foreign_key"
+            self.relation.kind is not RelationKind.FOREIGN_KEY
             or getattr(self.relation, "owned", None) is False
         ):
             return False
@@ -195,7 +197,7 @@ class RelatedAttribute:
         What `EntityReads.referenced` asks before `assign`: the ids a form sends are read as the
         records they name.
         """
-        return self.relation.kind == "many_to_many"
+        return self.relation.kind is RelationKind.MANY_TO_MANY
 
     def __set__(self, record: Any, value: Any) -> None:
         """An assignment replaces the set. Context: inside a unit of work, a stored record whose

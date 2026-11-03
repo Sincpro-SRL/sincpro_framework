@@ -42,6 +42,7 @@ from sincpro_framework.ddd.entity.entity_collection import (
 from sincpro_framework.ddd.entity.entity_meta import FieldType, Meta
 from sincpro_framework.ddd.entity.relations import (
     Groups,
+    RelationKind,
     cut,
     key_pair,
     limit_of,
@@ -329,27 +330,27 @@ def _resolve(
     the scope is merged here and nowhere else, so every kind honours it alike."""
     node = _scoped(declared, node)
     limit = limit_of(node, whole)
-    if declared.kind == "resolver":
+    if declared.kind is RelationKind.RESOLVER:
         return resolve_elsewhere(meta, parents, declared, node, many, limit)
     relation = cast("TableRelation", declared)
     match relation.kind:
-        case "foreign_key" if many:
+        case RelationKind.FOREIGN_KEY if many:
             return _by_foreign_key_on_related(
                 prepare, session, meta, parents, relation, node, limit, dropped
             )
-        case "foreign_key":
+        case RelationKind.FOREIGN_KEY:
             return _by_foreign_key_here(
                 prepare, session, meta, parents, relation, node, dropped
             )
-        case "many_to_many":
+        case RelationKind.MANY_TO_MANY:
             return _through_table(
                 prepare, session, meta, parents, relation, node, limit, dropped
             )
-        case "id_list":
+        case RelationKind.ID_LIST:
             return _by_id_list(
                 prepare, session, meta, parents, relation, node, limit, dropped
             )
-        case "resolver":
+        case RelationKind.RESOLVER:
             return resolve_elsewhere(meta, parents, relation, node, many, limit)
     raise ValueError(f"unknown relation kind {relation.kind!r}")
 
