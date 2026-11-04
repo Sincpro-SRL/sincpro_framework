@@ -39,6 +39,10 @@ class ContextKey(StrEnum):
     run."""
     ENTITY_DRAFT_CONTEXT = "SINCPRO_ENTITY_DRAFT_CONTEXT"
     """In the store, the namespace every draft is saved under, apart from everything else."""
+    SKIP_CHECKS = "skip_checks"
+    """Why the saves of this call skip the entities' `@check` rules — an import, a migration —
+    as a sentence that is logged with who asked: `bus.context(skip_checks="legacy import")`.
+    Computations still run; only the rules are not judged."""
 
 
 PLUMBING = frozenset({"trace_id", "span_id", "carrier"})

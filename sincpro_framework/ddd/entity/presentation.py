@@ -42,7 +42,7 @@ class FieldRef(str):
 
 
 class Fields:
-    """The stand-in a declaration's lambda runs against (`presentation`, `computations`). An
+    """The stand-in a declaration's lambda runs against (`presentation`, `@compute`, `@check`). An
     unknown name fails here, naming the class, so a typo is refused when the class is described
     and not on the first empty page.
     """
@@ -50,8 +50,8 @@ class Fields:
     def __init__(
         self, owner: str, names: Iterable[str], declaration: str = "presentation"
     ) -> None:
-        """`names` are the entity's fields; `declaration` names the class attribute a refusal
-        points at — `presentation`, `computations`."""
+        """`names` are the entity's fields; `declaration` names what a refusal points at —
+        `presentation`, `total_of's @compute`."""
         self._owner = owner
         self._names = frozenset(names)
         self._declaration = declaration
@@ -74,14 +74,14 @@ class Fields:
 def field_name(value: object, form: str) -> str:
     """The name behind a `FieldRef`; anything else is refused, showing the form it takes.
 
-    in      FieldRef("number"), "i.number"    →  out  "number"
-    in      "number", "i.number"              →  ProgrammingError: takes a field read through
-                                                 the entity, as in lambda a: i.number
+    in      FieldRef("number"), "lambda a: a.number"    →  out  "number"
+    in      "number", "lambda a: a.number"              →  ProgrammingError: takes a field read
+                                                           through the entity, as in lambda a: a.number
     """
     if isinstance(value, FieldRef):
         return str(value)
     raise exceptions.ProgrammingError(
-        f"a presentation takes a field read through the entity, as in lambda a: {form}; "
+        f"a declaration takes a field read through the entity, as in {form}; "
         f"it was given {value!r}"
     )
 

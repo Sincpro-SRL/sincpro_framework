@@ -8,7 +8,7 @@ usable alone: computed fields, `apply_values`, and the preview itself. None is n
 ## Computed fields
 
 ```python
-from sincpro_framework.ddd import Computations, Compute, Entity, warn_form
+from sincpro_framework.ddd import Entity, compute, warn_form
 
 
 @dataclass
@@ -26,39 +26,36 @@ class Invoice(Entity):
     subtotal: Decimal = Decimal("0")
     total: Decimal = Decimal("0")
 
+    @compute(lambda i: i.subtotal, depends=lambda i: i.lines)
     def subtotal_of(self) -> Decimal:
         return sum((line.qty * line.price for line in self.lines), Decimal("0"))
 
+    @compute(lambda i: i.total, depends=lambda i: [i.subtotal, i.discount])
     def total_of(self) -> Decimal:
         if self.subtotal and self.discount > self.subtotal * Decimal("0.10"):
             warn_form("a discount above 10% needs approval", field="discount")
         return self.subtotal - self.discount
-
-    computations = Computations["Invoice"](
-        lambda i: [
-            Compute(i.subtotal, depends=i.lines, by=Invoice.subtotal_of),
-            Compute(i.total, depends=[i.subtotal, i.discount], by=Invoice.total_of),
-        ]
-    )
 ```
 
-The computation is the entity's own method; `computations` only says which field it computes
-and what it reads. The lambda answers one `Compute` alone or a list of them, and `depends` is one
-field alone or a list. The class is read once: the computations are put in the order their
-dependencies need, and a cycle, a field computed twice, a field computed from itself or a name
-that is not a field is refused there, naming it.
+The computation is the entity's own method; `@compute` only says which field it computes and
+what it reads — one field alone or a list. The class is read once: the computations are put in
+the order their dependencies need, and a cycle, a field computed twice, a field computed from
+itself or a name that is not a field is refused there, naming the method. An editable
+computation (`editable=True`) proposes a value only when a change reaches it, and the rules the
+entity holds are `@check` methods: both are in [Rules and computations](rules.md).
 
 | Call | What it does |
 |---|---|
-| `recompute(invoice)` | every computation, in order; answers the fields whose value moved |
+| `recompute(invoice)` | every computation that is not editable, in order; answers the fields whose value moved |
 | `recompute(invoice, ["discount"])` | only what the change reaches: `total`, not `subtotal` |
-| `repository.save(invoice)` | computes every field, the lines first, before the `before_save` hooks |
+| `recompute(invoice, ["lines.2.qty"])` | the third line's computations of `qty`, then what reads the lines |
+| `repository.save(invoice)` | computes every field that is not editable, the lines first, then every check, before the `before_save` hooks |
 
 **A save computes them too**, so what a preview showed is what is stored and the hooks see the
 computed values. It computes the records the aggregate owns first — a line's `amount`
 before the total that sums it — the same in memory and in a database. It looks only into the
 relations its computations read, and the lists of records that declare computations of their
-own; never into another aggregate it points at. An entity with no `computations` is saved
+own; never into another aggregate it points at. An entity with no computations is saved
 exactly as before: nothing extra is read.
 
 **A save never reads, and never computes over a relation it does not hold whole.** A
@@ -233,8 +230,8 @@ compared as values: `0` and `0.00` are one amount, not a change.
 
 - **Saving and rolling back** to preview: refused by the guard. It takes locks, spends numbers
   and fires hooks, events and mail.
-- **An `@onchange` method per field**: computations and warnings answer the same questions without
-  an imperative loop.
+- **An `@onchange` method per field**: an editable computation proposes the value and a check or
+  `warn_form` warns, answering the same questions without an imperative loop.
 - **Line commands** for a to-many field: a changed list comes back whole.
 - **Drafts** stored between requests: [Drafts](../core/drafts.md); the form's whole life over them,
   one command: [Edits](edits.md).

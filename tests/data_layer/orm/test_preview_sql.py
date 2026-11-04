@@ -27,8 +27,6 @@ from sincpro_framework.data_layer.orm.sqlalchemy.infrastructure.database import 
 )
 from sincpro_framework.data_layer.repositories import MemoryRepository
 from sincpro_framework.ddd import (
-    Computations,
-    Compute,
     Condition,
     Criteria,
     DraftState,
@@ -43,6 +41,7 @@ from sincpro_framework.ddd import (
     ResponseRecord,
     Specification,
     apply_values,
+    compute,
 )
 from sincpro_framework.ddd import exceptions as ddd_exceptions
 from sincpro_framework.ddd import read_only
@@ -66,18 +65,13 @@ class Sale(Entity):
     subtotal: Decimal = Decimal("0")
     total: Decimal = Decimal("0")
 
+    @compute(lambda s: s.subtotal, depends=lambda s: (s.lines,))
     def subtotal_of(self) -> Decimal:
         return sum((line.qty * line.price for line in self.lines), Decimal("0"))
 
+    @compute(lambda s: s.total, depends=lambda s: (s.subtotal, s.discount))
     def total_of(self) -> Decimal:
         return self.subtotal - self.discount
-
-    computations = Computations["Sale"](
-        lambda s: (
-            Compute(s.subtotal, depends=(s.lines,), by=Sale.subtotal_of),
-            Compute(s.total, depends=(s.subtotal, s.discount), by=Sale.total_of),
-        )
-    )
 
     @classmethod
     def DEFAULT_READING(cls) -> Specification:
@@ -464,12 +458,9 @@ class OrderLine(Entity):
     price: Decimal = Decimal("0")
     amount: Decimal = Decimal("0")
 
+    @compute(lambda o: o.amount, depends=lambda o: (o.qty, o.price))
     def amount_of(self) -> Decimal:
         return self.qty * self.price
-
-    computations = Computations["OrderLine"](
-        lambda o: (Compute(o.amount, depends=(o.qty, o.price), by=OrderLine.amount_of),)
-    )
 
 
 @dataclass
@@ -480,18 +471,13 @@ class Order(Entity):
     subtotal: Decimal = Decimal("0")
     total: Decimal = Decimal("0")
 
+    @compute(lambda o: o.subtotal, depends=lambda o: (o.lines,))
     def subtotal_of(self) -> Decimal:
         return sum((line.amount for line in self.lines), Decimal("0"))
 
+    @compute(lambda o: o.total, depends=lambda o: (o.subtotal, o.discount))
     def total_of(self) -> Decimal:
         return self.subtotal - self.discount
-
-    computations = Computations["Order"](
-        lambda o: (
-            Compute(o.subtotal, depends=(o.lines,), by=Order.subtotal_of),
-            Compute(o.total, depends=(o.subtotal, o.discount), by=Order.total_of),
-        )
-    )
 
 
 orders = registry(metadata=MetaData())

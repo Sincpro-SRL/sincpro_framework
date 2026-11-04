@@ -12,7 +12,7 @@ from dataclasses import dataclass, field
 from decimal import Decimal
 
 from sincpro_framework.ddd import (
-    Condition, Computations, Compute, Entity, Presentation, When, warn_form,
+    Condition, Entity, Presentation, When, check, compute, warn_form,
 )
 from sincpro_framework.ddd import exceptions
 from sincpro_framework.ddd.criteria import MeasureFunction, Operator
@@ -27,14 +27,20 @@ class InvoiceLine(Entity):
     cost: Decimal = Decimal("0")
     amount: Decimal = Decimal("0")
 
+    @compute(lambda l: l.price, depends=lambda l: l.product_id, editable=True)   # onchange
+    def price_of(self) -> Decimal:
+        return price_list(self.product_id)
+
+    @compute(lambda l: l.amount, depends=lambda l: [l.qty, l.price])
     def amount_of(self) -> Decimal:
         if self.price < self.cost:
             warn_form("price below cost", field="price")       # lands on this line, this cell
         return self.qty * self.price
 
-    computations = Computations["InvoiceLine"](
-        lambda l: Compute(l.amount, depends=[l.qty, l.price], by=InvoiceLine.amount_of)
-    )
+    @check(lambda l: l.qty)
+    def sells_something(self) -> None:
+        if self.qty <= 0:
+            raise exceptions.InvalidValue("A line sells at least one unit")   # warned, refused on save
     presentation = Presentation["InvoiceLine"](
         readonly=lambda l: l.amount,
         totals=lambda l: {l.amount: MeasureFunction.SUM},   # the foot of the lines
@@ -49,12 +55,9 @@ class Invoice(Entity):
     lines: list[InvoiceLine] = field(default_factory=list)
     total: Decimal = Decimal("0")
 
+    @compute(lambda i: i.total, depends=lambda i: i.lines)
     def total_of(self) -> Decimal:
         return sum((line.amount for line in self.lines), Decimal("0"))
-
-    computations = Computations["Invoice"](
-        lambda i: Compute(i.total, depends=i.lines, by=Invoice.total_of)
-    )
     presentation = Presentation["Invoice"](
         readonly=lambda i: [i.number, i.state, i.total],
         readonly_when=lambda i: When(
@@ -74,7 +77,9 @@ map_aggregates(registry, {Invoice: invoices, InvoiceLine: invoice_lines}, relati
 
 | What the form needs | Where it is declared | What the client receives |
 |---|---|---|
-| a line's amount, the total | `computations` on each class | `values` of a preview, recomputed only as far as `changed` reaches |
+| a line's amount, the total | `@compute` on each class | `values` of a preview, recomputed only as far as `changed` reaches |
+| the price of the product picked (onchange) | `@compute(..., editable=True)` | `values` when `changed` names the cell (`lines.2.product_id`); a save keeps what was typed |
+| a rule over the fields (a line sells something) | `@check` | `warnings[]` while drafting; `ChecksFailed` → one field error per failure on save |
 | read-only, required, visible — per state | `presentation` | `Meta` hints, and `states` of a preview evaluated for this record (`states.lines.items[i]` per line) |
 | the sum at the foot of the lines | `presentation(totals=…)` | `FieldMeta.total` |
 | a warning that does not refuse | `warn_form(...)` in a computation | `warnings[]` with `field` and `path` (`["lines", 2, "price"]`) |
@@ -144,7 +149,7 @@ class PostInvoice(EntityEdits[Invoice]):
 
 - **Sending a client-minted `id` on a new line.** Refused as an `id` the document does not hold.
 - **Saving the lines without the version.** The whole list replaces what is stored.
-- **A per-field `onchange` Feature.** `PreviewEntity` + computations + `warn_form` answer it, for every
+- **A per-field `onchange` Feature.** `PreviewEntity` + editable computations + `@check` + `warn_form` answer it, for every
   client at once.
 - **Computing a total in a hook.** The preview never shows it; it is a computation.
 - **Passing an index to `warn_form` from a line.** The framework knows the line's place; the line

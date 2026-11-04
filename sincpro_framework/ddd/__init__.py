@@ -46,7 +46,8 @@ from sincpro_framework.ddd.entity import (
     new_entity_id,
     utc_now,
 )
-from sincpro_framework.ddd.entity.computations import Computations, Compute
+from sincpro_framework.ddd.entity.checks import check
+from sincpro_framework.ddd.entity.computations import compute
 from sincpro_framework.ddd.entity.computed import computed
 from sincpro_framework.ddd.entity.entity_collection import (
     Changes,
@@ -113,6 +114,7 @@ from sincpro_framework.ddd.reads.reads import (
     Search,
     history_of,
 )
+from sincpro_framework.ddd.reads.violations import Violation, violations_of
 from sincpro_framework.ddd.repositories import (
     AggregateRepository,
     Analyzes,
@@ -152,8 +154,6 @@ __all__ = [
     "CurrencyMismatch",
     "Cursor",
     "DeliverableEventMixin",
-    "Computations",
-    "Compute",
     "DomainError",
     "DomainEvent",
     "DomainEvents",
@@ -226,11 +226,14 @@ __all__ = [
     "Transacts",
     "Upserted",
     "ValueObject",
+    "Violation",
     "When",
     "WritesAggregates",
     "WritesInBulk",
     "warn_form",
     "apply_values",
+    "check",
+    "compute",
     "computed",
     "detail_of",
     "history_of",
@@ -238,6 +241,7 @@ __all__ = [
     "new_entity_id",
     "presentation_of",
     "read_only",
+    "violations_of",
     "recompute",
     "utc_now",
 ]

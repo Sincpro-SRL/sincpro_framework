@@ -118,20 +118,52 @@ NEXT_STEP_OF: Mapping[exceptions.FailureKind, tuple[NextStep, str]] = {
 }
 """What a caller does after each kind of failure, and why — the default an error may change."""
 
-TITLE_OF: Mapping[exceptions.FailureKind, str] = {
-    exceptions.FailureKind.INVALID: "The request does not validate",
-    exceptions.FailureKind.UNAUTHENTICATED: "Who is calling is not known",
-    exceptions.FailureKind.PERMISSION_DENIED: "Not allowed",
-    exceptions.FailureKind.NOT_FOUND: "Not found",
-    exceptions.FailureKind.CONFLICT: "The write collided",
-    exceptions.FailureKind.IN_PROGRESS: "The same request is still running",
-    exceptions.FailureKind.KEY_REUSED: "The idempotency key was used for another request",
-    exceptions.FailureKind.DOMAIN: "The domain refused the request",
-    exceptions.FailureKind.EXHAUSTED: "Too many requests",
-    exceptions.FailureKind.UNAVAILABLE: "Unavailable for now",
-    exceptions.FailureKind.UNKNOWN_OUTCOME: "It may have run — verify before retrying",
-    exceptions.FailureKind.INTERNAL: "Internal error",
+TITLE_OF: Mapping[exceptions.FailureKind, Mapping[str, str]] = {
+    exceptions.FailureKind.INVALID: {
+        "default": "The request does not validate",
+        "es": "La solicitud no es válida",
+    },
+    exceptions.FailureKind.UNAUTHENTICATED: {
+        "default": "Who is calling is not known",
+        "es": "No se sabe quién llama",
+    },
+    exceptions.FailureKind.PERMISSION_DENIED: {
+        "default": "Not allowed",
+        "es": "No permitido",
+    },
+    exceptions.FailureKind.NOT_FOUND: {"default": "Not found", "es": "No encontrado"},
+    exceptions.FailureKind.CONFLICT: {
+        "default": "The write collided",
+        "es": "La escritura chocó con otra",
+    },
+    exceptions.FailureKind.IN_PROGRESS: {
+        "default": "The same request is still running",
+        "es": "La misma solicitud todavía se está ejecutando",
+    },
+    exceptions.FailureKind.KEY_REUSED: {
+        "default": "The idempotency key was used for another request",
+        "es": "La clave de idempotencia ya se usó para otra solicitud",
+    },
+    exceptions.FailureKind.DOMAIN: {
+        "default": "The domain refused the request",
+        "es": "El dominio rechazó la solicitud",
+    },
+    exceptions.FailureKind.EXHAUSTED: {
+        "default": "Too many requests",
+        "es": "Demasiadas solicitudes",
+    },
+    exceptions.FailureKind.UNAVAILABLE: {
+        "default": "Unavailable for now",
+        "es": "No disponible por ahora",
+    },
+    exceptions.FailureKind.UNKNOWN_OUTCOME: {
+        "default": "It may have run — verify before retrying",
+        "es": "Puede que se haya ejecutado: verifica antes de reintentar",
+    },
+    exceptions.FailureKind.INTERNAL: {"default": "Internal error", "es": "Error interno"},
 }
+"""The title of each kind of failure, by language — read in the call's (`ContextKey.LANG`), else
+the default."""
 
 HTTP_STATUS_OF: Mapping[exceptions.FailureKind, int] = {
     exceptions.FailureKind.INVALID: 422,
@@ -214,11 +246,14 @@ class Problem(DataTransferObject):
 
             Problem.for_kind(FailureKind.INVALID, "UNREADABLE", "the body is not JSON")
         """
+        # `ddd` imports this module for its errors: the language is read at the call, not at import
+        from sincpro_framework.ddd.multi_language import MultiLanguage
+
         step, guidance = NEXT_STEP_OF[kind]
         return cls(
             kind=kind,
             reason=reason or kind.value.upper(),
-            title=TITLE_OF[kind],
+            title=str(MultiLanguage(TITLE_OF[kind])),
             status=HTTP_STATUS_OF[kind],
             detail=detail,
             next_step=step,

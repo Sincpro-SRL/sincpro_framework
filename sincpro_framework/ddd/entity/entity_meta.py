@@ -56,7 +56,8 @@ from sincpro_framework.ddd.criteria import (
     Sort,
     Specification,
 )
-from sincpro_framework.ddd.entity.computations import Computations, Compute
+from sincpro_framework.ddd.entity.checks import CHECK
+from sincpro_framework.ddd.entity.computations import COMPUTE
 from sincpro_framework.ddd.entity.computed import computed_fields_of
 from sincpro_framework.ddd.entity.entity_collection import Dropped
 from sincpro_framework.ddd.entity.presentation import (
@@ -1038,7 +1039,7 @@ def _worded(fields: dict[str, "FieldMeta"], declared: type) -> dict[str, "FieldM
         return fields
     return {
         name: meta.model_copy(
-            update={"label": labels.get(name, {}), "help": helps.get(name, {})}
+            update={"label": labels.get(name, meta.label), "help": helps.get(name, meta.help)}
         )
         for name, meta in fields.items()
     }
@@ -1242,9 +1243,9 @@ def _while(
                     f"which is not a field of {owner}"
                 )
         for one in entry.fields:
-            covered.setdefault(field_name(one, "When(..., a.partner_id)"), []).append(
-                entry.condition
-            )
+            covered.setdefault(
+                field_name(one, "lambda a: When(..., a.partner_id)"), []
+            ).append(entry.condition)
     return {
         name: conditions[0] if len(conditions) == 1 else Any_(any=conditions)
         for name, conditions in covered.items()
@@ -1279,7 +1280,7 @@ def _totals_checked(owner: str, answered: object) -> dict[str, MeasureFunction]:
     offered = [one for one in MeasureFunction if one is not MeasureFunction.PERCENTILE]
     totals: dict[str, MeasureFunction] = {}
     for one, function in answered.items():
-        name = field_name(one, "{i.amount: MeasureFunction.SUM}")
+        name = field_name(one, "lambda i: {i.amount: MeasureFunction.SUM}")
         if function not in offered:
             raise exceptions.ProgrammingError(
                 f"{owner}.presentation adds up {name} by {function!r}; a total is one of "
@@ -1294,13 +1295,12 @@ def framework_fields(declared: type) -> frozenset[str]:
     so a form shows them read-only. Found by the class that declares each one, never by name.
 
         framework_fields(Invoice)       # class Invoice(Entity)
-            ->  frozenset({"id", "created_at", "updated_at", "version",
-                           "computations", "presentation"})
+            ->  frozenset({"id", "created_at", "updated_at", "version", "presentation"})
         framework_fields(Client)        # class Client(ArchivableMixin, Entity)
             ->  the same, plus "archived_at"
 
     Context: every annotation of a framework class counts, its class variables
-    (`computations`, `presentation`) included — a caller intersects with the fields it has.
+    (`presentation`) included — a caller intersects with the fields it has.
     """
     found: set[str] = set()
     for owner in declared.__mro__:
@@ -1327,11 +1327,34 @@ def _required_by_structure(declared: type, system: frozenset[str]) -> frozenset[
 
 @dataclasses.dataclass(frozen=True)
 class Computation:
-    """One `Compute`, read: field names in place of lambdas."""
+    """One `@compute`, read: field names in place of lambdas, and the method by its name, so a
+    subclass that overrides the method is the one called."""
 
     field: str
     depends: tuple[str, ...]
-    by: Any
+    method: str
+    editable: bool
+
+
+def declared_methods(declared: type, marker: str) -> dict[str, Any]:
+    """The declarations a decorator left on the methods of a class and of its bases, by method
+    name, bases first and each class in the order its methods are written.
+
+        # Invoice: @compute on subtotal_of, then total_of; Refund(Invoice) overrides total_of
+        declared_methods(Refund, COMPUTE)
+            ->  {"subtotal_of": ComputeDeclaration(…), "total_of": ComputeDeclaration(…)}
+
+    Context: a method a subclass overrides without the decorator keeps the declaration of the
+    one it overrides — the subclass changes how, not what — and one it decorates again replaces
+    it, in the place the first one had.
+    """
+    found: dict[str, Any] = {}
+    for owner in reversed(declared.__mro__):
+        for name, value in vars(owner).items():
+            declaration = getattr(value, marker, None)
+            if declaration is not None:
+                found[name] = declaration
+    return found
 
 
 def _computation_order(owner: str, read: dict[str, Computation]) -> list[str]:
@@ -1353,7 +1376,7 @@ def _computation_order(owner: str, read: dict[str, Computation]) -> list[str]:
     for name, computation in read.items():
         if name in computation.depends:
             raise exceptions.ProgrammingError(
-                f"{owner}.computations computes {name} from itself"
+                f"{owner}.{computation.method} computes {name} from itself"
             )
     ordered: list[str] = []
     while waiting:
@@ -1361,7 +1384,7 @@ def _computation_order(owner: str, read: dict[str, Computation]) -> list[str]:
         if not free:
             cycle = " → ".join(sorted(waiting))
             raise exceptions.ProgrammingError(
-                f"{owner}.computations depend on each other in a cycle: {cycle}"
+                f"{owner}'s computations depend on each other in a cycle: {cycle}"
             )
         for name in free:
             ordered.append(name)
@@ -1373,52 +1396,86 @@ def _computation_order(owner: str, read: dict[str, Computation]) -> list[str]:
 
 @cache
 def computations_of(declared: type) -> tuple[Computation, ...]:
-    """The class's `computations`, read once, checked against its fields and put in the order
-    they have to run.
+    """The class's `@compute` methods, read once, checked against its fields and put in the
+    order they have to run.
 
         # Invoice: total ← (subtotal, discount), subtotal ← (lines,)
         computations_of(Invoice)
-            ->  (Computation(subtotal, (lines,)), Computation(total, (subtotal, discount)))
-        computations_of(Box)    ->  ()     # declares no computations
+            ->  (Computation(subtotal, (lines,), "subtotal_of", False),
+                 Computation(total, (subtotal, discount), "total_of", False))
+        computations_of(Box)    ->  ()     # computes nothing
 
-    1. A class with no `Computations` computes nothing.
-    2. The lambda runs once over `Fields`; an unknown name is refused, naming it.
-       2.1 An entry that is not a `Compute`, or whose `by` is not callable, is refused.
-    3. A field derived twice is refused: two computations would race for it.
+    1. The declarations of the class and its bases (`declared_methods`); none computes nothing.
+    2. Each lambda runs once over `Fields`; an unknown name is refused, naming the method.
+    3. A field computed by two methods is refused: they would race for it.
     4. Ordered so a field is computed after every computed field it reads; among the free ones,
        the order they were declared in.
        4.1 A cycle has no order and is refused, naming the fields in it.
     Final: the computations, ready for `recompute`.
     """
-    declaration = getattr(declared, "computations", None)
-    if not isinstance(declaration, Computations) or declaration.declared is None:
+    declarations = declared_methods(declared, COMPUTE)
+    if not declarations:
         return ()
     owner = declared.__name__
-    fields = Fields(owner, annotations_of(declared), "computations")
+    names = annotations_of(declared)
     read: dict[str, Computation] = {}
-    for entry in _entries(declaration.declared(fields)):
-        if not isinstance(entry, Compute):
-            raise exceptions.ProgrammingError(
-                f"{owner}.computations takes Compute, as in lambda i: "
-                f"[Compute(i.total, depends=i.subtotal, by={owner}.total_of)]; "
-                f"it was given {entry!r}"
-            )
-        name = field_name(entry.field, "Compute(i.total, ...)")
+    for method, declaration in declarations.items():
+        fields = Fields(owner, names, f"{method}'s @compute")
+        name = field_name(declaration.field(fields), "@compute(lambda i: i.total, ...)")
         if name in read:
-            raise exceptions.ProgrammingError(f"{owner}.computations computes {name} twice")
-        if not callable(entry.by):
             raise exceptions.ProgrammingError(
-                f"{owner}.computations computes {name} by {entry.by!r}, which is not callable"
+                f"{owner}.{name} is computed twice, by {read[name].method} and {method}: "
+                "one method computes a field"
             )
+        depends = () if declaration.depends is None else _entries(declaration.depends(fields))
         read[name] = Computation(
             field=name,
             depends=tuple(
-                field_name(one, "Compute(..., depends=i.lines)")
-                for one in _entries(entry.depends)
+                field_name(one, "@compute(..., depends=lambda i: [i.lines])")
+                for one in depends
             ),
-            by=entry.by,
+            method=method,
+            editable=declaration.editable,
         )
     return tuple(read[name] for name in _computation_order(owner, read))
+
+
+@dataclasses.dataclass(frozen=True)
+class Check:
+    """One `@check`, read: the fields it watches by name, and the method by its name, so a
+    subclass that overrides the method is the one called."""
+
+    watches: tuple[str, ...]
+    method: str
+
+
+@cache
+def checks_of(declared: type) -> tuple[Check, ...]:
+    """The class's `@check` methods, read once and checked against its fields, in the order they
+    were declared — its bases' first.
+
+        # Project: @check(lambda p: [p.deadline, p.state]) def deadline_when_confirmed
+        checks_of(Project)  ->  (Check(("deadline", "state"), "deadline_when_confirmed"),)
+        checks_of(Box)      ->  ()     # checks nothing
+
+    1. The declarations of the class and its bases (`declared_methods`); none checks nothing.
+    2. Each lambda runs once over `Fields`; an unknown name is refused, naming the method.
+    Final: the checks, ready for a save and a preview.
+    """
+    declarations = declared_methods(declared, CHECK)
+    if not declarations:
+        return ()
+    owner = declared.__name__
+    names = annotations_of(declared)
+    read: list[Check] = []
+    for method, declaration in declarations.items():
+        fields = Fields(owner, names, f"{method}'s @check")
+        watches = tuple(
+            field_name(one, "@check(lambda p: [p.deadline, p.state])")
+            for one in _entries(declaration.watches(fields))
+        )
+        read.append(Check(watches=watches, method=method))
+    return tuple(read)
 
 
 @cache
@@ -1471,8 +1528,9 @@ def presentation_of(declared: type) -> Presented:
        that is a `Specification`, a literal search that is a template holding `TEXT`.
     3. The form hints come from its `presentation`, each lambda run once over `Fields`; an
        unknown name is refused, naming it. Left alone, the fields the framework writes are
-       read-only — its own (`id`, `version`, …), a `computed` one and one a `Compute` computes,
-       which the next change would compute again over whatever was typed — and a field with no
+       read-only — its own (`id`, `version`, …), a `computed` one and one an `@compute` computes,
+       which the next change would compute again over whatever was typed (not an editable one,
+       which only proposes a value) — and a field with no
        default that cannot be `None` is required.
     Final: the names, ready for `Meta`, `matching` and `detail_of`.
     """
@@ -1493,15 +1551,15 @@ def presentation_of(declared: type) -> Presented:
     fields = Fields(owner, annotations)
     system = framework_fields(declared)
 
-    computes = {one.field for one in computations_of(declared)} | set(
+    computes = {one.field for one in computations_of(declared) if not one.editable} | set(
         computed_fields_of(declared)
     )
     readonly = (system & frozenset(annotations)) | computes
     if presentation.readonly is not None:
-        readonly |= _named(presentation.readonly(fields), "a.number")
+        readonly |= _named(presentation.readonly(fields), "lambda a: a.number")
     required = _required_by_structure(declared, system | computes)
     if presentation.required is not None:
-        required |= _named(presentation.required(fields), "a.partner_id")
+        required |= _named(presentation.required(fields), "lambda a: a.partner_id")
 
     return Presented(
         **read,

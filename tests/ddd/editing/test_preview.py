@@ -17,8 +17,6 @@ from sincpro_framework.common.failures import problem_of
 from sincpro_framework.data_layer.repositories import MemoryNumbering, MemoryRepository
 from sincpro_framework.ddd import (
     ArchivableMixin,
-    Computations,
-    Compute,
     Condition,
     Criteria,
     EntityReads,
@@ -27,6 +25,7 @@ from sincpro_framework.ddd import (
     ResponsePreviewEntity,
     When,
     apply_values,
+    compute,
 )
 from sincpro_framework.ddd import exceptions as ddd_exceptions
 from sincpro_framework.ddd import read_only, recompute, warn_form
@@ -63,22 +62,18 @@ class Invoice(Entity):
     subtotal: Decimal = Decimal("0")
     total: Decimal = Decimal("0")
 
+    @compute(lambda i: i.subtotal, depends=lambda i: (i.lines,))
     def subtotal_of(self) -> Decimal:
         ran.append("subtotal")
         return sum((line.qty * line.price for line in self.lines), Decimal("0"))
 
+    @compute(lambda i: i.total, depends=lambda i: (i.subtotal, i.discount))
     def total_of(self) -> Decimal:
         ran.append("total")
         if self.subtotal and self.discount > self.subtotal * Decimal("0.10"):
             warn_form("a discount above 10% needs approval", field="discount")
         return self.subtotal - self.discount
 
-    computations = Computations["Invoice"](
-        lambda i: (
-            Compute(i.total, depends=(i.subtotal, i.discount), by=Invoice.total_of),
-            Compute(i.subtotal, depends=(i.lines,), by=Invoice.subtotal_of),
-        )
-    )
     presentation = Presentation["Invoice"](
         readonly=lambda i: (i.number, i.subtotal, i.total),
         required_when=lambda i: (
@@ -179,37 +174,30 @@ def test_an_entity_without_derivations_is_saved_as_it_always_was():
 @pytest.mark.parametrize(
     ("declared", "refusal"),
     [
-        (
-            lambda i: (
-                Compute(i.a, depends=(i.b,), by=lambda r: 1),
-                Compute(i.b, depends=(i.a,), by=lambda r: 1),
-            ),
-            "cycle: a → b",
-        ),
-        (lambda i: (Compute(i.a, depends=(i.a,), by=lambda r: 1),), "a from itself"),
-        (
-            lambda i: (
-                Compute(i.a, depends=(), by=lambda r: 1),
-                Compute(i.a, depends=(), by=lambda r: 2),
-            ),
-            "computes a twice",
-        ),
-        (lambda i: (Compute(i.c, depends=(), by=lambda r: 1),), "names c"),
-        (lambda i: (i.a,), "takes Compute"),
+        ([(lambda i: i.a, lambda i: i.b), (lambda i: i.b, lambda i: i.a)], "cycle: a → b"),
+        ([(lambda i: i.a, lambda i: i.a)], "a from itself"),
+        ([(lambda i: i.a, None), (lambda i: i.a, None)], "computed twice"),
+        ([(lambda i: i.c, None)], "names c"),
+        ([(lambda i: "a", None)], "takes a field read through the entity"),
     ],
 )
-def test_a_derivation_that_cannot_be_ordered_is_refused_when_the_class_is_read(
+def test_a_computation_that_cannot_be_ordered_is_refused_when_the_class_is_read(
     declared, refusal
 ):
-    @dataclass
-    class Broken(Entity):
-        a: int = 0
-        b: int = 0
-
-        computations = Computations["Broken"](declared)
+    methods = {
+        f"method_{position}": compute(computed_field, depends)(lambda self: 1)
+        for position, (computed_field, depends) in enumerate(declared)
+    }
+    broken = dataclass(
+        type(
+            "Broken",
+            (Entity,),
+            {"__annotations__": {"a": int, "b": int}, "a": 0, "b": 0, **methods},
+        )
+    )
 
     with pytest.raises(exceptions.ProgrammingError, match=refusal):
-        recompute(Broken())
+        recompute(broken())
 
 
 # ---------------------------------------------------------------------------------------------
@@ -420,12 +408,9 @@ def test_every_write_door_is_refused_inside_a_preview(write):
 class NumberedInvoice(Entity):
     number: str = "/"
 
+    @compute(lambda i: i.number)
     def number_of(self) -> str:
         return f"F-{numbering.next_number('invoice')}"
-
-    computations = Computations["NumberedInvoice"](
-        lambda i: (Compute(i.number, depends=(), by=NumberedInvoice.number_of),)
-    )
 
 
 class ResponsePreviewNumbered(ResponsePreviewEntity):
@@ -470,14 +455,11 @@ class Cart(Entity):
     lines: list[CartLine] = field(default_factory=list)
     items: int = 0
 
+    @compute(lambda c: c.items, depends=lambda c: (c.lines,))
     def items_of(self) -> int:
         for line in self.lines:  # a computation that should not, rewriting what it reads
             line.name = line.name.upper()
         return sum(line.qty for line in self.lines)
-
-    computations = Computations["Cart"](
-        lambda c: (Compute(c.items, depends=(c.lines,), by=Cart.items_of),)
-    )
 
 
 class ResponsePreviewCart(ResponsePreviewEntity):
@@ -517,12 +499,9 @@ class TicketLine(Entity):
     price: Decimal = Decimal("0")
     amount: Decimal = Decimal("0")
 
+    @compute(lambda t: t.amount, depends=lambda t: (t.qty, t.price))
     def amount_of(self) -> Decimal:
         return self.qty * self.price
-
-    computations = Computations["TicketLine"](
-        lambda t: (Compute(t.amount, depends=(t.qty, t.price), by=TicketLine.amount_of),)
-    )
 
 
 @dataclass
@@ -530,12 +509,9 @@ class Ticket(Entity):
     lines: list[TicketLine] = field(default_factory=list)
     total: Decimal = Decimal("0")
 
+    @compute(lambda t: t.total, depends=lambda t: (t.lines,))
     def total_of(self) -> Decimal:
         return sum((line.amount for line in self.lines), Decimal("0"))
-
-    computations = Computations["Ticket"](
-        lambda t: (Compute(t.total, depends=(t.lines,), by=Ticket.total_of),)
-    )
 
 
 def test_a_save_computes_the_lines_before_the_total_that_reads_them():
@@ -575,12 +551,9 @@ def test_a_subclass_that_overrides_the_method_is_heard():
         base: int = 1
         price: int = 0
 
+        @compute(lambda t: t.price, depends=lambda t: t.base)
         def price_of(self) -> int:
             return self.base
-
-        computations = Computations["Tariff"](
-            lambda t: (Compute(t.price, depends=(t.base,), by=Tariff.price_of),)
-        )
 
     @dataclass
     class PeakTariff(Tariff):
@@ -662,14 +635,11 @@ class SaleLine(Entity):
     cost: Decimal = Decimal("0")
     amount: Decimal = Decimal("0")
 
+    @compute(lambda s: s.amount, depends=lambda s: (s.qty, s.price))
     def amount_of(self) -> Decimal:
         if self.price < self.cost:
             warn_form("price below cost", field="price")
         return self.qty * self.price
-
-    computations = Computations["SaleLine"](
-        lambda s: (Compute(s.amount, depends=(s.qty, s.price), by=SaleLine.amount_of),)
-    )
 
 
 @dataclass
@@ -677,14 +647,11 @@ class Sale(Entity):
     lines: list[SaleLine] = field(default_factory=list)
     total: Decimal = Decimal("0")
 
+    @compute(lambda s: s.total, depends=lambda s: (s.lines,))
     def total_of(self) -> Decimal:
         if len(self.lines) > 2:
             warn_form("more than two lines need a review")
         return sum((line.amount for line in self.lines), Decimal("0"))
-
-    computations = Computations["Sale"](
-        lambda s: (Compute(s.total, depends=(s.lines,), by=Sale.total_of),)
-    )
 
 
 class ResponsePreviewSale(ResponsePreviewEntity):

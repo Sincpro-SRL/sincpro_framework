@@ -1,5 +1,6 @@
 """The reads an entity already has: `EntityReads` with `Get`, `GetMany`, `LiteralSearch`,
-`Search`, `PreviewEntity` and `DomainEvents`, and the criteria its `DEFAULT_*` methods build (`defaults`).
+`Search`, `PreviewEntity` and `DomainEvents`, the criteria its `DEFAULT_*` methods build
+(`defaults`), and the stored records that break one of its rules (`violations_of`).
 """
 
 from sincpro_framework.ddd.reads.reads import (
@@ -14,6 +15,7 @@ from sincpro_framework.ddd.reads.reads import (
     Search,
     history_of,
 )
+from sincpro_framework.ddd.reads.violations import Violation, violations_of
 
 __all__ = [
     "DomainEvents",
@@ -25,5 +27,7 @@ __all__ = [
     "PreviewEntity",
     "ResponsePreviewEntity",
     "Search",
+    "Violation",
     "history_of",
+    "violations_of",
 ]

@@ -977,8 +977,6 @@ from sincpro_framework.context import InMemoryContexts
 from sincpro_framework import UseFramework
 from sincpro_framework.data_layer.repositories import MemoryRepository
 from sincpro_framework.ddd import (
-    Computations,
-    Compute,
     Edit,
     EditAction,
     EntityEdits,
@@ -987,6 +985,7 @@ from sincpro_framework.ddd import (
     ResponsePaginatedQuery,
     ResponseRecord,
     Search,
+    compute,
 )
 
 
@@ -997,12 +996,9 @@ class Quote(Entity):
     discount: Decimal = Decimal("0")
     total: Decimal = Decimal("0")
 
+    @compute(lambda q: q.total, depends=lambda q: [q.amount, q.discount])
     def total_of(self) -> Decimal:
         return self.amount - self.discount
-
-    computations = Computations["Quote"](
-        lambda q: (Compute(q.total, depends=(q.amount, q.discount), by=Quote.total_of),)
-    )
 
 
 class ResponseQuote(ResponseRecord):

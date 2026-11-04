@@ -1,6 +1,6 @@
 """Who wrote the record, beside when."""
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 
 @dataclass(kw_only=True)
@@ -19,5 +19,9 @@ class AuditedMixin:
     The columns go on the table with `audit_columns()`, beside `entity_columns()`.
     """
 
-    created_by: str | None = None
-    updated_by: str | None = None
+    created_by: str | None = field(
+        default=None, metadata={"label": {"default": "Created by", "es": "Creado por"}}
+    )
+    updated_by: str | None = field(
+        default=None, metadata={"label": {"default": "Updated by", "es": "Actualizado por"}}
+    )
