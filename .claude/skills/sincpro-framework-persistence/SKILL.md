@@ -1,6 +1,6 @@
 ---
 name: sincpro-framework-persistence
-description: Persist aggregates with sincpro_framework — Entity, IRepository capabilities, AggregateRepository, shared unit of work, Writes.SAVED/CHANGED, transactional numbering, relations, hooks, and the built-in reads of one aggregate (presentation, EntityReads with Get/GetMany/LiteralSearch/Search/DomainEvents) and a form's whole life (Edit + EntityEdits: save a draft, save, discard, find it again). Use when a task touches tables, get/save/remove/archive, repository.context(), entity_table/map_aggregates, DatabaseNumbering, aggregate mixins, or a Feature that reads one entity (get by id, get many, a select by text, a list, its event history) or edits it from a form over several requests (autosave, drafts, resume after the browser closed) in a Sincpro Python service.
+description: Persist aggregates with sincpro_framework — Entity, IRepository capabilities, AggregateRepository, shared unit of work, Writes.SAVED/CHANGED, transactional numbering, relations, hooks, and the built-in reads of one aggregate (presentation, EntityReads with Get/GetMany/LiteralSearch/Search/DomainEvents/PreviewEntity, Compute, warn_form) and a form's whole life (Edit + EntityEdits: save a draft, save, discard, find it again). Use when a task touches tables, get/save/remove/archive, repository.context(), entity_table/map_aggregates, DatabaseNumbering, aggregate mixins, or a Feature that reads one entity (get by id, get many, a select by text, a list, its event history) or edits it from a form over several requests (autosave, drafts, resume after the browser closed) in a Sincpro Python service.
 ---
 
 # sincpro-framework-persistence
@@ -70,12 +70,12 @@ This skill stands alone. The framework repo also has a longer, test-backed walkt
 | `EntityReads[T]` | The Feature that answers those four DTOs from the entity's `DEFAULT_*`; the caller's criteria wins part by part (`Criteria.replaced_by`); extend by overriding `get`/`get_many`/`literal_search`/`search` | Feature base | `from sincpro_framework.ddd import EntityReads` |
 | `ResponseRecord` / `ResponseRecords` | One record / a list by key (with `missing`), cut by the specification on the wire | response bases | `sincpro_framework.ddd` |
 | `AggregateNotFound` | `Get` named a key with no record; `not_found` on every wire (404 REST) | exception | `from sincpro_framework.ddd import exceptions` → `exceptions.AggregateNotFound` |
-| `Derivations` / `Derive` | Class attribute: fields the entity computes from others, by its own methods, run in dependency order by `recompute` and by `save` (children first, `recompute_whole`); `upsert`/`update_all` compute nothing | declaration | `sincpro_framework.ddd` |
-| `assign` / `recompute` | Put a form's values on a record (read as each field's type) / run the derivations a change reaches | functions | `sincpro_framework.ddd` |
+| `Computations` / `Compute` | Class attribute: fields the entity computes from others, by its own methods, run in dependency order by `recompute` and by `save` (children first); `upsert`/`update_all` compute nothing | declaration | `sincpro_framework.ddd` |
+| `apply_values` / `recompute` | Put a form's values on a record (read as each field's type) / run the computations a change reaches | functions | `sincpro_framework.ddd` |
 | `Edit` / `EditAction` / `ResponseEdit` / `EntityEdits[T]` | A form's whole life in one command: `SAVE_DRAFT` the caller's draft (version + preview), `SAVE` it to the store, `DISCARD` it; `Get(draft=True)` / `Search(drafts=True)` find it again; a project's command overrides `change` | DTO bases / StrEnum / Feature base | `sincpro_framework.ddd` |
-| `Preview` / `ResponsePreview` / `FieldState` | DTO base answered by `EntityReads.preview`: values that moved, field states, advice — nothing stored | DTO bases | `sincpro_framework.ddd` |
-| `refuse_stale` | Activating a draft (stored by the context: `self.context.drafts()`, skill `sincpro-framework-context`): `StaleAggregate` when the record changed since the draft started | function | `sincpro_framework.ddd` |
-| `previewing` / `is_previewing` / `advise` / `ProgrammingError` | The block where every store write, numbering `take` and SQL session flush raises; advice collected inside it | context manager / function / exception | `sincpro_framework.ddd` |
+| `PreviewEntity` / `ResponsePreviewEntity` / `FieldState` | DTO base answered by `EntityReads.preview`: values that moved, field states, warnings — nothing stored | DTO bases | `sincpro_framework.ddd` |
+| `refuse_stale` | Activating a draft (stored by the context: `self.context.drafts()`, skill `sincpro-framework-context`): `StaleAggregate` when the record changed since the draft started | function | `sincpro_framework.ddd.editing.drafts` |
+| `read_only` / `warn_form` / `FormWarning` / `ProgrammingError` | The block where every store write, numbering `take` and SQL session flush raises; warnings collected inside it | context manager / function / exception | `sincpro_framework.ddd` |
 
 "Aggregate" is the DDD root; a sum or a count is a **measure** (`sincpro-framework-criteria`).
 A `Hook` is your rule for one aggregate; a repository mixin (`ChangeTrackingRepositoryMixin`) is
@@ -285,8 +285,8 @@ use the common surface (then `MemoryRepository` substitutes in tests).
   default is the entity's own `DEFAULT_*` class methods — never a `default_factory` on each
   DTO — and a caller's criteria wins for every part it names. Writes stay Commands with an
   intent, written by hand. Recipe: [references/entity-reads.md](references/entity-reads.md).
-- **A value a form must see before saving is a derivation, not a hook.** Declare
-  `derivations` on the entity; `save` and `EntityReads.preview` run the same `recompute`, and
+- **A value a form must see before saving is a computation, not a hook.** Declare
+  `computations` on the entity; `save` and `EntityReads.preview` run the same `recompute`, and
   nothing is written inside a preview (`ProgrammingError`). Recipe:
   [references/preview.md](references/preview.md). What a form holds between requests is a draft
   stored by the context (`self.context.drafts()`), never a half-saved record — skill
@@ -318,8 +318,9 @@ rollback also returns the allocation. Calling outside commits the allocation ind
 - [references/hooks-and-mixins.md](references/hooks-and-mixins.md) — `Hook`/`Hooks`, moments, wiring, ordering
 - [references/entity-reads.md](references/entity-reads.md) — `DEFAULT_*` + `EntityReads`: get, get many, select by text, list
 - [references/edits.md](references/edits.md) — `Edit` + `EntityEdits`: save a form's draft, save the record, discard the draft; find it after the client lost its state; a project's own command
-- [references/preview.md](references/preview.md) — derived fields, `assign`, `Preview`: what a record becomes before it is saved
+- [references/preview.md](references/preview.md) — computed fields, `apply_values`, `PreviewEntity`: what a record becomes before it is saved
 - [references/form-hints.md](references/form-hints.md) — form hints in `presentation`, what a client receives, enforcing one with a hook
+- [references/document-form.md](references/document-form.md) — a document with lines served to a form: what the entity declares, which built-in use case answers each question (defaults, onchange, draft, save, post), how the lines travel, where errors and warnings point
 
 ## Related
 

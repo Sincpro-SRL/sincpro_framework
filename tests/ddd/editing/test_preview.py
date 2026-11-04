@@ -1,4 +1,4 @@
-"""A form's question answered before anything is saved: derived fields, the preview, and the
+"""A form's question answered before anything is saved: computed fields, the preview, and the
 guard that makes a preview unable to write.
 
 The cases are an invoicing screen: lines of quantity × price make a subtotal, a discount makes
@@ -17,21 +17,21 @@ from sincpro_framework.common.failures import problem_of
 from sincpro_framework.data_layer.repositories import MemoryNumbering, MemoryRepository
 from sincpro_framework.ddd import (
     ArchivableMixin,
+    Computations,
+    Compute,
     Condition,
     Criteria,
-    Derivations,
-    Derive,
     EntityReads,
     Presentation,
-    Preview,
-    ResponsePreview,
+    PreviewEntity,
+    ResponsePreviewEntity,
     When,
-    advise,
-    assign,
+    apply_values,
 )
 from sincpro_framework.ddd import exceptions as ddd_exceptions
-from sincpro_framework.ddd import previewing, recompute
+from sincpro_framework.ddd import read_only, recompute, warn_form
 from sincpro_framework.ddd.criteria import Operator
+from sincpro_framework.ddd.editing.preview import warnings_at
 from sincpro_framework.ddd.entity import Entity
 from sincpro_framework.ddd.reads.reads import copied
 
@@ -70,13 +70,13 @@ class Invoice(Entity):
     def total_of(self) -> Decimal:
         ran.append("total")
         if self.subtotal and self.discount > self.subtotal * Decimal("0.10"):
-            advise("a discount above 10% needs approval", field="discount")
+            warn_form("a discount above 10% needs approval", field="discount")
         return self.subtotal - self.discount
 
-    derivations = Derivations["Invoice"](
+    computations = Computations["Invoice"](
         lambda i: (
-            Derive(i.total, depends=(i.subtotal, i.discount), by=Invoice.total_of),
-            Derive(i.subtotal, depends=(i.lines,), by=Invoice.subtotal_of),
+            Compute(i.total, depends=(i.subtotal, i.discount), by=Invoice.total_of),
+            Compute(i.subtotal, depends=(i.lines,), by=Invoice.subtotal_of),
         )
     )
     presentation = Presentation["Invoice"](
@@ -90,11 +90,11 @@ class Invoice(Entity):
     )
 
 
-class ResponsePreviewInvoice(ResponsePreview):
+class ResponsePreviewInvoice(ResponsePreviewEntity):
     pass
 
 
-class QueryPreviewInvoice(Preview[Invoice, ResponsePreviewInvoice]):
+class QueryPreviewInvoice(PreviewEntity[Invoice, ResponsePreviewInvoice]):
     pass
 
 
@@ -123,7 +123,7 @@ def a_stored_invoice() -> Invoice:
 
 
 # ---------------------------------------------------------------------------------------------
-# Derived fields
+# Computed fields
 # ---------------------------------------------------------------------------------------------
 
 
@@ -181,21 +181,21 @@ def test_an_entity_without_derivations_is_saved_as_it_always_was():
     [
         (
             lambda i: (
-                Derive(i.a, depends=(i.b,), by=lambda r: 1),
-                Derive(i.b, depends=(i.a,), by=lambda r: 1),
+                Compute(i.a, depends=(i.b,), by=lambda r: 1),
+                Compute(i.b, depends=(i.a,), by=lambda r: 1),
             ),
             "cycle: a → b",
         ),
-        (lambda i: (Derive(i.a, depends=(i.a,), by=lambda r: 1),), "a from itself"),
+        (lambda i: (Compute(i.a, depends=(i.a,), by=lambda r: 1),), "a from itself"),
         (
             lambda i: (
-                Derive(i.a, depends=(), by=lambda r: 1),
-                Derive(i.a, depends=(), by=lambda r: 2),
+                Compute(i.a, depends=(), by=lambda r: 1),
+                Compute(i.a, depends=(), by=lambda r: 2),
             ),
             "computes a twice",
         ),
-        (lambda i: (Derive(i.c, depends=(), by=lambda r: 1),), "names c"),
-        (lambda i: (i.a,), "takes Derive"),
+        (lambda i: (Compute(i.c, depends=(), by=lambda r: 1),), "names c"),
+        (lambda i: (i.a,), "takes Compute"),
     ],
 )
 def test_a_derivation_that_cannot_be_ordered_is_refused_when_the_class_is_read(
@@ -206,7 +206,7 @@ def test_a_derivation_that_cannot_be_ordered_is_refused_when_the_class_is_read(
         a: int = 0
         b: int = 0
 
-        derivations = Derivations["Broken"](declared)
+        computations = Computations["Broken"](declared)
 
     with pytest.raises(exceptions.ProgrammingError, match=refusal):
         recompute(Broken())
@@ -220,7 +220,7 @@ def test_a_derivation_that_cannot_be_ordered_is_refused_when_the_class_is_read(
 def test_assign_reads_each_value_as_its_field_type_and_answers_what_changed():
     invoice = Invoice(partner_id="p1")
 
-    changed = assign(
+    changed = apply_values(
         invoice,
         {
             "discount": "12.50",
@@ -240,15 +240,15 @@ def test_assign_refuses_a_name_that_is_not_a_field_and_a_value_the_type_cannot_r
     invoice = Invoice(partner_id="p1")
 
     with pytest.raises(exceptions.ClientError, match="no field colour"):
-        assign(invoice, {"colour": "red"})
+        apply_values(invoice, {"colour": "red"})
     with pytest.raises(exceptions.ClientError, match="Invoice.discount cannot take 'mucho'"):
-        assign(invoice, {"discount": "mucho"})
+        apply_values(invoice, {"discount": "mucho"})
 
 
 def test_assign_refuses_nothing_because_of_a_hint():
     invoice = Invoice(partner_id="p1")
 
-    assert assign(invoice, {"number": "F-9", "total": "1"}) == ("number", "total")
+    assert apply_values(invoice, {"number": "F-9", "total": "1"}) == ("number", "total")
 
 
 # ---------------------------------------------------------------------------------------------
@@ -265,9 +265,9 @@ def test_a_new_invoice_form_starts_from_the_defaults_and_the_states():
     assert answer.values["payment"] == "cash"
     assert answer.values["total"] == "0"
     assert answer.values["partner_id"] is None
-    assert answer.fields["partner_id"].required is True
-    assert answer.fields["total"].readonly is True
-    assert answer.fields["card_reference"].visible is False
+    assert answer.states["partner_id"].required is True
+    assert answer.states["total"].readonly is True
+    assert answer.states["card_reference"].visible is False
 
 
 def test_a_line_typed_in_a_new_form_brings_back_the_totals():
@@ -310,7 +310,7 @@ def test_a_line_with_a_field_it_does_not_have_points_at_that_line():
     invoice = Invoice(partner_id="p1")
 
     with pytest.raises(ddd_exceptions.InvalidValue) as refused:
-        assign(
+        apply_values(
             invoice, {"lines": [{"product": "x", "qty": 1, "price": "1", "colour": "red"}]}
         )
 
@@ -329,11 +329,11 @@ def test_each_line_comes_back_with_how_a_form_shows_its_fields():
         ResponsePreviewInvoice,
     )
 
-    assert [sorted(line) for line in answer.fields["lines"].items] == [
+    assert [sorted(line) for line in answer.states["lines"].items] == [
         ["price", "product", "qty"],
         ["price", "product", "qty"],
     ]
-    assert answer.fields["discount"].items == []
+    assert answer.states["discount"].items == []
 
 
 def test_editing_a_stored_invoice_answers_what_moved_and_leaves_the_stored_one_alone():
@@ -346,7 +346,7 @@ def test_editing_a_stored_invoice_answers_what_moved_and_leaves_the_stored_one_a
     )
 
     assert answer.values == {"total": "83.00"}
-    assert answer.advice[0].field == "discount"
+    assert answer.warnings[0].field == "discount"
     kept = repository.get(Invoice, stored.id)
     assert kept is not None
     assert (kept.discount, kept.total) == (Decimal("0"), Decimal("133.00"))
@@ -362,19 +362,19 @@ def test_paying_by_card_shows_and_asks_for_the_card_reference():
     )
 
     assert answer.values == {}
-    assert answer.fields["card_reference"].visible is True
-    assert answer.fields["card_reference"].required is True
+    assert answer.states["card_reference"].visible is True
+    assert answer.states["card_reference"].required is True
 
 
 def test_advice_travels_back_and_is_silent_outside_a_preview():
     invoice = a_stored_invoice()
     invoice.discount = Decimal("100")
 
-    recompute(invoice, ("discount",))  # outside a preview: advice goes nowhere
-    with previewing() as advice:
+    recompute(invoice, ("discount",))  # outside a preview: the warning goes nowhere
+    with read_only() as warnings:
         recompute(invoice, ("discount",))
 
-    assert [one.message for one in advice] == ["a discount above 10% needs approval"]
+    assert [one.message for one in warnings] == ["a discount above 10% needs approval"]
 
 
 def test_previewing_a_record_that_is_not_there_is_not_found():
@@ -410,7 +410,7 @@ def test_every_write_door_is_refused_inside_a_preview(write):
     folder = Folder(name="docs")
     store = MemoryRepository().add(folder)
 
-    with previewing(), pytest.raises(exceptions.ProgrammingError):
+    with read_only(), pytest.raises(exceptions.ProgrammingError):
         write(store, folder)
 
     assert [one.name for one in store.search(Folder)] == ["docs"]
@@ -423,16 +423,16 @@ class NumberedInvoice(Entity):
     def number_of(self) -> str:
         return f"F-{numbering.next_number('invoice')}"
 
-    derivations = Derivations["NumberedInvoice"](
-        lambda i: (Derive(i.number, depends=(), by=NumberedInvoice.number_of),)
+    computations = Computations["NumberedInvoice"](
+        lambda i: (Compute(i.number, depends=(), by=NumberedInvoice.number_of),)
     )
 
 
-class ResponsePreviewNumbered(ResponsePreview):
+class ResponsePreviewNumbered(ResponsePreviewEntity):
     pass
 
 
-class QueryPreviewNumbered(Preview[NumberedInvoice, ResponsePreviewNumbered]):
+class QueryPreviewNumbered(PreviewEntity[NumberedInvoice, ResponsePreviewNumbered]):
     pass
 
 
@@ -452,7 +452,7 @@ def test_a_number_taken_by_domain_code_during_a_preview_is_refused_and_not_spent
 
 def test_outside_a_preview_every_write_goes_through_as_before():
     store = MemoryRepository()
-    with previewing():
+    with read_only():
         pass
     store.save(Folder(name="after"))
 
@@ -471,20 +471,20 @@ class Cart(Entity):
     items: int = 0
 
     def items_of(self) -> int:
-        for line in self.lines:  # a derivation that should not, rewriting what it reads
+        for line in self.lines:  # a computation that should not, rewriting what it reads
             line.name = line.name.upper()
         return sum(line.qty for line in self.lines)
 
-    derivations = Derivations["Cart"](
-        lambda c: (Derive(c.items, depends=(c.lines,), by=Cart.items_of),)
+    computations = Computations["Cart"](
+        lambda c: (Compute(c.items, depends=(c.lines,), by=Cart.items_of),)
     )
 
 
-class ResponsePreviewCart(ResponsePreview):
+class ResponsePreviewCart(ResponsePreviewEntity):
     pass
 
 
-class QueryPreviewCart(Preview[Cart, ResponsePreviewCart]):
+class QueryPreviewCart(PreviewEntity[Cart, ResponsePreviewCart]):
     pass
 
 
@@ -520,8 +520,8 @@ class TicketLine(Entity):
     def amount_of(self) -> Decimal:
         return self.qty * self.price
 
-    derivations = Derivations["TicketLine"](
-        lambda t: (Derive(t.amount, depends=(t.qty, t.price), by=TicketLine.amount_of),)
+    computations = Computations["TicketLine"](
+        lambda t: (Compute(t.amount, depends=(t.qty, t.price), by=TicketLine.amount_of),)
     )
 
 
@@ -533,8 +533,8 @@ class Ticket(Entity):
     def total_of(self) -> Decimal:
         return sum((line.amount for line in self.lines), Decimal("0"))
 
-    derivations = Derivations["Ticket"](
-        lambda t: (Derive(t.total, depends=(t.lines,), by=Ticket.total_of),)
+    computations = Computations["Ticket"](
+        lambda t: (Compute(t.total, depends=(t.lines,), by=Ticket.total_of),)
     )
 
 
@@ -552,16 +552,16 @@ def test_a_save_computes_the_lines_before_the_total_that_reads_them():
 def test_assign_builds_the_lines_through_their_own_class_and_refuses_framework_fields():
     ticket = Ticket()
 
-    assign(ticket, {"lines": [{"qty": 3, "price": "5"}]})
+    apply_values(ticket, {"lines": [{"qty": 3, "price": "5"}]})
 
     assert isinstance(ticket.lines[0], TicketLine)
     assert (ticket.lines[0].qty, ticket.lines[0].price) == (3, Decimal("5"))
     with pytest.raises(exceptions.ClientError, match="version"):
-        assign(ticket, {"version": 1})
+        apply_values(ticket, {"version": 1})
     with pytest.raises(exceptions.ClientError, match="id"):
-        assign(ticket, {"id": "another"})
+        apply_values(ticket, {"id": "another"})
     with pytest.raises(exceptions.ClientError, match="version"):
-        assign(ticket, {"lines": [{"qty": 1, "version": 4}]})
+        apply_values(ticket, {"lines": [{"qty": 1, "version": 4}]})
 
 
 def test_recompute_refuses_a_change_that_names_no_field():
@@ -578,8 +578,8 @@ def test_a_subclass_that_overrides_the_method_is_heard():
         def price_of(self) -> int:
             return self.base
 
-        derivations = Derivations["Tariff"](
-            lambda t: (Derive(t.price, depends=(t.base,), by=Tariff.price_of),)
+        computations = Computations["Tariff"](
+            lambda t: (Compute(t.price, depends=(t.base,), by=Tariff.price_of),)
         )
 
     @dataclass
@@ -613,9 +613,9 @@ def test_a_back_reference_in_the_copy_points_at_the_copy():
 
 
 def test_the_advice_of_a_preview_inside_another_reaches_the_outer_one():
-    with previewing() as outer:
-        with previewing() as inner:
-            advise("revisar el descuento", field="discount")
+    with read_only() as outer:
+        with read_only() as inner:
+            warn_form("revisar el descuento", field="discount")
 
     assert [one.message for one in inner] == ["revisar el descuento"]
     assert [one.message for one in outer] == ["revisar el descuento"]
@@ -627,7 +627,7 @@ def test_a_line_given_as_a_bare_value_is_refused_pointing_at_it():
     with pytest.raises(
         ddd_exceptions.InvalidValue, match="holds InvoiceLine records"
     ) as refused:
-        assign(invoice, {"lines": [{"product": "x", "qty": 1, "price": "1"}, "l9"]})
+        apply_values(invoice, {"lines": [{"product": "x", "qty": 1, "price": "1"}, "l9"]})
 
     assert problem_of(refused.value).errors[0].pointer == "#/values/lines/1"
     assert invoice.lines == []
@@ -637,7 +637,7 @@ def test_a_line_given_as_the_record_itself_is_held_as_it_is():
     invoice = Invoice(partner_id="p1")
     line = InvoiceLine("cuaderno", 2, Decimal("3"))
 
-    assign(invoice, {"lines": [line]})
+    apply_values(invoice, {"lines": [line]})
 
     assert invoice.lines == [line] and invoice.lines[0] is line
 
@@ -647,3 +647,117 @@ def test_a_rule_of_the_project_points_at_the_field_of_its_own_request():
 
     assert problem_of(refused).errors[0].pointer == "#/customer/tax_id"
     assert refused.within("billing").path == ("billing", "tax_id")
+
+
+# ---------------------------------------------------------------------------------------------
+# FormWarning about one line: where it is, as an error says it
+# ---------------------------------------------------------------------------------------------
+
+
+@dataclass
+class SaleLine(Entity):
+    product: str = ""
+    qty: int = 1
+    price: Decimal = Decimal("0")
+    cost: Decimal = Decimal("0")
+    amount: Decimal = Decimal("0")
+
+    def amount_of(self) -> Decimal:
+        if self.price < self.cost:
+            warn_form("price below cost", field="price")
+        return self.qty * self.price
+
+    computations = Computations["SaleLine"](
+        lambda s: (Compute(s.amount, depends=(s.qty, s.price), by=SaleLine.amount_of),)
+    )
+
+
+@dataclass
+class Sale(Entity):
+    lines: list[SaleLine] = field(default_factory=list)
+    total: Decimal = Decimal("0")
+
+    def total_of(self) -> Decimal:
+        if len(self.lines) > 2:
+            warn_form("more than two lines need a review")
+        return sum((line.amount for line in self.lines), Decimal("0"))
+
+    computations = Computations["Sale"](
+        lambda s: (Compute(s.total, depends=(s.lines,), by=Sale.total_of),)
+    )
+
+
+class ResponsePreviewSale(ResponsePreviewEntity):
+    pass
+
+
+class QueryPreviewSale(PreviewEntity[Sale, ResponsePreviewSale]):
+    pass
+
+
+def test_the_advice_a_line_gives_points_at_that_line_and_that_cell():
+    sale = Sale(
+        lines=[
+            SaleLine("cuaderno", 1, Decimal("10"), Decimal("4")),
+            SaleLine("lapiz", 2, Decimal("1"), Decimal("3")),
+        ]
+    )
+
+    with read_only() as warnings:
+        recompute(sale)
+
+    assert [(one.message, one.field, one.path) for one in warnings] == [
+        ("price below cost", "lines", ("lines", 1, "price")),
+    ]
+
+
+def test_the_advice_about_the_record_and_about_a_field_say_where_they_are():
+    sale = Sale(lines=[SaleLine("a"), SaleLine("b"), SaleLine("c")])
+    invoice = a_stored_invoice()
+    invoice.discount = Decimal("100")
+
+    with read_only() as warnings:
+        recompute(sale)
+        recompute(invoice, ("discount",))
+
+    assert [(one.field, one.path) for one in warnings] == [
+        (None, ()),
+        ("discount", ("discount",)),
+    ]
+
+
+def test_a_preview_answers_the_advice_of_a_line_typed_in_a_new_form():
+    bus = UseFramework("sale-preview", log_after_execution=False)
+    bus.add_dependency("repository", MemoryRepository())
+
+    @bus.feature(QueryPreviewSale)
+    class SaleReads(EntityReads[Sale]):
+        pass
+
+    answer = bus(
+        QueryPreviewSale(
+            values={
+                "lines": [
+                    {"product": "cuaderno", "qty": 1, "price": "10", "cost": "4"},
+                    {"product": "lapiz", "qty": 2, "price": "1", "cost": "3"},
+                ]
+            },
+            changed=["lines"],
+        ),
+        ResponsePreviewSale,
+    )
+
+    assert answer.values["total"] == "12"
+    assert answer.model_dump(mode="json")["warnings"] == [
+        {"message": "price below cost", "field": "lines", "path": ["lines", 1, "price"]},
+    ]
+
+
+def test_advice_given_inside_nested_blocks_adds_their_places_up():
+    with read_only() as warnings:
+        with warnings_at(("lines", 0)):
+            with warnings_at(("components", 3)):
+                warn_form("out of stock", field="qty")
+
+    assert warnings[0].path == ("lines", 0, "components", 3, "qty")
+    assert warnings[0].field == "lines"

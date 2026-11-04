@@ -20,7 +20,7 @@ drafts = self.context.drafts(by=["session_id"])    # a session's instead of a us
 | `drafts.save(subject, values, origin_version, expected)` | stores `values` under a new version, when `expected` is the version there now; `Draft` back — the one `read` gives until the next save |
 | `drafts.read(subject)` | the live `Draft`, or `None` (none, discarded, expired) |
 | `drafts.discard(subject)` | drops it; a key with none is not an error |
-| `refuse_stale(draft, record)` (`sincpro_framework.ddd`) | `StaleAggregate` when the record changed since the draft started |
+| `refuse_stale(draft, record)` (`sincpro_framework.ddd.editing.drafts`) | `StaleAggregate` when the record changed since the draft started |
 
 A `Draft` carries `key`, `values` (as JSON carries them: `"1150.50"` for a decimal, ISO text for
 a date), `version`, `origin_version` and `kept_at`. A version is opaque, like an ETag: compare
@@ -141,13 +141,13 @@ class ActivateInvoiceDraft(Feature):
             raise DraftConflict(subject, dto.version, 0)
         invoice = self.repository.get(Invoice, dto.invoice_id)
         refuse_stale(draft, invoice)                # somebody saved it since: StaleAggregate
-        assign(invoice, draft.values)               # JSON read as each field's type
+        apply_values(invoice, draft.values)         # JSON read as each field's type
         self.repository.save(invoice)
         drafts.discard(subject)
 ```
 
 `refuse_stale` compares the record's `version` with the draft's `origin_version` before the
-draft's values touch the record. `assign` (`sincpro_framework.ddd`) reads each JSON value as its
+draft's values touch the record. `apply_values` (`sincpro_framework.ddd`) reads each JSON value as its
 field's type — `"1150.50"` becomes a `Decimal` — so the save sees what a typed edit would. Setting `version` back on a loaded record is not a check: the
 mapping writes it as a new value and the save goes through.
 

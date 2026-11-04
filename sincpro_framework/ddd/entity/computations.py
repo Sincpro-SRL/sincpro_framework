@@ -14,16 +14,16 @@ them the same way.
         def total_of(self) -> Decimal:
             return self.subtotal - self.discount
 
-        derivations = Derivations["Invoice"](
+        computations = Computations["Invoice"](
             lambda i: [
-                Derive(i.subtotal, depends=i.lines, by=Invoice.subtotal_of),
-                Derive(i.total, depends=[i.subtotal, i.discount], by=Invoice.total_of),
+                Compute(i.subtotal, depends=i.lines, by=Invoice.subtotal_of),
+                Compute(i.total, depends=[i.subtotal, i.discount], by=Invoice.total_of),
             ]
         )
 
-The computation is the entity's own method; the framework only orders the derivations by what
+The computation is the entity's own method; the framework only orders the computations by what
 they depend on and runs the ones a change reaches (`recompute`). The lambda names fields through
-the entity, as `presentation` does, answers one `Derive` alone or a list of them, and runs once when the class is described; a cycle or a
+the entity, as `presentation` does, answers one `Compute` alone or a list of them, and runs once when the class is described; a cycle or a
 name that is not a field is refused there.
 """
 
@@ -32,8 +32,8 @@ from dataclasses import dataclass
 
 
 @dataclass(frozen=True)
-class Derive:
-    """One field computed from others: `Derive(i.total, depends=[i.subtotal, i.discount],
+class Compute:
+    """One field computed from others: `Compute(i.total, depends=[i.subtotal, i.discount],
     by=Invoice.total_of)`.
 
     `depends` is one field alone or a list of them. `by` is a method of the entity (or any
@@ -46,7 +46,7 @@ class Derive:
 
 
 @dataclass(frozen=True)
-class Derivations[T]:
+class Computations[T]:
     """What the entity computes, listed once. Left alone, nothing is computed."""
 
-    declared: Callable[[T], Derive | Sequence[Derive]] | None = None
+    declared: Callable[[T], Compute | Sequence[Compute]] | None = None

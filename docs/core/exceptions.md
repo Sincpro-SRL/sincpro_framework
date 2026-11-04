@@ -129,7 +129,7 @@ class TaxAuthorityDown(exceptions.ServiceUnavailableError):
 
 **A value the caller sent wrong, pointed at.** `InvalidValue` says where the value is, so the
 `Problem` carries a pointer and a screen marks that field — or that cell of a line. It is what
-`assign` raises for a form's values, and a project's own rule raises it the same way:
+`apply_values` raises for a form's values, and a project's own rule raises it the same way:
 
 ```python
 from sincpro_framework.ddd import exceptions as ddd_exceptions
@@ -142,7 +142,7 @@ raise ddd_exceptions.InvalidValue("not a valid tax id", ("tax_id",), field="cust
 ```
 
 `field` is the request's field that carries the record — `values` by default, as in an `Edit` and
-a `Preview`. `error.within("lines", 2)` is the same refusal seen from the record that holds the
+a `PreviewEntity`. `error.within("lines", 2)` is the same refusal seen from the record that holds the
 line.
 
 ## What the framework raises

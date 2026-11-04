@@ -15,16 +15,16 @@ from sincpro_framework.data_layer.caching.domain.failure import FailSafe
 from sincpro_framework.data_layer.caching.domain.policies import QueryCachePolicy
 from sincpro_framework.data_layer.repositories import MemoryRepository
 from sincpro_framework.ddd import (
+    Computations,
+    Compute,
     Condition,
-    Derivations,
-    Derive,
     Entity,
     Presentation,
     When,
     presentation_of,
 )
 from sincpro_framework.ddd.criteria import Operator, Sort
-from sincpro_framework.ddd.entity.entity_meta import derivations_of
+from sincpro_framework.ddd.entity.entity_meta import computations_of
 from sincpro_framework.ddd.repositories import Hook, Hooks
 
 
@@ -55,10 +55,10 @@ class AsList(Entity):
         required_when=lambda a: [When(Condition.on(a.state, Operator.EQ, "draft"), a.code)],
         visible_when=lambda a: [When(Condition.on(a.state, Operator.EQ, "draft"), a.total)],
     )
-    derivations = Derivations["AsList"](
+    computations = Computations["AsList"](
         lambda a: [
-            Derive(a.count, depends=[a.lines], by=lambda r: len(r.lines)),
-            Derive(a.total, depends=[a.count], by=lambda r: Decimal(r.count)),
+            Compute(a.count, depends=[a.lines], by=lambda r: len(r.lines)),
+            Compute(a.total, depends=[a.count], by=lambda r: Decimal(r.count)),
         ]
     )
 
@@ -79,10 +79,10 @@ class AsTuple(Entity):
         required_when=lambda a: (When(Condition.on(a.state, Operator.EQ, "draft"), a.code),),
         visible_when=lambda a: (When(Condition.on(a.state, Operator.EQ, "draft"), a.total),),
     )
-    derivations = Derivations["AsTuple"](
+    computations = Computations["AsTuple"](
         lambda a: (
-            Derive(a.count, depends=(a.lines,), by=lambda r: len(r.lines)),
-            Derive(a.total, depends=(a.count,), by=lambda r: Decimal(r.count)),
+            Compute(a.count, depends=(a.lines,), by=lambda r: len(r.lines)),
+            Compute(a.total, depends=(a.count,), by=lambda r: Decimal(r.count)),
         )
     )
 
@@ -103,21 +103,21 @@ class AsOne(Entity):
         required_when=lambda a: When(Condition.on(a.state, Operator.EQ, "draft"), a.code),
         visible_when=lambda a: When(Condition.on(a.state, Operator.EQ, "draft"), a.total),
     )
-    derivations = Derivations["AsOne"](
+    computations = Computations["AsOne"](
         lambda a: [
-            Derive(a.count, depends=a.lines, by=lambda r: len(r.lines)),
-            Derive(a.total, depends=a.count, by=lambda r: Decimal(r.count)),
+            Compute(a.count, depends=a.lines, by=lambda r: len(r.lines)),
+            Compute(a.total, depends=a.count, by=lambda r: Decimal(r.count)),
         ]
     )
 
 
 @dataclass
-class OneDerive(Entity):
+class OneCompute(Entity):
     lines: list[Line] = field(default_factory=list)
     count: int = 0
 
-    derivations = Derivations["OneDerive"](
-        lambda a: Derive(a.count, depends=a.lines, by=lambda r: len(r.lines))
+    computations = Computations["OneCompute"](
+        lambda a: Compute(a.count, depends=a.lines, by=lambda r: len(r.lines))
     )
 
 
@@ -170,12 +170,12 @@ def test_a_presentation_reads_the_same_as_a_list_a_tuple_or_one_alone():
 
 def test_derivations_read_the_same_as_a_list_a_tuple_or_one_alone():
     read = [
-        tuple((one.field, one.depends) for one in derivations_of(kind))
+        tuple((one.field, one.depends) for one in computations_of(kind))
         for kind in (AsList, AsTuple, AsOne)
     ]
 
     assert read[0] == read[1] == read[2] == (("count", ("lines",)), ("total", ("count",)))
-    assert tuple((one.field, one.depends) for one in derivations_of(OneDerive)) == (
+    assert tuple((one.field, one.depends) for one in computations_of(OneCompute)) == (
         ("count", ("lines",)),
     )
 

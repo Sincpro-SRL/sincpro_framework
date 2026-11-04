@@ -1,7 +1,7 @@
-"""What a form's values do to an aggregate in hand: `assign` puts them on it, read as each
-field's type, and `recompute` runs the derivations they reach.
+"""What a form's values do to an aggregate in hand: `apply_values` puts them on it, read as each
+field's type, and `recompute` runs the computations they reach.
 
-    changed = assign(invoice, {"discount": "50", "lines": [{"qty": 2, "price": "10.00"}]})
+    changed = apply_values(invoice, {"discount": "50", "lines": [{"qty": 2, "price": "10.00"}]})
     recompute(invoice, changed)              subtotal, then total
 
 Neither stores anything nor refuses a value because of a form hint: a hint is a client's
@@ -18,11 +18,12 @@ from typing import Any, get_args, get_origin
 from pydantic import TypeAdapter, ValidationError
 
 from sincpro_framework.ddd import exceptions
+from sincpro_framework.ddd.editing.preview import warnings_at
 from sincpro_framework.ddd.entity.entity_collection import EntityCollection, identity_name
 from sincpro_framework.ddd.entity.entity_meta import (
-    Derivation,
+    Computation,
     annotations_of,
-    derivations_of,
+    computations_of,
     framework_fields,
     related_class,
     without_optional,
@@ -31,7 +32,7 @@ from sincpro_framework.ddd.entity.relations import relation_attribute
 from sincpro_framework.sincpro_logger import logger
 
 UNREAD = object()
-"""What a relation never read holds, for `assign` to compare with: anything is a change."""
+"""What a relation never read holds, for `apply_values` to compare with: anything is a change."""
 
 
 @cache
@@ -49,7 +50,9 @@ def _current(record: Any, name: str) -> Any:
         return UNREAD
 
 
-def assign(record: Any, values: Mapping[str, Any], adopt: bool = False) -> tuple[str, ...]:
+def apply_values(
+    record: Any, values: Mapping[str, Any], adopt: bool = False
+) -> tuple[str, ...]:
     """Put a form's values on `record`, each read as its field's type, and answer which fields
     now hold another value.
 
@@ -116,7 +119,7 @@ def _is_record_class(annotation: Any) -> bool:
 def form_values(
     kind: type, values: Mapping[str, Any], nested: bool = False
 ) -> dict[str, Any]:
-    """A record's values as a form sends them back to `assign`: what the framework writes left
+    """A record's values as a form sends them back to `apply_values`: what the framework writes left
     out at every level — a nested record retaining its identity, the way a form names the line
     it edits.
 
@@ -132,7 +135,7 @@ def form_values(
            in the list left as it is;
        2.3 one record held as a mapping — read the same way, nested;
        2.4 anything else left as it is.
-    Final: the values a form edits, ready for `assign`.
+    Final: the values a form edits, ready for `apply_values`.
     """
     annotations = annotations_of(kind)
     own_identity = _identity_of(kind) if nested else ""
@@ -215,7 +218,7 @@ def _records(
     1. A mapping is a record to make — built, or a held one edited (`made`).
     2. A record of the line's class is taken as it is.
     3. Anything else — an id, a number — is refused: a list of records holds records. An id
-       of another aggregate is read as its record before `assign` (`EntityReads.referenced`)
+       of another aggregate is read as its record before `apply_values` (`EntityReads.referenced`)
        only where the store names it by id; here it would be held as a bare value.
     Final: the records; a refusal inside one points at its position (`within`).
     """
@@ -328,7 +331,9 @@ def _edited_or_built(
                 "the field already holds, and a new one comes without its identity",
                 (identity,),
             )
-        assign(found, {name: one for name, one in values.items() if name != identity}, adopt)
+        apply_values(
+            found, {name: one for name, one in values.items() if name != identity}, adopt
+        )
         return found
     return _built(kind, values, adopt)
 
@@ -358,24 +363,24 @@ def _plain(kind: type, name: str, annotation: Any, value: Any, adopt: bool) -> A
 @cache
 def owned(declared: type) -> tuple[str, ...]:
     """The fields holding records a computation of `declared` has to compute first: those its
-    derivations read, and the lists of records that declare derivations of their own. Never
+    computations read, and the lists of records that declare computations of their own. Never
     another aggregate it only points at.
 
         owned(Order)    ->  ("lines",)    # Order: subtotal ← lines; OrderLine: amount ← qty
         owned(Sale)     ->  ("lines",)    # nothing reads lines, but SaleLine derives amount
-        owned(Box)      ->  ()            # Box and Item declare no derivations
+        owned(Box)      ->  ()            # Box and Item declare no computations
 
-    Context: a single record field counts only when a derivation reads it; a list counts
+    Context: a single record field counts only when a computation reads it; a list counts
     also when its records derive something themselves. Cached per class.
     """
-    derivations = derivations_of(declared)
-    read = {name for one in derivations for name in one.depends}
+    computations = computations_of(declared)
+    read = {name for one in computations for name in one.depends}
     found: list[str] = []
     for name, annotation in annotations_of(declared).items():
         kind, many = related_class(annotation)
         if kind is None or not _is_record_class(kind):
             continue
-        if name in read or (many and derivations_of(kind)):
+        if name in read or (many and computations_of(kind)):
             found.append(name)
     return tuple(found)
 
@@ -397,15 +402,15 @@ def _held_in_part(record: Any, name: str) -> str:
     return attribute.held_in_part(record) if attribute is not None else ""
 
 
-def _warn_stale_derivation(record: Any, derivation: Derivation) -> None:
-    """A derivation a save skipped over a relation held in part retains its stored value,
+def _warn_stale_computation(record: Any, computation: Computation) -> None:
+    """A computation a save skipped over a relation held in part retains its stored value,
     which may no longer agree with the records it sums: said once, with the way out."""
     owner = type(record).__name__
-    for name in derivation.depends:
+    for name in computation.depends:
         how = _held_in_part(record, name)
         if how:
             logger.warning(
-                f"{owner}.{derivation.field} is not recomputed on save: {owner}.{name} is held "
+                f"{owner}.{computation.field} is not recomputed on save: {owner}.{name} is held "
                 f"{how}, so the stored value stays and may not match it. Read {name} whole "
                 "— inside context(), or with a specification that does not filter or page it — "
                 "for the save to compute it"
@@ -413,11 +418,11 @@ def _warn_stale_derivation(record: Any, derivation: Derivation) -> None:
             return
 
 
-def _computed(derivation: Derivation, record: Any) -> Any:
-    """The derivation's value for `record`. A method named in the declaration is called as the
+def _computed(computation: Computation, record: Any) -> Any:
+    """The computation's value for `record`. A method named in the declaration is called as the
     record's own, so a subclass that overrides it is heard; any other callable is called as is.
     """
-    by = derivation.by
+    by = computation.by
     name = getattr(by, "__name__", "")
     if inspect.isfunction(by) and name != "<lambda>":
         own = getattr(type(record), name, None)
@@ -427,45 +432,46 @@ def _computed(derivation: Derivation, record: Any) -> Any:
 
 
 def _ran(
-    record: Any, derivations: tuple[Derivation, ...], reached: set[str], tolerant: bool
+    record: Any, computations: tuple[Computation, ...], reached: set[str], tolerant: bool
 ) -> tuple[str, ...]:
-    """Runs the derivations `reached` asks for (all of them when it is empty). Tolerant, one that
+    """Runs the computations `reached` asks for (all of them when it is empty). Tolerant, one that
     reads a field the record does not hold whole is skipped, and its field retains what it
     holds.
     """
     every = not reached
     moved: list[str] = []
-    for derivation in derivations:
-        if not every and reached.isdisjoint(derivation.depends):
+    for computation in computations:
+        if not every and reached.isdisjoint(computation.depends):
             continue
-        if tolerant and not all(_holds_whole(record, one) for one in derivation.depends):
-            _warn_stale_derivation(record, derivation)
+        if tolerant and not all(_holds_whole(record, one) for one in computation.depends):
+            _warn_stale_computation(record, computation)
             continue
         try:
-            value = _computed(derivation, record)
-            before = getattr(record, derivation.field, None)
+            value = _computed(computation, record)
+            before = getattr(record, computation.field, None)
         except exceptions.RelationNotResolved:
             if not tolerant:
                 raise
             continue
-        setattr(record, derivation.field, value)
-        reached.add(derivation.field)
+        setattr(record, computation.field, value)
+        reached.add(computation.field)
         if value != before:
-            moved.append(derivation.field)
+            moved.append(computation.field)
     return tuple(moved)
 
 
 def _tree(record: Any, reached: set[str], tolerant: bool, seen: set[int]) -> tuple[str, ...]:
-    """The derivations of `record` and of the records it owns, innermost first — what both
+    """The computations of `record` and of the records it owns, innermost first — what both
     `recompute` and `recompute_whole` run.
 
     1. A record already visited answers nothing: a cycle of references ends here.
     2. Each owned field (`owned`) the record holds whole or in part: every record in it runs
-       its own tree, with nothing reached — its derivations all run.
+       its own tree, with nothing reached — its computations all run —, its warnings pointing at where
+       it sits (`("lines", 2)`).
        2.1 When one of them moved and the change named fields, the owned field is reached, so
            what sums it runs.
-    3. A record with no derivations of its own answers nothing.
-    Final: its derivations run (`_ran`) — `tolerant` skipping those over a relation not held
+    3. A record with no computations of its own answers nothing.
+    Final: its computations run (`_ran`) — `tolerant` skipping those over a relation not held
     whole — answering the fields of `record` that moved.
     """
     if id(record) in seen:
@@ -477,33 +483,35 @@ def _tree(record: Any, reached: set[str], tolerant: bool, seen: set[int]) -> tup
         if not (_holds_whole(record, name) or _held_in_part(record, name)):
             continue
         value = getattr(record, name)
+        many = isinstance(value, (list, EntityCollection))
         moved = False
-        for one in value if isinstance(value, (list, EntityCollection)) else (value,):
+        for index, one in enumerate(value if many else (value,)):
             if dataclasses.is_dataclass(one) and not isinstance(one, type):
-                moved = bool(_tree(one, set(), tolerant, seen)) or moved
+                with warnings_at((name, index) if many else (name,)):
+                    moved = bool(_tree(one, set(), tolerant, seen)) or moved
         if moved and reached:
             reached.add(name)
-    derivations = derivations_of(type(record))
-    if not derivations:
+    computations = computations_of(type(record))
+    if not computations:
         return ()
-    return _ran(record, derivations, reached, tolerant)
+    return _ran(record, computations, reached, tolerant)
 
 
 def recompute(record: Any, changed: Iterable[str] = ()) -> tuple[str, ...]:
-    """Run, in order, every derivation the change reaches — the records inside it first — and
+    """Run, in order, every computation the change reaches — the records inside it first — and
     answer the fields of `record` it changed.
 
         in      Invoice, ("discount",)          →  total runs; subtotal does not
         in      Invoice, ("lines",)             →  each line's amount, then subtotal, then total
-        in      Invoice, ()                     →  every derivation
+        in      Invoice, ()                     →  every computation
 
     1. A name in `changed` that is not a field is refused, naming it.
     2. The records it owns are computed first, whole (`owned`): a line's amount before the
        subtotal that sums it; a field whose records moved is reached.
-    3. With `changed` empty every derivation of the record runs, in order.
-    4. Otherwise a derivation runs when it reads a field the change reached; its own field is
-       then reached too, so a derivation of a derivation follows.
-    Final: the derived fields of `record` whose value moved.
+    3. With `changed` empty every computation of the record runs, in order.
+    4. Otherwise a computation runs when it reads a field the change reached; its own field is
+       then reached too, so a computation of a computation follows.
+    Final: the computed fields of `record` whose value moved.
     """
     owner = type(record)
     unknown = sorted(set(changed) - set(annotations_of(owner))) if changed else []
@@ -515,18 +523,18 @@ def recompute(record: Any, changed: Iterable[str] = ()) -> tuple[str, ...]:
 
 
 def recompute_whole(record: Any) -> tuple[str, ...]:
-    """Every derivation of the record, the records it owns first — what a save runs, so a total
+    """Every computation of the record, the records it owns first — what a save runs, so a total
     over its lines reads lines already computed.
 
     in      Sale(lines=[Line(qty=2, price=10, amount=0)], subtotal=0)
     out     Line.amount = 20, then Sale.subtotal = 20
 
     **A save never reads, and never computes over a relation it does not hold whole.** A
-    derivation that reads a relation not loaded, cut by a specification, or assigned without a
-    whole reading behind it is skipped and retains its stored value; a derivation that reads
+    computation that reads a relation not loaded, cut by a specification, or assigned without a
+    whole reading behind it is skipped and retains its stored value; a computation that reads
     it computes from that stored value. A relation never read cannot have changed, so that
     skip is silent; one held in part may have, so a warning names the field, the relation and
     how to read it whole. The records held are computed either way. An aggregate with no
-    derivations is not looked into at all.
+    computations is not looked into at all.
     """
     return _tree(record, set(), True, set())

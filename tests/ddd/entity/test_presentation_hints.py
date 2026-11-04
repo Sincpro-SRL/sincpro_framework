@@ -18,9 +18,9 @@ from sincpro_framework import UseFramework, exceptions
 from sincpro_framework.data_layer.repositories import MemoryRepository
 from sincpro_framework.ddd import (
     All,
+    Computations,
+    Compute,
     Condition,
-    Derivations,
-    Derive,
     EntityReads,
     Get,
     Presentation,
@@ -167,8 +167,8 @@ class SaleOrder(Entity):
     def customer_name_of(self) -> str:
         return f"customer {self.customer_id}"
 
-    derivations = Derivations["SaleOrder"](
-        lambda o: Derive(
+    computations = Computations["SaleOrder"](
+        lambda o: Compute(
             o.customer_name, depends=o.customer_id, by=SaleOrder.customer_name_of
         )
     )

@@ -977,8 +977,8 @@ from sincpro_framework.context import InMemoryContexts
 from sincpro_framework import UseFramework
 from sincpro_framework.data_layer.repositories import MemoryRepository
 from sincpro_framework.ddd import (
-    Derivations,
-    Derive,
+    Computations,
+    Compute,
     Edit,
     EditAction,
     EntityEdits,
@@ -1000,8 +1000,8 @@ class Quote(Entity):
     def total_of(self) -> Decimal:
         return self.amount - self.discount
 
-    derivations = Derivations["Quote"](
-        lambda q: (Derive(q.total, depends=(q.amount, q.discount), by=Quote.total_of),)
+    computations = Computations["Quote"](
+        lambda q: (Compute(q.total, depends=(q.amount, q.discount), by=Quote.total_of),)
     )
 
 

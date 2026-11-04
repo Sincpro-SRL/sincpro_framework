@@ -56,8 +56,8 @@ from sincpro_framework.ddd.criteria import (
     Sort,
     Specification,
 )
-from sincpro_framework.ddd.entity.computed import computations_of
-from sincpro_framework.ddd.entity.derivations import Derivations, Derive
+from sincpro_framework.ddd.entity.computations import Computations, Compute
+from sincpro_framework.ddd.entity.computed import computed_fields_of
 from sincpro_framework.ddd.entity.entity_collection import Dropped
 from sincpro_framework.ddd.entity.presentation import (
     Fields,
@@ -1295,12 +1295,12 @@ def framework_fields(declared: type) -> frozenset[str]:
 
         framework_fields(Invoice)       # class Invoice(Entity)
             ->  frozenset({"id", "created_at", "updated_at", "version",
-                           "derivations", "presentation"})
+                           "computations", "presentation"})
         framework_fields(Client)        # class Client(ArchivableMixin, Entity)
             ->  the same, plus "archived_at"
 
     Context: every annotation of a framework class counts, its class variables
-    (`derivations`, `presentation`) included — a caller intersects with the fields it has.
+    (`computations`, `presentation`) included — a caller intersects with the fields it has.
     """
     found: set[str] = set()
     for owner in declared.__mro__:
@@ -1326,34 +1326,34 @@ def _required_by_structure(declared: type, system: frozenset[str]) -> frozenset[
 
 
 @dataclasses.dataclass(frozen=True)
-class Derivation:
-    """One `Derive`, read: field names in place of lambdas."""
+class Computation:
+    """One `Compute`, read: field names in place of lambdas."""
 
     field: str
     depends: tuple[str, ...]
     by: Any
 
 
-def _derivation_order(owner: str, read: dict[str, Derivation]) -> list[str]:
-    """The derived fields, each after the derived fields it reads (Kahn, declaration order among
+def _computation_order(owner: str, read: dict[str, Computation]) -> list[str]:
+    """The computed fields, each after the computed fields it reads (Kahn, declaration order among
     the free ones). A cycle is refused, naming it.
 
         total ← (subtotal, discount) · subtotal ← (lines,)   ->  ["subtotal", "total"]
 
-    1. For each derived field, the other derived fields it reads — what it waits for; a
-       field read from outside the derivations waits for nothing.
+    1. For each computed field, the other computed fields it reads — what it waits for; a
+       field read from outside the computations waits for nothing.
     2. A field that reads itself is refused.
     3. Round by round, every field waiting for nothing is placed and freed from the rest.
     Final: a round with nothing free is a cycle, refused naming every field still waiting.
     """
     waiting = {
-        name: {one for one in derivation.depends if one in read and one != name}
-        for name, derivation in read.items()
+        name: {one for one in computation.depends if one in read and one != name}
+        for name, computation in read.items()
     }
-    for name, derivation in read.items():
-        if name in derivation.depends:
+    for name, computation in read.items():
+        if name in computation.depends:
             raise exceptions.ProgrammingError(
-                f"{owner}.derivations computes {name} from itself"
+                f"{owner}.computations computes {name} from itself"
             )
     ordered: list[str] = []
     while waiting:
@@ -1361,7 +1361,7 @@ def _derivation_order(owner: str, read: dict[str, Derivation]) -> list[str]:
         if not free:
             cycle = " → ".join(sorted(waiting))
             raise exceptions.ProgrammingError(
-                f"{owner}.derivations depend on each other in a cycle: {cycle}"
+                f"{owner}.computations depend on each other in a cycle: {cycle}"
             )
         for name in free:
             ordered.append(name)
@@ -1372,53 +1372,53 @@ def _derivation_order(owner: str, read: dict[str, Derivation]) -> list[str]:
 
 
 @cache
-def derivations_of(declared: type) -> tuple[Derivation, ...]:
-    """The class's `derivations`, read once, checked against its fields and put in the order
+def computations_of(declared: type) -> tuple[Computation, ...]:
+    """The class's `computations`, read once, checked against its fields and put in the order
     they have to run.
 
         # Invoice: total ← (subtotal, discount), subtotal ← (lines,)
-        derivations_of(Invoice)
-            ->  (Derivation(subtotal, (lines,)), Derivation(total, (subtotal, discount)))
-        derivations_of(Box)    ->  ()     # declares no derivations
+        computations_of(Invoice)
+            ->  (Computation(subtotal, (lines,)), Computation(total, (subtotal, discount)))
+        computations_of(Box)    ->  ()     # declares no computations
 
-    1. A class with no `Derivations` computes nothing.
+    1. A class with no `Computations` computes nothing.
     2. The lambda runs once over `Fields`; an unknown name is refused, naming it.
-       2.1 An entry that is not a `Derive`, or whose `by` is not callable, is refused.
+       2.1 An entry that is not a `Compute`, or whose `by` is not callable, is refused.
     3. A field derived twice is refused: two computations would race for it.
-    4. Ordered so a field is computed after every derived field it reads; among the free ones,
+    4. Ordered so a field is computed after every computed field it reads; among the free ones,
        the order they were declared in.
        4.1 A cycle has no order and is refused, naming the fields in it.
-    Final: the derivations, ready for `recompute`.
+    Final: the computations, ready for `recompute`.
     """
-    declaration = getattr(declared, "derivations", None)
-    if not isinstance(declaration, Derivations) or declaration.declared is None:
+    declaration = getattr(declared, "computations", None)
+    if not isinstance(declaration, Computations) or declaration.declared is None:
         return ()
     owner = declared.__name__
-    fields = Fields(owner, annotations_of(declared), "derivations")
-    read: dict[str, Derivation] = {}
+    fields = Fields(owner, annotations_of(declared), "computations")
+    read: dict[str, Computation] = {}
     for entry in _entries(declaration.declared(fields)):
-        if not isinstance(entry, Derive):
+        if not isinstance(entry, Compute):
             raise exceptions.ProgrammingError(
-                f"{owner}.derivations takes Derive, as in lambda i: "
-                f"[Derive(i.total, depends=i.subtotal, by={owner}.total_of)]; "
+                f"{owner}.computations takes Compute, as in lambda i: "
+                f"[Compute(i.total, depends=i.subtotal, by={owner}.total_of)]; "
                 f"it was given {entry!r}"
             )
-        name = field_name(entry.field, "Derive(i.total, ...)")
+        name = field_name(entry.field, "Compute(i.total, ...)")
         if name in read:
-            raise exceptions.ProgrammingError(f"{owner}.derivations computes {name} twice")
+            raise exceptions.ProgrammingError(f"{owner}.computations computes {name} twice")
         if not callable(entry.by):
             raise exceptions.ProgrammingError(
-                f"{owner}.derivations computes {name} by {entry.by!r}, which is not callable"
+                f"{owner}.computations computes {name} by {entry.by!r}, which is not callable"
             )
-        read[name] = Derivation(
+        read[name] = Computation(
             field=name,
             depends=tuple(
-                field_name(one, "Derive(..., depends=i.lines)")
+                field_name(one, "Compute(..., depends=i.lines)")
                 for one in _entries(entry.depends)
             ),
             by=entry.by,
         )
-    return tuple(read[name] for name in _derivation_order(owner, read))
+    return tuple(read[name] for name in _computation_order(owner, read))
 
 
 @cache
@@ -1471,7 +1471,7 @@ def presentation_of(declared: type) -> Presented:
        that is a `Specification`, a literal search that is a template holding `TEXT`.
     3. The form hints come from its `presentation`, each lambda run once over `Fields`; an
        unknown name is refused, naming it. Left alone, the fields the framework writes are
-       read-only — its own (`id`, `version`, …), a `computed` one and one a `Derive` computes,
+       read-only — its own (`id`, `version`, …), a `computed` one and one a `Compute` computes,
        which the next change would compute again over whatever was typed — and a field with no
        default that cannot be `None` is required.
     Final: the names, ready for `Meta`, `matching` and `detail_of`.
@@ -1493,8 +1493,8 @@ def presentation_of(declared: type) -> Presented:
     fields = Fields(owner, annotations)
     system = framework_fields(declared)
 
-    computes = {one.field for one in derivations_of(declared)} | set(
-        computations_of(declared)
+    computes = {one.field for one in computations_of(declared)} | set(
+        computed_fields_of(declared)
     )
     readonly = (system & frozenset(annotations)) | computes
     if presentation.readonly is not None:
@@ -1590,7 +1590,7 @@ def with_computed(fields: dict[str, FieldMeta], declared: type) -> dict[str, Fie
 
     in      {'balance': …}, Invoice (balance computed)   →  out  balance: computed
     """
-    marked = computations_of(declared)
+    marked = computed_fields_of(declared)
     if not marked:
         return fields
     return {

@@ -42,11 +42,12 @@ client (409 via `FailureKind.CONFLICT`), which reads again and merges. Never ret
 ## 3. Activate in a Command
 
 ```python
-from sincpro_framework.ddd import assign, refuse_stale
+from sincpro_framework.ddd import apply_values
+from sincpro_framework.ddd.editing.drafts import refuse_stale
 
 invoice = self.repository.get(Invoice, invoice_id)
 refuse_stale(draft, invoice)          # StaleAggregate if saved since the draft started
-assign(invoice, draft.values)         # values are JSON: each read as its field's type
+apply_values(invoice, draft.values)         # values are JSON: each read as its field's type
 self.repository.save(invoice)
 drafts.discard(subject)
 ```
@@ -62,5 +63,5 @@ drafts.discard(subject)
 - **Using drafts for what others must see** (a draft invoice for approval): that is a stored
   record with a state.
 - **Treating `values` as typed.** They are JSON (`"1150.50"`, `"2026-11-01"`); put them on the
-  record with `assign`, never `setattr`.
+  record with `apply_values`, never `setattr`.
 - **Counting with `version`.** It is opaque, like an ETag, and never repeats for a key.

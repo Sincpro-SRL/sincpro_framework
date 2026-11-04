@@ -68,7 +68,7 @@ from sincpro_framework.ddd.criteria import (
     Sort,
 )
 from sincpro_framework.ddd.entity import ArchivableMixin, Entity, extensions, utc_now
-from sincpro_framework.ddd.entity.computed import computations_of
+from sincpro_framework.ddd.entity.computed import computed_fields_of
 from sincpro_framework.ddd.entity.entity_collection import (
     Count,
     Dropped,
@@ -591,7 +591,7 @@ class MemoryRepository(
         """The record with its computed fields set from `python`, which is what a store in memory
         answers where a database would run the field's `sql`. A field with only `sql` stays at its
         default here, and `_refuse_unanswerable` stops a criteria from asking for it."""
-        for name, computation in computations_of(type(record)).items():
+        for name, computation in computed_fields_of(type(record)).items():
             if computation.python is not None:
                 setattr(record, name, computation.python(record))
         return record
@@ -601,7 +601,7 @@ class MemoryRepository(
         value would be a second implementation that quietly differs: it is refused, naming it.
         """
         for name in names:
-            computation = computations_of(aggregate).get(name)
+            computation = computed_fields_of(aggregate).get(name)
             if computation is not None and computation.python is None:
                 raise exceptions.InvalidCriteria(
                     f"{aggregate.__name__}.{name} is computed in SQL and has no `python`: a "

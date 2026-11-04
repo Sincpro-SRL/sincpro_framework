@@ -33,8 +33,8 @@ QueryGetInvoice(id=new_id, draft=True)                                          
 QueryListInvoices(criteria=Criteria(), drafts=True)                                 # what was I editing?
 ```
 
-Each answer is the record with its derived fields, `draft` (version, `stale`), `fields` and
-`advice`. `DraftConflict` (409) when another tab saved its draft first; `StaleAggregate` when somebody saved
+Each answer is the record with its computed fields, `draft` (version, `stale`), `states` and
+`warnings`. `DraftConflict` (409) when another tab saved its draft first; `StaleAggregate` when somebody saved
 the record since the draft started.
 
 ## 3. A command of the project's own

@@ -296,7 +296,7 @@ with repository.context() as unit:
 | assigned blind, or read cut | inserts the new ones, deletes none, logs a warning when blind |
 
 A form names the related records by id — `{"labels": ["0192…", "0193…"]}`, or mappings carrying
-the id, as a form reads them back — and `EntityReads` reads them in one search before `assign`
+the id, as a form reads them back — and `EntityReads` reads them in one search before `apply_values`
 puts them on the record: an id with no record is an `InvalidValue` pointing at it
 (`#/values/labels/1`), and a mapping without one is refused — a reference never creates the
 record it names.
@@ -337,7 +337,7 @@ each one — the contract the vocabulary asks, every answer given without readin
 
 | Method | Who asks | What it answers |
 |---|---|---|
-| `joined_by(record)` | `assign`, building a line a form sent without its key | `("id", "sale_id")` when a save of `record` writes the relation, else `None` |
+| `joined_by(record)` | `apply_values`, building a line a form sent without its key | `("id", "sale_id")` when a save of `record` writes the relation, else `None` |
 | `holds_whole(record)` | `recompute`, before a total over the lines | whether the relation was read whole or assigned over a whole reading |
 | `held_in_part(record)` | the warning of a total a save skipped | `"cut"`, `"blind"` or `""` |
 | `named_by_id()` | `EntityReads.referenced`, `states_of` | `True` for a many-to-many: a form names its records by id |

@@ -43,7 +43,7 @@ billing.store_context_in(KeyValueContexts(RedisKeyValue(redis)))   # where draft
 
 | The client sends | What happens | The answer |
 |---|---|---|
-| `CommandEditInvoice(id=…, values={…})` | the record — the stored one, or a new one under `id` — with the form's values on it, its derived fields computed; saved as the caller's draft | the record, `draft.version`, each field's state, the advice |
+| `CommandEditInvoice(id=…, values={…})` | the record — the stored one, or a new one under `id` — with the form's values on it, its computed fields up to date; saved as the caller's draft | the record, `draft.version`, each field's state, the warnings |
 | the same, `version=draft.version` | saved again over the version the client read | a new `draft.version` |
 | `…, version=…, action=EditAction.SAVE` | the draft's values, then this edit's, on the stored record; saved; the draft dropped | the record as saved, `draft=None` |
 | `…, action=EditAction.DISCARD` | the draft dropped | the record as stored, `draft=None` |
@@ -54,7 +54,7 @@ billing.store_context_in(KeyValueContexts(RedisKeyValue(redis)))   # where draft
 included, each line it got back named by its `id`, a new line without one; a many-to-many as the
 ids of the records it references (`{"labels": ["0192…"]}`), read before they are put on the
 record and stored as the pairs of the table in between ([relations](relations.md#8-an-aggregate-is-saved-whole)).
-`changed` names what moved, so only the derivations it reaches run; none runs them all.
+`changed` names what moved, so only the computations it reaches run; none runs them all.
 
 **The id is the client's**: a new record is created under the `id` the client names — a UUID v7 it
 mints — or one minted for it when it names none, answered back. The draft and the stored record
@@ -84,7 +84,7 @@ class InvoiceForms(EntityEdits[Invoice]):
 ## What the form sent wrong
 
 A field the record does not have, a value its type cannot read, a field the framework writes, a
-line named by an id the record does not hold: the request is wrong, and `assign` refuses it with
+line named by an id the record does not hold: the request is wrong, and `apply_values` refuses it with
 `InvalidValue` — a `ClientError` — naming the field, 422 on every wire, its message told to the
 caller. It carries where the value is, a line's cell included, so the `Problem` points at it and a
 screen marks that cell:
@@ -117,7 +117,7 @@ QueryListInvoices(criteria=Criteria(), drafts=True)  # what was I editing? — t
 
 A command that changes the record with the domain's methods is an `Edit` with fields of its own,
 answered by an `EntityEdits` that overrides `change`. It saves drafts, saves, discards and answers as the
-generic one does — a draft save runs the domain over a copy inside `previewing()`, so nothing is
+generic one does — a draft save runs the domain over a copy inside `read_only()`, so nothing is
 written; a save runs it on the stored record, and the events it records are saved with it.
 
 ```python
@@ -158,8 +158,8 @@ Who may post is the bus's access control on `CommandPostInvoice`, as for any com
 
 ## What it is built on
 
-`Preview` answers "what would the record become" and stores nothing; an `Edit` with `SAVE_DRAFT` is
+`PreviewEntity` answers "what would the record become" and stores nothing; an `Edit` with `SAVE_DRAFT` is
 the same computation, stored. The draft holds the record's values as a form sends them (`form_values`):
 nothing the framework writes, a nested record named by its id; reading it back puts them on the
-stored record with `assign(record, values, adopt=True)`, so a line the draft created is built under
+stored record with `apply_values(record, values, adopt=True)`, so a line the draft created is built under
 the id it already has. [Drafts](../core/drafts.md) says how a draft is stored and versioned.

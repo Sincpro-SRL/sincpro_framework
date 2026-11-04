@@ -68,7 +68,7 @@ class RelationAttribute(Protocol):
         attribute.named_by_id()          ->  False                lines are parts, sent whole
 
     Context: the vocabulary cannot import the adapter, so this is the contract between them —
-    `assign` ties a new line by it, `recompute` asks whether a total can be computed, a form's
+    `apply_values` ties a new line by it, `recompute` asks whether a total can be computed, a form's
     ids of a many-to-many are read as records by it. A store with no such attribute (memory)
     holds its relations as plain fields: whole, tied by nobody, named by nobody.
     """

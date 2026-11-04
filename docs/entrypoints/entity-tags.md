@@ -24,7 +24,7 @@ project, a wizard sits between two of them. The order means nothing and an entit
 counts once.
 
 A framework DTO that names its entity in its type concerns it without saying so: `Get`,
-`GetMany`, `LiteralSearch`, `Search`, `DomainEvents`, `Preview` and `Edit` —
+`GetMany`, `LiteralSearch`, `Search`, `DomainEvents`, `PreviewEntity` and `Edit` —
 `QueryGetIssue(Get[Issue, ResponseIssue])` concerns `Issue`.
 
 ## How it is read

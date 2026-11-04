@@ -16,7 +16,7 @@ after an expiry — so a tab still holding an old one cannot win.
 
 The draft is not the record. Activating it is the project's Command: read the stored record,
 `refuse_stale(draft, record)` (`sincpro_framework.ddd`) — a record changed since the draft started
-is `StaleAggregate` — then `assign(record, draft.values)`, save it and discard the draft.
+is `StaleAggregate` — then `apply_values(record, draft.values)`, save it and discard the draft.
 """
 
 from datetime import datetime

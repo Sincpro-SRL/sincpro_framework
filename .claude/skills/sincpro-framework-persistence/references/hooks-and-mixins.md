@@ -7,7 +7,7 @@ the repository that fired it is refused rather than left to recurse.
 In the framework repo, `docs/persistence/hooks.md` and `docs/persistence/lifecycle.md` go deeper;
 this page is enough to use them.
 
-A hook is for **one deployment's rule about one aggregate** (an invariant, a derived field, a
+A hook is for **one deployment's rule about one aggregate** (an invariant, a value stamped on save, a
 policy). What needs several aggregates is a Feature; what must happen after the commit is an
 event published by the Feature, not a hook.
 

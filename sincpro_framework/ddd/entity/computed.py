@@ -29,11 +29,11 @@ from dataclasses import dataclass
 from typing import Any
 
 COMPUTED = "computed"
-"""The key under which a dataclass field's metadata carries its `Computation`."""
+"""The key under which a dataclass field's metadata carries its `ComputedField`."""
 
 
 @dataclass(frozen=True)
-class Computation:
+class ComputedField:
     """How a computed field is answered: by the database, by memory, or by both."""
 
     sql: Callable[[Any], Any] | None = None
@@ -57,14 +57,16 @@ def computed(
     if sql is None and python is None:
         raise TypeError("a computed field is computed by `sql`, by `python`, or by both")
     return dataclasses.field(
-        default=default, init=False, metadata={COMPUTED: Computation(sql=sql, python=python)}
+        default=default,
+        init=False,
+        metadata={COMPUTED: ComputedField(sql=sql, python=python)},
     )
 
 
-def computations_of(declared: type) -> dict[str, Computation]:
+def computed_fields_of(declared: type) -> dict[str, ComputedField]:
     """The computed fields of a class and how each is answered; empty when there are none.
 
-    in      Invoice (balance computed)    →  out  {'balance': Computation(sql=…, python=…)}
+    in      Invoice (balance computed)    →  out  {'balance': ComputedField(sql=…, python=…)}
     in      a class that is not a dataclass   →  out  {}
     """
     if not dataclasses.is_dataclass(declared):

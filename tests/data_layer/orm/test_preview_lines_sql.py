@@ -2,7 +2,7 @@
 that do not know the order's key, then edited — one line changed, one dropped, one added.
 
 A form never knows the key a line holds pointing back at its order, least of all for an order
-that is not stored yet. `assign` fills it from the relation, so the form sends only what a
+that is not stored yet. `apply_values` fills it from the relation, so the form sends only what a
 person types. Dropping a line is what the relation says it is: here `Orphans.DELETE`.
 """
 
@@ -19,13 +19,13 @@ from sincpro_framework.data_layer.orm.sqlalchemy.entrypoint.repository import Re
 from sincpro_framework.data_layer.orm.sqlalchemy.entrypoint.template_table import entity_table
 from sincpro_framework.data_layer.orm.sqlalchemy.infrastructure.database import Database
 from sincpro_framework.ddd import (
-    Derivations,
-    Derive,
+    Computations,
+    Compute,
     EntityReads,
-    Preview,
-    ResponsePreview,
+    PreviewEntity,
+    ResponsePreviewEntity,
     Specification,
-    assign,
+    apply_values,
 )
 from sincpro_framework.ddd.entity import Entity
 
@@ -47,8 +47,8 @@ class Order(Entity):
     def total_of(self) -> Decimal:
         return sum((line.qty * line.price for line in self.lines), Decimal("0"))
 
-    derivations = Derivations["Order"](
-        lambda o: Derive(o.total, depends=o.lines, by=Order.total_of)
+    computations = Computations["Order"](
+        lambda o: Compute(o.total, depends=o.lines, by=Order.total_of)
     )
 
     @classmethod
@@ -84,11 +84,11 @@ map_aggregates(
 )
 
 
-class ResponsePreviewOrder(ResponsePreview):
+class ResponsePreviewOrder(ResponsePreviewEntity):
     pass
 
 
-class QueryPreviewOrder(Preview[Order, ResponsePreviewOrder]):
+class QueryPreviewOrder(PreviewEntity[Order, ResponsePreviewOrder]):
     pass
 
 
@@ -128,7 +128,7 @@ def test_a_new_order_is_previewed_with_lines_that_do_not_know_its_key(store):
 def test_a_new_order_is_created_with_its_lines_tied_to_it(store):
     with store.context() as repository:
         order = Order(customer_id="c1")
-        assign(order, {"lines": TYPED})
+        apply_values(order, {"lines": TYPED})
         repository.save(order)
 
     with store.context() as repository:
@@ -143,7 +143,7 @@ def test_a_key_the_form_sends_back_from_an_earlier_preview_is_replaced(store):
     stale = [{**one, "order_id": "an-id-from-a-previous-preview"} for one in TYPED]
     with store.context() as repository:
         order = Order(customer_id="c1")
-        assign(order, {"lines": stale})
+        apply_values(order, {"lines": stale})
         repository.save(order)
 
     with store.context() as repository:
@@ -155,13 +155,13 @@ def test_a_key_the_form_sends_back_from_an_earlier_preview_is_replaced(store):
 def test_an_edit_changes_one_line_drops_another_and_adds_a_new_one(store):
     with store.context() as repository:
         order = Order(customer_id="c1")
-        assign(order, {"lines": TYPED})
+        apply_values(order, {"lines": TYPED})
         repository.save(order)
     with store.context() as repository:
         stored = repository.get(Order, order.id)
         assert stored is not None
         notebook = next(line for line in stored.lines if line.product == "cuaderno")
-        assign(
+        apply_values(
             stored,
             {
                 "lines": [

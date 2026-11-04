@@ -139,7 +139,7 @@ class DatabaseNumbering(INumbering):
 
             numbering.take("F", count=3, scope="branch-1/2026")   ->  range(41, 44)
 
-        1. Refused inside `previewing()` and for a count below one.
+        1. Refused inside `read_only()` and for a count below one.
         2. The session: the unit of work in play (refused when read-only), or a transaction of
            its own, warned in the log.
         3. The counter moved in one statement where the dialect has an upsert (Postgres,

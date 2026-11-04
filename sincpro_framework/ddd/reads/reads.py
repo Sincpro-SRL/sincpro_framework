@@ -1,5 +1,5 @@
 """The reads of one aggregate, written once: `Get`, `GetMany`, `LiteralSearch`, `Search` and
-`Preview`, answered by one Feature that reads what the entity answers about itself: its
+`PreviewEntity`, answered by one Feature that reads what the entity answers about itself: its
 `DEFAULT_*` class methods (the key, what a record brings, the order, how a text finds it).
 
     class ResponseAccount(ResponseRecord):
@@ -23,7 +23,7 @@
     class QueryListAccounts(Search[Account, ResponseListAccounts]):         a page by criteria
         pass
 
-    class QueryPreviewAccount(Preview[Account, ResponsePreviewAccount]):    a form's question
+    class QueryPreviewAccount(PreviewEntity[Account, ResponsePreviewAccount]):    a form's question
         pass
 
     class QueryAccountEvents(DomainEvents[Account, ResponseAccountEvents]):  its events, oldest first
@@ -70,8 +70,8 @@ from sincpro_framework.ddd.criteria import (
     Sort,
     Specification,
 )
-from sincpro_framework.ddd.editing.editing import adapter_of, assign, owned, recompute
-from sincpro_framework.ddd.editing.preview import Advice, previewing
+from sincpro_framework.ddd.editing.editing import adapter_of, apply_values, owned, recompute
+from sincpro_framework.ddd.editing.preview import FormWarning, read_only
 from sincpro_framework.ddd.entity.entity_collection import (
     Count,
     EntityCollection,
@@ -192,22 +192,25 @@ class FieldState(DataTransferObject):
     the records a many-to-many references."""
 
 
-class ResponsePreview(DataTransferObject):
+class ResponsePreviewEntity(DataTransferObject):
     """What a preview answers: the values the form does not have yet, each field's state over
-    the new record, and what the domain advised.
+    the new record, and what the domain warned.
 
-    class ResponsePreviewInvoice(ResponsePreview):
+    class ResponsePreviewInvoice(ResponsePreviewEntity):
         pass
     """
 
     values: dict[str, Any] = {}
-    """Every value that differs from what the form sent — derived fields included — as JSON.
+    """Every value that differs from what the form sent — computed fields included — as JSON.
     For a new record with nothing changed yet, every value: the form it starts from."""
-    fields: dict[str, FieldState] = {}
-    advice: list[Advice] = []
+    states: dict[str, FieldState] = {}
+    """Each field's state — read-only, required, visible — evaluated over the new record; a
+    list of records carries each one's own in `items`, in order."""
+    warnings: list[FormWarning] = []
+    """What the domain warned the form about (`warn_form`), each saying where it points."""
 
 
-class Preview[T, R: ResponsePreview](DataTransferObject):
+class PreviewEntity[T, R: ResponsePreviewEntity](DataTransferObject):
     """A form's question: these values, this field changed — what does the record become?
 
     QueryPreviewInvoice(values={"discount": "50"}, changed=["discount"], id="01a1…")
@@ -224,7 +227,7 @@ class Preview[T, R: ResponsePreview](DataTransferObject):
 
 
 def key_of(entity: type) -> str:
-    """The field `Get`, `GetMany` and `Preview` find a record by: the entity's
+    """The field `Get`, `GetMany` and `PreviewEntity` find a record by: the entity's
     `DEFAULT_GET_ID`, or its identity when it answers none (a plain model).
 
     in      Account (DEFAULT_GET_ID = "code")   →  out  "code"
@@ -472,7 +475,7 @@ class EntityReads[T](Feature):
 
     def referenced(self, owner: type, values: dict[str, Any]) -> dict[str, Any]:
         """The values with each many-to-many the form names by id as the records those ids
-        name — what `assign` puts on a record of `owner`. The other aggregate is referenced,
+        name — what `apply_values` puts on a record of `owner`. The other aggregate is referenced,
         never created nor changed from here.
 
             # Ticket.labels: a many-to-many to Label
@@ -484,7 +487,7 @@ class EntityReads[T](Feature):
 
         1. Only a list for a relation the store names by id (`named_by_id`, answered by the
            persistence adapter without reading anything) is looked at: the lines an aggregate
-           owns are `assign`'s.
+           owns are `apply_values`'s.
         2. The identity each item names (`ids_named`), then their records (`records_named`).
         Final: the values, each reference the record it names; a refusal points at the field
         and the item.
@@ -512,7 +515,7 @@ class EntityReads[T](Feature):
 
     def previewed(self, entity: type, identity: str | None) -> Any:
         """The record a preview starts from: a copy of the stored one found by its key, read as
-        its `DEFAULT_READING` brings it and with the relations its derivations read, or a new
+        its `DEFAULT_READING` brings it and with the relations its computations read, or a new
         one holding the class defaults (`None` where a field has none).
 
             previewed(Invoice, "F-7")    ->  a copy of invoice F-7, its lines read
@@ -528,7 +531,7 @@ class EntityReads[T](Feature):
         criteria = self.by_identity(
             entity, Condition(field=key_of(entity), value=identity), 1, Criteria()
         )
-        page = self.reads_from().search(entity, with_derived_relations(entity, criteria))
+        page = self.reads_from().search(entity, with_computed_relations(entity, criteria))
         if not page.items:
             raise exceptions.AggregateNotFound(f"{entity.__name__} {identity} does not exist")
         return copied(page.items[0])
@@ -558,7 +561,7 @@ class EntityReads[T](Feature):
         """
         stored = self.stored(entity, key)
         record = stored if stored is not None else keyed(blank(entity), entity, key)
-        assign(record, self.referenced(type(record), draft.values), True)
+        apply_values(record, self.referenced(type(record), draft.values), True)
         answer = response.of(record, self.described(entity, criteria), criteria)
         answer.draft = DraftState(
             version=draft.version,
@@ -659,7 +662,7 @@ class EntityReads[T](Feature):
             key = subject.removeprefix(prefix)
             stored = self.stored(entity, key)
             record = stored if stored is not None else keyed(blank(entity), entity, key)
-            assign(record, self.referenced(type(record), draft.values), True)
+            apply_values(record, self.referenced(type(record), draft.values), True)
             records.append(record)
         page = EntityCollection(items=tuple(records)).filtered_by(criteria.expression)
         for sort in reversed(criteria.order):
@@ -748,28 +751,28 @@ class EntityReads[T](Feature):
         """What the record becomes with the form's values, computed over a record nobody saves.
 
             QueryPreviewSale(id="S-1", values={"discount": "10"}, changed=["discount"])
-                ->  ResponsePreview(values={"total": 90.00}, fields={…}, advice=[])
+                ->  ResponsePreviewEntity(values={"total": 90.00}, states={…}, warnings=[])
             QueryPreviewSale(values={})    # a new sale, nothing changed yet
-                ->  ResponsePreview(values={<every value of a blank sale, derived>}, …)
+                ->  ResponsePreviewEntity(values={<every value of a blank sale, derived>}, …)
 
-        1. Inside `previewing()`: every write of every store raises, advice is collected.
+        1. Inside `read_only()`: every write of every store raises, warnings are collected.
         2. Start from a copy of the stored record, read as its `DEFAULT_READING` brings it and
-           with every relation its derivations read (`AggregateNotFound` when the id has none), or from a
+           with every relation its computations read (`AggregateNotFound` when the id has none), or from a
            new one with the class defaults.
-        3. `assign` the form's values, read as each field's type; `recompute` what `changed`
-           reaches, the records it owns first, as a save does — every derivation when nothing
+        3. `apply_values` the form's values, read as each field's type; `recompute` what `changed`
+           reaches, the records it owns first, as a save does — every computation when nothing
            changed yet.
         4. Events the domain recorded are dropped: nothing happened.
         Final: the values that differ from what the form sent, compared as values (`0` and
         `0.00` are one amount) — never a field the framework writes, which a form must not
-        send back —, each field's state, the advice. A new record with nothing changed
+        send back —, each field's state, the warnings. A new record with nothing changed
         answers every value.
         """
         entity, response = declared_by(type(dto))
-        with previewing() as advice:
+        with read_only() as warnings:
             record = self.previewed(entity, dto.id)
             sent = held(record)
-            assign(record, self.referenced(type(record), dto.values))
+            apply_values(record, self.referenced(type(record), dto.values))
             sent.update({name: getattr(record, name) for name in dto.values})
             recompute(record, dto.changed)
             pull = getattr(record, "pull_events", None)
@@ -784,7 +787,7 @@ class EntityReads[T](Feature):
                 for name, one in values.items()
                 if name not in sent or sent[name] != now.get(name)
             }
-        return response(values=values, fields=states_of(record), advice=list(advice))
+        return response(values=values, states=states_of(record), warnings=list(warnings))
 
     def execute(self, dto: Any) -> Any:
         """Routes the DTO to the read its base names — `Get` to `get`, `Search` to `search`, …
@@ -808,22 +811,22 @@ class EntityReads[T](Feature):
                 return self.domain_events(dto)
             case Search():
                 return self.search(dto)
-            case Preview():
+            case PreviewEntity():
                 return self.preview(dto)
         raise exceptions.ProgrammingError(
             f"{type(self).__name__} answers Get, GetMany, LiteralSearch, Search, DomainEvents and "
-            f"Preview, not {type(dto).__name__}"
+            f"PreviewEntity, not {type(dto).__name__}"
         )
 
 
-def with_derived_relations(entity: type, criteria: Criteria) -> Criteria:
+def with_computed_relations(entity: type, criteria: Criteria) -> Criteria:
     """`criteria`, also bringing every relation the computation of `entity` reads (`owned`) — a
     total over lines the entity's reading does not name still reads the lines.
 
         # Sale: DEFAULT_READING names customer_id; subtotal ← lines
-        with_derived_relations(Sale, Criteria(specification={"customer_id": {}}))
+        with_computed_relations(Sale, Criteria(specification={"customer_id": {}}))
             ->  Criteria(specification={"customer_id": {}, "lines": {}})  # every scalar
-        with_derived_relations(Sale, Criteria(specification={"lines": {"qty": {}}}))
+        with_computed_relations(Sale, Criteria(specification={"lines": {"qty": {}}}))
             ->  the same criteria — `lines` named already, as the caller cut it
 
     Context: only what is missing is added, sorted by name, after what the caller named; the
