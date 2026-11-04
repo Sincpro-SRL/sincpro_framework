@@ -44,7 +44,7 @@ from typing import Any
 from sincpro_framework.context import context_executions
 from sincpro_framework.ddd import exceptions
 from sincpro_framework.ddd.editing.editing import recompute_whole
-from sincpro_framework.ddd.editing.preview import is_previewing
+from sincpro_framework.ddd.editing.preview import is_read_only
 from sincpro_framework.ddd.entity import ArchivableMixin
 from sincpro_framework.ddd.entity.entity_collection import (
     model_and_collection,
@@ -134,7 +134,7 @@ def refuse_wiring_as_a_record(records: "tuple[Any, ...]") -> None:
 
 
 def refuse_writing_in_preview(call: str) -> None:
-    """Refuses a write inside `previewing()`, naming it.
+    """Refuses a write inside `read_only()`, naming it.
 
     in      "save", inside a preview    →   ProgrammingError: save inside a preview
     in      "save", outside             →   nothing
@@ -142,7 +142,7 @@ def refuse_writing_in_preview(call: str) -> None:
     A preview answers what a record would become; a write there would store a record, take a
     number or hold a lock that nobody asked for — silently, behind a form. Refused loudly.
     """
-    if is_previewing():
+    if is_read_only():
         raise exceptions.ProgrammingError(
             f"{call} inside a preview: a preview stores nothing — the Command that saves does"
         )

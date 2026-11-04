@@ -27,25 +27,26 @@ from sincpro_framework.data_layer.orm.sqlalchemy.infrastructure.database import 
 )
 from sincpro_framework.data_layer.repositories import MemoryRepository
 from sincpro_framework.ddd import (
+    Computations,
+    Compute,
     Condition,
     Criteria,
-    Derivations,
-    Derive,
     DraftState,
     Edit,
     EditAction,
     EntityEdits,
     EntityReads,
     Get,
-    Preview,
+    PreviewEntity,
     ResponseEdit,
-    ResponsePreview,
+    ResponsePreviewEntity,
     ResponseRecord,
     Specification,
-    assign,
+    apply_values,
 )
 from sincpro_framework.ddd import exceptions as ddd_exceptions
-from sincpro_framework.ddd import previewing, refuse_stale
+from sincpro_framework.ddd import read_only
+from sincpro_framework.ddd.editing.drafts import refuse_stale
 from sincpro_framework.ddd.entity import Entity
 
 
@@ -71,10 +72,10 @@ class Sale(Entity):
     def total_of(self) -> Decimal:
         return self.subtotal - self.discount
 
-    derivations = Derivations["Sale"](
+    computations = Computations["Sale"](
         lambda s: (
-            Derive(s.subtotal, depends=(s.lines,), by=Sale.subtotal_of),
-            Derive(s.total, depends=(s.subtotal, s.discount), by=Sale.total_of),
+            Compute(s.subtotal, depends=(s.lines,), by=Sale.subtotal_of),
+            Compute(s.total, depends=(s.subtotal, s.discount), by=Sale.total_of),
         )
     )
 
@@ -104,11 +105,11 @@ counters = numbering_table("previewed_numbers", books.metadata)
 map_aggregates(books, {Sale: sale_table, SaleLine: line_table})
 
 
-class ResponsePreviewSale(ResponsePreview):
+class ResponsePreviewSale(ResponsePreviewEntity):
     pass
 
 
-class QueryPreviewSale(Preview[Sale, ResponsePreviewSale]):
+class QueryPreviewSale(PreviewEntity[Sale, ResponsePreviewSale]):
     pass
 
 
@@ -187,7 +188,7 @@ def test_every_write_door_of_the_database_is_refused_inside_a_preview(database, 
     store = Repository(database)
     sale = a_stored_sale(store)
 
-    with previewing(), pytest.raises(exceptions.ProgrammingError):
+    with read_only(), pytest.raises(exceptions.ProgrammingError):
         write(store, sale)
 
     assert store.count(Sale).value == 1
@@ -197,7 +198,7 @@ def test_every_write_door_of_the_database_is_refused_inside_a_preview(database, 
 def test_a_database_number_is_not_spent_by_a_preview(database):
     numbers = DatabaseNumbering(database, counters)
 
-    with previewing(), pytest.raises(exceptions.ProgrammingError, match="take"):
+    with read_only(), pytest.raises(exceptions.ProgrammingError, match="take"):
         numbers.next_number("sale")
 
     assert numbers.next_number("sale") == 1
@@ -208,7 +209,7 @@ def test_a_draft_is_activated_over_the_stored_sale_and_refused_once_someone_else
 ):
     """A form keeps a discount as a draft, then activates it: the project's Command reads the
     stored sale, refuses a stale draft before touching it, assigns the values and saves — the
-    derivations recompute the total on the way."""
+    computations recompute the total on the way."""
     store = Repository(database)
     sale = a_stored_sale(store)
     contexts = InMemoryContexts(entry_ttl=timedelta(hours=1))
@@ -222,7 +223,7 @@ def test_a_draft_is_activated_over_the_stored_sale_and_refused_once_someone_else
         stored = repository.get(Sale, sale.id)
         assert stored is not None
         refuse_stale(draft, stored)
-        assign(stored, draft.values)
+        apply_values(stored, draft.values)
         repository.save(stored)
     drafts.discard(f"sale:{sale.id}")
 
@@ -466,8 +467,8 @@ class OrderLine(Entity):
     def amount_of(self) -> Decimal:
         return self.qty * self.price
 
-    derivations = Derivations["OrderLine"](
-        lambda o: (Derive(o.amount, depends=(o.qty, o.price), by=OrderLine.amount_of),)
+    computations = Computations["OrderLine"](
+        lambda o: (Compute(o.amount, depends=(o.qty, o.price), by=OrderLine.amount_of),)
     )
 
 
@@ -485,10 +486,10 @@ class Order(Entity):
     def total_of(self) -> Decimal:
         return self.subtotal - self.discount
 
-    derivations = Derivations["Order"](
+    computations = Computations["Order"](
         lambda o: (
-            Derive(o.subtotal, depends=(o.lines,), by=Order.subtotal_of),
-            Derive(o.total, depends=(o.subtotal, o.discount), by=Order.total_of),
+            Compute(o.subtotal, depends=(o.lines,), by=Order.subtotal_of),
+            Compute(o.total, depends=(o.subtotal, o.discount), by=Order.total_of),
         )
     )
 
@@ -513,11 +514,11 @@ order_line_table = entity_table(
 map_aggregates(orders, {Order: order_table, OrderLine: order_line_table})
 
 
-class ResponsePreviewOrder(ResponsePreview):
+class ResponsePreviewOrder(ResponsePreviewEntity):
     pass
 
 
-class QueryPreviewOrder(Preview[Order, ResponsePreviewOrder]):
+class QueryPreviewOrder(PreviewEntity[Order, ResponsePreviewOrder]):
     pass
 
 
@@ -549,7 +550,7 @@ def test_the_lines_are_computed_before_the_order_that_sums_them(order_store):
 def test_lines_assigned_from_a_form_are_records_the_database_writes(order_store):
     with order_store.context() as repository:
         order = Order(customer_id="c2")
-        assign(order, {"lines": [{"order_id": order.id, "qty": 3, "price": "5"}]})
+        apply_values(order, {"lines": [{"order_id": order.id, "qty": 3, "price": "5"}]})
         repository.save(order)
 
     with order_store.context() as repository:
@@ -606,7 +607,7 @@ def test_no_door_of_a_unit_of_work_writes_inside_a_preview(order_store, door):
     order = a_stored_order(order_store)
 
     with pytest.raises(exceptions.ProgrammingError):
-        with previewing():
+        with read_only():
             if door == "tracked commit":
                 with order_store.context(writes=Writes.CHANGED) as repository:
                     kept = repository.get(Order, order.id)
@@ -758,7 +759,7 @@ def test_a_preview_computes_the_lines_before_the_order_as_the_save_does(order_st
     )
     with order_store.context() as repository:
         saved = Order(customer_id="c9")
-        assign(saved, {"lines": lines})
+        apply_values(saved, {"lines": lines})
         repository.save(saved)
     stored = order_store.search(Order, Criteria(where=Condition(field="id", value=saved.id)))
 
@@ -794,7 +795,7 @@ def test_a_line_assigned_with_its_id_is_the_stored_line_edited(order_store):
     with order_store.context() as repository:
         kept = repository.get(Order, order.id)
         assert kept is not None
-        assign(
+        apply_values(
             kept, {"lines": [{"id": line_id, "order_id": order.id, "qty": 5, "price": "10"}]}
         )
         repository.save(kept)
@@ -815,7 +816,7 @@ def test_a_line_assigned_with_its_id_over_an_order_read_without_lines(order_stor
 
     with order_store.context() as repository:
         kept = repository.search(Order, Criteria()).items[0]
-        assign(
+        apply_values(
             kept, {"lines": [{"id": line_id, "order_id": order.id, "qty": 7, "price": "1"}]}
         )
         repository.save(kept)
@@ -835,7 +836,9 @@ def test_a_line_id_the_order_does_not_hold_is_refused_naming_it(order_store):
         kept = repository.get(Order, order.id)
         assert kept is not None
         with pytest.raises(exceptions.ClientError, match="gone-line"):
-            assign(kept, {"lines": [{"id": "gone-line", "order_id": order.id, "qty": 1}]})
+            apply_values(
+                kept, {"lines": [{"id": "gone-line", "order_id": order.id, "qty": 1}]}
+            )
 
 
 def test_an_edited_line_keeps_its_row_in_memory_too():
@@ -847,7 +850,9 @@ def test_an_edited_line_keeps_its_row_in_memory_too():
 
     kept = store.get(Order, order.id)
     assert kept is not None
-    assign(kept, {"lines": [{"id": line_id, "order_id": order.id, "qty": 5, "price": "10"}]})
+    apply_values(
+        kept, {"lines": [{"id": line_id, "order_id": order.id, "qty": 5, "price": "10"}]}
+    )
     store.save(kept)
 
     edited = store.get(Order, order.id)
@@ -867,11 +872,11 @@ def test_a_text_statement_that_writes_is_refused_inside_a_preview(order_store):
     a_stored_order(order_store)
 
     with pytest.raises(exceptions.ProgrammingError):
-        with previewing():
+        with read_only():
             with order_store.context() as repository:
                 repository.session.execute(text("UPDATE reviewed_order SET discount = 3"))
 
-    with previewing():
+    with read_only():
         with order_store.context() as repository:
             read = repository.session.execute(text("SELECT count(*) FROM reviewed_order"))
             assert read.scalar() == 1
@@ -882,7 +887,7 @@ def test_a_read_that_locks_rows_is_refused_inside_a_preview(order_store):
     order = a_stored_order(order_store)
 
     with pytest.raises(exceptions.ProgrammingError, match="locks"):
-        with previewing():
+        with read_only():
             with order_store.context() as repository:
                 repository.get(Order, order.id, for_update=True)
 
@@ -952,7 +957,7 @@ def test_assign_without_ids_over_lines_never_read_replaces_them_as_an_assignment
     order = a_stored_order(order_store)
     read = order_store.search(Order, Criteria()).items[0]
 
-    changed = assign(read, {"lines": [{"order_id": order.id, "qty": 3, "price": "5"}]})
+    changed = apply_values(read, {"lines": [{"order_id": order.id, "qty": 3, "price": "5"}]})
 
     assert changed == ("lines",)
     assert [line.qty for line in read.lines] == [3]
@@ -973,7 +978,7 @@ def test_a_text_statement_that_writes_or_locks_in_disguise_is_refused(order_stor
     a_stored_order(order_store)
 
     with pytest.raises(exceptions.ProgrammingError):
-        with previewing():
+        with read_only():
             with order_store.context() as repository:
                 repository.session.execute(text(statement))
 
@@ -993,7 +998,7 @@ def test_a_text_statement_that_writes_or_locks_in_disguise_is_refused(order_stor
 def test_a_text_statement_that_only_reads_runs_inside_a_preview(order_store, statement):
     a_stored_order(order_store)
 
-    with previewing():
+    with read_only():
         with order_store.context() as repository:
             assert repository.session.execute(text(statement)).scalar() == 1
 
@@ -1008,7 +1013,7 @@ def test_a_preview_inside_a_unit_of_work_with_pending_changes_reads_without_flus
         assert stored is not None
         stored.discount = Decimal("4")
         assert repository.session.dirty, "a change the unit of work will write at its commit"
-        with previewing():
+        with read_only():
             seen = repository.search(Order, Criteria()).items
         assert len(seen) == 1
 

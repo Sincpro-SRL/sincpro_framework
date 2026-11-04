@@ -44,7 +44,7 @@ from sincpro_framework.data_layer.orm.sqlalchemy.services.relation_resolver impo
     resolve_whole,
 )
 from sincpro_framework.ddd.entity import relations
-from sincpro_framework.ddd.entity.computed import computations_of
+from sincpro_framework.ddd.entity.computed import computed_fields_of
 from sincpro_framework.ddd.entity.entity_collection import identity_name
 from sincpro_framework.ddd.entity.entity_meta import (
     annotations_of,
@@ -179,7 +179,7 @@ class RelatedAttribute:
             Sale.lines       →  ("id", "sale_id")    a new line takes the sale's id
             Sale.customer    →  None                 another aggregate, not written from here
 
-        What `assign` asks before building a line a form sent without its key: the form cannot
+        What `apply_values` asks before building a line a form sent without its key: the form cannot
         know it, least of all for a sale that is not stored yet.
         """
         if not self._written_by_root(record):
@@ -194,7 +194,7 @@ class RelatedAttribute:
             Sale.lines       →  False    the lines are parts, sent whole
             Run.dataset      →  False
 
-        What `EntityReads.referenced` asks before `assign`: the ids a form sends are read as the
+        What `EntityReads.referenced` asks before `apply_values`: the ids a form sends are read as the
         records they name.
         """
         return self.relation.kind is RelationKind.MANY_TO_MANY
@@ -309,7 +309,7 @@ def computed_properties(entity: type, table: Table) -> dict[str, Any]:
     refused here, at boot, naming the field and the column, and not on the first query.
     """
     found: dict[str, Any] = {}
-    for name, computation in computations_of(entity).items():
+    for name, computation in computed_fields_of(entity).items():
         if computation.sql is None:
             continue
         try:

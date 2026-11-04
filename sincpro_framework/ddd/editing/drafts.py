@@ -2,7 +2,7 @@
 
     draft = use_context().drafts().read("invoice:01a1")
     refuse_stale(draft, invoice)                 StaleAggregate when the invoice moved on
-    assign(invoice, draft.values)
+    apply_values(invoice, draft.values)
 
 The drafts themselves are stored by the context (`sincpro_framework.context.Drafts`): whose
 they are is the context's to say; what a record does with one is the domain's.

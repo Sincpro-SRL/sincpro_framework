@@ -17,9 +17,9 @@ from sincpro_framework.context.domain import exceptions as context_exceptions
 from sincpro_framework.data_layer.repositories import MemoryNumbering, MemoryRepository
 from sincpro_framework.data_layer.store import InMemoryKeyValue
 from sincpro_framework.ddd import (
+    Computations,
+    Compute,
     Criteria,
-    Derivations,
-    Derive,
     DraftState,
     Edit,
     EditAction,
@@ -78,10 +78,10 @@ class Invoice(Entity):
     def total_of(self) -> Decimal:
         return self.subtotal - self.discount
 
-    derivations = Derivations["Invoice"](
+    computations = Computations["Invoice"](
         lambda i: (
-            Derive(i.total, depends=(i.subtotal, i.discount), by=Invoice.total_of),
-            Derive(i.subtotal, depends=(i.lines,), by=Invoice.subtotal_of),
+            Compute(i.total, depends=(i.subtotal, i.discount), by=Invoice.total_of),
+            Compute(i.subtotal, depends=(i.lines,), by=Invoice.subtotal_of),
         )
     )
 
@@ -224,7 +224,7 @@ def test_a_new_record_is_kept_as_a_draft_with_its_derived_fields_and_nothing_is_
 
     assert answered.draft is not None and drafted(answered).version > 0
     assert answered.invoice.total == Decimal("125.00")
-    assert answered.fields["total"].visible
+    assert answered.states["total"].visible
     assert shop.repository.get(Invoice, answered.invoice.id) is None
 
 

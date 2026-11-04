@@ -51,8 +51,8 @@ class InvalidValue(ClientError):
 
     `path` is where the value is inside the record, empty when the value is wrong as a whole — a
     line that cannot be built — and then the pointer is the line itself. `field` is the field of
-    the request that carries the record: `values` in an `Edit` and a `Preview`, which is what
-    `assign` refuses into; a project's own rule — a hook, a Feature — raises it with its own.
+    the request that carries the record: `values` in an `Edit` and a `PreviewEntity`, which is what
+    `apply_values` refuses into; a project's own rule — a hook, a Feature — raises it with its own.
     """
 
     def __init__(

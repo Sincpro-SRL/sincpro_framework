@@ -177,7 +177,7 @@ class Invoice(Entity):
 
 | `FieldMeta` | A form | Left alone |
 |---|---|---|
-| `readonly` | shows the field read-only | the fields the framework writes or computes: `id`, `created_at`, `updated_at`, `version`, a mixin's, a `computed` one, one a `Derive` computes |
+| `readonly` | shows the field read-only | the fields the framework writes or computes: `id`, `created_at`, `updated_at`, `version`, a mixin's, a `computed` one, one a `Compute` computes |
 | `required` | asks for it | a field with no default that cannot be `None` |
 | `default` | starts a new record with it | the dataclass default, as JSON; nothing for a `default_factory` |
 | `readonly_when` | shows it read-only while the condition holds over the record | — |

@@ -1,5 +1,5 @@
 """The reads an entity already has: `EntityReads` with `Get`, `GetMany`, `LiteralSearch`,
-`Search`, `Preview` and `DomainEvents`, and the criteria its `DEFAULT_*` methods build (`defaults`).
+`Search`, `PreviewEntity` and `DomainEvents`, and the criteria its `DEFAULT_*` methods build (`defaults`).
 """
 
 from sincpro_framework.ddd.reads.reads import (
@@ -9,8 +9,8 @@ from sincpro_framework.ddd.reads.reads import (
     Get,
     GetMany,
     LiteralSearch,
-    Preview,
-    ResponsePreview,
+    PreviewEntity,
+    ResponsePreviewEntity,
     Search,
     history_of,
 )
@@ -22,8 +22,8 @@ __all__ = [
     "Get",
     "GetMany",
     "LiteralSearch",
-    "Preview",
-    "ResponsePreview",
+    "PreviewEntity",
+    "ResponsePreviewEntity",
     "Search",
     "history_of",
 ]

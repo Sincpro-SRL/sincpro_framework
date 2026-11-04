@@ -29,9 +29,9 @@ from sincpro_framework.context import (
 from sincpro_framework.context.domain import exceptions as context_exceptions
 from sincpro_framework.data_layer.repositories import MemoryRepository
 from sincpro_framework.data_layer.store import InMemoryKeyValue
-from sincpro_framework.ddd import assign
+from sincpro_framework.ddd import apply_values
 from sincpro_framework.ddd import exceptions as ddd_exceptions
-from sincpro_framework.ddd import refuse_stale
+from sincpro_framework.ddd.editing.drafts import refuse_stale
 from sincpro_framework.ddd.entity import Entity
 from sincpro_framework.runtime.testing import ManualClock
 
@@ -550,7 +550,7 @@ def activate(repository: MemoryRepository, drafts: Drafts, key: str, invoice_id:
     invoice = repository.get(Invoice, invoice_id)
     assert invoice is not None
     refuse_stale(draft, invoice)
-    assign(invoice, draft.values)
+    apply_values(invoice, draft.values)
     repository.save(invoice)
     drafts.discard(key)
 

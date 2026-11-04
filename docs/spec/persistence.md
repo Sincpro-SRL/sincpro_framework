@@ -23,7 +23,7 @@ screen share.
 | Relations | ✅ | many2one, one2many, many2many; declared, inferred from foreign keys, or resolved through a bus; read per page | `tests/data_layer/orm/test_relations.py` |
 | Mixins | ✅ | archivable (soft delete), audited, change tracking, event sourced, deliverable events | `tests/data_layer/orm/test_tracking.py` |
 | **Computed field** | ✅ | `computed(sql=…, python=…)`: a value that is an expression over the row, read with it, filtered/ordered/grouped like a column, never written | `tests/data_layer/orm/test_model_driven_analytics.py` |
-| Derived field | ✅ | `Derive`: stored, computed in Python on save and preview, ordered by dependency | `tests/ddd/test_one_or_several.py` |
+| Derived field | ✅ | `Compute`: stored, computed in Python on save and preview, ordered by dependency | `tests/ddd/test_one_or_several.py` |
 | Form hints | ✅ | `presentation`: readonly/required and the `*_when` conditions, as criteria expressions; hints, never rules | `tests/ddd/entity/test_presentation_hints.py` |
 | How the entity is read | ✅ | `DEFAULT_GET_ID`, `DEFAULT_READING`, `DEFAULT_ORDER`, `DEFAULT_DISPLAY`, `DEFAULT_LITERAL_SEARCH` | `tests/ddd/entity/test_query_entity.py` |
 | What `Meta` publishes | ✅ | per field: type, `ops`, `sortable`, `groupable`, `aggregates`, `computed`, `choices`, hints; plus `resolvers` | `tests/data_layer/orm/test_field_meta_unified.py` |
@@ -39,7 +39,7 @@ turned into SQL. Two implementations of one value drift, so the framework gives 
 (`ComputedFieldsContract`) that puts both in front of the same rows, and makes `python` optional:
 without it a memory store **refuses** to filter or group by the field instead of guessing it.
 Rejected: deriving one from the other (it works for `a - b` and fails at the first `CASE`),
-and computing it in the hooks and storing it (that is `Derive`, which cannot be filtered by a value
+and computing it in the hooks and storing it (that is `Compute`, which cannot be filtered by a value
 nobody wrote yet, and goes stale).
 
 ## 2. Reading

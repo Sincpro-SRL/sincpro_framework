@@ -1,4 +1,4 @@
-# Recipe: preview a record before saving — derived fields, `assign`, `Preview`
+# Recipe: preview a record before saving — computed fields, `apply_values`, `PreviewEntity`
 
 Use it when a form needs the server to answer "what does this record become?" before a save:
 totals as lines are typed, a new record's defaults, which fields appear for these values.
@@ -6,7 +6,7 @@ totals as lines are typed, a new record's defaults, which fields appear for thes
 ## 1. Declare what the entity computes (optional)
 
 ```python
-from sincpro_framework.ddd import Derivations, Derive, Entity, advise
+from sincpro_framework.ddd import Computations, Compute, Entity, warn_form
 
 @dataclass
 class Invoice(Entity):
@@ -21,34 +21,34 @@ class Invoice(Entity):
 
     def total_of(self) -> Decimal:
         if self.subtotal and self.discount > self.subtotal * Decimal("0.10"):
-            advise("a discount above 10% needs approval", field="discount")
+            warn_form("a discount above 10% needs approval", field="discount")
         return self.subtotal - self.discount
 
-    derivations = Derivations["Invoice"](
+    computations = Computations["Invoice"](
         lambda i: [
-            Derive(i.subtotal, depends=i.lines, by=Invoice.subtotal_of),
-            Derive(i.total, depends=[i.subtotal, i.discount], by=Invoice.total_of),
+            Compute(i.subtotal, depends=i.lines, by=Invoice.subtotal_of),
+            Compute(i.total, depends=[i.subtotal, i.discount], by=Invoice.total_of),
         ]
     )
 ```
 
 `by` is the entity's own method. Declaration order does not matter: they run in dependency
 order. A cycle, a field computed twice or an unknown name is refused when the class is read.
-**`save` runs `recompute_whole(record)` before the `before_save` hooks** — the lines first, then
+**`save` computes every field before the `before_save` hooks** — the lines first, then
 the record — so stored = previewed, in memory and in SQL. **A save never reads**: a
-derivation over a relation not held whole (not loaded, cut by a specification, assigned blind)
+computation over a relation not held whole (not loaded, cut by a specification, assigned blind)
 is skipped and retains its stored value, and what reads it computes from that. Never read →
 silent; cut or blind → a warning names the field and says to read the relation whole (inside
 `context()`, or a specification that does not filter it). The held lines are computed either
-way. An entity with no derivations is not looked into. `upsert` and `update_all` compute nothing.
+way. An entity with no computations is not looked into. `upsert` and `update_all` compute nothing.
 
 ## 2. Expose the preview on the entity's reads
 
 ```python
-from sincpro_framework.ddd import Preview, ResponsePreview, EntityReads
+from sincpro_framework.ddd import PreviewEntity, ResponsePreviewEntity, EntityReads
 
-class ResponsePreviewInvoice(ResponsePreview): pass
-class QueryPreviewInvoice(Preview[Invoice, ResponsePreviewInvoice]): pass
+class ResponsePreviewInvoice(ResponsePreviewEntity): pass
+class QueryPreviewInvoice(PreviewEntity[Invoice, ResponsePreviewInvoice]): pass
 
 @billing.feature([QueryGetInvoice, QueryPreviewInvoice])
 class InvoiceReads(EntityReads[Invoice]):
@@ -61,8 +61,22 @@ class InvoiceReads(EntityReads[Invoice]):
 | `QueryPreviewInvoice(values={...}, changed=["lines"])` | the totals the typed lines make |
 | `QueryPreviewInvoice(id=x, values={"discount": "50"}, changed=["discount"])` | `{"total": "83.00"}`, the stored invoice untouched |
 
-`ResponsePreview`: `values` (what differs from what the form sent, JSON), `fields` (each field's
-`readonly`/`required`/`visible` evaluated over the new record), `advice`.
+`ResponsePreviewEntity`: `values` (what differs from what the form sent, JSON), `states` (each field's
+`readonly`/`required`/`visible` evaluated over the new record; a list of lines carries each line's
+in `items`, in order), `warnings` (each with `field` and `path`).
+
+A line warns from its own computation and the warning lands on that line — `recompute` runs each
+owned record knowing its place, so the domain never passes an index:
+
+```python
+def amount_of(self) -> Decimal:                       # SaleLine
+    if self.price < self.cost:
+        warn_form("price below cost", field="price")     # → field "lines", path ("lines", 1, "price")
+    return self.qty * self.price
+```
+
+The position is the one in the list the form sent — the same one an `InvalidValue` points at
+(`#/values/lines/1/price`) — so a screen marks errors and warnings with one rule.
 
 ## 3. A form that is not always saved: `Edit`
 
@@ -73,13 +87,13 @@ The preview stored as the caller's draft, saved or discarded when the form says 
 
 ```python
 invoice = self.repository.get(dto.id)
-assign(invoice, dto.values)          # values read as each field's type, hints refuse nothing
-self.repository.save(invoice)        # derivations recomputed, before_save hooks, version check
+apply_values(invoice, dto.values)          # values read as each field's type, hints refuse nothing
+self.repository.save(invoice)        # computations recomputed, before_save hooks, version check
 ```
 
 ## 5. Lines a form sends
 
-- A new line comes without `id` and without the order's key: `assign` fills `order_id` from
+- A new line comes without `id` and without the order's key: `apply_values` fills `order_id` from
   the SQL mapping (an echoed stale key is replaced). In `MemoryRepository` there is no mapping:
   send the key.
 - An edited line comes with its `id` and is updated in place; an unknown `id` is refused.
@@ -90,25 +104,25 @@ self.repository.save(invoice)        # derivations recomputed, before_save hooks
 
 - **Writing inside a preview.** Every store write, numbering `take`, session flush, `text(...)`
   that is not one plain read (a `WITH … UPDATE`, two statements, `FOR UPDATE`) and locking read
-  (`for_update`) raises `ProgrammingError` inside `previewing()`. Reads inside a preview do not
+  (`for_update`) raises `ProgrammingError` inside `read_only()`. Reads inside a preview do not
   autoflush: changes a unit of work holds pending are not seen, and are written at its commit. Number the document in the Command that saves it;
   show `"/"` before. A bare `ThreadPoolExecutor` does not carry the guard: use `ContextExecutor`.
-- **Assigning `id` or `version` from a form.** `assign` refuses framework fields, and a
+- **Assigning `id` or `version` from a form.** `apply_values` refuses framework fields, and a
   preview never answers them. A line may carry its `id`: it is the line the order already
   holds, edited in place, so its row is updated — read the lines first (inside `context()`); an
   `id` the order does not hold is refused. Lines without ids over lines never read replace
   them, exactly as `order.lines = [...]` does — blind, so the save retains the totals and warns.
-- **Computing in a hook instead of a derivation.** A `before_save` hook runs on save only; the
-  preview would not show it. A value a form must see comes from `derivations`.
-- **A derivation with side effects.** `by` reads the record and answers a value: no repository,
-  no event publishing, no remote call. Use `advise(...)` to tell the form something.
+- **Computing in a hook instead of a computation.** A `before_save` hook runs on save only; the
+  preview would not show it. A value a form must see comes from `computations`.
+- **A computation with side effects.** `by` reads the record and answers a value: no repository,
+  no event publishing, no remote call. Use `warn_form(...)` to tell the form something.
 - **Mutating a line record in `by`.** The preview works on a copy of every record inside the
-  aggregate, so nothing leaks into a store; but a derivation answers a value, it does not
+  aggregate, so nothing leaks into a store; but a computation answers a value, it does not
   rewrite the lines.
 - **Expecting every relation in a preview.** The stored record is read with
-  `DEFAULT_READING` plus every relation its derivations read; a relation neither names
+  `DEFAULT_READING` plus every relation its computations read; a relation neither names
   comes back empty.
-- **Expecting a preview's `Decimal` at the column's scale.** Nothing rounds it; a derivation
+- **Expecting a preview's `Decimal` at the column's scale.** Nothing rounds it; a computation
   that must match `Numeric(12, 2)` quantizes its own result.
 - **Previewing by saving and rolling back.** Refused by the guard, and wrong: locks, numbers,
   hooks, events.

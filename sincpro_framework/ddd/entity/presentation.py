@@ -42,7 +42,7 @@ class FieldRef(str):
 
 
 class Fields:
-    """The stand-in a declaration's lambda runs against (`presentation`, `derivations`). An
+    """The stand-in a declaration's lambda runs against (`presentation`, `computations`). An
     unknown name fails here, naming the class, so a typo is refused when the class is described
     and not on the first empty page.
     """
@@ -51,7 +51,7 @@ class Fields:
         self, owner: str, names: Iterable[str], declaration: str = "presentation"
     ) -> None:
         """`names` are the entity's fields; `declaration` names the class attribute a refusal
-        points at — `presentation`, `derivations`."""
+        points at — `presentation`, `computations`."""
         self._owner = owner
         self._names = frozenset(names)
         self._declaration = declaration
@@ -112,7 +112,7 @@ class Presentation[T]:
     while a condition holds over the record (`When(...)`); `totals`, the function a list folds
     each field with at its foot — one of the field's own `aggregates` (`sum`, `avg`, …). Left
     alone, the fields the framework writes or computes (`id`, `version`, a `computed` one, one
-    a `Derive` computes) are read-only, a field with no default that cannot be `None` is
+    a `Compute` computes) are read-only, a field with no default that cannot be `None` is
     required, and nothing is added up: an amount is summed, a unit price is not, and only the
     entity knows which is which.
     """

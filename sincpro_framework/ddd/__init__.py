@@ -35,12 +35,9 @@ from sincpro_framework.ddd.criteria import (
     Specification,
     Today,
 )
-from sincpro_framework.ddd.editing.drafts import (
-    refuse_stale,
-)
-from sincpro_framework.ddd.editing.editing import assign, recompute, recompute_whole
+from sincpro_framework.ddd.editing.editing import apply_values, recompute
 from sincpro_framework.ddd.editing.edits import Edit, EditAction, EntityEdits, ResponseEdit
-from sincpro_framework.ddd.editing.preview import Advice, advise, is_previewing, previewing
+from sincpro_framework.ddd.editing.preview import FormWarning, read_only, warn_form
 from sincpro_framework.ddd.entity import (
     ArchivableMixin,
     AuditedMixin,
@@ -49,8 +46,8 @@ from sincpro_framework.ddd.entity import (
     new_entity_id,
     utc_now,
 )
+from sincpro_framework.ddd.entity.computations import Computations, Compute
 from sincpro_framework.ddd.entity.computed import computed
-from sincpro_framework.ddd.entity.derivations import Derivations, Derive
 from sincpro_framework.ddd.entity.entity_collection import (
     Changes,
     Count,
@@ -111,8 +108,8 @@ from sincpro_framework.ddd.reads.reads import (
     Get,
     GetMany,
     LiteralSearch,
-    Preview,
-    ResponsePreview,
+    PreviewEntity,
+    ResponsePreviewEntity,
     Search,
     history_of,
 )
@@ -133,7 +130,7 @@ from sincpro_framework.ddd.repositories.hooks import Hook, Hooks
 from sincpro_framework.ddd.value_object import ValueObject
 
 __all__ = [
-    "Advice",
+    "FormWarning",
     "AggregateNotFound",
     "AggregateRepository",
     "All",
@@ -155,8 +152,8 @@ __all__ = [
     "CurrencyMismatch",
     "Cursor",
     "DeliverableEventMixin",
-    "Derivations",
-    "Derive",
+    "Computations",
+    "Compute",
     "DomainError",
     "DomainEvent",
     "DomainEvents",
@@ -204,7 +201,7 @@ __all__ = [
     "Pivot",
     "PivotCell",
     "Presentation",
-    "Preview",
+    "PreviewEntity",
     "Query",
     "ReadsAggregates",
     "Relation",
@@ -214,7 +211,7 @@ __all__ = [
     "Resolver",
     "ResponseEdit",
     "ResponsePaginatedQuery",
-    "ResponsePreview",
+    "ResponsePreviewEntity",
     "ResponseRecord",
     "ResponseRecords",
     "Search",
@@ -232,18 +229,15 @@ __all__ = [
     "When",
     "WritesAggregates",
     "WritesInBulk",
-    "advise",
-    "assign",
+    "warn_form",
+    "apply_values",
     "computed",
     "detail_of",
     "history_of",
-    "is_previewing",
     "matching",
     "new_entity_id",
     "presentation_of",
-    "previewing",
+    "read_only",
     "recompute",
-    "recompute_whole",
-    "refuse_stale",
     "utc_now",
 ]

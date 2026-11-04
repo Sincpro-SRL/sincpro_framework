@@ -38,7 +38,7 @@ from sincpro_framework.data_layer.orm.sqlalchemy.infrastructure.read_tracking im
 from sincpro_framework.data_layer.orm.sqlalchemy.infrastructure.transaction_hooks import (
     install as hooks_per_transaction,
 )
-from sincpro_framework.ddd.editing.preview import is_previewing
+from sincpro_framework.ddd.editing.preview import is_read_only
 from sincpro_framework.ddd.entity import utc_now
 from sincpro_framework.ddd.repositories.repository import refuse_writing_in_preview
 
@@ -276,7 +276,7 @@ class Database:
 
 
 def _refused_in_preview(session: Session) -> None:
-    """A flush with something to write, inside `previewing()`, is refused: `record_changes`,
+    """A flush with something to write, inside `read_only()`, is refused: `record_changes`,
     the commit of a unit of work tracking changes, a record added to the session by hand.
 
     Outside the guard: a statement sent on a raw connection, and a thread started without the
@@ -306,14 +306,14 @@ def _reads_only(sql: str) -> bool:
 
 
 def _statement_refused_in_preview(state: Any) -> None:
-    """A statement sent through a session inside `previewing()` that writes or locks is refused:
+    """A statement sent through a session inside `read_only()` that writes or locks is refused:
     an INSERT, UPDATE or DELETE, a text statement that is not a read, a read that locks rows.
 
         UPDATE … / text("DELETE …")             →  ProgrammingError
         SELECT … FOR UPDATE                      →  ProgrammingError
         SELECT … / text("SELECT …")             →  runs, without an autoflush
     """
-    if not is_previewing():
+    if not is_read_only():
         return
     if state.is_select:
         # A read inside a preview never flushes what the unit of work holds pending: that

@@ -32,7 +32,7 @@ saves drafts, stores, discards and answers as the generic one does.
             invoice.add_line(dto.product, dto.quantity)
 
 Context: a draft is the caller's — whose, the context says (`EntityReads.drafts`) — and nothing is
-stored until `SAVE`: an edit saved as a draft is computed over a copy inside `previewing()`,
+stored until `SAVE`: an edit saved as a draft is computed over a copy inside `read_only()`,
 so a domain method that writes is refused there, as in a preview. Each edit names the draft
 version it read; another tab that saved its draft first makes it lose with `DraftConflict`. A
 save with no draft is an edit too: the values go straight to the store, refused when the
@@ -49,8 +49,8 @@ from sincpro_framework.common.ids import new_entity_id
 from sincpro_framework.context import Draft
 from sincpro_framework.ddd import exceptions
 from sincpro_framework.ddd.criteria import Condition, Criteria
-from sincpro_framework.ddd.editing.editing import assign, form_values, recompute
-from sincpro_framework.ddd.editing.preview import Advice, previewing
+from sincpro_framework.ddd.editing.editing import apply_values, form_values, recompute
+from sincpro_framework.ddd.editing.preview import FormWarning, read_only
 from sincpro_framework.ddd.entity import extensions
 from sincpro_framework.ddd.query import DraftState, ResponseRecord
 from sincpro_framework.ddd.reads.reads import (
@@ -62,7 +62,7 @@ from sincpro_framework.ddd.reads.reads import (
     key_of,
     keyed,
     states_of,
-    with_derived_relations,
+    with_computed_relations,
 )
 from sincpro_framework.ddd.repositories.capabilities import Extends
 from sincpro_framework.sincpro_abstractions import DataTransferObject
@@ -81,16 +81,16 @@ class EditAction(StrEnum):
 
 
 class ResponseEdit(ResponseRecord):
-    """What an edit answers: the record as it is now — its derived fields computed — each field's
-    state over it and what the domain advised. `draft` names the version the next edit reads;
+    """What an edit answers: the record as it is now — its computed fields up to date — each field's
+    state over it and what the domain warned the form about. `draft` names the version the next edit reads;
     `None` once the record is saved or the draft discarded.
 
     class ResponseEditInvoice(ResponseEdit):
         invoice: Invoice
     """
 
-    fields: dict[str, FieldState] = {}
-    advice: list[Advice] = []
+    states: dict[str, FieldState] = {}
+    warnings: list[FormWarning] = []
 
 
 class Edit[T, R: ResponseEdit](DataTransferObject):
@@ -102,7 +102,7 @@ class Edit[T, R: ResponseEdit](DataTransferObject):
     values: dict[str, Any] = {}
     """The record as the form holds it, whole, as JSON: each field read as its type."""
     changed: list[str] = []
-    """The fields the form changed, so only the derivations they reach run; none runs them all."""
+    """The fields the form changed, so only the computations they reach run; none runs them all."""
     version: int = 0
     """The draft version the caller read; `0` when it holds no draft."""
     origin_version: int | None = None
@@ -126,7 +126,7 @@ class EntityEdits[T](EntityReads[T]):
         """What the edit does to the record: the form's values put on it, each read as its field's
         type, a many-to-many named by ids as the records they name (`referenced`). A command of
         the project's changes it with the domain's methods instead."""
-        assign(record, self.referenced(type(record), dto.values))
+        apply_values(record, self.referenced(type(record), dto.values))
 
     def answered(
         self,
@@ -135,15 +135,15 @@ class EntityEdits[T](EntityReads[T]):
         record: Any,
         draft: Draft | None,
         stale: bool,
-        advice: list[Advice],
+        warnings: list[FormWarning],
     ) -> Any:
         """The record whole — what the form shows and sends back — with the model's definition,
-        each field's state, the advice and the draft it is now."""
+        each field's state, the warnings and the draft it is now."""
         answer = response(
             **{response.record_field(): record},
             entity_meta_data=self.described(entity, Criteria()).meta,
-            fields=states_of(record),
-            advice=list(advice),
+            states=states_of(record),
+            warnings=list(warnings),
         )
         if draft is not None:
             answer.draft = DraftState(
@@ -186,19 +186,19 @@ class EntityEdits[T](EntityReads[T]):
             # the same edit again with version=0, another tab having saved its draft first
                 ->  raises DraftConflict
 
-        1. The working copy, inside `previewing()`: a copy of the stored record — or a new one
-           under `id` — with the caller's draft on it, changed by this edit, its derivations
+        1. The working copy, inside `read_only()`: a copy of the stored record — or a new one
+           under `id` — with the caller's draft on it, changed by this edit, its computations
            recomputed; events it recorded are dropped, as a preview drops them.
         2. Its values saved as the draft, over the version the caller read (`DraftConflict`
            when another tab saved first); the draft remembers the stored version it started
            from.
-        Final: the record, the new draft version, each field's state and the advice.
+        Final: the record, the new draft version, each field's state and the warnings.
         """
         entity, response = declared_by(type(dto))
         drafts = self.drafts()
         subject = self.draft_subject(entity, dto.id)
         existing = drafts.read(subject)
-        with previewing() as advice:
+        with read_only() as warnings:
             stored = self.stored(entity, dto.id)
             record = self.shaped(
                 entity,
@@ -208,7 +208,7 @@ class EntityEdits[T](EntityReads[T]):
                 dto.values,
             )
             if existing is not None:
-                assign(record, self.referenced(type(record), existing.values), True)
+                apply_values(record, self.referenced(type(record), existing.values), True)
             self.change(record, dto)
             recompute(record, dto.changed)
             pull = getattr(record, "pull_events", None)
@@ -223,17 +223,22 @@ class EntityEdits[T](EntityReads[T]):
             origin = current
         draft = drafts.save(subject, form_values(entity, dumped(record)), origin, dto.version)
         return self.answered(
-            entity, response, record, draft, stored is not None and current != origin, advice
+            entity,
+            response,
+            record,
+            draft,
+            stored is not None and current != origin,
+            warnings,
         )
 
     def writable(self, entity: type, key: str) -> Any:
         """The stored record of `key` as the store holds it — the instance a save writes, read as
-        a preview reads it, with the relations its derivations read — or `None` when there is
+        a preview reads it, with the relations its computations read — or `None` when there is
         none yet."""
         criteria = self.by_identity(
             entity, Condition(field=key_of(entity), value=key), 1, Criteria()
         )
-        page = self.reads_from().search(entity, with_derived_relations(entity, criteria))
+        page = self.reads_from().search(entity, with_computed_relations(entity, criteria))
         return page.items[0] if page.items else None
 
     def save(self, dto: Any) -> Any:
@@ -287,7 +292,7 @@ class EntityEdits[T](EntityReads[T]):
                 dto.values,
             )
         if existing is not None:
-            assign(record, self.referenced(type(record), existing.values), True)
+            apply_values(record, self.referenced(type(record), existing.values), True)
         self.change(record, dto)
         self.reads_from().save(record)
         if existing is not None:
@@ -299,7 +304,7 @@ class EntityEdits[T](EntityReads[T]):
         with no draft.
 
             discard(CommandEditInvoice(id="0192…", version=2, action=EditAction.DISCARD))
-                ->  ResponseEditInvoice(invoice=<as stored>, draft=None, advice=[], …)
+                ->  ResponseEditInvoice(invoice=<as stored>, draft=None, warnings=[], …)
             # no stored invoice under the id  ->  a blank Invoice keyed "0192…", draft=None
 
         Context: the version the caller read is not checked — dropping a draft another tab
@@ -349,7 +354,7 @@ class EntityEdits[T](EntityReads[T]):
         by a form in that shape, and sends it back as it read it. The nested values are the fields
         of that extension; `None` is a record that has no such extension, and writes nothing. Flat
         values are taken as they are, whatever the entity delegates, and a key that is not an
-        extension of it is left for `assign` to refuse as any unknown field.
+        extension of it is left for `apply_values` to refuse as any unknown field.
 
         1. An entity that delegates no extension: the values as they came.
         2. For each extension of the entity, its key among the values:

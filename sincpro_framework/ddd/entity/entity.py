@@ -49,7 +49,7 @@ from sincpro_framework.ddd.criteria import (
     Sort,
     Specification,
 )
-from sincpro_framework.ddd.entity.derivations import Derivations
+from sincpro_framework.ddd.entity.computations import Computations
 from sincpro_framework.ddd.entity.entity_meta import (
     TEXT_TYPES,
     annotations_of,
@@ -152,7 +152,7 @@ class Entity:
     a client starts from (`Presentation`). It is a class attribute, not a field: it is never
     stored and never travels with a record.
 
-    `derivations` lists the fields it computes from others (`Derivations`), so a preview and a
+    `computations` lists the fields it computes from others (`Computations`), so a preview and a
     save compute them the same way. A class attribute too; left alone, nothing is computed.
     """
 
@@ -166,7 +166,7 @@ class Entity:
     """How many times it has been written. Zero means never — the adapter raises it, and a
     save carrying a number older than the row's is refused as `StaleAggregate`."""
     presentation: ClassVar[Presentation[Any]] = Presentation()
-    derivations: ClassVar[Derivations[Any]] = Derivations()
+    computations: ClassVar[Computations[Any]] = Computations()
 
     def __init_subclass__(cls, **kwargs: Any) -> None:
         """Refuse a subclass that redeclares a field the framework writes.
