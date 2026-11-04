@@ -7,6 +7,7 @@
       ConstraintViolation   the database refused the write by a rule of its own
     InvalidCriteria       the caller asked what cannot be answered          (invalid, 400)
     InvalidValue          a form's value its field cannot take, and where   (invalid, 422)
+      ChecksFailed          every `@check` a save found broken, each where it points
     CurrencyMismatch      two currencies added, subtracted or compared      (invalid, 422)
     AggregateNotFound     the record the caller named is not there          (not found, 404)
     TimedOut              the engine stopped at a bound it was given        (unavailable, 503)
@@ -56,9 +57,10 @@ class InvalidValue(ClientError):
     """
 
     def __init__(
-        self, message: str, path: tuple[str | int, ...], field: str = "values"
+        self, message: str, path: tuple[str | int, ...] = (), field: str = "values"
     ) -> None:
-        """`message` is what the caller reads; `path` and `field` say where it points."""
+        """`message` is what the caller reads; `path` and `field` say where it points. An
+        `@check` that raises it with no `path` points at the first field it watches."""
         super().__init__(message)
         self.path = path
         self.field = field
@@ -79,6 +81,41 @@ class InvalidValue(ClientError):
             update={
                 "errors": [
                     FieldError(pointer=pointer((self.field, *self.path)), detail=str(self))
+                ]
+            }
+        )
+
+
+class ChecksFailed(InvalidValue):
+    """Every `@check` a save found broken in one aggregate — its lines' included — so the caller
+    fixes them all in one round and a screen marks each field.
+
+        ChecksFailed((InvalidValue("needs a deadline", ("deadline",)),
+                      InvalidValue("price below cost", ("lines", 2, "price"))))
+        ->  Problem(errors=[FieldError(pointer="#/values/deadline", …),
+                            FieldError(pointer="#/values/lines/2/price", …)])
+
+    It is an `InvalidValue`: whoever handles one handles this; `failures` holds each, in the
+    order the save found them — the lines first, then the aggregate.
+    """
+
+    def __init__(self, failures: tuple[InvalidValue, ...]) -> None:
+        """`failures` are the checks that failed, at least one; the message reads them all."""
+        first = failures[0]
+        super().__init__("; ".join(str(one) for one in failures), first.path, first.field)
+        self.failures = failures
+
+    def within(self, *outer: str | int) -> "ChecksFailed":
+        """The same failures seen from the record that holds the aggregate."""
+        return ChecksFailed(tuple(one.within(*outer) for one in self.failures))
+
+    def refine_problem(self, problem: Problem) -> Problem:
+        """The problem with one error per failure, each pointing at its value."""
+        return problem.model_copy(
+            update={
+                "errors": [
+                    FieldError(pointer=pointer((one.field, *one.path)), detail=str(one))
+                    for one in self.failures
                 ]
             }
         )

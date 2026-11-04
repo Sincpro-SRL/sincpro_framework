@@ -19,13 +19,12 @@ from sincpro_framework.data_layer.orm.sqlalchemy.entrypoint.repository import Re
 from sincpro_framework.data_layer.orm.sqlalchemy.entrypoint.template_table import entity_table
 from sincpro_framework.data_layer.orm.sqlalchemy.infrastructure.database import Database
 from sincpro_framework.ddd import (
-    Computations,
-    Compute,
     EntityReads,
     PreviewEntity,
     ResponsePreviewEntity,
     Specification,
     apply_values,
+    compute,
 )
 from sincpro_framework.ddd.entity import Entity
 
@@ -44,12 +43,9 @@ class Order(Entity):
     lines: list[OrderLine] = field(default_factory=list)
     total: Decimal = Decimal("0")
 
+    @compute(lambda o: o.total, depends=lambda o: o.lines)
     def total_of(self) -> Decimal:
         return sum((line.qty * line.price for line in self.lines), Decimal("0"))
-
-    computations = Computations["Order"](
-        lambda o: Compute(o.total, depends=o.lines, by=Order.total_of)
-    )
 
     @classmethod
     def DEFAULT_READING(cls) -> Specification:

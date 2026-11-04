@@ -49,7 +49,6 @@ from sincpro_framework.ddd.criteria import (
     Sort,
     Specification,
 )
-from sincpro_framework.ddd.entity.computations import Computations
 from sincpro_framework.ddd.entity.entity_meta import (
     TEXT_TYPES,
     annotations_of,
@@ -152,21 +151,30 @@ class Entity:
     a client starts from (`Presentation`). It is a class attribute, not a field: it is never
     stored and never travels with a record.
 
-    `computations` lists the fields it computes from others (`Computations`), so a preview and a
-    save compute them the same way. A class attribute too; left alone, nothing is computed.
+    A field it computes from others is declared on the method that computes it (`@compute`), so
+    a preview and a save compute it the same way; a rule over its fields, on the method that
+    checks it (`@check`).
     """
 
-    id: str = field(default_factory=new_entity_id)
-    created_at: datetime = field(default_factory=utc_now)
-    updated_at: datetime | None = None
+    id: str = field(
+        default_factory=new_entity_id, metadata={"label": {"default": "ID", "es": "ID"}}
+    )
+    created_at: datetime = field(
+        default_factory=utc_now,
+        metadata={"label": {"default": "Created at", "es": "Creado el"}},
+    )
+    updated_at: datetime | None = field(
+        default=None, metadata={"label": {"default": "Updated at", "es": "Actualizado el"}}
+    )
     """When it was last written. `None` until it is first stored, when it is `created_at`; the
     adapter stamps it on every flush that changed something, so nobody remembers to — and
     "untouched since" is this one column."""
-    version: int = 0
+    version: int = field(
+        default=0, metadata={"label": {"default": "Version", "es": "Versión"}}
+    )
     """How many times it has been written. Zero means never — the adapter raises it, and a
     save carrying a number older than the row's is refused as `StaleAggregate`."""
     presentation: ClassVar[Presentation[Any]] = Presentation()
-    computations: ClassVar[Computations[Any]] = Computations()
 
     def __init_subclass__(cls, **kwargs: Any) -> None:
         """Refuse a subclass that redeclares a field the framework writes.

@@ -14,7 +14,8 @@ import pytest
 
 from sincpro_framework import exceptions
 from sincpro_framework.ddd import DomainEvent
-from sincpro_framework.ddd.entity import ArchivableMixin, Entity
+from sincpro_framework.ddd.entity import ArchivableMixin, AuditedMixin, Entity
+from sincpro_framework.ddd.entity.entity_meta import describe_class
 
 
 @pytest.mark.parametrize("reserved", ["id", "created_at", "updated_at", "version"])
@@ -108,3 +109,21 @@ class OrderLine(Entity):
 
 def test_a_forward_reference_does_not_break_the_check():
     assert Order(lines=[OrderLine()]).lines[0].qty == 1
+
+
+def test_a_field_the_framework_writes_comes_with_its_label_since_no_subclass_can_give_one():
+    @dataclass
+    class Folder(AuditedMixin, ArchivableMixin, Entity):
+        title: str = ""
+
+    fields = describe_class(Folder, "id").fields
+
+    assert {name: fields[name].label for name in fields if name != "title"} == {
+        "id": {"default": "ID", "es": "ID"},
+        "created_at": {"default": "Created at", "es": "Creado el"},
+        "updated_at": {"default": "Updated at", "es": "Actualizado el"},
+        "version": {"default": "Version", "es": "Versión"},
+        "archived_at": {"default": "Archived at", "es": "Archivado el"},
+        "created_by": {"default": "Created by", "es": "Creado por"},
+        "updated_by": {"default": "Updated by", "es": "Actualizado por"},
+    }

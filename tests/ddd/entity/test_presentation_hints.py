@@ -18,14 +18,13 @@ from sincpro_framework import UseFramework, exceptions
 from sincpro_framework.data_layer.repositories import MemoryRepository
 from sincpro_framework.ddd import (
     All,
-    Computations,
-    Compute,
     Condition,
     EntityReads,
     Get,
     Presentation,
     ResponseRecord,
     When,
+    compute,
     computed,
 )
 from sincpro_framework.ddd import exceptions as ddd_exceptions
@@ -164,14 +163,9 @@ class SaleOrder(Entity):
         default=Decimal("0"),
     )
 
+    @compute(lambda o: o.customer_name, depends=lambda o: o.customer_id)
     def customer_name_of(self) -> str:
         return f"customer {self.customer_id}"
-
-    computations = Computations["SaleOrder"](
-        lambda o: Compute(
-            o.customer_name, depends=o.customer_id, by=SaleOrder.customer_name_of
-        )
-    )
 
 
 def test_what_the_framework_computes_is_published_read_only_and_never_asked_for():

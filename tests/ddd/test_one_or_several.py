@@ -15,16 +15,16 @@ from sincpro_framework.data_layer.caching.domain.failure import FailSafe
 from sincpro_framework.data_layer.caching.domain.policies import QueryCachePolicy
 from sincpro_framework.data_layer.repositories import MemoryRepository
 from sincpro_framework.ddd import (
-    Computations,
-    Compute,
     Condition,
     Entity,
     Presentation,
     When,
+    check,
+    compute,
     presentation_of,
 )
 from sincpro_framework.ddd.criteria import Operator, Sort
-from sincpro_framework.ddd.entity.entity_meta import computations_of
+from sincpro_framework.ddd.entity.entity_meta import checks_of, computations_of
 from sincpro_framework.ddd.repositories import Hook, Hooks
 
 
@@ -42,11 +42,17 @@ class AsList(Entity):
     count: int = 0
     total: Decimal = Decimal("0")
 
+    @compute(lambda a: a.count, depends=lambda a: [a.lines])
     def count_of(self) -> int:
         return len(self.lines)
 
+    @compute(lambda a: a.total, depends=lambda a: [a.count])
     def total_of(self) -> Decimal:
         return Decimal(self.count)
+
+    @check(lambda a: [a.code, a.name])
+    def named(self) -> None:
+        pass
 
     presentation = Presentation["AsList"](
         readonly=lambda a: [a.code],
@@ -54,12 +60,6 @@ class AsList(Entity):
         readonly_when=lambda a: [When(Condition.on(a.state, Operator.NE, "draft"), a.name)],
         required_when=lambda a: [When(Condition.on(a.state, Operator.EQ, "draft"), a.code)],
         visible_when=lambda a: [When(Condition.on(a.state, Operator.EQ, "draft"), a.total)],
-    )
-    computations = Computations["AsList"](
-        lambda a: [
-            Compute(a.count, depends=[a.lines], by=lambda r: len(r.lines)),
-            Compute(a.total, depends=[a.count], by=lambda r: Decimal(r.count)),
-        ]
     )
 
 
@@ -79,12 +79,18 @@ class AsTuple(Entity):
         required_when=lambda a: (When(Condition.on(a.state, Operator.EQ, "draft"), a.code),),
         visible_when=lambda a: (When(Condition.on(a.state, Operator.EQ, "draft"), a.total),),
     )
-    computations = Computations["AsTuple"](
-        lambda a: (
-            Compute(a.count, depends=(a.lines,), by=lambda r: len(r.lines)),
-            Compute(a.total, depends=(a.count,), by=lambda r: Decimal(r.count)),
-        )
-    )
+
+    @compute(lambda a: a.count, depends=lambda a: (a.lines,))
+    def count_of(self) -> int:
+        return len(self.lines)
+
+    @compute(lambda a: a.total, depends=lambda a: (a.count,))
+    def total_of(self) -> Decimal:
+        return Decimal(self.count)
+
+    @check(lambda a: (a.code, a.name))
+    def named(self) -> None:
+        pass
 
 
 @dataclass
@@ -103,12 +109,18 @@ class AsOne(Entity):
         required_when=lambda a: When(Condition.on(a.state, Operator.EQ, "draft"), a.code),
         visible_when=lambda a: When(Condition.on(a.state, Operator.EQ, "draft"), a.total),
     )
-    computations = Computations["AsOne"](
-        lambda a: [
-            Compute(a.count, depends=a.lines, by=lambda r: len(r.lines)),
-            Compute(a.total, depends=a.count, by=lambda r: Decimal(r.count)),
-        ]
-    )
+
+    @compute(lambda a: a.count, depends=lambda a: a.lines)
+    def count_of(self) -> int:
+        return len(self.lines)
+
+    @compute(lambda a: a.total, depends=lambda a: a.count)
+    def total_of(self) -> Decimal:
+        return Decimal(self.count)
+
+    @check(lambda a: a.code)
+    def named(self) -> None:
+        pass
 
 
 @dataclass
@@ -116,9 +128,9 @@ class OneCompute(Entity):
     lines: list[Line] = field(default_factory=list)
     count: int = 0
 
-    computations = Computations["OneCompute"](
-        lambda a: Compute(a.count, depends=a.lines, by=lambda r: len(r.lines))
-    )
+    @compute(lambda a: a.count, depends=lambda a: a.lines)
+    def count_of(self) -> int:
+        return len(self.lines)
 
 
 @dataclass
@@ -168,7 +180,7 @@ def test_a_presentation_reads_the_same_as_a_list_a_tuple_or_one_alone():
     assert set(first.visible_when) == {"total"}
 
 
-def test_derivations_read_the_same_as_a_list_a_tuple_or_one_alone():
+def test_computations_and_checks_read_the_same_as_a_list_a_tuple_or_one_alone():
     read = [
         tuple((one.field, one.depends) for one in computations_of(kind))
         for kind in (AsList, AsTuple, AsOne)
@@ -178,6 +190,9 @@ def test_derivations_read_the_same_as_a_list_a_tuple_or_one_alone():
     assert tuple((one.field, one.depends) for one in computations_of(OneCompute)) == (
         ("count", ("lines",)),
     )
+    watched = [tuple(one.watches for one in checks_of(kind)) for kind in (AsList, AsTuple)]
+    assert watched[0] == watched[1] == ((("code", "name"),))
+    assert tuple(one.watches for one in checks_of(AsOne)) == (("code",),)
 
 
 @pytest.mark.parametrize("kind", [AsList, AsTuple, AsOne])

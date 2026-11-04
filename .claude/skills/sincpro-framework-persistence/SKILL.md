@@ -1,6 +1,6 @@
 ---
 name: sincpro-framework-persistence
-description: Persist aggregates with sincpro_framework — Entity, IRepository capabilities, AggregateRepository, shared unit of work, Writes.SAVED/CHANGED, transactional numbering, relations, hooks, and the built-in reads of one aggregate (presentation, EntityReads with Get/GetMany/LiteralSearch/Search/DomainEvents/PreviewEntity, Compute, warn_form) and a form's whole life (Edit + EntityEdits: save a draft, save, discard, find it again). Use when a task touches tables, get/save/remove/archive, repository.context(), entity_table/map_aggregates, DatabaseNumbering, aggregate mixins, or a Feature that reads one entity (get by id, get many, a select by text, a list, its event history) or edits it from a form over several requests (autosave, drafts, resume after the browser closed) in a Sincpro Python service.
+description: Persist aggregates with sincpro_framework — Entity, IRepository capabilities, AggregateRepository, shared unit of work, Writes.SAVED/CHANGED, transactional numbering, relations, hooks, and the built-in reads of one aggregate (presentation, EntityReads with Get/GetMany/LiteralSearch/Search/DomainEvents/PreviewEntity, @compute, @check, warn_form) and a form's whole life (Edit + EntityEdits: save a draft, save, discard, find it again). Use when a task touches tables, get/save/remove/archive, repository.context(), entity_table/map_aggregates, DatabaseNumbering, aggregate mixins, or a Feature that reads one entity (get by id, get many, a select by text, a list, its event history) or edits it from a form over several requests (autosave, drafts, resume after the browser closed) in a Sincpro Python service.
 ---
 
 # sincpro-framework-persistence
@@ -70,7 +70,8 @@ This skill stands alone. The framework repo also has a longer, test-backed walkt
 | `EntityReads[T]` | The Feature that answers those four DTOs from the entity's `DEFAULT_*`; the caller's criteria wins part by part (`Criteria.replaced_by`); extend by overriding `get`/`get_many`/`literal_search`/`search` | Feature base | `from sincpro_framework.ddd import EntityReads` |
 | `ResponseRecord` / `ResponseRecords` | One record / a list by key (with `missing`), cut by the specification on the wire | response bases | `sincpro_framework.ddd` |
 | `AggregateNotFound` | `Get` named a key with no record; `not_found` on every wire (404 REST) | exception | `from sincpro_framework.ddd import exceptions` → `exceptions.AggregateNotFound` |
-| `Computations` / `Compute` | Class attribute: fields the entity computes from others, by its own methods, run in dependency order by `recompute` and by `save` (children first); `upsert`/`update_all` compute nothing | declaration | `sincpro_framework.ddd` |
+| `@compute` | Method decorator: the field the method computes and what it reads, run in dependency order by `recompute` and by `save` (children first); `editable=True` proposes only when a change reaches it, never on save; `upsert`/`update_all` compute nothing — recipe [rules.md](references/rules.md) | decorator | `sincpro_framework.ddd` |
+| `@check` | Method decorator: a rule over the entity's own fields (raises `InvalidValue`); warns a form (`FormWarning`) for what a change reaches, refuses a save with `ChecksFailed` (all failures, lines first); `ContextKey.SKIP_CHECKS` for imports — recipe [rules.md](references/rules.md) | decorator | `sincpro_framework.ddd` |
 | `apply_values` / `recompute` | Put a form's values on a record (read as each field's type) / run the computations a change reaches | functions | `sincpro_framework.ddd` |
 | `Edit` / `EditAction` / `ResponseEdit` / `EntityEdits[T]` | A form's whole life in one command: `SAVE_DRAFT` the caller's draft (version + preview), `SAVE` it to the store, `DISCARD` it; `Get(draft=True)` / `Search(drafts=True)` find it again; a project's command overrides `change` | DTO bases / StrEnum / Feature base | `sincpro_framework.ddd` |
 | `PreviewEntity` / `ResponsePreviewEntity` / `FieldState` | DTO base answered by `EntityReads.preview`: values that moved, field states, warnings — nothing stored | DTO bases | `sincpro_framework.ddd` |
@@ -286,15 +287,16 @@ use the common surface (then `MemoryRepository` substitutes in tests).
   DTO — and a caller's criteria wins for every part it names. Writes stay Commands with an
   intent, written by hand. Recipe: [references/entity-reads.md](references/entity-reads.md).
 - **A value a form must see before saving is a computation, not a hook.** Declare
-  `computations` on the entity; `save` and `EntityReads.preview` run the same `recompute`, and
+  `@compute` on the entity's method; `save` and `EntityReads.preview` run the same `recompute`, and
   nothing is written inside a preview (`ProgrammingError`). Recipe:
   [references/preview.md](references/preview.md). What a form holds between requests is a draft
   stored by the context (`self.context.drafts()`), never a half-saved record — skill
   `sincpro-framework-context`, recipe `references/drafts.md`.
 - **Form hints are defaults for a client, never rules.** `presentation`'s `readonly`,
   `required`, `*_when` and the dataclass defaults reach `Meta.fields`; nothing checks them on
-  save. A rule the server enforces is the project's own `before_save` hook, reading the same
-  condition from `presentation_of(Entity)`. Recipe: [references/form-hints.md](references/form-hints.md).
+  save. A rule the server enforces over the entity's own fields is a `@check` on the entity
+  ([references/rules.md](references/rules.md)); one that reads outside the record is a
+  `before_save` hook. Recipe: [references/form-hints.md](references/form-hints.md).
 - **The aggregate records events; save stores mapped facts with it.** Publishing is separate:
   the Feature publishes after the commit, or the repository does with `publish_on_commit=` and
   stamps the stored row with how its delivery went.
@@ -319,6 +321,7 @@ rollback also returns the allocation. Calling outside commits the allocation ind
 - [references/entity-reads.md](references/entity-reads.md) — `DEFAULT_*` + `EntityReads`: get, get many, select by text, list
 - [references/edits.md](references/edits.md) — `Edit` + `EntityEdits`: save a form's draft, save the record, discard the draft; find it after the client lost its state; a project's own command
 - [references/preview.md](references/preview.md) — computed fields, `apply_values`, `PreviewEntity`: what a record becomes before it is saved
+- [references/rules.md](references/rules.md) — `@check` and `@compute` on the entity: where each rule goes, when it runs (save refuses, form warns), editable proposals, lines, skipping for imports
 - [references/form-hints.md](references/form-hints.md) — form hints in `presentation`, what a client receives, enforcing one with a hook
 - [references/document-form.md](references/document-form.md) — a document with lines served to a form: what the entity declares, which built-in use case answers each question (defaults, onchange, draft, save, post), how the lines travel, where errors and warnings point
 

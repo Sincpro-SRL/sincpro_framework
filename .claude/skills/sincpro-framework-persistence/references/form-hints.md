@@ -55,30 +55,33 @@ The client evaluates each condition over the record with the same evaluator it f
 decimals: an amount arrives as the text `"0"`). A component prop wins over the hint:
 `<Field name="partner_id" required />`, or hiding by the user's groups, is the client's call.
 
-## 3. When the server must enforce a rule: the project's own hook
+## 3. When the server must enforce a rule: a `@check` on the entity
 
-The framework enforces no hint. A rule the server enforces is a normal hook, ordered with
-`after=`/`sequence=` like any other; read the published condition so the rule is written once:
+The framework enforces no hint. A rule the server holds over the entity's own fields is a
+`@check` — written once, warned while the form is drafted, refused on save
+([rules.md](rules.md)):
 
 ```python
-from sincpro_framework.ddd import exceptions, presentation_of
-from sincpro_framework.ddd.criteria import Evaluation
+from sincpro_framework.ddd import check, exceptions
 
-@billing_hooks.on(Invoice)
-class PaymentNeedsItsReference(BillingHook):
-    def before_save(self, invoice: Invoice) -> None:
-        for name, condition in presentation_of(Invoice).required_when.items():
-            if Evaluation.matches(invoice, condition) and not getattr(invoice, name):
-                raise exceptions.ConstraintViolation(f"{name} is required for this invoice")
+@dataclass
+class Invoice(Entity):
+    ...
+    @check(lambda i: [i.card_reference, i.payment])
+    def card_reference_when_card(self) -> None:
+        if self.payment == Payment.CARD and not self.card_reference:
+            raise exceptions.InvalidValue("Paying by card needs the card reference")
 ```
 
-A state lock ("a confirmed invoice cannot change its partner") is better written as the aggregate's
-own method refusing the change, or a `before_save` hook comparing with the stored version.
+A rule that reads outside the record — the customer's credit, another aggregate — is a
+`before_save` hook, which has the bus. A state lock ("a confirmed invoice cannot change its
+partner") is the aggregate's own method refusing the change, or a hook comparing with the
+stored version.
 
 ## Mistakes to avoid
 
 - **Treating a hint as protection.** `readonly`/`required` greyed in a form do not stop the API.
-  If it matters, write the hook.
+  If it matters, write a `@check`.
 - **Hiding a sensitive field only in the UI.** Hiding is not omitting: cut it on the server
   with the specification or an `after_read` hook.
 - **Writing a condition as a Python expression.** `When(i.state == "done", ...)` is refused:

@@ -21,6 +21,7 @@ Read in this order:
 | [Analytics from the model](analytics.md) | A computed field, the part of a date, groups with no rows and the extra folds: group, filter and order by things that are not columns, answered the same in memory and in SQL |
 | [Specification](specification.md) | What to bring back of each record, at any depth: the rules, what the entity answers in its `DEFAULT_*` class methods, and the form hints of `presentation` |
 | [Entity reads](entity-reads.md) | `EntityReads`: one Feature for get, get many, the select by text and the list, from the entity's `DEFAULT_*` class methods; what the caller names wins |
+| [Rules and computations](rules.md) | `@check` and `@compute` on the entity: written once, warned while a form is edited, refused on save; editable proposals, lines, imports that skip the rules, why not on assignment, the cost |
 | [Preview](preview.md) | What a record becomes before it is saved: computed fields, `apply_values`, `PreviewEntity` on `EntityReads`, and the guard that makes a preview unable to write |
 | [Edits](edits.md) | The life of a form in one command: `Edit` saves the caller's draft, saves the record or discards the draft; `Get(draft=True)` / `Search(drafts=True)` find it after the client lost its state; creating and updating, two tabs, someone who saved meanwhile |
 | [Drafts](../core/drafts.md) | What a form holds between requests — stored by the context, by user or session, where it stores everything (memory or Redis); optimistic versions, a TTL, `refuse_stale` before activating |

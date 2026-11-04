@@ -17,8 +17,6 @@ from sincpro_framework.context.domain import exceptions as context_exceptions
 from sincpro_framework.data_layer.repositories import MemoryNumbering, MemoryRepository
 from sincpro_framework.data_layer.store import InMemoryKeyValue
 from sincpro_framework.ddd import (
-    Computations,
-    Compute,
     Criteria,
     DraftState,
     Edit,
@@ -30,6 +28,7 @@ from sincpro_framework.ddd import (
     ResponseRecord,
     Search,
     Specification,
+    compute,
 )
 from sincpro_framework.ddd import exceptions as ddd_exceptions
 from sincpro_framework.ddd.criteria import (
@@ -72,18 +71,13 @@ class Invoice(Entity):
         self.lines = [*self.lines, InvoiceLine(product, qty, price)]
         self.record(LineAdded(entity_id=self.id, product=product))
 
+    @compute(lambda i: i.subtotal, depends=lambda i: (i.lines,))
     def subtotal_of(self) -> Decimal:
         return sum((line.qty * line.price for line in self.lines), Decimal("0"))
 
+    @compute(lambda i: i.total, depends=lambda i: (i.subtotal, i.discount))
     def total_of(self) -> Decimal:
         return self.subtotal - self.discount
-
-    computations = Computations["Invoice"](
-        lambda i: (
-            Compute(i.total, depends=(i.subtotal, i.discount), by=Invoice.total_of),
-            Compute(i.subtotal, depends=(i.lines,), by=Invoice.subtotal_of),
-        )
-    )
 
 
 class ResponseInvoice(ResponseRecord):
@@ -270,6 +264,24 @@ def test_editing_a_stored_record_drafts_over_it_and_leaves_it_alone(shop: Shop):
     assert answered.invoice.total == Decimal("5")
     assert answered.draft is not None and drafted(answered).origin_version == invoice.version
     assert shop.stored(invoice.id).discount == Decimal("0")
+
+
+def test_a_save_with_no_draft_changes_only_the_fields_it_names(shop: Shop):
+    invoice = a_stored_invoice(shop)
+    read = shop.stored(invoice.id)
+
+    shop.edit(
+        ANA,
+        id=invoice.id,
+        values={"discount": "3"},
+        changed=["discount"],
+        origin_version=read.version,
+        action=EditAction.SAVE,
+    )
+
+    stored = shop.stored(invoice.id)
+    assert stored.discount == Decimal("3") and stored.total == Decimal("5")
+    assert stored.partner_id == "p1" and stored.lines == read.lines
 
 
 def test_a_command_of_the_projects_own_edits_with_the_domains_methods(shop: Shop):

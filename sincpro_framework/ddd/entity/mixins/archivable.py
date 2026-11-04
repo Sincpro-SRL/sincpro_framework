@@ -1,6 +1,6 @@
 """Put away rather than deleted."""
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime
 
 from sincpro_framework.ddd.entity.entity import utc_now
@@ -27,7 +27,9 @@ class ArchivableMixin:
     The column goes on the table with `archive_columns()`.
     """
 
-    archived_at: datetime | None = None
+    archived_at: datetime | None = field(
+        default=None, metadata={"label": {"default": "Archived at", "es": "Archivado el"}}
+    )
 
     @property
     def is_archived(self) -> bool:

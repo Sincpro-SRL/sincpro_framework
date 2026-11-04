@@ -10,19 +10,27 @@ of it agree.
 """
 
 import dataclasses
-import inspect
-from collections.abc import Callable, Iterable, Mapping
+from collections.abc import Callable, Iterable, Mapping, Sequence
+from contextvars import ContextVar
 from functools import cache
 from typing import Any, get_args, get_origin
 
 from pydantic import TypeAdapter, ValidationError
 
+from sincpro_framework.context import ContextKey, use_context
 from sincpro_framework.ddd import exceptions
-from sincpro_framework.ddd.editing.preview import warnings_at
+from sincpro_framework.ddd.editing.preview import (
+    is_read_only,
+    located,
+    warn_form_at,
+    warnings_at,
+)
 from sincpro_framework.ddd.entity.entity_collection import EntityCollection, identity_name
 from sincpro_framework.ddd.entity.entity_meta import (
+    Check,
     Computation,
     annotations_of,
+    checks_of,
     computations_of,
     framework_fields,
     related_class,
@@ -30,6 +38,11 @@ from sincpro_framework.ddd.entity.entity_meta import (
 )
 from sincpro_framework.ddd.entity.relations import relation_attribute
 from sincpro_framework.sincpro_logger import logger
+
+_SKIPPED: ContextVar[tuple[Any, ...] | None] = ContextVar(
+    "sincpro_checks_skipped", default=None
+)
+"""The last (execution, entity, reason) whose skipped checks were logged — said once, not per row."""
 
 UNREAD = object()
 """What a relation never read holds, for `apply_values` to compare with: anything is a change."""
@@ -362,25 +375,27 @@ def _plain(kind: type, name: str, annotation: Any, value: Any, adopt: bool) -> A
 
 @cache
 def owned(declared: type) -> tuple[str, ...]:
-    """The fields holding records a computation of `declared` has to compute first: those its
-    computations read, and the lists of records that declare computations of their own. Never
-    another aggregate it only points at.
+    """The fields holding records a pass over `declared` has to run first: those its
+    computations read or its checks watch, and the lists of records that declare computations or
+    checks of their own. Never another aggregate it only points at.
 
         owned(Order)    ->  ("lines",)    # Order: subtotal ← lines; OrderLine: amount ← qty
         owned(Sale)     ->  ("lines",)    # nothing reads lines, but SaleLine derives amount
-        owned(Box)      ->  ()            # Box and Item declare no computations
+        owned(Box)      ->  ()            # Box and Item declare no computations and no checks
 
-    Context: a single record field counts only when a computation reads it; a list counts
-    also when its records derive something themselves. Cached per class.
+    Context: a single record field counts only when a computation reads it or a check watches
+    it; a list counts also when its records compute or check something themselves. Cached per
+    class.
     """
-    computations = computations_of(declared)
-    read = {name for one in computations for name in one.depends}
+    read = {name for one in computations_of(declared) for name in one.depends} | {
+        name for one in checks_of(declared) for name in one.watches
+    }
     found: list[str] = []
     for name, annotation in annotations_of(declared).items():
         kind, many = related_class(annotation)
         if kind is None or not _is_record_class(kind):
             continue
-        if name in read or (many and computations_of(kind)):
+        if name in read or (many and (computations_of(kind) or checks_of(kind))):
             found.append(name)
     return tuple(found)
 
@@ -418,123 +433,295 @@ def _warn_stale_computation(record: Any, computation: Computation) -> None:
             return
 
 
-def _computed(computation: Computation, record: Any) -> Any:
-    """The computation's value for `record`. A method named in the declaration is called as the
-    record's own, so a subclass that overrides it is heard; any other callable is called as is.
+@dataclasses.dataclass
+class _Pass:
+    """One run over an aggregate and the records it owns.
+
+    `saving` is a save: what reads a relation the record does not hold whole is skipped, no
+    editable computation runs, and a failed check is collected in `failures` to refuse.
+    Otherwise a failed check is warned to the form — and checks run at all only when `checking`:
+    inside `read_only()`, where a warning has somewhere to go.
     """
-    by = computation.by
-    name = getattr(by, "__name__", "")
-    if inspect.isfunction(by) and name != "<lambda>":
-        own = getattr(type(record), name, None)
-        if inspect.isfunction(own):
-            return own(record)
-    return by(record)
+
+    saving: bool
+    checking: bool
+    failures: list[exceptions.InvalidValue] = dataclasses.field(default_factory=list)
+    seen: set[int] = dataclasses.field(default_factory=set)
+
+
+def _split(owner: type, changed: Sequence[str]) -> tuple[set[str], dict[str, list[str]]]:
+    """The fields of `owner` a change names, and what it names inside the records each holds.
+
+        _split(Invoice, ["discount", "lines.2.qty", "lines.3"])
+            ->  ({"discount"}, {"lines": ["2.qty", "3"]})
+
+    A name that is not a field of `owner` is refused, naming it: the change came from a form.
+    """
+    named: set[str] = set()
+    inside: dict[str, list[str]] = {}
+    for one in changed:
+        head, dot, rest = one.partition(".")
+        if dot:
+            inside.setdefault(head, []).append(rest)
+        else:
+            named.add(head)
+    unknown = sorted((named | set(inside)) - set(annotations_of(owner))) if changed else []
+    if unknown:
+        raise exceptions.ClientError(
+            f"{owner.__name__} has no field {', '.join(unknown)} to recompute"
+        )
+    return named, inside
+
+
+def _by_position(owner: type, name: str, paths: list[str]) -> dict[int, list[str]]:
+    """What a change names inside each record of the list `name`, by its position: `"2.qty"`
+    is `qty` of the third, `"2"` the third whole (`""`).
+
+        _by_position(Invoice, "lines", ["2.qty", "2.price", "3"])
+            ->  {2: ["qty", "price"], 3: [""]}
+
+    A path that does not start with a position is refused, showing the form it takes.
+    """
+    found: dict[int, list[str]] = {}
+    for path in paths:
+        position, _, rest = path.partition(".")
+        if not position.isdigit():
+            raise exceptions.ClientError(
+                f"{owner.__name__}.{name}.{path} names no record of {name}: one is named by its "
+                f"position in the list, as in {name}.2.qty"
+            )
+        found.setdefault(int(position), []).append(rest)
+    return found
 
 
 def _ran(
-    record: Any, computations: tuple[Computation, ...], reached: set[str], tolerant: bool
+    record: Any,
+    computations: tuple[Computation, ...],
+    reached: set[str],
+    every: bool,
+    run: _Pass,
 ) -> tuple[str, ...]:
-    """Runs the computations `reached` asks for (all of them when it is empty). Tolerant, one that
-    reads a field the record does not hold whole is skipped, and its field retains what it
-    holds.
+    """Runs, in order, the computations of `record` the pass asks for, and answers the fields
+    whose value moved.
+
+    1. A computation runs when `every` asks for all of them or a change reached a field it
+       reads; an editable one only when a change reached it, and never in a save — it proposes
+       a value, and the one typed over it is the one stored.
+    2. In a save, one that reads a field the record does not hold whole is skipped and its field
+       retains what it holds (`_warn_stale_computation`); one that reads a relation nobody asked
+       for is skipped too. Elsewhere that is the code's mistake, raised.
+    3. A field computed because a change reached it is reached in turn, so what reads it follows.
+    Final: the fields whose value moved.
     """
-    every = not reached
     moved: list[str] = []
     for computation in computations:
-        if not every and reached.isdisjoint(computation.depends):
+        reaches = not reached.isdisjoint(computation.depends)
+        if computation.editable:
+            if run.saving or not reaches:
+                continue
+        elif not (every or reaches):
             continue
-        if tolerant and not all(_holds_whole(record, one) for one in computation.depends):
+        if run.saving and not all(_holds_whole(record, one) for one in computation.depends):
             _warn_stale_computation(record, computation)
             continue
         try:
-            value = _computed(computation, record)
-            before = getattr(record, computation.field, None)
+            value = getattr(record, computation.method)()
         except exceptions.RelationNotResolved:
-            if not tolerant:
+            if not run.saving:
                 raise
             continue
+        before = getattr(record, computation.field, None)
         setattr(record, computation.field, value)
-        reached.add(computation.field)
+        if reaches:
+            reached.add(computation.field)
         if value != before:
             moved.append(computation.field)
     return tuple(moved)
 
 
-def _tree(record: Any, reached: set[str], tolerant: bool, seen: set[int]) -> tuple[str, ...]:
-    """The computations of `record` and of the records it owns, innermost first — what both
-    `recompute` and `recompute_whole` run.
+def _checked(
+    record: Any, checks: tuple[Check, ...], reached: set[str], whole: bool, run: _Pass
+) -> None:
+    """Runs the checks of `record` the pass asks for: each failure collected to refuse, in a
+    save, or warned to the form.
+
+    1. A check runs when `whole` asks for all of them or a change reached a field it watches.
+    2. In a save, one that watches a field the record does not hold whole is skipped: a rule
+       over lines nobody read whole cannot be judged. Lines held in part may break it unseen, so
+       that skip is said; a relation never read cannot have changed, so that one is silent.
+    3. A failure with no path points at the first field the check watches; where the record
+       sits in the aggregate goes in front (`located`), so a line's failure reaches its cell.
+    """
+    owner = type(record).__name__
+    for one in checks:
+        if not (whole or not reached.isdisjoint(one.watches)):
+            continue
+        if run.saving:
+            partial = [name for name in one.watches if not _holds_whole(record, name)]
+            if partial:
+                held = [name for name in partial if _held_in_part(record, name)]
+                if held:
+                    logger.warning(
+                        f"{owner}.{one.method} is not checked on save: {owner}.{held[0]} is held "
+                        f"{_held_in_part(record, held[0])}, so the rule cannot be judged. Read "
+                        f"{held[0]} whole — inside context(), or with a specification that does "
+                        "not filter or page it — for the save to check it"
+                    )
+                continue
+        try:
+            getattr(record, one.method)()
+        except exceptions.RelationNotResolved:
+            if not run.saving:
+                raise
+        except exceptions.InvalidValue as error:
+            path = located(error.path or one.watches[:1])
+            if run.saving:
+                run.failures.append(exceptions.InvalidValue(str(error), path, error.field))
+            else:
+                warn_form_at(str(error), path)
+
+
+def _tree(
+    record: Any,
+    changed: Sequence[str],
+    every: bool,
+    whole: bool,
+    judged: bool,
+    run: _Pass,
+) -> tuple[str, ...]:
+    """The computations and checks of `record` and of the records it owns, innermost first —
+    what both `recompute` and `recompute_whole` run.
 
     1. A record already visited answers nothing: a cycle of references ends here.
-    2. Each owned field (`owned`) the record holds whole or in part: every record in it runs
-       its own tree, with nothing reached — its computations all run —, its warnings pointing at where
-       it sits (`("lines", 2)`).
-       2.1 When one of them moved and the change named fields, the owned field is reached, so
+    2. What the change names: fields of the record, and paths inside the records it holds
+       (`lines.2.qty`); each of those fields is reached.
+    3. Each owned field (`owned`) the record holds whole or in part: every record in it runs its
+       own tree — every computation; the checks a path names inside it, or all of them when the
+       pass checks everything or the change named the field whole — its warnings and failures
+       pointing at where it sits (`("lines", 2)`). Records a save of `record` does not write —
+       another aggregate it points at (`joined_by` is `None`) — are computed but not judged:
+       their rules are their own save's.
+       3.1 When one of them moved and the change named fields, the owned field is reached, so
            what sums it runs.
-    3. A record with no computations of its own answers nothing.
-    Final: its computations run (`_ran`) — `tolerant` skipping those over a relation not held
-    whole — answering the fields of `record` that moved.
+    4. Its computations run (`_ran`), then, when the pass checks and `record` is `judged`, its
+       checks (`_checked`).
+    Final: the computed fields of `record` that moved.
     """
-    if id(record) in seen:
+    if id(record) in run.seen:
         return ()
-    seen.add(id(record))
-    for name in owned(type(record)):
+    run.seen.add(id(record))
+    owner = type(record)
+    named, inside = _split(owner, changed)
+    reached = named | set(inside)
+    for name in owned(owner):
         # The records held are computed, whether the relation is held whole or in part: each
         # line's own amount reads only the line. What reads the relation is decided in `_ran`.
         if not (_holds_whole(record, name) or _held_in_part(record, name)):
             continue
         value = getattr(record, name)
         many = isinstance(value, (list, EntityCollection))
+        paths = inside.get(name, [])
+        positions = _by_position(owner, name, paths) if many else {0: paths}
+        attribute = relation_attribute(owner, name)
+        written = attribute is None or attribute.joined_by(record) is not None
         moved = False
         for index, one in enumerate(value if many else (value,)):
             if dataclasses.is_dataclass(one) and not isinstance(one, type):
+                within = positions.get(index, [])
                 with warnings_at((name, index) if many else (name,)):
-                    moved = bool(_tree(one, set(), tolerant, seen)) or moved
-        if moved and reached:
+                    moved = (
+                        bool(
+                            _tree(
+                                one,
+                                [path for path in within if path],
+                                True,
+                                whole or name in named or "" in within,
+                                judged and written,
+                                run,
+                            )
+                        )
+                        or moved
+                    )
+        if moved and not every:
             reached.add(name)
-    computations = computations_of(type(record))
-    if not computations:
-        return ()
-    return _ran(record, computations, reached, tolerant)
+    moved_here = _ran(record, computations_of(owner), reached, every, run)
+    if run.checking and judged:
+        _checked(record, checks_of(owner), reached, whole, run)
+    return moved_here
 
 
 def recompute(record: Any, changed: Iterable[str] = ()) -> tuple[str, ...]:
     """Run, in order, every computation the change reaches — the records inside it first — and
-    answer the fields of `record` it changed.
+    answer the fields of `record` it changed; inside `read_only()`, warn the form of every check
+    the change reaches.
 
         in      Invoice, ("discount",)          →  total runs; subtotal does not
         in      Invoice, ("lines",)             →  each line's amount, then subtotal, then total
-        in      Invoice, ()                     →  every computation
+        in      Invoice, ("lines.2.product",)   →  the third line's editable price, then the rest
+        in      Invoice, ()                     →  every computation, no check
 
-    1. A name in `changed` that is not a field is refused, naming it.
+    1. A name in `changed` that is not a field is refused, naming it; a path names a field of a
+       record the aggregate owns, by its position (`lines.2.qty`).
     2. The records it owns are computed first, whole (`owned`): a line's amount before the
        subtotal that sums it; a field whose records moved is reached.
-    3. With `changed` empty every computation of the record runs, in order.
+    3. With `changed` empty every computation of the record runs, in order, but no editable one
+       and no check: nothing was changed yet.
     4. Otherwise a computation runs when it reads a field the change reached; its own field is
-       then reached too, so a computation of a computation follows.
+       then reached too, so a computation of a computation follows. An editable one runs only so.
+    5. Inside `read_only()`, each check whose fields the change reached warns the form when it
+       fails (`FormWarning`); outside it no check runs — the save checks them all.
     Final: the computed fields of `record` whose value moved.
     """
-    owner = type(record)
-    unknown = sorted(set(changed) - set(annotations_of(owner))) if changed else []
-    if unknown:
-        raise exceptions.ClientError(
-            f"{owner.__name__} has no field {', '.join(unknown)} to recompute"
+    asked = list(changed)
+    return _tree(
+        record, asked, not asked, False, True, _Pass(saving=False, checking=is_read_only())
+    )
+
+
+def _skipping_checks(record: Any) -> bool:
+    """Whether this call's saves skip the checks (`ContextKey.SKIP_CHECKS`): said once per
+    execution and entity with the reason and who asked, so a skipped rule is never silent —
+    outside an execution, once per thread for the same reason.
+
+        # bus.context(skip_checks="legacy import 2026-11"), user ana, 10 000 saves
+        ->  True for each; one warning: "Sale saved without its checks: legacy import
+            2026-11 (asked by ana)"
+    """
+    context = use_context()
+    reason = context.get(ContextKey.SKIP_CHECKS)
+    if not reason:
+        return False
+    said = (context.get(ContextKey.EXECUTION_ID), type(record).__name__, reason)
+    if _SKIPPED.get() != said:
+        _SKIPPED.set(said)
+        logger.warning(
+            f"{type(record).__name__} saved without its checks: {reason} "
+            f"(asked by {context.get(ContextKey.USER_ID) or 'nobody named'})"
         )
-    return _tree(record, set(changed), False, set())
+    return True
 
 
 def recompute_whole(record: Any) -> tuple[str, ...]:
-    """Every computation of the record, the records it owns first — what a save runs, so a total
-    over its lines reads lines already computed.
+    """Every computation of the record, the records it owns first, then every check — what a save
+    runs, so a total over its lines reads lines already computed and a broken rule is refused.
 
     in      Sale(lines=[Line(qty=2, price=10, amount=0)], subtotal=0)
     out     Line.amount = 20, then Sale.subtotal = 20
 
-    **A save never reads, and never computes over a relation it does not hold whole.** A
-    computation that reads a relation not loaded, cut by a specification, or assigned without a
-    whole reading behind it is skipped and retains its stored value; a computation that reads
-    it computes from that stored value. A relation never read cannot have changed, so that
-    skip is silent; one held in part may have, so a warning names the field, the relation and
-    how to read it whole. The records held are computed either way. An aggregate with no
-    computations is not looked into at all.
+    **A save never reads, and never computes or checks over a relation it does not hold whole.**
+    A computation that reads a relation not loaded, cut by a specification, or assigned without
+    a whole reading behind it is skipped and retains its stored value; a computation that reads
+    it computes from that stored value; a check that watches it is not judged. A relation never
+    read cannot have changed, so that skip is silent; one held in part may have, so a warning
+    names the field, the relation and how to read it whole. The records held are computed either
+    way. An editable computation does not run: what the user typed is stored. An aggregate with
+    no computations and no checks is not looked into at all.
+
+    Raises `ChecksFailed` with every failure — the lines' first — when any check failed, unless
+    the call skips the checks (`ContextKey.SKIP_CHECKS`, logged).
     """
-    return _tree(record, set(), True, set())
+    run = _Pass(saving=True, checking=not _skipping_checks(record))
+    moved = _tree(record, (), True, True, True, run)
+    if run.failures:
+        raise exceptions.ChecksFailed(tuple(run.failures))
+    return moved

@@ -6,9 +6,10 @@ from datetime import timedelta
 import pytest
 from pydantic import ValidationError
 
-from sincpro_framework import DataTransferObject, exceptions
+from sincpro_framework import DataTransferObject, UseFramework, exceptions
 from sincpro_framework.auth.domain.exceptions import PermissionDenied, Unauthenticated
 from sincpro_framework.common.failures import NEXT_STEP_OF, NextStep, Problem, problem_of
+from sincpro_framework.context import ContextKey
 from sincpro_framework.ddd import exceptions as ddd_exceptions
 
 
@@ -150,3 +151,13 @@ def test_a_failure_no_error_raised_takes_its_kind_s_defaults():
         NextStep.FIX_REQUEST,
         "not JSON",
     )
+
+
+def test_the_title_is_read_in_the_language_of_the_call():
+    bus = UseFramework("problem-language", log_after_execution=False)
+
+    with bus.context({ContextKey.LANG: "es-BO"}):
+        spanish = Problem.for_kind(exceptions.FailureKind.NOT_FOUND)
+    english = Problem.for_kind(exceptions.FailureKind.NOT_FOUND)
+
+    assert (spanish.title, english.title) == ("No encontrado", "Not found")

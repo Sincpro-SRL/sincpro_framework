@@ -93,6 +93,32 @@ def is_read_only() -> bool:
     return _WARNINGS.get() is not None
 
 
+def located(path: tuple[str | int, ...]) -> tuple[str | int, ...]:
+    """`path`, given by the record whose code runs now, as seen from the aggregate: where
+    `warnings_at` placed that record, in front of it.
+
+        # in InvoiceLine's own code, computing the third line
+        located(("price",))    ->  ("lines", 2, "price")
+    """
+    return (*_AT.get(), *path)
+
+
+def warn_form_at(message: str, path: tuple[str | int, ...]) -> None:
+    """A warning to the form pointing at `path` inside the aggregate, already located — what a
+    rule that points into one of its lines gives. Collected inside `read_only()`, ignored
+    outside it.
+
+        warn_form_at("name repeated", ("repositories", 3, "name"))
+            ->  FormWarning(field="repositories", path=("repositories", 3, "name"))
+    """
+    collected = _WARNINGS.get()
+    if collected is None:
+        return
+    collected.append(
+        FormWarning(message=message, field=str(path[0]) if path else None, path=path)
+    )
+
+
 def warn_form(message: str, field: str | None = None) -> None:
     """Warn the form about its values, refusing nothing. Collected inside `read_only()`, ignored
     outside it.
@@ -106,10 +132,4 @@ def warn_form(message: str, field: str | None = None) -> None:
     `field` is the field of the record whose code is running; where that record sits inside the
     aggregate is added in front of it.
     """
-    collected = _WARNINGS.get()
-    if collected is None:
-        return
-    path = (*_AT.get(), *(() if field is None else (field,)))
-    collected.append(
-        FormWarning(message=message, field=str(path[0]) if path else None, path=path)
-    )
+    warn_form_at(message, located(() if field is None else (field,)))

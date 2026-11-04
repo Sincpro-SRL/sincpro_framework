@@ -6,7 +6,7 @@ totals as lines are typed, a new record's defaults, which fields appear for thes
 ## 1. Declare what the entity computes (optional)
 
 ```python
-from sincpro_framework.ddd import Computations, Compute, Entity, warn_form
+from sincpro_framework.ddd import Entity, compute, warn_form
 
 @dataclass
 class Invoice(Entity):
@@ -16,31 +16,30 @@ class Invoice(Entity):
     subtotal: Decimal = Decimal("0")
     total: Decimal = Decimal("0")
 
+    @compute(lambda i: i.subtotal, depends=lambda i: i.lines)
     def subtotal_of(self) -> Decimal:
         return sum((l.qty * l.price for l in self.lines), Decimal("0"))
 
+    @compute(lambda i: i.total, depends=lambda i: [i.subtotal, i.discount])
     def total_of(self) -> Decimal:
         if self.subtotal and self.discount > self.subtotal * Decimal("0.10"):
             warn_form("a discount above 10% needs approval", field="discount")
         return self.subtotal - self.discount
-
-    computations = Computations["Invoice"](
-        lambda i: [
-            Compute(i.subtotal, depends=i.lines, by=Invoice.subtotal_of),
-            Compute(i.total, depends=[i.subtotal, i.discount], by=Invoice.total_of),
-        ]
-    )
 ```
 
-`by` is the entity's own method. Declaration order does not matter: they run in dependency
-order. A cycle, a field computed twice or an unknown name is refused when the class is read.
-**`save` computes every field before the `before_save` hooks** — the lines first, then
-the record — so stored = previewed, in memory and in SQL. **A save never reads**: a
-computation over a relation not held whole (not loaded, cut by a specification, assigned blind)
-is skipped and retains its stored value, and what reads it computes from that. Never read →
-silent; cut or blind → a warning names the field and says to read the relation whole (inside
-`context()`, or a specification that does not filter it). The held lines are computed either
-way. An entity with no computations is not looked into. `upsert` and `update_all` compute nothing.
+The decorated method is the entity's own. Declaration order does not matter: they run in
+dependency order. A cycle, a field computed twice or an unknown name is refused when the class
+is read. `editable=True` proposes a value only when a change reaches it (a form's `onchange`) and
+never on save. Rules over the entity's fields are `@check` methods — recipe
+[rules.md](rules.md).
+**`save` computes every field that is not editable, then every check, before the `before_save`
+hooks** — the lines first, then the record — so stored = previewed, in memory and in SQL. **A save
+never reads**: a computation over a relation not held whole (not loaded, cut by a specification,
+assigned blind) is skipped and retains its stored value, and what reads it computes from that.
+Never read → silent; cut or blind → a warning names the field and says to read the relation whole
+(inside `context()`, or a specification that does not filter it). The held lines are computed
+either way. An entity with no computations is not looked into. `upsert` and `update_all` compute
+and check nothing.
 
 ## 2. Expose the preview on the entity's reads
 
@@ -113,7 +112,7 @@ self.repository.save(invoice)        # computations recomputed, before_save hook
   `id` the order does not hold is refused. Lines without ids over lines never read replace
   them, exactly as `order.lines = [...]` does — blind, so the save retains the totals and warns.
 - **Computing in a hook instead of a computation.** A `before_save` hook runs on save only; the
-  preview would not show it. A value a form must see comes from `computations`.
+  preview would not show it. A value a form must see comes from `@compute`.
 - **A computation with side effects.** `by` reads the record and answers a value: no repository,
   no event publishing, no remote call. Use `warn_form(...)` to tell the form something.
 - **Mutating a line record in `by`.** The preview works on a copy of every record inside the
