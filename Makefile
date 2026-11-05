@@ -13,6 +13,11 @@ export OPENWIKI_PROVIDER OPENWIKI_MODEL_ID OPENAI_COMPATIBLE_BASE_URL
 export OPENWIKI_TELEMETRY_DISABLED
 export OPENAI_COMPATIBLE_API_KEY
 
+# pyright always at its newest release: the Python wrapper fetches it when one ships, so `make
+# lint` — locally and in CI — checks with what is current, never a pinned copy that drifts.
+PYRIGHT_PYTHON_FORCE_VERSION ?= latest
+export PYRIGHT_PYTHON_FORCE_VERSION
+
 COVERAGE_MIN ?= 85
 COVERAGE_ARGS = --cov --cov-fail-under=$(COVERAGE_MIN)
 

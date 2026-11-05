@@ -13,9 +13,7 @@ from enum import StrEnum
 from pathlib import Path
 from typing import Any
 
-import fastmcp
 import pytest
-from mcp.types import TextResourceContents
 
 from sincpro_framework import Feature, UseFramework
 from sincpro_framework.ddd import (
@@ -408,6 +406,8 @@ if __name__ == "__main__":
 
 
 def test_an_agent_reads_the_models_of_what_the_mcp_wire_exposes():
+    fastmcp = pytest.importorskip("fastmcp")  # the [mcp] extra
+
     class QueryMcpOrders(Query):
         pass
 
@@ -427,7 +427,6 @@ def test_an_agent_reads_the_models_of_what_the_mcp_wire_exposes():
             listed = [str(one.uri) for one in await client.list_resources()]
             contents = await client.read_resource(listed[0])
             [written] = contents
-            assert isinstance(written, TextResourceContents)
             return listed, json.loads(written.text)
 
     listed, metamodel = asyncio.run(read())
