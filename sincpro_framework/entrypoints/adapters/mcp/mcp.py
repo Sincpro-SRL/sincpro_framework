@@ -19,6 +19,7 @@ from sincpro_framework.entrypoints.adapters.mcp.auth import (
 from sincpro_framework.entrypoints.adapters.mcp.wire import McpTool, catalog_hints
 from sincpro_framework.entrypoints.domain.packed import PackedFeatureOrAppService
 from sincpro_framework.exceptions import FailureKind
+from sincpro_framework.introspection import metamodel_of
 from sincpro_framework.observability import process
 from sincpro_framework.sincpro_logger import logger
 
@@ -170,6 +171,34 @@ def fastmcp_callable(operation: PackedFeatureOrAppService, bus: "UseFramework | 
     )
 
 
+def publish_metamodel(
+    mcp: Any, name: str, bus: "UseFramework", operations: list[str]
+) -> None:
+    """The bounded context's models, as a resource an agent reads before it filters or writes:
+    `metamodel://<name>` answers `metamodel_of(bus)` — each model's contract, the operations
+    that belong to it, the version —, read when asked, so a model that changed answers the new
+    one. Only the models the tools exposed here reach are in it.
+
+        publish_metamodel(server, "billing", billing, ["QueryGetInvoice", …])
+        ->  resource metamodel://billing
+    """
+
+    def metamodel() -> dict[str, Any]:
+        """The models of the bounded context, each as its published contract."""
+        return metamodel_of(bus, operations)
+
+    mcp.resource(
+        f"metamodel://{name}",
+        name=f"{name} models",
+        description=(
+            f"The models of {name}: each entity as its contract (JSON Schema with x-sincpro — "
+            "its fields, operators, relations, hints and formulas), the operations that belong "
+            "to each, and the version. Read it before writing a criteria or a command."
+        ),
+        mime_type="application/json",
+    )(metamodel)
+
+
 def catalog_server(
     name: str,
     operations: Iterable[PackedFeatureOrAppService],
@@ -187,6 +216,7 @@ def catalog_server(
     2. Register each entry with mcp.tool(fn, name=..., description=..., tags=layer,
        annotations=...) — the hints derived as the declared surface derives them, a declared
        `@mcp` shaping only its hints; each call acts as whoever called, when `bus` is guarded.
+    3. The models those tools reach as the resource `metamodel://<name>` (`publish_metamodel`).
     Final: the server — with `auth`, FastMCP verifies bearer tokens itself, and with
     `base_url` publishes the resource metadata.
     """
@@ -197,7 +227,9 @@ def catalog_server(
 
     verifier = token_verifier(auth, base_url) if auth is not None else None
     mcp = FastMCP(name, auth=verifier)
-    for operation in operations:
+    listed = list(operations)
+    publish_metamodel(mcp, name, bus, [one.name for one in listed])
+    for operation in listed:
         mcp.tool(
             fastmcp_callable(operation, bus),
             name=operation.name,
@@ -223,6 +255,7 @@ def surface_server(
     2. Each tool registered as a typed function over its Command, with its name, title,
        description (deprecation first), tags (its layer and the entities it concerns) and hints; each call acts as whoever
        called, through its own bus.
+    3. The models each bounded context's tools reach as its resource `metamodel://<alias>`.
     Final: the server — with `auth`, FastMCP verifies bearer tokens itself, and with
     `base_url` publishes the resource metadata.
     """
@@ -233,7 +266,14 @@ def surface_server(
 
     verifier = token_verifier(auth, base_url) if auth is not None else None
     mcp = FastMCP(name, auth=verifier)
-    for tool in tools:
+    listed = list(tools)
+    exposed: dict[str, tuple[Any, list[str]]] = {}
+    for tool in listed:
+        held = exposed.setdefault(tool.operation.alias, (tool.operation.bus, []))
+        held[1].append(tool.operation.command.__name__)
+    for alias, (bus, names) in exposed.items():
+        publish_metamodel(mcp, alias, bus, names)
+    for tool in listed:
         operation = tool.operation
         mcp.tool(
             tool_function(
