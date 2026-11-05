@@ -8,12 +8,26 @@ event's and every execution's.
 ordering by time, and the moment something began is read off its id instead of being stored twice.
 Unique across machines with no coordination.
 
-Python 3.12 and 3.13 have no `uuid.uuid7`; `uuid7()` below is RFC 9562 by hand and defers to the
-standard library where it exists. Only the standard library, so the bus mints ids without
-loading the domain layer.
+**Python 3.14 mints them; before it, `rfc9562_uuid7` does.** `uuid7` is the standard library's
+where it has one and this module's otherwise — chosen once, by version, as a backport is
+(`tomllib`/`tomli`): the global `uuid` module is never patched, so a library that asks it for
+`uuid7` hears the truth. Only the standard library, so the bus mints ids without loading the
+domain layer.
+
+**Two counters, both RFC 9562, both monotonic within a process.** This module counts in the 12
+bits after the version (method 1 of RFC 9562 §6.2), Python 3.14 in 42; each borrows the next
+millisecond when its counter is full and never counts back when the clock does. Across processes
+no UUID v7 orders two ids of the same millisecond — the bits after the timestamp are a counter
+or random —, so ids of two Python versions mixed lose no guarantee they had.
+
+**32 hex, not the 36 of the standard's text.** RFC 9562 writes a UUID with dashes; the framework
+stores and sends it without them, in every table, draft, event and client (`new_entity_id`). A
+key that takes the standard's spellings — a `uuid.UUID`, dashes, capitals — reads them into this
+one (`StrictEntityID`); one that keeps the standard's own is `EntityID[E, UUID]`.
 """
 
 import os
+import sys
 import threading
 import time
 import uuid
@@ -23,46 +37,54 @@ _MINTING = threading.Lock()
 _last_millisecond = 0
 _counter = 0
 
+COUNTER_FULL = 0xFFF
+"""The last value the 12 bits after the version hold."""
 
-def uuid7() -> uuid.UUID:
-    """A time-ordered UUID (RFC 9562 version 7).
+
+def rfc9562_uuid7() -> uuid.UUID:
+    """A time-ordered UUID (RFC 9562 version 7), by hand — what `uuid7` is before Python 3.14.
 
         layout  48 bits unix milliseconds · 4 bits version · 12 bits counter within the ms
                 2 bits variant · 62 bits random
 
-        uuid7()   ->  UUID('01a0fb9a-7e01-74f8-b13f-a739ccbdcd53')
-        uuid7()   ->  UUID('01a0fb9a-7e01-74f9-…')   # same millisecond: the counter + 1
+        rfc9562_uuid7()   ->  UUID('01a0fb9a-7e01-74f8-b13f-a739ccbdcd53')
+        rfc9562_uuid7()   ->  UUID('01a0fb9a-7e01-74f9-…')   # same millisecond: the counter + 1
 
-    >>> uuid7().version
+    >>> rfc9562_uuid7().version
     7
 
-    1. Python's own `uuid.uuid7`, where it exists, is the answer.
-    2. The current unix milliseconds, and 80 random bits — 62 of them the random tail.
-    3. Under a lock, the 12-bit counter:
-       3.1 the same millisecond as the last id, the counter not full: the counter + 1;
-       3.2 else the millisecond is remembered and the counter starts at a random point of
-           its lower 11 bits, so it has room to count up.
+    1. The current unix milliseconds, and 80 random bits — 62 of them the random tail.
+    2. Under a lock, the millisecond and the 12-bit counter (RFC 9562 §6.2, method 1):
+       2.1 a millisecond later than the last id's: remembered, and the counter starts at a
+           random point of its lower 11 bits, so it has room to count up;
+       2.2 the same millisecond, or an earlier one — a clock moved back —: the last id's
+           millisecond is kept and the counter + 1;
+       2.3 the counter full: the next millisecond is borrowed and the counter starts again, so
+           the id is still greater than the last.
     Final: milliseconds, version 7, counter, variant `10` and random tail packed in a UUID.
     """
-    native = getattr(uuid, "uuid7", None)
-    if native is not None:
-        return native()
-
     milliseconds = time.time_ns() // 1_000_000
     entropy = int.from_bytes(os.urandom(10), "big")
     rand_b = entropy & ((1 << 62) - 1)
+    start = (entropy >> 62) & 0x7FF
     with _MINTING:
-        # RFC 9562 method 1: within one millisecond the 12 bits are a counter, so ids minted
-        # in order sort in order; a new millisecond starts the counter at a random point.
         global _last_millisecond, _counter
-        if milliseconds == _last_millisecond and _counter < 0xFFF:
+        if milliseconds > _last_millisecond:
+            _last_millisecond, _counter = milliseconds, start
+        elif _counter < COUNTER_FULL:
             _counter += 1
         else:
-            _last_millisecond = milliseconds
-            _counter = (entropy >> 62) & 0x7FF
-        rand_a = _counter
+            _last_millisecond, _counter = _last_millisecond + 1, start
+        milliseconds, rand_a = _last_millisecond, _counter
     value = (milliseconds << 80) | (0x7 << 76) | (rand_a << 64) | (0b10 << 62) | rand_b
     return uuid.UUID(int=value)
+
+
+if sys.version_info >= (3, 14):
+    from uuid import uuid7
+else:
+    # The backport, under the standard library's name: on this Python it is `uuid7`.
+    uuid7 = rfc9562_uuid7
 
 
 def new_entity_id() -> str:
@@ -89,7 +111,8 @@ def moment_of(identity: str) -> datetime | None:
     >>> moment_of("ds_01") is None
     True
 
-    The moment is UTC, to the millisecond the id was minted at.
+    The moment is UTC, to the millisecond the id was minted at — the same 48 bits whichever
+    counter minted it.
     """
     try:
         parsed = uuid.UUID(identity)

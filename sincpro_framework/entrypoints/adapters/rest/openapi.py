@@ -15,6 +15,7 @@ from typing import Any
 from sincpro_framework.auth import AccessControl
 from sincpro_framework.ddd.metamodel import contract_of
 from sincpro_framework.entrypoints.adapters.rest.routing import RestRoute, is_plain
+from sincpro_framework.introspection.entity_tags import role_of
 from sincpro_framework.sincpro_abstractions import DryRunnable
 from sincpro_framework.sincpro_logger import logger
 
@@ -195,7 +196,8 @@ def _operation(route: RestRoute, method: str, components: _Components) -> dict[s
        another bus published a model of the same name and another shape.
     2. `operationId` — `_by_body` on the `POST` twin of a `GET` — summary (the description's
        first line), tags (alias, layer and the entities it concerns), a 200 and every failure as
-       `Error`, the DTO and the layer as `x-sincpro-*`, and the operation's security; the
+       `Error`, the DTO, the layer and what it is for its entity (`role_of`) as `x-sincpro-*`,
+       and the operation's security; the
        entities it belongs to as `x-sincpro-entities`, and `x-sincpro-dry-run` when its Command
        may be run dry (`DryRunnable`) — what a screen builds an entity's actions from.
     3. The path fields as path parameters.
@@ -243,6 +245,7 @@ def _operation(route: RestRoute, method: str, components: _Components) -> dict[s
         },
         "x-sincpro-dto": operation.name,
         "x-sincpro-layer": operation.layer,
+        "x-sincpro-role": str(role_of(operation.dto)),
         **operation_security(route.bus, route.operation.dto),
     }
     if operation.entities:

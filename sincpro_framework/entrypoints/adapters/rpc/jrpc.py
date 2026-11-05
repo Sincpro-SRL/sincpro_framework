@@ -30,6 +30,7 @@ from sincpro_framework.entrypoints.adapters.rpc.errors import (
 from sincpro_framework.entrypoints.domain.bindings import RpcBinding
 from sincpro_framework.entrypoints.domain.layers import Scalar
 from sincpro_framework.entrypoints.domain.surface import Resolved
+from sincpro_framework.introspection.entity_tags import role_of
 from sincpro_framework.observability import process
 from sincpro_framework.sincpro_logger import logger
 
@@ -391,7 +392,8 @@ def method_object(
              "x-sincpro-dto": "CommandIssueInvoice", "x-idempotent": False, ...}
 
     1. Params and result from the DTOs' schemas, nested definitions hoisted to `schemas`.
-    2. One tag, the context (the bus's alias) — the document is tagged per context.
+    2. One tag, the context (the bus's alias) — the document is tagged per context —, and one
+       per entity it belongs to; `x-sincpro-role`, what it is for its entity (`role_of`).
     3. `x-sincpro-requires`: what the use case declared (`public`, `authenticated`, the
        requirements, `unguarded`); `x-idempotent`: a Query, or `@idempotency.once` — a retry
        is safe.
@@ -424,6 +426,7 @@ def method_object(
         "errors": method_error_refs(),
         "x-sincpro-context": operation.alias,
         "x-sincpro-dto": operation.command.__name__,
+        "x-sincpro-role": str(role_of(operation.command)),
         "x-idempotent": operation.idempotent or operation.is_query,
     }
     if operation.access is not None:

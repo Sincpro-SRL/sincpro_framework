@@ -64,6 +64,7 @@ from sincpro_framework.entrypoints.domain.surface import (
     Resolved,
     Wire,
 )
+from sincpro_framework.introspection.entity_tags import role_of
 from sincpro_framework.observability.metrics import metrics
 from sincpro_framework.sincpro_abstractions import DryRunnable
 from sincpro_framework.use_bus import UseFramework
@@ -459,8 +460,9 @@ class FastApiWire(Wire[RestBinding]):
         3. Per method:
            3.1 `GET` / `DELETE` read the DTO from the URL, every field a query parameter; any
                other reads the body, without the fields the path carries.
-           3.2 `x-sincpro-dto` and `x-sincpro-layer` name what answers it, `x-sincpro-entities`
-               what it belongs to, `x-sincpro-dry-run` whether its Command may be run dry; the
+           3.2 `x-sincpro-dto` and `x-sincpro-layer` name what answers it, `x-sincpro-role`
+               what it is for its entity (`role_of`), `x-sincpro-entities` what it belongs to,
+               `x-sincpro-dry-run` whether its Command may be run dry; the
                contracts of the entities it answers ride along for `contracted_document`.
            3.3 The `POST` twin of an rpc `Query` gets `_by_body` on its `operationId`.
         Final: `add_api_route`, with `_PathIntoBody` when a body route takes fields from the
@@ -501,6 +503,7 @@ class FastApiWire(Wire[RestBinding]):
                 extra.update(_body_without(command, path_fields))
             extra["x-sincpro-dto"] = command.__name__
             extra["x-sincpro-layer"] = str(operation.layer)
+            extra["x-sincpro-role"] = str(role_of(command))
             if operation.entities:
                 extra["x-sincpro-entities"] = [one.__name__ for one in operation.entities]
             if issubclass(command, DryRunnable):

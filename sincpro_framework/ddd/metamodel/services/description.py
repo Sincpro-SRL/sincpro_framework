@@ -16,6 +16,7 @@ from typing import Any
 
 from sincpro_framework.ddd import exceptions
 from sincpro_framework.ddd.entity.entity import Entity
+from sincpro_framework.ddd.entity.entity_id import key_of
 from sincpro_framework.ddd.entity.entity_meta import (
     FieldMeta,
     FieldType,
@@ -59,7 +60,8 @@ def _shape_of(annotation: Any) -> tuple[type | None, bool]:
 
 def _column(annotation: Any, nullable: bool) -> FieldMeta:
     """A field kept as a value of its own type: text, a number, a date, a choice, a list of
-    texts — with what its value object holds, when it says."""
+    texts — with what its value object holds, when it says, and whose record it names, when it
+    is a key (`EntityID[Project]`: a text whose `relation` is `Project`)."""
     column = FieldMeta.for_column(
         logical_type(annotation),
         nullable,
@@ -68,8 +70,14 @@ def _column(annotation: Any, nullable: bool) -> FieldMeta:
         and issubclass(without_optional(annotation), Decimal),
         choice_labels=choice_translations_of(annotation),
     )
+    said: dict[str, Any] = {}
     held = holds_of(without_optional(annotation))
-    return column.model_copy(update={"holds": held}) if held is not None else column
+    if held is not None:
+        said["holds"] = held
+    key = key_of(annotation)
+    if key is not None and key.relation is not None:
+        said["relation"] = key.relation
+    return column.model_copy(update=said) if said else column
 
 
 def _fields(model: Model, facts: StoreFacts) -> dict[str, FieldMeta]:

@@ -48,17 +48,130 @@ model_of(Sale).fingerprint         # the version: equal wherever the same code r
 contract_of(Sale)                  # what a client is published, related entities under $defs
 ```
 
-The metamodel of a whole bounded context — every model its operations reach, the operations that
-belong to each, one version — and the file a build writes from it, for a client that works offline
-or generates its types:
+The metamodel of a whole bounded context — every model its operations reach, the operations a
+client calls on each, one version — and the file a build writes from it, for a client that works
+offline or generates its types and its client:
 
 ```python
 from sincpro_framework.introspection import export_metamodel, metamodel_of
 
-metamodel_of(billing)                                   # {"version", "models", "operations"}
-metamodel_of(billing, {"QueryGetInvoice"})              # what those operations reach
+metamodel_of(billing)                                   # {"context", "version", "models", "operations", "$defs"}
+metamodel_of(billing, {"QueryGetInvoice"})              # what those operations reach, named by class
 export_metamodel(billing, "web/src/metamodel.json")     # the same code writes the same bytes
 ```
+
+Each operation is keyed by its Command's identity — `registered_name`, `<context>.<Class>`, the
+key `gateway.manifest()` lists every wire's binding by — and says what it is for its entity and
+what it takes and answers, protocol-agnostic; how it is reached is each wire's binding (PRD_33):
+
+```python
+metamodel_of(billing)["operations"]["billing.QueryGetInvoice"]
+# {"role": "get", "query": True, "entities": ["Invoice"], "targets": {"Invoice": "id"},
+#  "reaches": ["Invoice", "Partner"], "dry_run": False, "description": "…",
+#  "input":  {"properties": {"id": {…}, "criteria": {"$ref": "#/$defs/Criteria", …}}, …},
+#  "output": {"title": "ResponseInvoice", "properties": {"invoice": {"$ref": "#/models/Invoice"}, …}}}
+
+metamodel_of(billing)["operations"]["billing.CommandVoidInvoice"]["targets"]
+# {"Invoice": "invoice_id"}
+```
+
+- **`role`** is read off the Command's type, never declared (`role_of`): the framework DTO it
+  descends from — `Get` → `get`, `GetMany` → `get_many`, `LiteralSearch` → `literal_search`,
+  `Search` → `search`, `DomainEvents` → `events`, `PreviewEntity` → `preview`, `Edit` → `edit` —,
+  so a project's own base over one (forge's `TenantSearch(Search)`) keeps it; anything else is a
+  `command`, with the entities `@entity_tags` names, or none.
+- **`query`**: it writes nothing, so a retry or a cache is safe — every role that reads, and a
+  `command` whose DTO is a `Query`. How a wire reaches it is the wire's: REST still serves a
+  `Get` that is no `Query` as `POST`.
+- **`targets`**: the field that names the record of each entity it belongs to. Per entity,
+  the first rule that names one field: a field typed as its key (`EntityID[Invoice]`), then the
+  name `<entity>_id` (unless typed as another's key), then — with one entity only — its one bare
+  `EntityID`, else `id`. A rule that finds two names none: nothing is guessed. A client fills
+  the field with the record's key to run the operation on that record; an entity with no such
+  field is no record it runs on — one it creates, a page of it, the context's own.
+- **`input` / `output`** are JSON Schema 2020-12. An entity is a pointer into `models`; an
+  edit's and a preview's `values` — the record the form holds — is its entity's model. Anything
+  else nested — criteria's schema above all — is written once under the metamodel's `$defs`,
+  named by its class: its name, or, when two classes share it, each by its module
+  (`shop__orders__Line`, `shop__stock__Line`); two classes of one name and one shape are one. A
+  name never comes to mean another class because an operation was added: a generated type keeps
+  its shape, or is gone. `output` is what `execute` declares, else the response the DTO names
+  (`Get[Invoice, ResponseInvoice]`); `{"type": "null"}` for an answer of nothing, `null` when
+  nothing is declared.
+- A use case that reacts to a domain event is no operation a client calls: the bus runs it, the
+  metamodel leaves it out.
+
+### A key that says whose it is
+
+A field holding another record's key says whose it is by its type — never by its name:
+
+```python
+from uuid import UUID
+
+from sincpro_framework.ddd import EntityID, Reference, StrictEntityID
+
+class Tenant(Reference, context="auth"):       # shared/: auth's tenant, never imported
+    """auth's tenant."""
+
+class CommandMoveIssue(DataTransferObject):
+    issue: EntityID[Issue]                       # an issue's key, in a field of any name
+    destination: EntityID[Project]
+    partner: EntityID[Partner, int]              # a key that is a whole number
+    device: EntityID[Device, UUID]               # a standard UUID, as pydantic reads and writes one
+    tenant: EntityID[Tenant]                     # another context's: "auth.Tenant"
+    approver: StrictEntityID[User]               # only a UUID v7, as the framework mints it
+
+@dataclass(kw_only=True)
+class Issue(Entity):
+    project_id: EntityID[Project] | None = None
+```
+
+- **Open by default, read by pydantic's own rules.** An `EntityID` takes what the plain value it
+  holds takes: typing a key says whose it is and changes nothing a caller may send. A context
+  with keys of its own — an email, a slug, an Odoo integer, another system's UUID — types them
+  the same way.
+
+  | Annotation | Holds | Takes | Writes |
+  |---|---|---|---|
+  | `EntityID[E]` | `str` | any text; a `uuid.UUID` as its 32 hex | the text |
+  | `EntityID[E, int]` | `int` | what an `int` field takes | the number |
+  | `EntityID[E, UUID]` | `uuid.UUID` | any spelling of a UUID (pydantic's `UUID`) | the standard's 36, `format: uuid` |
+  | `StrictEntityID[E]` | `str` | a UUID v7 in any spelling (pydantic's `UUID7`) | 32 lowercase hex, its pattern |
+
+  `StrictEntityID` is the framework's own id (`new_entity_id`): 32 hex and not the standard's
+  36, because every id already stored, drafted, recorded and held by a client is written so; a
+  dashed or capital spelling, or a `uuid.UUID`, is read into it, and anything else refused as
+  pydantic refuses it (`uuid_version`, `uuid_parsing`). A text key rewrites no text: whoever
+  needs the spellings normalized says `StrictEntityID`, or `EntityID[E, UUID]` for the
+  standard's own. Outside a model a key is read as pydantic reads any type:
+  `TypeAdapter(StrictEntityID[Issue]).validate_python(value)`.
+- **In the editor** it is the value it holds — any `str` is an `EntityID[Issue]`, an
+  `EntityID[Partner, int]` is an `int`, an `EntityID[Device, UUID]` a `UUID` —, so nothing is
+  wrapped at a call site. A type checker
+  cannot bound an alias's parameter, so whose a key is is checked when its schema is built: an
+  `EntityID[int]` fails at import, naming what it got.
+- **Published** as what it holds, whose it is under `x-sincpro.relation` — the word a relation
+  already says the aggregate on the other side with; the field's `type` (`text`, `integer`,
+  `uuid`) says it holds a key, never the record, and no filter crosses it. An entity of this context is
+  named alone (`"Project"`, a key of `models`), another context's with its context
+  (`"auth.Tenant"`, from its `Reference`); a strict key adds the pattern of a UUID v7 to the
+  operation's input — never `format: uuid`, which asks for dashes.
+
+```json
+{"type": "string", "x-sincpro": {"relation": "Project"}}
+{"type": "integer", "x-sincpro": {"relation": "Partner"}}
+{"type": "string", "format": "uuid", "x-sincpro": {"relation": "Device"}}
+{"type": "string", "pattern": "^[0-9a-f]{12}7[0-9a-f]{3}[89ab][0-9a-f]{15}$", "x-sincpro": {"relation": "auth.Tenant"}}
+```
+
+- **Read**: the field an operation runs on (`targets`), and the entities it concerns — a key of
+  an entity of this context says it, with no `@entity_tags`; another context's does not.
+- An entity's own identity stays `id: str` — a project keeps its own keys (an email, a slug).
+
+How a model is read — its `search` and its `detail` under `x-sincpro` — is published with only
+what each criteria says (`rendered_criteria`): what a blank criteria says is left out at every
+depth, a field brought as it is is `{}`, and an expression is written whole. Whoever reads it
+fills the defaults back.
 
 ## Where it is published
 
@@ -67,9 +180,10 @@ operation that wire exposes reads or answers it.
 
 | Wire | Where |
 |---|---|
-| REST (`FastApiGateway`, `RestGateway`) | `/openapi.json`, `components.schemas.<Entity>`; each operation says `x-sincpro-entities` and `x-sincpro-dry-run` |
-| JSON-RPC | the OpenRPC document (`rpc.discover`, `/openrpc.json`) |
-| MCP | the resource `metamodel://<context>`: `metamodel_of` of what the tools expose |
+| REST (`FastApiGateway`, `RestGateway`) | `/openapi.json`, `components.schemas.<Entity>`; each operation says `x-sincpro-role`, `x-sincpro-entities` and `x-sincpro-dry-run` |
+| JSON-RPC | the OpenRPC document (`rpc.discover`, `/openrpc.json`); each method says `x-sincpro-role` |
+| gRPC | `sincpro.Introspection/Describe`: each method says its `role` |
+| MCP | the resource `metamodel://<context>`: `metamodel_of` of what the tools expose — roles, targets and shapes included |
 
 A discovery document is tagged by its content (`ETag`): a client that holds it is answered `304`.
 Every read answers the version of its model (`model_version`) — `ResponsePaginatedQuery`,

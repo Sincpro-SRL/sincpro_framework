@@ -18,6 +18,7 @@ import pytest
 from sincpro_framework import Feature, UseFramework
 from sincpro_framework.data_layer.repositories import MemoryRepository
 from sincpro_framework.ddd import (
+    Criteria,
     Entity,
     EntityReads,
     Get,
@@ -33,7 +34,7 @@ from sincpro_framework.ddd.criteria import Formulas
 from sincpro_framework.ddd.criteria.services.programs import reader
 from sincpro_framework.ddd.entity.entity_meta import FieldMeta, FieldType, Meta
 from sincpro_framework.ddd.metamodel import StoreFacts, contract_of, description_of, model_of
-from sincpro_framework.ddd.metamodel.services.contract import SAID
+from sincpro_framework.ddd.metamodel.services.contract import SAID, rendered_criteria
 from sincpro_framework.ddd.metamodel.services.description import held_relations
 from sincpro_framework.ddd.query import Query, ResponsePaginatedQuery
 from sincpro_framework.entrypoints import FastApiGateway, McpGateway, RestGateway, RpcGateway
@@ -149,6 +150,30 @@ def test_a_relation_points_at_the_contract_of_what_it_points_at():
     assert contract["properties"]["buyer"]["anyOf"][0] == {"$ref": "#/$defs/Buyer"}
     assert contract["properties"]["buyer"]["x-sincpro"]["relation"] == "Buyer"
     assert contract["$defs"]["Buyer"]["x-sincpro"]["entity"] == "Buyer"
+
+
+def test_how_a_record_is_read_is_published_with_only_what_it_says():
+    search = contract_of(Buyer)["x-sincpro"]["search"]
+    detail = Criteria.model_validate(
+        {"specification": {"name": {}, "lines": {"pagination": {"limit": 20}}}}
+    )
+
+    written = rendered_criteria(detail)
+
+    # An expression is written whole: what kind of node each part is travels with it.
+    assert search == {
+        "selection": {
+            "field": "name",
+            "operator": "like",
+            "value": {"$": "param", "name": "text"},
+        }
+    }
+    # What a blank criteria says is left out, at every depth; a scalar's is `{}`.
+    assert written["specification"]["name"] == {}
+    assert set(written["specification"]["lines"]) == {"pagination"}
+    assert set(written) == {"specification"}
+    # Whoever reads it fills the defaults back: the same criteria.
+    assert Criteria.model_validate(written) == detail
 
 
 def test_any_json_schema_validator_reads_it():
@@ -274,7 +299,8 @@ def _field_as_published(field: FieldMeta) -> dict[str, Any]:
 
 
 def _as_published(meta: Meta) -> dict[str, Any]:
-    """The description as a client reads it back from the contract."""
+    """The description as a client reads it back from the contract: a criteria with only what
+    it says, every default filled by whoever reads it."""
     dumped = meta.model_dump(mode="json")
     written: dict[str, Any] = {
         "aggregate": meta.aggregate,
@@ -283,9 +309,12 @@ def _as_published(meta: Meta) -> dict[str, Any]:
         "fields": {name: _field_as_published(one) for name, one in meta.fields.items()},
         "name": dumped["name"],
     }
-    for name in ("display", "get_id", "search", "detail"):
+    for name in ("display", "get_id"):
         if dumped.get(name):
             written[name] = dumped[name]
+    for criteria, name in ((meta.search, "search"), (meta.detail, "detail")):
+        if criteria is not None:
+            written[name] = rendered_criteria(criteria)
     return written
 
 
@@ -437,7 +466,14 @@ def test_an_agent_reads_the_models_of_what_the_mcp_wire_exposes():
 
     assert listed == ["metamodel://shop-mcp"]
     assert metamodel["models"]["Order"]["x-sincpro"]["version"] == model_of(Order).fingerprint
-    assert metamodel["operations"]["QueryMcpOrders"]["entities"] == ["Order"]
+    listed_orders = metamodel["operations"]["shop-mcp.QueryMcpOrders"]
+    assert listed_orders["entities"] == ["Order"]
+    # What it is and what it answers ride along: the resource IS `metamodel_of`.
+    assert listed_orders["role"] == "command"
+    assert listed_orders["query"] is True
+    assert listed_orders["output"]["properties"]["orders"]["items"] == {
+        "$ref": "#/models/Order"
+    }
 
 
 class ResponseOrderRead(ResponseRecord):

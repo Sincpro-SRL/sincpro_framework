@@ -10,11 +10,8 @@ import uuid
 from dataclasses import dataclass, field, fields
 from decimal import Decimal
 
-import pytest
-
 from sincpro_framework.ddd import MultiLanguage
-from sincpro_framework.ddd import entity as entity_module
-from sincpro_framework.ddd.entity import Entity, new_entity_id, uuid7
+from sincpro_framework.ddd.entity import Entity, new_entity_id
 from sincpro_framework.ddd.entity.entity_collection import identity_of
 
 
@@ -72,21 +69,6 @@ def test_ids_minted_in_order_sort_in_order():
 
     assert minted == sorted(minted)  # uuid7: minted in order is sorted in order
     assert len(set(minted)) == 50
-
-
-@pytest.mark.parametrize("native", [True, False])
-def test_the_fallback_and_the_native_generator_agree_on_the_shape(monkeypatch, native):
-    """Python 3.12 has no `uuid.uuid7`; the fallback is what runs there."""
-    if not native:
-        monkeypatch.delattr(uuid, "uuid7", raising=False)
-    elif not hasattr(uuid, "uuid7"):
-        pytest.skip("this interpreter has no native uuid7")
-
-    minted = entity_module.uuid7()
-
-    assert minted.version == 7
-    assert minted.variant == uuid.RFC_4122
-    assert isinstance(uuid7(), uuid.UUID)
 
 
 def test_as_json_round_trips_decimal_and_datetime():

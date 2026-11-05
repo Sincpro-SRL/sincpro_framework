@@ -14,6 +14,8 @@ from typing import Any
 
 from pydantic import BaseModel
 
+from sincpro_framework.ddd.reads.reads import named_in_type
+from sincpro_framework.introspection.entity_tags import Role, role_of
 from sincpro_framework.introspection.inspector import app_services, features
 from sincpro_framework.use_bus import UseFramework
 
@@ -32,6 +34,26 @@ class OperationDescription:
     description: str
     entities: tuple[type, ...] = ()
     """The entities it concerns (`entity_tags`) — a category to group it by."""
+
+    @property
+    def role(self) -> Role:
+        """What it is for its entity — `get`, `search`, `edit`, … or `command` —, read off its
+        Command's type (`role_of`)."""
+        return role_of(self.input)
+
+    @property
+    def answer(self) -> Any:
+        """What it answers: the response `execute` declares, else the one its Command names in
+        its type — a read `EntityReads` answers declares none, `Get[Issue, ResponseIssue]`
+        says it.
+
+            OperationDescription(input=QueryGetIssue, response=None, …).answer  ->  ResponseIssue
+            OperationDescription(input=CommandClose, response=None, …).answer   ->  None
+        """
+        if self.response is not None:
+            return self.response
+        named = named_in_type(self.input)
+        return named[1] if named is not None else None
 
     @property
     def response_fields(self) -> set[str] | None:
@@ -60,11 +82,12 @@ class OperationDescription:
 
     def to_json(self) -> dict[str, Any]:
         """The operation as JSON Schema, for an agent or a UI — `response` is `None` unless it
-        is a Pydantic model; `entities` by name."""
+        is a Pydantic model; `entities` by name, `role` as its word."""
         is_model = isinstance(self.response, type) and issubclass(self.response, BaseModel)
         return {
             "description": self.description,
             "entities": [one.__name__ for one in self.entities],
+            "role": str(self.role),
             "input": self.input.model_json_schema(),
             "response": self.response.model_json_schema() if is_model else None,
         }
