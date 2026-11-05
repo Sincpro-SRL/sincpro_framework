@@ -608,23 +608,7 @@
                     "name": "text"
                   },
                   "operator": "like"
-                },
-                "order": [],
-                "pagination": {
-                  "limit": 50,
-                  "strategy": {
-                    "token": null
-                  }
-                },
-                "specification": null,
-                "grouping": {
-                  "group_by": [],
-                  "measures": {},
-                  "where_measures": null,
-                  "order": [],
-                  "pagination": null
-                },
-                "count": "capped"
+                }
               },
               "title": {
                 "default": "Buyer"
@@ -1193,23 +1177,7 @@
                 "name": "text"
               },
               "operator": "like"
-            },
-            "order": [],
-            "pagination": {
-              "limit": 50,
-              "strategy": {
-                "token": null
-              }
-            },
-            "specification": null,
-            "grouping": {
-              "group_by": [],
-              "measures": {},
-              "where_measures": null,
-              "order": [],
-              "pagination": null
-            },
-            "count": "capped"
+            }
           },
           "title": {
             "default": "Buyer"
@@ -1376,23 +1344,7 @@
               "name": "text"
             },
             "operator": "like"
-          },
-          "order": [],
-          "pagination": {
-            "limit": 50,
-            "strategy": {
-              "token": null
-            }
-          },
-          "specification": null,
-          "grouping": {
-            "group_by": [],
-            "measures": {},
-            "where_measures": null,
-            "order": [],
-            "pagination": null
-          },
-          "count": "capped"
+          }
         }
       }
     }

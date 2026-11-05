@@ -197,8 +197,8 @@ How it is written (`contract_of(Sale)`, `sincpro_framework/ddd/metamodel/service
   described yet is published as its annotations say, its relations not navigable.
 - **Where it travels**: every response schema the catalog builds describes each entity it
   reaches by its contract — OpenAPI's components (REST and FastAPI wires) and OpenRPC's —; an
-  operation says the entities it belongs to (`x-sincpro-entities`) and whether its Command may be
-  run dry (`x-sincpro-dry-run`). MCP publishes the resource `metamodel://<context>` —
+  operation says what it is for its entity (`x-sincpro-role`), the entities it belongs to
+  (`x-sincpro-entities`) and whether its Command may be run dry (`x-sincpro-dry-run`). MCP publishes the resource `metamodel://<context>` —
   `metamodel_of` of what its tools expose —, read before an agent writes a criteria or a command.
 
 ### What #230 asks that nothing declares yet
@@ -296,7 +296,7 @@ with no infrastructure behind it. The metamodel compiles and serves it.
 | **Compile** | the first read of a class; every mapped entity when a bus starts | builds the model from the class's declarations and the store's facts; a mistake fails at boot, naming the class |
 | **Change** | a use case loaded at runtime (`runtime_use_cases`), an extension installed | compiles the models it touches again; the metamodel's version changes; the log says which model changed and both versions — and a client hears it over SSE once [#201](https://github.com/Sincpro-SRL/sincpro_framework/issues/201) is built; until then a read answering another `model_version` tells it |
 | **Publish** | a client asks for a discovery document | renders the contract; answers its version as an `ETag` ([#200](https://github.com/Sincpro-SRL/sincpro_framework/issues/200)), so an unchanged catalog costs a `304` |
-| **Export** | a build, by hand | writes a bus's metamodel to a file (`export_metamodel(bus, path)`, the dict `metamodel_of(bus)`: models, operations, version; same code, same bytes) — an offline bundle for the web and mobile clients, the source of TypeScript types ([#214](https://github.com/Sincpro-SRL/sincpro_framework/issues/214)), the parity fixtures |
+| **Export** | a build, by hand | writes a bus's metamodel to a file (`export_metamodel(bus, path)`, the dict `metamodel_of(bus)`: its context, models, the operations a client calls — keyed by their Command's identity, each with its role, whether it only reads, the field naming each entity's record, input and output —, the definitions they share named by their class, version; same code, same bytes) — an offline bundle for the web and mobile clients, the source of TypeScript types ([#214](https://github.com/Sincpro-SRL/sincpro_framework/issues/214)), the parity fixtures |
 | **Run** | a filter, a preview, a save | takes the program of an expression from the cache, compiled once per expression, model and target |
 
 ### What it holds to
@@ -433,7 +433,7 @@ metamodel feeds those documents; it opens no route of its own.
 | A client needs | It gets it from |
 |---|---|
 | every model of a bounded context | the discovery document its wire already serves: OpenAPI's and OpenRPC's components, MCP's resources — loaded once, revalidated with the metamodel's version as an `ETag` |
-| which operations belong to a model — get, search, the select by text, the preview, the edit, the actions | the operations of the same document, tagged by entity (`@entity_tags`), each pointing at the models it reads and answers |
+| which operations belong to a model — get, search, the select by text, the preview, the edit, the actions | the operations of the same document, tagged by entity (`@entity_tags`), each saying what it is for it (`role`, read off its DTO's type), whether it only reads (`query`), which of its fields names each entity's record (`targets`) and pointing at the models it reads and answers (`input`, `output`; an edit's `values` is its entity's model) — PRD_33 |
 | to read records | the read Commands it already calls (`Get`, `Search`, `LiteralSearch`) with a query as JSON; the query is checked against the model and what was dropped comes back named (`Dropped`) |
 | a form's life | `PreviewEntity` and `Edit`, as today; paths by identity (§7) |
 | to know its model is stale | every read answers the model's version (`model_version`); a different one means reload the document, which is tagged by its content (`ETag`) and answered `304` while it has not changed |

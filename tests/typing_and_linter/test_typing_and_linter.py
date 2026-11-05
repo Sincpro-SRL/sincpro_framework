@@ -40,6 +40,31 @@ class TestTypingAndLinter:
             f"STDOUT:\n{result.stdout}\nSTDERR:\n{result.stderr}"
         )
 
+    def test_pyright_rejects_a_text_where_a_key_holds_a_whole_number(self, tmp_path: Path):
+        """`EntityID[Partner, int]` is an `int` in the editor: a text there is a mistake the
+        editor shows, not one the server finds."""
+        case = tmp_path / "rejected_key.py"
+        case.write_text(
+            "from dataclasses import dataclass\n"
+            "\n"
+            "from sincpro_framework import DataTransferObject\n"
+            "from sincpro_framework.ddd import Entity, EntityID\n"
+            "\n"
+            "@dataclass(kw_only=True)\n"
+            "class Partner(Entity):\n"
+            "    name: str = ''\n"
+            "\n"
+            "class CommandBill(DataTransferObject):\n"
+            "    partner: EntityID[Partner, int]\n"
+            "\n"
+            "CommandBill(partner='42')\n"
+        )
+
+        result = self._run_pyright(case)
+
+        assert result.returncode != 0
+        assert 'cannot be assigned to parameter "partner"' in result.stdout
+
     def test_pyright_rejects_a_response_type_that_is_neither(self, tmp_path: Path):
         """The bound is widened, not dropped: a scalar is still refused.
 

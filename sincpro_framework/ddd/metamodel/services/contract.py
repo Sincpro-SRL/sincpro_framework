@@ -21,6 +21,7 @@ from typing import Any, get_args
 
 from pydantic import BaseModel
 
+from sincpro_framework.ddd.criteria.domain.criteria import Criteria
 from sincpro_framework.ddd.entity.entity import Entity
 from sincpro_framework.ddd.entity.entity_meta import FieldMeta, FieldType, Meta
 from sincpro_framework.ddd.value_object import keywords_of
@@ -73,8 +74,9 @@ SAID = (
 
 def _held(field: FieldMeta) -> dict[str, Any]:
     """What the field holds, as JSON Schema: its primitive, its choices, the keywords of what its
-    value object holds, a shape inside the record, or the schema of the entity a relation
-    points at — empty when its value is not described.
+    value object holds, a shape inside the record, or the schema of the entity a relational
+    field points at — empty when its value is not described. A key (`EntityID[Project]`) holds
+    its primitive: whose it is travels under `x-sincpro.relation`.
 
     An exact number travels as a text (`"12.50"`), so no numeric keyword is written on it — a
     validator would skip `minimum` on a string, silently; what it holds travels whole under
@@ -82,7 +84,7 @@ def _held(field: FieldMeta) -> dict[str, Any]:
     if field.type is FieldType.EMBEDDED and field.definition is not None:
         shape = rendered(field.definition)
         return {"type": "array", "items": shape} if field.many else shape
-    if field.relation is not None:
+    if field.type.is_relational and field.relation is not None:
         pointed = {"$ref": f"#/$defs/{field.relation}"}
         return {"type": "array", "items": pointed} if field.many else pointed
     if field.type is FieldType.NUMBER and field.exact:
@@ -120,6 +122,35 @@ def _property(field: FieldMeta) -> dict[str, Any]:
     return held
 
 
+def rendered_criteria(criteria: Criteria) -> dict[str, Any]:
+    """A criteria as the contract writes it: only the parts that differ from a blank criteria,
+    and each field it specifies written the same way — a scalar's is `{}`, as `Specification`
+    reads it. What a reader rebuilds the same criteria from, every default filled.
+
+        rendered_criteria(<Project's detail: each field brought as a blank criteria brings it>)
+            ->  {"specification": {"channels": {}, "created_at": {}, "issues": {…}, …}}
+        rendered_criteria(<Issue's search: title like the text typed>)
+            ->  {"selection": {"field": "title", "operator": "like",
+                               "value": {"$": "param", "name": "text"}}}
+
+    1. Every part dumped; one equal to a blank criteria's is left out. A part that stays is
+       written whole: an expression's every field says what kind of node it is.
+    2. The specification: each field's criteria rendered the same way.
+    Final: the parts that say something.
+    """
+    blank = Criteria().model_dump(mode="json")
+    written = {
+        name: value
+        for name, value in criteria.model_dump(mode="json").items()
+        if value != blank[name]
+    }
+    if criteria.specification is not None:
+        written["specification"] = {
+            name: rendered_criteria(one) for name, one in criteria.specification.root.items()
+        }
+    return written
+
+
 def rendered(meta: Meta, version: str = "") -> dict[str, Any]:
     """The JSON Schema of a record the description `meta` describes, with its `x-sincpro`.
 
@@ -130,15 +161,19 @@ def rendered(meta: Meta, version: str = "") -> dict[str, Any]:
     1. Each field as a property (`_property`): what it holds, its title, what the framework says.
     2. Required: the fields a form must fill — the hint `required`.
     3. The schema's own `x-sincpro`: the entity, how it is read — its identity, its key, its
-       display, its order, its search and its detail —, its title in every language, and the
-       version of its model, when given.
+       display, its order, and its search and its detail, each criteria with only what it says
+       (`rendered_criteria`) —, its title in every language, and the version of its model, when
+       given.
     Final: the schema, JSON all through.
     """
     dumped = meta.model_dump(mode="json")
     entity: dict[str, Any] = {"entity": meta.aggregate}
-    for name in ("identity", "get_id", "display", "default_order", "search", "detail"):
+    for name in ("identity", "get_id", "display", "default_order"):
         if dumped.get(name):
             entity[name] = dumped[name]
+    for criteria, name in ((meta.search, "search"), (meta.detail, "detail")):
+        if criteria is not None:
+            entity[name] = rendered_criteria(criteria)
     entity["title"] = dumped["name"]
     if version:
         entity["version"] = version

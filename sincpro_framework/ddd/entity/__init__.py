@@ -1,5 +1,6 @@
 """`sincpro_framework.ddd.entity` — what an aggregate is: `Entity`, `AuditedMixin`,
-`ArchivableMixin`, `EventSourcedMixin`, `new_entity_id`, `utc_now`, `uuid7`.
+`ArchivableMixin`, `EventSourcedMixin`, `EntityID`, `StrictEntityID`, `Reference`,
+`new_entity_id`, `utc_now`, `uuid7`.
 
     from sincpro_framework.ddd.entity import Entity, AuditedMixin
 
@@ -16,6 +17,7 @@ from sincpro_framework.ddd.entity.entity import (
     json_serializer,
     utc_now,
 )
+from sincpro_framework.ddd.entity.entity_id import EntityID, Reference, StrictEntityID
 from sincpro_framework.ddd.entity.mixins.archivable import ArchivableMixin
 from sincpro_framework.ddd.entity.mixins.audited import AuditedMixin
 from sincpro_framework.ddd.entity.mixins.event_sourced import EventSourcedMixin
@@ -26,6 +28,9 @@ __all__ = [
     "AuditedMixin",
     "EventSourcedMixin",
     "Entity",
+    "EntityID",
+    "Reference",
+    "StrictEntityID",
     "json_serializer",
     "new_entity_id",
     "utc_now",

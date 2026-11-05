@@ -70,6 +70,7 @@ from sincpro_framework.ddd.entity.checks import CHECK
 from sincpro_framework.ddd.entity.computations import COMPUTE
 from sincpro_framework.ddd.entity.computed import computed_fields_of
 from sincpro_framework.ddd.entity.entity_collection import Dropped
+from sincpro_framework.ddd.entity.entity_id import key_of
 from sincpro_framework.ddd.entity.presentation import (
     FieldRef,
     Fields,
@@ -463,9 +464,13 @@ def logical_type(annotation: Any) -> FieldType:
     4. An enum: as the primitive it is — a `StrEnum` text, an `IntEnum` integer — and
        `UNKNOWN` when it is neither.
     5. A value object: as the primitive it subclasses (`Email` is text).
+    6. A key (`EntityID[Project]`, `EntityID[Partner, int]`): as what it holds, whoever's it is.
     Final: the primitive's type by `LOGICAL_TYPES` — `UNKNOWN` for any other class.
     """
     base = without_optional(annotation)
+    key = key_of(base)
+    if key is not None:
+        return LOGICAL_TYPES[key.held]
     if get_origin(base) is list:
         members = get_args(base)
         return FieldType.TEXT_LIST if members and members[0] is str else FieldType.UNKNOWN
@@ -561,8 +566,10 @@ class FieldMeta(DataTransferObject):
     many: bool = False
     """Several of them: a `one2many`, a `many2many`, or a list of embedded values."""
     relation: str | None = None
-    """For a relational field, the aggregate on the other side, by name: `Run` for
-    `Dataset.runs`. What Odoo's `fields_get` calls `relation`."""
+    """The aggregate on the other side, by name: `Run` for `Dataset.runs`. What Odoo's
+    `fields_get` calls `relation`. On a relational field the field holds its records; on a key
+    (`EntityID[Run]`) it holds a text or a number that names one — `type` says which. Another
+    context's is named with its context (`auth.Tenant`)."""
     identified_by: str | None = None
     """For a relational field, the column that identifies the relation: this aggregate's own
     column for a `many2one` (`Run.dataset` by `Run.dataset_id`), the related aggregate's for a

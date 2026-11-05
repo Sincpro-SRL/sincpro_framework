@@ -18,6 +18,7 @@ from typing import Any
 
 from sincpro_framework.entrypoints.domain.layers import Scalar
 from sincpro_framework.entrypoints.domain.surface import Operation
+from sincpro_framework.introspection.entity_tags import role_of
 from sincpro_framework.sincpro_abstractions import DataTransferObject
 from sincpro_framework.use_bus import UseFramework
 
@@ -119,6 +120,8 @@ def describe_document(
     what they answer*. `params` is the input DTO's JSON Schema — the same one MCP
     publishes as a tool schema and OpenRPC as content descriptors — and `result`
     is the declared response's, an open object when `execute` declares none.
+    `role` is what the method is for its entity (`role_of`): `get`, `search`,
+    `edit`, … or `command`.
     """
     services: list[dict[str, Any]] = []
     for service, entries in group_by_service(specs).items():
@@ -133,6 +136,7 @@ def describe_document(
                         "path": spec.path,
                         "command": spec.operation.command.__name__,
                         "kind": str(spec.operation.layer),
+                        "role": str(role_of(spec.operation.command)),
                         "deprecated": spec.deprecated,
                         "description": spec.operation.description,
                         "params": spec.operation.json_schema,
