@@ -198,7 +198,7 @@ class RpcGateway(Gateway):
         contract_path: str | None = "/client-contract",
     ) -> list[Any]:
         """This gateway's Starlette `Route`s, mountable into any app: JSON-RPC, OpenRPC
-        discovery, each context's client contract at `{contract_path}/{context}.json` and — by
+        discovery, each context's client contract at `{contract_path}/{alias}.json` and — by
         default — the liveness and readiness checks (`serving.routes`).
 
         The composable primitive: `Starlette(routes=[*gateway.routes(), *my_own_routes])`,
@@ -235,7 +235,7 @@ class RpcGateway(Gateway):
         **starlette_kwargs: Any,
     ) -> Any:
         """A standalone ASGI app: `POST /rpc` (JSON-RPC 2.0), `GET /openrpc.json`,
-        `GET /client-contract/{context}.json`, and — by default — `GET /healthz` and
+        `GET /client-contract/{alias}.json`, and — by default — `GET /healthz` and
         `GET /readyz`.
 
         The convenience path, for a process that serves only this gateway. `middleware` is a

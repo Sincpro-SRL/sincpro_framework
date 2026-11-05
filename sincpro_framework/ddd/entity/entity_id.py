@@ -69,65 +69,70 @@ class Reference:
     """An entity of another bounded context, named once where every context may read it
     (`shared/`), so a key says whose it is without importing that context.
 
-        class Tenant(Reference, context="auth"):
+        class Tenant(Reference, bounded_context="auth"):
             '''auth's tenant.'''
 
         tenant_id: EntityID[Tenant]       ->  published as `relation: "auth.Tenant"`
 
-    It is no entity here — no table, no contract, no model of this context —: a name, and the
-    context that owns it.
+    It is no entity here — no table, no contract, no model of this bounded context —: a name, and
+    the bounded context that owns it — `bounded_context`, never the runtime `context` a use case
+    reads.
     """
 
-    context: ClassVar[str] = ""
+    bounded_context: ClassVar[str] = ""
 
-    def __init_subclass__(cls, context: str = "", **kwargs: Any) -> None:
-        """Remember the context it belongs to; a reference that names none is refused."""
+    def __init_subclass__(cls, bounded_context: str = "", **kwargs: Any) -> None:
+        """Remember the bounded context it belongs to; a reference that names none is refused."""
         super().__init_subclass__(**kwargs)
-        if not context:
+        if not bounded_context:
             raise exceptions.ProgrammingError(
-                f"{cls.__name__} is another context's entity: name that context — "
-                f'`class {cls.__name__}(Reference, context="auth")`.'
+                f"{cls.__name__} is another bounded context's entity: name that bounded context — "
+                f'`class {cls.__name__}(Reference, bounded_context="auth")`.'
             )
-        cls.context = context
+        cls.bounded_context = bounded_context
 
 
 @dataclass(frozen=True)
 class Key:
     """What a key's annotation says: whose record it names — `None` for a bare `EntityID` or
-    `EntityKey`, the key of the one entity an operation concerns —, what it holds, and whether it
-    is the framework's id (`strict`: an `EntityID`, a UUID v7)."""
+    `EntityKey`, the key of the one entity an operation concerns —, what it holds, whether it is
+    the framework's id (`strict`: an `EntityID`, a UUID v7), and whether it names several records
+    (`many`: a list of keys — the lines a reconciliation matches)."""
 
     entity: type | None
     held: type
     strict: bool
+    many: bool
 
     @property
     def relation(self) -> str | None:
         """Whose key it is, as a contract names it: the entity's name in its own context,
         `auth.Tenant` for another's; `None` when it does not say.
 
-            Key(Project, str, False).relation   ->  "Project"
-            Key(Tenant, str, False).relation    ->  "auth.Tenant"
+            Key(Project, str, False, False).relation   ->  "Project"
+            Key(Tenant, str, False, False).relation    ->  "auth.Tenant"
         """
         if self.entity is None:
             return None
         if issubclass(self.entity, Reference):
-            return f"{self.entity.context}.{self.entity.__name__}"
+            return f"{self.entity.bounded_context}.{self.entity.__name__}"
         return self.entity.__name__
 
 
 def key_of(annotation: Any) -> Key | None:
     """What a key's annotation says — its `| None` aside —; `None` for any other annotation.
 
-        key_of(EntityID[Issue] | None)        ->  Key(Issue, str, strict=True)
-        key_of(EntityKey[User])               ->  Key(User, str, strict=False)
-        key_of(EntityKey[Partner, int])       ->  Key(Partner, int, strict=False)
-        key_of(EntityKey[Device, UUID])       ->  Key(Device, UUID, strict=False)
-        key_of(EntityID)                      ->  Key(None, str, strict=True)
+        key_of(EntityID[Issue] | None)        ->  Key(Issue, str, strict=True, many=False)
+        key_of(list[EntityID[MoveLine]])      ->  Key(MoveLine, str, strict=True, many=True)
+        key_of(EntityKey[User])               ->  Key(User, str, strict=False, many=False)
+        key_of(EntityKey[Partner, int])       ->  Key(Partner, int, strict=False, many=False)
+        key_of(EntityKey[Device, UUID])       ->  Key(Device, UUID, strict=False, many=False)
+        key_of(EntityID)                      ->  Key(None, str, strict=True, many=False)
         key_of(str)                           ->  None
         key_of(EntityID[int])                 ->  raises ProgrammingError
 
-    1. The optional stripped: a key that may be absent is still a key.
+    1. The optional stripped: a key that may be absent is still a key; a list of keys names
+       several records of the entity (`many`).
     2. `EntityID` or `EntityKey`, bare or with arguments; anything else is no key.
     3. Whose it is — an entity, or another context's (`Reference`) — and what it holds: an
        `EntityID` the framework's text, an `EntityKey` a `str`, an `int` or a `uuid.UUID`
@@ -138,6 +143,9 @@ def key_of(annotation: Any) -> Key | None:
         present = [one for one in get_args(annotation) if one is not type(None)]
         if len(present) == 1:
             annotation = present[0]
+    many = get_origin(annotation) is list and len(get_args(annotation)) == 1
+    if many:
+        annotation = get_args(annotation)[0]
     origin = get_origin(annotation) or annotation
     if origin is not EntityID and origin is not EntityKey:
         return None
@@ -159,7 +167,7 @@ def key_of(annotation: Any) -> Key | None:
             f"{annotation} holds {held!r}: an `EntityID` is the framework's UUID v7 alone, and "
             f"an `EntityKey` holds a `str`, an `int` or a `uuid.UUID`."
         )
-    return Key(entity, held, strict)
+    return Key(entity, held, strict, many)
 
 
 def _as_text(value: Any) -> Any:
@@ -181,7 +189,7 @@ def key_schema(source: Any) -> core_schema.CoreSchema:
     4. An `int`: as an `int` field.
     Final: a text: as a `str` field, a `uuid.UUID` read as its 32 hex (`_as_text`).
     """
-    key = key_of(source) or Key(None, str, False)
+    key = key_of(source) or Key(None, str, False, False)
     metadata = {KEY: key}
     if key.strict:
         return core_schema.no_info_after_validator_function(

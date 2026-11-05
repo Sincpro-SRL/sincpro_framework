@@ -186,7 +186,8 @@ assert (removed.status_code, removed.content) == (204, b"")
   with a non-plain field such as `criteria` as JSON, and validated once. The document points
   that JSON parameter at its definition, written once under `components/schemas`, and
   `/openapi.json` answers its `ETag` — `304` to a client that holds it.
-- Each context's client contract is served at `GET /client-contract/<context>.json`
+- Each context's client contract is served at `GET /client-contract/<alias>.json` — the alias the
+  gateway publishes it under —
   (`app(contract_path=None)` serves none), out of the document.
 - The route calls the bus. It never calls `execute`, and never the dictionary-in executor, which
   would validate again. That is also why `add(..., wrap=...)` is refused on this gateway: use an

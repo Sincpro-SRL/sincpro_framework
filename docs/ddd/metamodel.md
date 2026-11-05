@@ -55,7 +55,7 @@ offline or generates its types and its client:
 ```python
 from sincpro_framework.introspection import export_metamodel, metamodel_of
 
-metamodel_of(billing)                                   # {"context", "version", "models", "operations", "$defs"}
+metamodel_of(billing)                                   # {"bounded_context", "version", "models", "operations", "$defs"}
 metamodel_of(billing, {"QueryGetInvoice"})              # what those operations reach, named by class
 export_metamodel(billing, "web/src/metamodel.json")     # the same code writes the same bytes
 ```
@@ -83,12 +83,16 @@ metamodel_of(billing)["operations"]["billing.CommandVoidInvoice"]["targets"]
 - **`query`**: it writes nothing, so a retry or a cache is safe — every role that reads, and a
   `command` whose DTO is a `Query`. How a wire reaches it is the wire's: REST still serves a
   `Get` that is no `Query` as `POST`.
-- **`targets`**: the field that names the record of each entity it belongs to. Per entity,
-  the first rule that names one field: a field typed as its key (`EntityID[Invoice]`), then the
-  name `<entity>_id` (unless typed as another's key), then — with one entity only — its one bare
-  `EntityID`, else `id`. A rule that finds two names none: nothing is guessed. A client fills
+- **`targets`**: the field that names the record — or the records — of each entity it belongs
+  to. Per entity, the first rule that names one field: a field typed as its key
+  (`EntityID[Invoice]`, `list[EntityID[Invoice]]`), then the name `<entity>_id` or `<entity>_ids`
+  (unless typed as another's key), then — with one entity only — its one bare key, else `id` or
+  `ids`. A rule that finds two names none: nothing is guessed. A client fills
   the field with the record's key to run the operation on that record; an entity with no such
   field is no record it runs on — one it creates, a page of it, the context's own.
+- **`models`** holds each entity's contract and every shape a record holds inside — a value
+  object, a line —, named by its class (`ProjectSnapshot`, `OrderLine`) and written once, so a
+  generated type has its name. Every pointer between them points at `models`.
 - **`input` / `output`** are JSON Schema 2020-12. An entity is a pointer into `models`; an
   edit's and a preview's `values` — the record the form holds — is its entity's model. Anything
   else nested — criteria's schema above all — is written once under the metamodel's `$defs`,
@@ -110,7 +114,7 @@ from uuid import UUID
 
 from sincpro_framework.ddd import EntityID, EntityKey, Reference
 
-class Tenant(Reference, context="auth"):       # shared/: auth's tenant, never imported
+class Tenant(Reference, bounded_context="auth"):   # shared/: auth's tenant, never imported
     """auth's tenant."""
 
 class CommandMoveIssue(DataTransferObject):
@@ -160,6 +164,19 @@ class Issue(Entity):
 {"type": "string", "format": "uuid", "x-sincpro": {"relation": "Device"}}
 ```
 
+- **Several keys** — `list[EntityID[MoveLine]]`, the lines a reconciliation matches — are a key
+  too: a `text[]` field naming `MoveLine`, the field `targets` names for it. One use case may
+  concern N entities — reconciling move lines, a move, payments —, each its own field.
+- **Another context's entity**: import its class and the key is published as this context's
+  (`relation: "Tenant"`, its model in this contract) — the class does not know its context. To
+  say it is another's, or when no class exists here to import (another service, Odoo, an external
+  system), name it once in `shared/` with a `Reference`: `class Tenant(Reference,
+  bounded_context="auth")` → `relation: "auth.Tenant"`, no model, no entity of this bounded
+  context. A project of many bounded contexts names them once — a `StrEnum` of its own,
+  `BoundedContext` — and passes the member to both `UseFramework(BoundedContext.AUTH)` and
+  `Reference(bounded_context=BoundedContext.AUTH)`: no bounded context's name is written twice
+  as a literal, and none is ever mistaken for the runtime context a use case reads
+  (`use_context`).
 - **Read**: the field an operation runs on (`targets`), and the entities it concerns — a key of
   an entity of this context says it, with no `@entity_tags`; another context's does not.
 - An entity's own identity stays `id: str` — a project keeps its own keys (an email, a slug).
@@ -186,18 +203,21 @@ A discovery document is tagged by its content (`ETag`): a client that holds it i
 ### The client contract: what an operation is, and how each wire reaches it
 
 The document a client generates its domain and its client from joins the metamodel to how each
-wire reaches every operation, by the Command's identity — one file per bounded context:
+wire reaches every operation, by the Command's identity — one file per bounded context, named by
+the alias the gateways publish it under:
 
 ```python
 from sincpro_framework.entrypoints import client_contracts, export_client_contract
 
+rest = FastApiGateway({"project": project_bus})        # the bus is named "acme-project"
 export_client_contract([rest, rpc, grpc, mcp], "web/src/contracts")
-# {"tracker": Path("web/src/contracts/tracker.contract.json")}
+# {"project": Path("web/src/contracts/project.contract.json")}
 ```
 
 ```json
 {
-  "format": "sincpro.client-contract/1", "context": "tracker", "version": "9b1c…",
+  "format": "sincpro.client-contract/1", "bounded_context": "acme-project", "alias": "project",
+  "version": "9b1c…",
   "models": {"…": "…"}, "operations": {"tracker.CommandMoveIssue": {"…": "…",
     "deprecated": false, "sunset": null, "replacement": null}}, "$defs": {"…": "…"},
   "bindings": {
@@ -209,6 +229,11 @@ export_client_contract([rest, rpc, grpc, mcp], "web/src/contracts")
 }
 ```
 
+- **`bounded_context` and `alias`**: `bounded_context` is the bounded context's own name, what
+  every identity starts with (`acme-project.CommandMoveIssue`) — never the runtime context a use
+  case reads —; `alias` is the name the gateways publish it
+  under — what a client names the context by (`project:issue`), what the file and the live route
+  are named after. An alias that names two bounded contexts across the gateways is refused.
 - **Only what the gateways expose**: an `@internal` use case is in no contract, a wire that does
   not publish an operation has no binding for it. How a wire is reached is the wire's own word
   (`Wire.reached_by`): REST the verb, the full path and `path_fields` — the Command's fields its
@@ -225,10 +250,11 @@ export_client_contract([rest, rpc, grpc, mcp], "web/src/contracts")
           app.http:gateways web/src/contracts
   ```
 
-- **Live**: every HTTP gateway (FastAPI, JSON-RPC) serves `GET /client-contract/<context>.json`
+- **Live**: every HTTP gateway (FastAPI, JSON-RPC) serves `GET /client-contract/<alias>.json`
   — the bytes the export writes for it, built when asked, so a use case registered or a model
   changed while the service runs is the next answer —, its `version` the `ETag`, `304` to a
   client that holds it, out of the OpenAPI document. `app(contract_path=None)` serves none.
+
 Every read answers the version of its model (`model_version`) — `ResponsePaginatedQuery`,
 `ResponseRecord`, `ResponseRecords` and an `Edit` alike — and never the model again: another
 version means read the document again.

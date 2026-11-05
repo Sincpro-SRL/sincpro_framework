@@ -175,77 +175,7 @@
           "lines": {
             "type": "array",
             "items": {
-              "type": "object",
-              "title": "OrderLine",
-              "properties": {
-                "product": {
-                  "type": "string",
-                  "x-sincpro": {
-                    "type": "text",
-                    "widget": "text",
-                    "sortable": true,
-                    "groupable": true,
-                    "aggregates": [
-                      "min",
-                      "max",
-                      "count",
-                      "count_distinct"
-                    ],
-                    "ops": [
-                      "=",
-                      "!=",
-                      "like",
-                      "starts with",
-                      "in",
-                      "not in"
-                    ]
-                  }
-                },
-                "qty": {
-                  "type": "integer",
-                  "exclusiveMinimum": 0,
-                  "x-sincpro": {
-                    "type": "integer",
-                    "widget": "number",
-                    "default": 1,
-                    "sortable": true,
-                    "groupable": true,
-                    "aggregates": [
-                      "sum",
-                      "avg",
-                      "min",
-                      "max",
-                      "count",
-                      "count_distinct",
-                      "percentile",
-                      "median"
-                    ],
-                    "ops": [
-                      "=",
-                      "!=",
-                      ">",
-                      ">=",
-                      "<",
-                      "<=",
-                      "between",
-                      "in",
-                      "not in"
-                    ],
-                    "holds": {
-                      "field": "value",
-                      "value": 0,
-                      "operator": ">"
-                    }
-                  }
-                }
-              },
-              "required": [],
-              "x-sincpro": {
-                "entity": "OrderLine",
-                "title": {
-                  "default": "OrderLine"
-                }
-              }
+              "$ref": "#/$defs/OrderLine"
             },
             "x-sincpro": {
               "type": "embedded",
@@ -614,6 +544,79 @@
                 "default": "Buyer"
               },
               "version": "3d65720c26351cc0d17878916903e97e6960c9b9062d9df06b5025df4e54586e"
+            }
+          },
+          "OrderLine": {
+            "type": "object",
+            "title": "OrderLine",
+            "properties": {
+              "product": {
+                "type": "string",
+                "x-sincpro": {
+                  "type": "text",
+                  "widget": "text",
+                  "sortable": true,
+                  "groupable": true,
+                  "aggregates": [
+                    "min",
+                    "max",
+                    "count",
+                    "count_distinct"
+                  ],
+                  "ops": [
+                    "=",
+                    "!=",
+                    "like",
+                    "starts with",
+                    "in",
+                    "not in"
+                  ]
+                }
+              },
+              "qty": {
+                "type": "integer",
+                "exclusiveMinimum": 0,
+                "x-sincpro": {
+                  "type": "integer",
+                  "widget": "number",
+                  "default": 1,
+                  "sortable": true,
+                  "groupable": true,
+                  "aggregates": [
+                    "sum",
+                    "avg",
+                    "min",
+                    "max",
+                    "count",
+                    "count_distinct",
+                    "percentile",
+                    "median"
+                  ],
+                  "ops": [
+                    "=",
+                    "!=",
+                    ">",
+                    ">=",
+                    "<",
+                    "<=",
+                    "between",
+                    "in",
+                    "not in"
+                  ],
+                  "holds": {
+                    "field": "value",
+                    "value": 0,
+                    "operator": ">"
+                  }
+                }
+              }
+            },
+            "required": [],
+            "x-sincpro": {
+              "entity": "OrderLine",
+              "title": {
+                "default": "OrderLine"
+              }
             }
           }
         }
@@ -1346,6 +1349,554 @@
             "operator": "like"
           }
         }
+      }
+    },
+    {
+      "name": "Delivery",
+      "contract": {
+        "type": "object",
+        "title": "Delivery",
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "ID",
+            "x-sincpro": {
+              "type": "text",
+              "widget": "text",
+              "label": {
+                "default": "ID",
+                "es": "ID"
+              },
+              "readonly": true,
+              "sortable": true,
+              "groupable": true,
+              "aggregates": [
+                "min",
+                "max",
+                "count",
+                "count_distinct"
+              ],
+              "ops": [
+                "=",
+                "!=",
+                "like",
+                "starts with",
+                "in",
+                "not in"
+              ]
+            }
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created at",
+            "x-sincpro": {
+              "type": "datetime",
+              "widget": "datetime",
+              "label": {
+                "default": "Created at",
+                "es": "Creado el"
+              },
+              "readonly": true,
+              "sortable": true,
+              "groupable": true,
+              "aggregates": [
+                "min",
+                "max",
+                "count",
+                "count_distinct"
+              ],
+              "ops": [
+                "=",
+                "!=",
+                ">",
+                ">=",
+                "<",
+                "<=",
+                "between"
+              ]
+            }
+          },
+          "updated_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Updated at",
+            "x-sincpro": {
+              "type": "datetime",
+              "widget": "datetime",
+              "label": {
+                "default": "Updated at",
+                "es": "Actualizado el"
+              },
+              "readonly": true,
+              "groupable": true,
+              "aggregates": [
+                "min",
+                "max",
+                "count",
+                "count_distinct"
+              ],
+              "ops": [
+                "=",
+                "!=",
+                ">",
+                ">=",
+                "<",
+                "<=",
+                "between",
+                "is null"
+              ]
+            }
+          },
+          "version": {
+            "type": "integer",
+            "title": "Version",
+            "x-sincpro": {
+              "type": "integer",
+              "widget": "number",
+              "label": {
+                "default": "Version",
+                "es": "Versión"
+              },
+              "readonly": true,
+              "sortable": true,
+              "groupable": true,
+              "aggregates": [
+                "sum",
+                "avg",
+                "min",
+                "max",
+                "count",
+                "count_distinct",
+                "percentile",
+                "median"
+              ],
+              "ops": [
+                "=",
+                "!=",
+                ">",
+                ">=",
+                "<",
+                "<=",
+                "between",
+                "in",
+                "not in"
+              ]
+            }
+          },
+          "order_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "x-sincpro": {
+              "type": "text",
+              "widget": "text",
+              "groupable": true,
+              "aggregates": [
+                "min",
+                "max",
+                "count",
+                "count_distinct"
+              ],
+              "ops": [
+                "=",
+                "!=",
+                "like",
+                "starts with",
+                "in",
+                "not in",
+                "is null"
+              ],
+              "relation": "Order"
+            }
+          },
+          "buyer_code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "x-sincpro": {
+              "type": "text",
+              "widget": "text",
+              "groupable": true,
+              "aggregates": [
+                "min",
+                "max",
+                "count",
+                "count_distinct"
+              ],
+              "ops": [
+                "=",
+                "!=",
+                "like",
+                "starts with",
+                "in",
+                "not in",
+                "is null"
+              ],
+              "relation": "Buyer"
+            }
+          },
+          "carrier_number": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "x-sincpro": {
+              "type": "integer",
+              "widget": "number",
+              "groupable": true,
+              "aggregates": [
+                "sum",
+                "avg",
+                "min",
+                "max",
+                "count",
+                "count_distinct",
+                "percentile",
+                "median"
+              ],
+              "ops": [
+                "=",
+                "!=",
+                ">",
+                ">=",
+                "<",
+                "<=",
+                "between",
+                "in",
+                "not in",
+                "is null"
+              ],
+              "relation": "Carrier"
+            }
+          },
+          "warehouse_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "x-sincpro": {
+              "type": "text",
+              "widget": "text",
+              "groupable": true,
+              "aggregates": [
+                "min",
+                "max",
+                "count",
+                "count_distinct"
+              ],
+              "ops": [
+                "=",
+                "!=",
+                "like",
+                "starts with",
+                "in",
+                "not in",
+                "is null"
+              ],
+              "relation": "stock.Warehouse"
+            }
+          },
+          "merged_order_ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "x-sincpro": {
+              "type": "text[]",
+              "widget": "tags",
+              "ops": [
+                "contains",
+                "not contains",
+                "=",
+                "!="
+              ],
+              "relation": "Order"
+            }
+          }
+        },
+        "required": [],
+        "x-sincpro": {
+          "entity": "Delivery",
+          "identity": "id",
+          "get_id": "id",
+          "default_order": "-id",
+          "title": {
+            "default": "Delivery"
+          },
+          "version": "18b966ae98cb8d794fa94e6954d2af20fb9e90e170ec74532761e37e3f96e561"
+        }
+      },
+      "expected": {
+        "aggregate": "Delivery",
+        "identity": "id",
+        "default_order": "-id",
+        "fields": {
+          "id": {
+            "widget": "text",
+            "label": {
+              "default": "ID",
+              "es": "ID"
+            },
+            "readonly": true,
+            "sortable": true,
+            "groupable": true,
+            "aggregates": [
+              "min",
+              "max",
+              "count",
+              "count_distinct"
+            ],
+            "ops": [
+              "=",
+              "!=",
+              "like",
+              "starts with",
+              "in",
+              "not in"
+            ],
+            "type": "text",
+            "kind": "scalar",
+            "nullable": false
+          },
+          "created_at": {
+            "widget": "datetime",
+            "label": {
+              "default": "Created at",
+              "es": "Creado el"
+            },
+            "readonly": true,
+            "sortable": true,
+            "groupable": true,
+            "aggregates": [
+              "min",
+              "max",
+              "count",
+              "count_distinct"
+            ],
+            "ops": [
+              "=",
+              "!=",
+              ">",
+              ">=",
+              "<",
+              "<=",
+              "between"
+            ],
+            "type": "datetime",
+            "kind": "scalar",
+            "nullable": false
+          },
+          "updated_at": {
+            "widget": "datetime",
+            "label": {
+              "default": "Updated at",
+              "es": "Actualizado el"
+            },
+            "readonly": true,
+            "groupable": true,
+            "aggregates": [
+              "min",
+              "max",
+              "count",
+              "count_distinct"
+            ],
+            "ops": [
+              "=",
+              "!=",
+              ">",
+              ">=",
+              "<",
+              "<=",
+              "between",
+              "is null"
+            ],
+            "type": "datetime",
+            "kind": "scalar",
+            "nullable": true,
+            "sortable": false
+          },
+          "version": {
+            "widget": "number",
+            "label": {
+              "default": "Version",
+              "es": "Versión"
+            },
+            "readonly": true,
+            "sortable": true,
+            "groupable": true,
+            "aggregates": [
+              "sum",
+              "avg",
+              "min",
+              "max",
+              "count",
+              "count_distinct",
+              "percentile",
+              "median"
+            ],
+            "ops": [
+              "=",
+              "!=",
+              ">",
+              ">=",
+              "<",
+              "<=",
+              "between",
+              "in",
+              "not in"
+            ],
+            "type": "integer",
+            "kind": "scalar",
+            "nullable": false
+          },
+          "order_id": {
+            "widget": "text",
+            "groupable": true,
+            "aggregates": [
+              "min",
+              "max",
+              "count",
+              "count_distinct"
+            ],
+            "ops": [
+              "=",
+              "!=",
+              "like",
+              "starts with",
+              "in",
+              "not in",
+              "is null"
+            ],
+            "relation": "Order",
+            "type": "text",
+            "kind": "scalar",
+            "nullable": true,
+            "sortable": false
+          },
+          "buyer_code": {
+            "widget": "text",
+            "groupable": true,
+            "aggregates": [
+              "min",
+              "max",
+              "count",
+              "count_distinct"
+            ],
+            "ops": [
+              "=",
+              "!=",
+              "like",
+              "starts with",
+              "in",
+              "not in",
+              "is null"
+            ],
+            "relation": "Buyer",
+            "type": "text",
+            "kind": "scalar",
+            "nullable": true,
+            "sortable": false
+          },
+          "carrier_number": {
+            "widget": "number",
+            "groupable": true,
+            "aggregates": [
+              "sum",
+              "avg",
+              "min",
+              "max",
+              "count",
+              "count_distinct",
+              "percentile",
+              "median"
+            ],
+            "ops": [
+              "=",
+              "!=",
+              ">",
+              ">=",
+              "<",
+              "<=",
+              "between",
+              "in",
+              "not in",
+              "is null"
+            ],
+            "relation": "Carrier",
+            "type": "integer",
+            "kind": "scalar",
+            "nullable": true,
+            "sortable": false
+          },
+          "warehouse_id": {
+            "widget": "text",
+            "groupable": true,
+            "aggregates": [
+              "min",
+              "max",
+              "count",
+              "count_distinct"
+            ],
+            "ops": [
+              "=",
+              "!=",
+              "like",
+              "starts with",
+              "in",
+              "not in",
+              "is null"
+            ],
+            "relation": "stock.Warehouse",
+            "type": "text",
+            "kind": "scalar",
+            "nullable": true,
+            "sortable": false
+          },
+          "merged_order_ids": {
+            "widget": "tags",
+            "ops": [
+              "contains",
+              "not contains",
+              "=",
+              "!="
+            ],
+            "relation": "Order",
+            "type": "text[]",
+            "kind": "scalar",
+            "nullable": false,
+            "sortable": false
+          }
+        },
+        "name": {
+          "default": "Delivery"
+        },
+        "get_id": "id"
       }
     }
   ],

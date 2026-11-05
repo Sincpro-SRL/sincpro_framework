@@ -6,7 +6,7 @@ pydantic reads and writes each —; another context's entity through a `Referenc
 """
 
 import uuid
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from uuid import UUID
 
 import pytest
@@ -53,7 +53,7 @@ class Device(Entity):
     serial: str = ""
 
 
-class Tenant(Reference, context="auth"):
+class Tenant(Reference, bounded_context="auth"):
     """auth's tenant, named once in `shared/`: a key points at it without importing auth."""
 
 
@@ -65,6 +65,7 @@ class Issue(Entity):
     owner_id: EntityKey[User] | None = None
     partner_id: EntityKey[Partner, int] | None = None
     device_id: EntityKey[Device, UUID] | None = None
+    watcher_ids: list[EntityKey[User]] = field(default_factory=list)
 
 
 class CommandMoveIssue(DataTransferObject):
@@ -214,6 +215,10 @@ def test_a_key_on_an_entity_is_filtered_as_what_it_holds_and_names_whose_it_is()
         "Device",
     )
     assert not fields["project_id"].navigable  # a key, not a relation a filter may cross
+    assert (fields["watcher_ids"].type, fields["watcher_ids"].relation) == (
+        FieldType.TEXT_LIST,
+        "User",
+    )  # several keys of one entity
 
 
 def test_a_key_on_an_entity_is_published_as_what_it_holds_never_as_the_entity():
@@ -262,7 +267,7 @@ def test_a_key_of_something_that_is_no_entity_is_refused_when_the_command_is_dec
 
 
 def test_a_reference_that_names_no_context_is_refused():
-    with pytest.raises(ddd_exceptions.ProgrammingError, match="name that context"):
+    with pytest.raises(ddd_exceptions.ProgrammingError, match="name that bounded context"):
 
         class Orphan(Reference):
             pass

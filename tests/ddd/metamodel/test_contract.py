@@ -20,9 +20,12 @@ from sincpro_framework.data_layer.repositories import MemoryRepository
 from sincpro_framework.ddd import (
     Criteria,
     Entity,
+    EntityID,
+    EntityKey,
     EntityReads,
     Get,
     Presentation,
+    Reference,
     ResponseRecord,
     ValueObject,
     When,
@@ -87,6 +90,29 @@ class Order(Entity):
             raise ddd_exceptions.InvalidValue("A confirmed order needs a delivery date")
 
 
+@dataclass
+class Carrier(Entity):
+    """Keyed by another system's whole number."""
+
+    name: str = ""
+
+
+class Warehouse(Reference, bounded_context="stock"):
+    """stock's warehouse, named once in `shared/`."""
+
+
+@dataclass
+class Delivery(Entity):
+    """Every kind of key a client reads: the framework's id, a context's own text and number,
+    another context's entity, and several keys of one entity."""
+
+    order_id: EntityID[Order] | None = None
+    buyer_code: EntityKey[Buyer] | None = None
+    carrier_number: EntityKey[Carrier, int] | None = None
+    warehouse_id: EntityID[Warehouse] | None = None
+    merged_order_ids: list[EntityID[Order]] = field(default_factory=list)
+
+
 def test_the_schema_is_json_schema_with_the_entity_said_beside_it():
     contract = contract_of(Order)
 
@@ -129,8 +155,9 @@ def test_what_a_change_reaches_is_published_derived_from_the_rules():
 
 
 def test_what_a_value_object_holds_travels_as_keywords_and_whole():
-    properties = contract_of(Order)["properties"]
-    line = properties["lines"]["items"]["properties"]
+    contract = contract_of(Order)
+    properties = contract["properties"]
+    line = contract["$defs"]["OrderLine"]["properties"]
 
     assert line["qty"]["exclusiveMinimum"] == 0
     assert line["qty"]["x-sincpro"]["holds"] == {
@@ -142,6 +169,54 @@ def test_what_a_value_object_holds_travels_as_keywords_and_whole():
     # validator would skip on a string
     assert "minimum" not in properties["discount"]
     assert properties["discount"]["x-sincpro"]["holds"]["all"][0]["operator"] == ">="
+
+
+def test_a_shape_a_record_holds_inside_is_named_by_its_class_and_written_once():
+    contract = contract_of(Order)
+    lines = contract["properties"]["lines"]
+
+    assert lines["items"] == {"$ref": "#/$defs/OrderLine"}
+    assert lines["x-sincpro"]["type"] == "embedded"  # what the field says, beside the pointer
+    assert contract["$defs"]["OrderLine"]["x-sincpro"]["entity"] == "OrderLine"
+    assert list(contract["$defs"]["OrderLine"]["properties"]) == ["product", "qty"]
+
+
+def _written_note() -> type:
+    """A note that says something."""
+
+    @dataclass
+    class Note:
+        text: str = ""
+
+    return Note
+
+
+def _rated_note() -> type:
+    """Another class named `Note`: one that rates."""
+
+    @dataclass
+    class Note:
+        stars: int = 0
+
+    return Note
+
+
+def test_two_shapes_of_one_name_in_a_contract_never_point_at_each_other():
+    """A shape is named by its class; another class of the same name stays written in place."""
+    written, rated = _written_note(), _rated_note()
+
+    @dataclass
+    class Review(Entity):
+        summary: written | None = None
+        rating: rated | None = None
+
+    contract = contract_of(Review)
+    named = contract["properties"]["summary"]["anyOf"][0]
+    inline = contract["properties"]["rating"]["anyOf"][0]
+
+    assert named == {"$ref": "#/$defs/Note"}
+    assert contract["$defs"]["Note"]["properties"].keys() == {"text"}
+    assert list(inline["properties"]) == ["stars"]  # its own shape, in place
 
 
 def test_a_relation_points_at_the_contract_of_what_it_points_at():
@@ -414,7 +489,7 @@ def contract_parity() -> dict[str, Any]:
                     )
                 ),
             }
-            for entity in (Order, Buyer)
+            for entity in (Order, Buyer, Delivery)
         ],
         "formulas": [{**one, "expected": _answered(one)} for one in FORMULA_CASES],
     }

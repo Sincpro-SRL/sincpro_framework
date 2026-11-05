@@ -154,7 +154,7 @@ wire) validate first and raise `ProgrammingError` with **every** reason at once;
 | a reserved name | an RPC name starting with `rpc.` |
 | a deprecation past its sunset | |
 | a queue binding against the message | `queue.consumes` on a `DomainEvent`; `queue.hears` on a Command |
-| a stage against the Command's kind | `@idempotency.once` on a `Query` |
+| a stage against the Command's kind | `@idempotency.once` on a read — a `Query`, or a framework read (`Get`, `GetMany`, `LiteralSearch`, `PreviewEntity`) |
 | a second binding for one wire on a class | refused at declaration |
 | the wire's own clashes | what the `Wire` port's `validate` answers |
 

@@ -4,8 +4,9 @@ joined by the Command's identity (PRD_33 §3). A client generates its domain and
 it; the framework writes JSON, never a client.
 
     client_contracts([rest, rpc])
-        ->  {"billing": {"format": "sincpro.client-contract/1", "context": "billing",
-                         "version": "9b1c…", "models": {…}, "operations": {…}, "$defs": {…},
+        ->  {"billing": {"format": "sincpro.client-contract/1", "bounded_context": "acme-billing",
+                         "alias": "billing", "version": "9b1c…",
+                         "models": {…}, "operations": {…}, "$defs": {…},
                          "bindings": {
                              "rest": {"billing.CommandIssueInvoice": {"method": "POST",
                                       "path": "/billing/invoices", "path_fields": []}},
@@ -14,7 +15,11 @@ it; the framework writes JSON, never a client.
     export_client_contract([rest, rpc], "contracts")
         ->  {"billing": Path("contracts/billing.contract.json")}
 
-Context: only what a gateway exposes is in it — an `@internal` use case is in no contract, and a
+Context: `bounded_context` is the bounded context's own name — what every identity starts with
+(`acme-billing.CommandIssueInvoice`) —, never the runtime context a use case reads; `alias` the
+name the gateways publish it under
+(`FastApiGateway({"billing": billing})`) — what a client names the context by, what the file and
+the live route are named after. Only what a gateway exposes is in it — an `@internal` use case is in no contract, and a
 wire that does not publish an operation has no binding for it. The same gateways write the same
 bytes: `version` is the fingerprint of the whole document, what a client compares its snapshot
 with; each model keeps the version of its own (`model_version`), what a read answers.
@@ -26,6 +31,7 @@ from collections.abc import Iterable
 from pathlib import Path
 from typing import Any
 
+from sincpro_framework import exceptions
 from sincpro_framework.common.naming import local_name
 from sincpro_framework.entrypoints.domain.surface import ManifestEntry
 from sincpro_framework.entrypoints.services.gateway import Gateway
@@ -70,18 +76,20 @@ def _binding(entry: ManifestEntry, address: dict[str, Any]) -> dict[str, Any]:
 
 def client_contracts(gateways: Gateway | Iterable[Gateway]) -> dict[str, dict[str, Any]]:
     """The client contract of each bounded context `gateways` publish — one gateway per wire,
-    or a single one —, by the context's name.
+    or a single one —, by the alias they publish it under.
 
         client_contracts(rest)            ->  {"billing": {…, "bindings": {"rest": {…}}}}
         client_contracts([rest, rpc])     ->  {"billing": {…, "bindings": {"rest": …, "rpc": …}}}
 
     1. Each gateway's surface: its manifest lines (`manifest`) and how its wire reaches each
-       operation (`addresses`), by the bounded context they belong to.
+       operation (`addresses`), by the alias of their context; an alias that names two bounded
+       contexts across the gateways is refused.
     2. Per context, the metamodel of what the gateways expose (`metamodel_of`): what a client
        calls, each model as its contract, what they share written once.
     3. Each operation with its deprecation (`_deprecation`); each wire's bindings, of the
        operations in the contract, by the same identity (`_binding`).
-    Final: the document, `version` the fingerprint of all of it.
+    Final: the document — the bounded context's own name and its alias —, `version` the
+    fingerprint of all of it.
     """
     listed = [gateways] if isinstance(gateways, Gateway) else list(gateways)
     buses: dict[str, UseFramework] = {}
@@ -90,13 +98,18 @@ def client_contracts(gateways: Gateway | Iterable[Gateway]) -> dict[str, dict[st
         catalogs, addresses = gateway.catalogs, gateway.addresses()
         for entry in gateway.manifest():
             bus = catalogs[entry.context].framework_instance
-            buses[bus.name] = bus
-            published.setdefault(bus.name, []).append((entry, addresses[entry.command]))
+            held = buses.setdefault(entry.context, bus)
+            if held is not bus:
+                raise exceptions.ProgrammingError(
+                    f"{entry.context!r} publishes {held.name} on one gateway and {bus.name} on "
+                    f"another: an alias names one bounded context in a client contract"
+                )
+            published.setdefault(entry.context, []).append((entry, addresses[entry.command]))
     contracts: dict[str, dict[str, Any]] = {}
-    for context in sorted(published):
-        lines = published[context]
+    for alias in sorted(published):
+        lines, bounded_context = published[alias], buses[alias].name
         metamodel = metamodel_of(
-            buses[context], {local_name(entry.command, context) for entry, _ in lines}
+            buses[alias], {local_name(entry.command, bounded_context) for entry, _ in lines}
         )
         operations = metamodel["operations"]
         for identity, operation in operations.items():
@@ -109,14 +122,15 @@ def client_contracts(gateways: Gateway | Iterable[Gateway]) -> dict[str, dict[st
                 bindings.setdefault(entry.wire, {})[entry.command] = _binding(entry, address)
         content = {
             "format": FORMAT,
-            "context": context,
+            "bounded_context": bounded_context,
+            "alias": alias,
             "models": metamodel["models"],
             "operations": operations,
             "$defs": metamodel["$defs"],
             "bindings": bindings,
         }
         written = json.dumps(content, sort_keys=True, separators=(",", ":"), default=str)
-        contracts[context] = {
+        contracts[alias] = {
             "version": hashlib.sha256(written.encode()).hexdigest(),
             **content,
         }
@@ -133,8 +147,8 @@ def contract_bytes(contract: dict[str, Any]) -> bytes:
 def export_client_contract(
     gateways: Gateway | Iterable[Gateway], out_dir: str | Path
 ) -> dict[str, Path]:
-    """Write each bounded context's contract to `<out_dir>/<context>.contract.json` — for a
-    build or a CI step, nothing served — and answer where each one went.
+    """Write each bounded context's contract to `<out_dir>/<alias>.contract.json` — for a
+    build or a CI step, nothing served — and answer where each one went, by alias.
 
         export_client_contract([rest, rpc], "web/contracts")
             ->  {"billing": Path("web/contracts/billing.contract.json"), "stock": Path(…)}
@@ -142,20 +156,20 @@ def export_client_contract(
     directory = Path(out_dir)
     directory.mkdir(parents=True, exist_ok=True)
     written: dict[str, Path] = {}
-    for context, contract in client_contracts(gateways).items():
-        path = directory / f"{context}.contract.json"
+    for alias, contract in client_contracts(gateways).items():
+        path = directory / f"{alias}.contract.json"
         path.write_bytes(contract_bytes(contract))
-        written[context] = path
+        written[alias] = path
     return written
 
 
-def contract_of(gateway: Gateway, context: str) -> tuple[bytes, str] | None:
-    """What a running gateway serves for `context`: the bytes its export would write, and the
-    version that tags them — `None` for a context it does not publish. Built when asked, so a
+def contract_of(gateway: Gateway, alias: str) -> tuple[bytes, str] | None:
+    """What a running gateway serves for the context it publishes as `alias`: the bytes its
+    export would write, and the version that tags them — `None` for an alias it does not publish. Built when asked, so a
     use case registered while it runs, or a model an extension changed, is the contract at once.
 
         contract_of(rest, "billing")    ->  (b'{\n  "$defs": …}\n', "9b1c…")
         contract_of(rest, "nowhere")    ->  None
     """
-    found = client_contracts(gateway).get(context)
+    found = client_contracts(gateway).get(alias)
     return None if found is None else (contract_bytes(found), found["version"])

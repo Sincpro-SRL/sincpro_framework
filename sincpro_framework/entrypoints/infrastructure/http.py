@@ -43,16 +43,17 @@ def document_tag(document: Mapping[str, Any]) -> str:
 
 
 def contract_route(path: str, contract: Callable[[str], tuple[bytes, str] | None]) -> Any:
-    """`GET {path}/{context}.json` as a Starlette route: a bounded context's client contract —
-    the bytes its export writes —, tagged by its version, `304` to a client that holds it.
+    """`GET {path}/{alias}.json` as a Starlette route: the client contract of the bounded context
+    a gateway publishes as `alias` — the bytes its export writes —, tagged by its version, `304`
+    to a client that holds it.
 
         contract_route("/client-contract", partial(contract_of, gateway))
         GET /client-contract/billing.json                          ->  200, ETag: "9b1c…"
         GET /client-contract/billing.json  If-None-Match: "9b1c…"  ->  304
         GET /client-contract/nowhere.json                          ->  404, a problem
 
-    1. `contract(context)` per request — so a use case registered while it runs, or a model an
-       extension changed, is served at once —; `None`, a context it does not serve, is a 404.
+    1. `contract(alias)` per request — so a use case registered while it runs, or a model an
+       extension changed, is served at once —; `None`, an alias it does not serve, is a 404.
     2. The tag the client holds answered `304`.
     Final: the bytes, as JSON, with their `ETag`.
     """
@@ -61,16 +62,16 @@ def contract_route(path: str, contract: Callable[[str], tuple[bytes, str] | None
     from starlette.routing import Route
 
     async def served(request: Any) -> Any:
-        """The contract of the context the path names."""
-        context = request.path_params["context"]
-        found = contract(context)
+        """The contract of the alias the path names."""
+        alias = request.path_params["alias"]
+        found = contract(alias)
         if found is None:
             return JSONResponse(
                 {
                     "type": "about:blank",
                     "title": "Not Found",
                     "status": 404,
-                    "detail": f"no client contract for {context!r}",
+                    "detail": f"no client contract for {alias!r}",
                 },
                 status_code=404,
                 media_type="application/problem+json",
@@ -81,4 +82,4 @@ def contract_route(path: str, contract: Callable[[str], tuple[bytes, str] | None
             return Response(status_code=304, headers={"ETag": tag})
         return Response(body, media_type="application/json", headers={"ETag": tag})
 
-    return Route(f"{path.rstrip('/')}/{{context}}.json", served, methods=["GET"])
+    return Route(f"{path.rstrip('/')}/{{alias}}.json", served, methods=["GET"])

@@ -182,7 +182,10 @@ How it is written (`contract_of(Sale)`, `sincpro_framework/ddd/metamodel/service
 - **A property per field**: what JSON Schema says of its value — `type`, `format` (`date`,
   `date-time`, `uuid`), `enum` for choices, `anyOf […, null]` when it may be empty, the keywords of
   what its value object holds (`minimum`, `exclusiveMinimum`, `maximum`, `exclusiveMaximum`,
-  `enum`), a shape inside the record inline, a relation as `$ref` to the related entity's schema —
+  `enum`), a shape inside the record as `$ref` to its definition — named by its class
+  (`#/$defs/OrderLine`) and written once, beside the entities under `$defs` —, a relation as `$ref`
+  to the related entity's schema, a key (`EntityID[Project]`) as what it holds with whose it is
+  under `relation` —
   and its `x-sincpro`: `type`, `widget`, `label`, `help`, `readonly`, `default`, the `*_when`
   conditions as expressions, `total`, `sortable`, `groupable`, `aggregates`, `ops`, `computed`,
   `owner`, `choice_labels`, `exact`, the relation's `relation`, `many`, `identified_by`,

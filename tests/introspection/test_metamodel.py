@@ -109,7 +109,23 @@ def test_every_model_the_operations_reach_is_its_contract():
 
     assert sorted(metamodel["models"]) == ["Invoice", "Partner"]
     assert metamodel["models"]["Partner"] == invoice.pop("$defs")["Partner"]
-    assert metamodel["models"]["Invoice"] == invoice
+    # The same contract, its pointer at the related entity pointed where the metamodel holds it.
+    assert metamodel["models"]["Invoice"]["properties"]["partner"]["anyOf"][0] == {
+        "$ref": "#/models/Partner"
+    }
+    assert {**metamodel["models"]["Invoice"], "properties": {}} == {
+        **invoice,
+        "properties": {},
+    }
+
+
+def test_every_pointer_inside_the_models_resolves_in_the_metamodel():
+    metamodel = metamodel_of(help_desk())
+
+    pointers = _refs(metamodel["models"])
+
+    assert pointers and all(_resolved(metamodel, one) is not None for one in pointers)
+    assert not any(one.startswith("#/$defs/") for one in pointers)
 
 
 def test_each_operation_says_the_entities_it_belongs_to_and_whether_it_runs_dry():
@@ -124,7 +140,7 @@ def test_each_operation_says_the_entities_it_belongs_to_and_whether_it_runs_dry(
 def test_an_operation_is_keyed_by_its_commands_identity_the_key_every_binding_is_listed_by():
     metamodel = metamodel_of(billing())
 
-    assert metamodel["context"] == "billing-metamodel"
+    assert metamodel["bounded_context"] == "billing-metamodel"
     assert sorted(metamodel["operations"]) == [
         registered_name(CommandVoidInvoice, "billing-metamodel"),
         registered_name(QueryGetInvoice, "billing-metamodel"),
@@ -415,7 +431,7 @@ def test_an_operation_names_the_field_that_holds_each_entitys_record():
 
     assert {name: one["targets"] for name, one in operations.items()} == {
         "QueryGetTicket": {"Ticket": "id"},
-        "QueryGetManyTickets": {},  # several keys, `ids`
+        "QueryGetManyTickets": {"Ticket": "ids"},  # several keys
         "QueryFindTickets": {},
         "QueryListTickets": {},
         "QueryListQueuedTickets": {},
@@ -617,7 +633,7 @@ class Account(Entity):
     name: str = ""
 
 
-class Tenant(Reference, context="auth"):
+class Tenant(Reference, bounded_context="auth"):
     """auth's tenant, named once in `shared/`."""
 
 
@@ -747,3 +763,57 @@ def test_a_key_of_another_context_says_whose_it_is_and_brings_no_model_of_it():
     }
     assert joined["targets"] == {}
     assert "Tenant" not in metamodel["models"]
+
+
+# ---------------------------------------------------------------------------------------------
+# One use case, N entities: reconciling move lines, a move, payments — keys in a list
+# ---------------------------------------------------------------------------------------------
+
+
+@dataclass
+class MoveLine(Entity):
+    amount: str = ""
+
+
+@dataclass
+class Move(Entity):
+    reference: str = ""
+
+
+@dataclass
+class Payment(Entity):
+    amount: str = ""
+
+
+class CommandReconcile(DataTransferObject):
+    """One reconciliation, whatever it matches: lines, a move, payments."""
+
+    lines: list[EntityID[MoveLine]] = []
+    move_id: str | None = None
+    payment_ids: list[str] = []
+
+
+def ledger_reconciliation() -> UseFramework:
+    bus = UseFramework("ledger-reconciliation", log_after_execution=False)
+
+    @bus.feature(CommandReconcile)
+    @entity_tags(Move, Payment)
+    class Reconcile(Feature):
+        def execute(self, dto: CommandReconcile) -> None:
+            return None
+
+    return bus
+
+
+def test_one_use_case_names_the_records_of_each_of_its_entities_a_list_of_keys_too():
+    [reconcile] = metamodel_of(ledger_reconciliation())["operations"].values()
+    lines = reconcile["input"]["properties"]["lines"]
+
+    assert reconcile["entities"] == ["Move", "Payment", "MoveLine"]
+    assert reconcile["targets"] == {
+        "Move": "move_id",
+        "Payment": "payment_ids",
+        "MoveLine": "lines",
+    }
+    assert lines["type"] == "array"
+    assert lines["items"]["x-sincpro"] == {"relation": "MoveLine"}

@@ -61,15 +61,16 @@ def contract_of(declared: type) -> dict[str, Any]:
         contract_of(Sale)
             ->  {"type": "object", "title": "Sale", "properties": {…},
                  "x-sincpro": {"entity": "Sale", "identity": "id", "version": "3f9c…", …},
-                 "$defs": {"Customer": {…}, "SaleLine": {…}}}
+                 "$defs": {"Customer": {…}, "SaleLine": {…}, "Discount": {…}}}
 
     1. The entities reached: `declared`, then each entity a relation of one reached points at,
        once each.
     2. Each described as the store that keeps it last said (`models.facts_of`) — or, when no store
        has described it yet, as its annotations say: found by its first field, a field holding
        another entity a relation no filter crosses —, and rendered with the fingerprint of its
-       model as its version.
-    Final: the schema of `declared`, the others beside it under `$defs`.
+       model as its version; each shape a record holds inside written once, by its class's name
+       (`shapes`), the entities' names taken from the start.
+    Final: the schema of `declared`; the entities and the shapes beside it under `$defs`.
     """
     reached: list[type] = [declared]
     for one in reached:
@@ -77,6 +78,7 @@ def contract_of(declared: type) -> dict[str, Any]:
             kind, _ = related_class(annotation)
             if isinstance(kind, type) and issubclass(kind, Entity) and kind not in reached:
                 reached.append(kind)
+    shapes: dict[str, Any] = {one.__name__: {} for one in reached}
     schemas = {
         one.__name__: rendered(
             described(
@@ -88,10 +90,13 @@ def contract_of(declared: type) -> dict[str, Any]:
                 ),
             ),
             models.of(one).fingerprint,
+            shapes,
         )
         for one in reached
     }
     contract = schemas.pop(declared.__name__)
-    if schemas:
-        contract["$defs"] = schemas
+    beside = {**shapes, **schemas}
+    beside.pop(declared.__name__)
+    if beside:
+        contract["$defs"] = beside
     return contract
