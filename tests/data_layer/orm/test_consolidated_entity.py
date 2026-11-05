@@ -139,7 +139,7 @@ def test_the_consolidated_record_is_filtered_by_a_field_of_any_of_them(engine_ur
     store.save(MoveConsolidated(id="M2", number="F-2", route="R8", cufd="C2"))
 
     found = store.search(
-        MoveConsolidated, Criteria(where=Condition(field="cufd", value="C2"))
+        MoveConsolidated, Criteria(selection=Condition(field="cufd", value="C2"))
     )
 
     assert [one.number for one in found] == ["F-2"]

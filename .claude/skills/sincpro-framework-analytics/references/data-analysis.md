@@ -44,7 +44,7 @@ september = sales.narrow({"field": "posted_at", "operator": ">=", "value": "2026
 sal = september.narrow({"field": "journal", "operator": "=", "value": "SAL"})
 ```
 
-`where` is written as in a `Criteria` (a condition, or `{"all": …}`, `{"any": …}`, `{"negate": …}`).
+`selection` is written as in a `Criteria` (a condition, or `{"all": …}`, `{"any": …}`, `{"negate": …}`).
 A field the frame has no column for is refused, and so is a value not of the column's type. A frame
 that stopped at a page refuses (`ProgrammingError`) — from it there is no telling which rows are missing;
 read the narrower filter as its own query instead.

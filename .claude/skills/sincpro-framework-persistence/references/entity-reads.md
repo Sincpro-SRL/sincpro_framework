@@ -42,7 +42,7 @@ class Invoice(Entity):
 
     @classmethod
     def DEFAULT_LITERAL_SEARCH(cls) -> Criteria:    # a template: a where holding TEXT
-        return Criteria(where=Any(any=[
+        return Criteria(selection=Any(any=[
             Condition(field="number", operator=Operator.STARTS_WITH, value=TEXT),
             Condition(field="name", operator=Operator.LIKE, value=TEXT),
         ]))
@@ -96,14 +96,14 @@ class InvoiceReads(EntityReads[Invoice]):
 ## 4. The caller's criteria wins, part by part
 
 Every DTO takes `criteria`. Each part it **names** (`model_fields_set`) replaces the entity's
-default — `specification`, `order`, `pagination`… — and its `where` adds to the read's own
+default — `specification`, `order`, `pagination`… — and its `selection` adds to the read's own
 filter. `Criteria()` names nothing: the entity's defaults, exactly.
 
 ```python
 QueryGetInvoice(id="F-001", criteria=Criteria(specification=Specification({"total": Criteria()})))
 #   → identity + total, even if DEFAULT_READING does not name total
 QueryListInvoices(criteria=Criteria(order=(Sort(field="name"),)))     # → by name
-QueryGetInvoice(id="F-001", criteria=Criteria(where=Condition(field="state", value="open")))
+QueryGetInvoice(id="F-001", criteria=Criteria(selection=Condition(field="state", value="open")))
 #   → the key AND state = open: a closed F-001 is not found
 ```
 
@@ -112,7 +112,7 @@ what either side named:
 
 ```python
 def search(self, dto: QueryListInvoices) -> ResponseListInvoices:
-    scope = Criteria(where=Condition(field="tenant_id", value=dto.tenant_id))
+    scope = Criteria(selection=Condition(field="tenant_id", value=dto.tenant_id))
     return super().search(dto.model_copy(update={"criteria": scope.merged_with(dto.criteria)}))
 ```
 
@@ -150,9 +150,9 @@ history_of(issue, *runs))`. Never one hand-written "list X events" Feature per a
 
 - **A `DEFAULT_*` as a value, a `@staticmethod` or a field.** Always `@classmethod`; anything
   else is refused when the class is declared.
-- **A `where` in `DEFAULT_READING`.** It answers a `Specification` — what of each record,
+- **A `selection` in `DEFAULT_READING`.** It answers a `Specification` — what of each record,
   never which records; a `Criteria` there is refused.
-- **A literal template without `TEXT`, or with an order or a page.** A template is a `where`
+- **A literal template without `TEXT`, or with an order or a page.** A template is a `selection`
   alone that says where the text goes; the read sets the page and the order.
 - **A key that is not unique.** `DEFAULT_GET_ID` other than `id` needs a unique column, or
   `ModelIntrospection.describe` refuses the mapped class.

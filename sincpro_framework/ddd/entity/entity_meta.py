@@ -1,7 +1,8 @@
 """What a mapped model is, and everything only it can answer about a filter.
 
-Derived by the adapter's `describe`, never declared. It reaches a client as `entity_meta_data`
-so a filter form can be built without anybody maintaining a schema.
+Derived by the adapter's `describe`, never declared. It reaches a client rendered as the entity's
+published contract (`contract_of`: JSON Schema with `x-sincpro`), in the discovery document every
+wire serves, so a filter form can be built without anybody maintaining a schema.
 
 The rules about what may be asked live here rather than in whoever is asking: a field knows
 which operators it takes and how to read a value written as text, and the model knows which of
@@ -12,12 +13,13 @@ accepts; reading one off a mapped class is the adapter's job, because that is th
 knows the ORM.
 """
 
+import ast
 import dataclasses
 import inspect
 import sys
 import types
 import uuid
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from datetime import UTC, date, datetime, time, tzinfo
 from decimal import Decimal
 from enum import Enum, StrEnum
@@ -34,7 +36,13 @@ from typing import (
 )
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
-from pydantic import Field, PydanticSchemaGenerationError, TypeAdapter, computed_field
+from pydantic import (
+    Field,
+    PrivateAttr,
+    PydanticSchemaGenerationError,
+    TypeAdapter,
+    computed_field,
+)
 from pydantic_core import PydanticSerializationError
 
 from sincpro_framework.context import use_context
@@ -50,17 +58,20 @@ from sincpro_framework.ddd.criteria import (
     MeasureFunction,
     Node,
     Operator,
+    Predicates,
     Resolution,
     ResolutionContext,
     ResolverMeta,
     Sort,
     Specification,
+    Through,
 )
 from sincpro_framework.ddd.entity.checks import CHECK
 from sincpro_framework.ddd.entity.computations import COMPUTE
 from sincpro_framework.ddd.entity.computed import computed_fields_of
 from sincpro_framework.ddd.entity.entity_collection import Dropped
 from sincpro_framework.ddd.entity.presentation import (
+    FieldRef,
     Fields,
     Presentation,
     When,
@@ -451,6 +462,7 @@ def logical_type(annotation: Any) -> FieldType:
     3. `dict[str, str]`: `TRANSLATED`.
     4. An enum: as the primitive it is — a `StrEnum` text, an `IntEnum` integer — and
        `UNKNOWN` when it is neither.
+    5. A value object: as the primitive it subclasses (`Email` is text).
     Final: the primitive's type by `LOGICAL_TYPES` — `UNKNOWN` for any other class.
     """
     base = without_optional(annotation)
@@ -468,6 +480,12 @@ def logical_type(annotation: Any) -> FieldType:
             if issubclass(base, primitive):
                 return LOGICAL_TYPES[primitive]
         return FieldType.UNKNOWN
+    if isinstance(base, type) and base not in LOGICAL_TYPES:
+        # A value object is a subclass of its primitive — an `Email` a `str`, a `Discount` a
+        # `Decimal` — and is filtered as the primitive it is.
+        for ancestor in base.__mro__[1:]:
+            if ancestor in LOGICAL_TYPES:
+                return LOGICAL_TYPES[ancestor]
     return LOGICAL_TYPES.get(base, FieldType.UNKNOWN)
 
 
@@ -562,6 +580,38 @@ class FieldMeta(DataTransferObject):
     scope is not a filter laid over the relation, it is part of what the relation means.
     `Invoice.lines` is this invoice's lines as the mapper defines them, and that a voided one
     is not among them is a fact of the model rather than a caveat to disclose."""
+
+    widget: str = ""
+    """What a screen shows the field with: the `Widget` its type gives — a text, a date, a
+    select for choices, lines for a to-many — or the one `presentation(widgets=…)` names, any
+    name a screen registers. A hint, as every hint here."""
+
+    affects: list[str] = []
+    """The computed fields a change of this one recomputes, in the order they run: a client asks
+    the server for a preview when a change affects something (`@compute` dependencies)."""
+
+    judged_by: list[str] = []
+    """The rules (`@check`) a change of this one is judged by: a client asks for a preview to be
+    warned of them while the form is edited."""
+
+    computes: dict[str, Any] | None = None
+    """What the field's computation returns, written down when the language can say it — `+`,
+    `-`, `*` over the record's own fields and a sum over the records it holds — so a client
+    computes it offline as the server does (`Formulas`). `None`: the server computes it.
+
+        {"op": "*", "args": [{"$": "field", "name": "qty"}, {"$": "field", "name": "price"}]}
+    """
+
+    holds: Expression | None = None
+    """What the field's value holds, when its type is a value object that says so
+    (`ValueObject(…, holds=lambda v: 0 <= v <= 30)`): an expression over `value`, which a client
+    checks offline as the server checks it on every construction. `None`: nothing declared."""
+
+    navigable: bool = False
+    """Whether a filter may cross this relation (`Through`): some related record answers a
+    selection. A relation the store keeps — a foreign key, a many-to-many, records held in memory —
+    is navigable; one brought by a resolver, a bus or over HTTP is not, and a filter through it is
+    dropped as `not_navigable`."""
     definition: "Meta | None" = None
     """The shape of the other side: always for an embedded value, and for a relational field
     once it was expanded, cut by the same mask."""
@@ -594,9 +644,11 @@ class FieldMeta(DataTransferObject):
         nullable: bool = False,
         parent_field: str | None = None,
         related_field: str | None = None,
+        navigable: bool = False,
     ) -> "FieldMeta":
         """A field that points at another aggregate. Nothing to filter or order by directly:
-        the key it hangs on is a scalar field of its own, and that one takes the operators."""
+        the key it hangs on is a scalar field of its own, and that one takes the operators; a
+        filter crosses it (`Through`) when it is `navigable`."""
         return cls(
             type=logical,
             nullable=nullable,
@@ -607,6 +659,7 @@ class FieldMeta(DataTransferObject):
             identified_by=identified_by,
             parent_field=parent_field,
             related_field=related_field,
+            navigable=navigable,
         )
 
     @classmethod
@@ -790,6 +843,15 @@ class Meta(DataTransferObject):
     resolvers: list[ResolverMeta] = Field(default_factory=lambda: list(RESOLVERS))
     """The dynamic values a condition's value may be (`today`, `context`, …): what a filter builder
     offers beside a literal."""
+    _related: Callable[[str], "Meta | None"] | None = PrivateAttr(default=None)
+    """How the store that described this aggregate describes the aggregate a relation points at,
+    by the relation's name — what a filter crossing it (`Through`) is checked against."""
+
+    def with_related(self, related: Callable[[str], "Meta | None"]) -> "Meta":
+        """This description, able to check a filter that crosses a relation: `related` answers
+        the description of what a relation points at, by its name."""
+        self._related = related
+        return self
 
     @property
     def relations(self) -> dict[str, FieldMeta]:
@@ -995,6 +1057,9 @@ class Meta(DataTransferObject):
                compared by a same-row operator — else `bad_value`;
            4.3 else its value read as the field's type — a value that will not read is
                `bad_value`.
+        5. A `Through`: its relation known and navigable — else `unknown_field` or
+           `not_navigable` —, its selection accepted by the related description, each loss
+           named by its path (`lines.qty`); one whose selection lost everything is dropped.
         Final: the tree of what was accepted, a group that lost every part gone, and the
         drops.
         """
@@ -1026,23 +1091,32 @@ class Meta(DataTransferObject):
                 dropped.append(loss)
             return read
 
-        return (expression.mapped(accepted) if expression is not None else None), dropped
+        def crossed(node: Through) -> Through | None:
+            """A filter that crosses a relation, checked against what the relation points at:
+            kept when the relation is navigable and the related description accepts its
+            selection, each loss named by its path (`lines.qty`)."""
+            held = self.fields.get(node.through)
+            related = (
+                self._related(node.through)
+                if held is not None and held.navigable and self._related is not None
+                else None
+            )
+            if related is None:
+                reason = "unknown_field" if held is None else "not_navigable"
+                dropped.append(Dropped(field=node.through, reason=reason))
+                return None
+            inner, losses = related.accept(node.selection, resolution)
+            dropped.extend(
+                Dropped(field=f"{node.through}.{one.field}", reason=one.reason)
+                for one in losses
+            )
+            return (
+                Through(through=node.through, selection=inner) if inner is not None else None
+            )
 
-
-def _worded(fields: dict[str, "FieldMeta"], declared: type) -> dict[str, "FieldMeta"]:
-    """`fields`, each carrying the label/help its own dataclass field declared — a class that
-    declared none gets the defaults `FieldMeta` already has."""
-    labels, helps = field_translations(declared, "label"), field_translations(
-        declared, "help"
-    )
-    if not labels and not helps:
-        return fields
-    return {
-        name: meta.model_copy(
-            update={"label": labels.get(name, meta.label), "help": helps.get(name, meta.help)}
-        )
-        for name, meta in fields.items()
-    }
+        return (
+            expression.mapped(accepted, crossed) if expression is not None else None
+        ), dropped
 
 
 TEXT_TYPES = frozenset({FieldType.TEXT, FieldType.TRANSLATED})
@@ -1070,6 +1144,7 @@ class Presented:
     required_when: dict[str, Expression] = dataclasses.field(default_factory=dict)
     visible_when: dict[str, Expression] = dataclasses.field(default_factory=dict)
     totals: dict[str, MeasureFunction] = dataclasses.field(default_factory=dict)
+    widgets: dict[str, str] = dataclasses.field(default_factory=dict)
 
 
 def _entries(answered: object) -> tuple[object, ...]:
@@ -1176,13 +1251,13 @@ def _search_checked(
             f"{owner}.DEFAULT_LITERAL_SEARCH answers a Criteria whose where holds TEXT; "
             f"it was given {type(answered).__name__}"
         )
-    extra = sorted(answered.model_fields_set - {"where"})
+    extra = sorted(answered.model_fields_set - {"selection"})
     if extra:
         raise exceptions.ProgrammingError(
             f"{owner}.DEFAULT_LITERAL_SEARCH sets {', '.join(extra)}: a template is a where "
             f"alone — the page, the order and what each record brings are the read's own"
         )
-    conditions = answered.where.conditions() if answered.where is not None else []
+    conditions = answered.selection.conditions() if answered.selection is not None else []
     if not any(one.holds_text() for one in conditions):
         raise exceptions.ProgrammingError(
             f"{owner}.DEFAULT_LITERAL_SEARCH never uses TEXT: a template says where the typed "
@@ -1207,6 +1282,76 @@ def _search_checked(
     return answered
 
 
+def _run_part(
+    written: Callable[[Any], object], node: ast.Lambda, part: ast.expr, fields: Any
+) -> Any:
+    """One part of a lambda run alone over `fields` — a condition built with `Condition.on`,
+    `All`… beside others written as Python — in the lambda's own scope."""
+    alone = ast.Expression(body=ast.Lambda(args=node.args, body=part))
+    ast.fix_missing_locations(ast.copy_location(alone.body, node))
+    closure = inspect.getclosurevars(written)
+    scope = {**closure.builtins, **closure.globals, **closure.nonlocals}
+    return eval(compile(alone, written.__code__.co_filename, "eval"), scope)(fields)
+
+
+def _whens(written: Callable[[Any], object], fields: Any) -> object:
+    """What a `*_when` lambda answers: run over `fields` when its conditions are built
+    (`Condition.on(a.state, …)`, `All`…); read from its syntax tree when one is written as Python
+    (`a.state != State.DRAFT`), which cannot be run over field names.
+
+        lambda a: When(Condition.on(a.state, Operator.NE, State.DRAFT), a.partner_id)   run
+        lambda a: When(a.state != State.DRAFT, a.partner_id)                           read
+
+    1. The lambda's `When(…)` calls — the body itself, or the items of a list or a tuple; a body
+       of another shape, or no source to read, is run as it always was.
+    2. Every condition built with a call: run.
+    3. Otherwise each `When` read: a condition written as Python compiled (`read_inside`), a built
+       one run alone over `fields`; each field it covers read as its name.
+    """
+    try:
+        node, _ = Predicates.lambda_of(written)
+    except exceptions.ProgrammingError:
+        return written(fields)
+    body = node.body
+    items = list(body.elts) if isinstance(body, (ast.List, ast.Tuple)) else [body]
+    calls = [
+        one
+        for one in items
+        if isinstance(one, ast.Call)
+        and isinstance(one.func, ast.Name)
+        and one.func.id == "When"
+    ]
+    if (
+        not calls
+        or len(calls) != len(items)
+        or all(isinstance(call.args[0], ast.Call) for call in calls)
+    ):
+        return written(fields)
+    root = node.args.args[0].arg
+    read: list[When] = []
+    for call in calls:
+        first = call.args[0]
+        condition = (
+            _run_part(written, node, first, fields)
+            if isinstance(first, ast.Call)
+            else Predicates.read_inside(written, first)
+        )
+        names: list[FieldRef] = []
+        for covered in call.args[1:]:
+            if not (
+                isinstance(covered, ast.Attribute)
+                and isinstance(covered.value, ast.Name)
+                and covered.value.id == root
+            ):
+                raise exceptions.ProgrammingError(
+                    f"`{ast.unparse(covered)}` is not a field of the entity: When covers fields "
+                    f"read through it, as in When({root}.state != …, {root}.partner_id)"
+                )
+            names.append(FieldRef(covered.attr))
+        read.append(When(condition, *names))
+    return read
+
+
 def _while(
     owner: str, answered: object, part: str, annotations: dict[str, Any]
 ) -> dict[str, Expression]:
@@ -1227,14 +1372,15 @@ def _while(
         if not isinstance(entry, When):
             raise exceptions.ProgrammingError(
                 f"{owner}.presentation {part} takes When, as in "
-                f"lambda a: [When(Condition.on(a.state, Operator.EQ, State.DRAFT), a.partner_id)]; "
+                f"lambda a: [When(a.state == State.DRAFT, a.partner_id)]; "
                 f"it was given {entry!r}"
             )
         if not isinstance(entry.condition, Node):
             raise exceptions.ProgrammingError(
-                f"{owner}.presentation {part} takes a condition as Condition, All, Any or Not, "
-                f"as in When(Condition.on(a.state, Operator.EQ, State.DRAFT), a.partner_id); "
-                f"it was given {entry.condition!r}"
+                f"{owner}.presentation {part} takes a condition written over the entity, as in "
+                f"When(a.state == State.DRAFT, a.partner_id), or built (Condition, All, Any, "
+                f"Not); it was given {entry.condition!r} — a condition written as Python needs "
+                "the lambda's source to read"
             )
         for leaf in entry.condition.conditions():
             if leaf.field not in annotations:
@@ -1288,6 +1434,29 @@ def _totals_checked(owner: str, answered: object) -> dict[str, MeasureFunction]:
             )
         totals[name] = MeasureFunction(function)
     return totals
+
+
+def _widgets_checked(owner: str, answered: object) -> dict[str, str]:
+    """The widget each field is shown with instead of its type's, by field name — any name a
+    screen registers, a `Widget` or its own; refused when it is not a mapping or names nothing.
+
+        {i.notes: Widget.TEXTAREA, i.signature: "signature-pad"}
+            ->  {"notes": "textarea", "signature": "signature-pad"}
+    """
+    if not isinstance(answered, Mapping):
+        raise exceptions.ProgrammingError(
+            f"{owner}.presentation widgets takes a mapping of field to widget, as in "
+            f"lambda i: {{i.notes: Widget.TEXTAREA}}; it was given {answered!r}"
+        )
+    widgets: dict[str, str] = {}
+    for one, widget in answered.items():
+        name = field_name(one, "lambda i: {i.notes: Widget.TEXTAREA}")
+        if not isinstance(widget, str) or not widget:
+            raise exceptions.ProgrammingError(
+                f"{owner}.presentation shows {name} with {widget!r}; a widget is a name"
+            )
+        widgets[name] = str(widget)
+    return widgets
 
 
 def framework_fields(declared: type) -> frozenset[str]:
@@ -1566,146 +1735,40 @@ def presentation_of(declared: type) -> Presented:
         readonly=readonly,
         required=required,
         readonly_when=(
-            _while(owner, presentation.readonly_when(fields), "readonly_when", annotations)
+            _while(
+                owner,
+                _whens(presentation.readonly_when, fields),
+                "readonly_when",
+                annotations,
+            )
             if presentation.readonly_when
             else {}
         ),
         required_when=(
-            _while(owner, presentation.required_when(fields), "required_when", annotations)
+            _while(
+                owner,
+                _whens(presentation.required_when, fields),
+                "required_when",
+                annotations,
+            )
             if presentation.required_when
             else {}
         ),
         visible_when=(
-            _while(owner, presentation.visible_when(fields), "visible_when", annotations)
+            _while(
+                owner, _whens(presentation.visible_when, fields), "visible_when", annotations
+            )
             if presentation.visible_when
             else {}
         ),
         totals=(
             _totals_checked(owner, presentation.totals(fields)) if presentation.totals else {}
         ),
-    )
-
-
-def hinted(fields: dict[str, "FieldMeta"], declared: type) -> dict[str, "FieldMeta"]:
-    """`fields`, each carrying the form hints the class declared or its structure implies:
-    read-only, required, the default, the three conditions and the total.
-
-        # Invoice: totals={i.amount: "sum"}
-        hinted({"amount": NUMBER, …}, Invoice)["amount"].total    ->  "sum"
-        # totals={i.partner_id: "sum"}
-        hinted(…)   ->  ProgrammingError: Invoice.presentation adds up partner_id by sum;
-                        a text adds up by min, max, count, count_distinct
-
-    1. A total the field's type cannot be folded with — not one of its `aggregates` — is
-       refused, naming what it takes.
-    Final: each field with its hints.
-    """
-    presented = presentation_of(declared)
-    defaults = defaults_of(declared)
-    for name, function in presented.totals.items():
-        meta = fields.get(name)
-        if meta is not None and function not in meta.aggregates:
-            offered = [
-                one for one in meta.aggregates if one is not MeasureFunction.PERCENTILE
-            ]
-            raise exceptions.ProgrammingError(
-                f"{declared.__name__}.presentation adds up {name} by {function}; "
-                f"a {meta.type} adds up by {', '.join(offered) or 'nothing'}"
-            )
-    return {
-        name: meta.model_copy(
-            update={
-                "readonly": name in presented.readonly,
-                "required": name in presented.required,
-                "default": None if meta.computed else defaults.get(name),
-                "readonly_when": presented.readonly_when.get(name),
-                "required_when": presented.required_when.get(name),
-                "visible_when": presented.visible_when.get(name),
-                "total": presented.totals.get(name),
-            }
-        )
-        for name, meta in fields.items()
-    }
-
-
-def default_order_of(declared: type, identity: str) -> str:
-    """The order a list takes when nobody asks: `DEFAULT_ORDER`, or newest identity first for
-    a class that has none.
-
-    in      Account (DEFAULT_ORDER=code), "id"   →  out  "code"
-    in      Note (Entity's default), "id"        →  out  "-id"
-    """
-    declared_order = ",".join(str(sort) for sort in presentation_of(declared).order)
-    return declared_order or (f"-{identity}" if identity else "")
-
-
-EVENT_ENVELOPE = frozenset({"entity_type", "entity_id", "correlation_id", "causation_id"})
-"""The fields that make a class a domain event's: one carrying them also answers its `name`."""
-
-
-def with_computed(fields: dict[str, FieldMeta], declared: type) -> dict[str, FieldMeta]:
-    """The fields with the computed ones marked. `hinted` then shows them read-only.
-
-    in      {'balance': …}, Invoice (balance computed)   →  out  balance: computed
-    """
-    marked = computed_fields_of(declared)
-    if not marked:
-        return fields
-    return {
-        name: (field.model_copy(update={"computed": True}) if name in marked else field)
-        for name, field in fields.items()
-    }
-
-
-def describe_class(declared: type, identity: str = "") -> "Meta":
-    """A definition read off the annotations alone, with no table behind it.
-
-        in      Shape(width: int, height: int, unit: str = "cm")
-        out     Meta(aggregate='Shape', identity='', fields={width, height, unit})
-
-    What a value object is described by, and what a repository with no database reads to
-    validate a criteria. `identity` is empty for a value object, which has none, and the
-    aggregate's own identity field when a record has one.
-    """
-    annotations = annotations_of(declared)
-    translator = getattr(declared, "translations", None)
-    name = (
-        MultiLanguage(cast(Mapping[str, str], translator()))
-        if callable(translator)
-        else MultiLanguage(declared.__name__)
-    )
-    fields = _worded(
-        {
-            field_name: FieldMeta.for_column(
-                logical_type(annotation),
-                annotation != without_optional(annotation),
-                members_of(annotation),
-                without_optional(annotation) is Decimal,
-                choice_labels=choice_translations_of(annotation),
-            )
-            for field_name, annotation in annotations.items()
-            if related_class(annotation)[0] is None
-            or logical_type(annotation) is not FieldType.UNKNOWN
-        },
-        declared,
-    )
-    if EVENT_ENVELOPE <= set(annotations) and isinstance(
-        getattr(declared, "name", None), str
-    ):
-        # A domain event's wire name is a class attribute, not a field; every row holds it.
-        fields["name"] = FieldMeta.for_column(FieldType.TEXT, False, [], False)
-    fields = hinted(with_computed(fields, declared), declared)
-    presented = presentation_of(declared)
-    return Meta(
-        aggregate=declared.__name__,
-        identity=identity,
-        default_order=default_order_of(declared, identity),
-        get_id=presented.get_id,
-        display=presented.display,
-        search=presented.search,
-        detail=presented.detail,
-        fields=fields,
-        name=name,
+        widgets=(
+            _widgets_checked(owner, presentation.widgets(fields))
+            if presentation.widgets
+            else {}
+        ),
     )
 
 

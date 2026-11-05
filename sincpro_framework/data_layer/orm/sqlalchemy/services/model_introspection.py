@@ -9,11 +9,8 @@ which may be NULL, which annotation points at another mapped class.
 Cached, because mappings are applied once at boot and a table grows no column at runtime.
 """
 
-from collections.abc import Mapping
-from dataclasses import is_dataclass
-from decimal import Decimal
 from functools import cache
-from typing import Any, TypeGuard, cast
+from typing import Any, TypeGuard
 
 from sqlalchemy import UniqueConstraint, inspect
 from sqlalchemy.exc import NoInspectionAvailable
@@ -34,21 +31,11 @@ from sincpro_framework.ddd.entity.entity_meta import (
     FieldMeta,
     FieldType,
     Meta,
-    annotations_of,
-    choice_translations_of,
-    default_order_of,
-    describe_class,
-    enum_of,
-    field_translations,
-    hinted,
-    logical_type,
-    presentation_of,
     related_class,
-    with_computed,
     without_optional,
 )
 from sincpro_framework.ddd.entity.relations import RelationKind, key_pair
-from sincpro_framework.ddd.multi_language import MultiLanguage
+from sincpro_framework.ddd.metamodel import StoredField, StoreFacts, description_of, model_of
 
 
 def _relational_type(kind: RelationKind | None, many: bool) -> FieldType:
@@ -62,16 +49,6 @@ def _relational_type(kind: RelationKind | None, many: bool) -> FieldType:
     if kind is RelationKind.MANY_TO_MANY:
         return FieldType.MANY2MANY
     return FieldType.ONE2MANY if many else FieldType.MANY2ONE
-
-
-def _members_of(annotation: Any) -> list[Any]:
-    """The values an enum field may hold, in declaration order.
-
-    in  Stage | None   →  out  ['started', 'fitted', 'generated']
-    in  str            →  out  []
-    """
-    members = enum_of(annotation)
-    return [] if members is None else [member.value for member in members]
 
 
 def is_mapped(candidate: Any) -> TypeGuard[type]:
@@ -90,23 +67,6 @@ def is_mapped(candidate: Any) -> TypeGuard[type]:
         return True
     except NoInspectionAvailable:
         return False
-
-
-def describe_shape(value_object: type) -> Meta:
-    """The definition of a value object embedded in a row: its annotations, no table, and no
-    identity of its own, so nothing survives a mask on its own account.
-
-    in      Shape(width: int, height: int, unit: str = "cm")
-    out     Meta(aggregate='Shape', identity='', fields={width, height, unit})
-    """
-    return describe_class(value_object)
-
-
-def _is_shape(candidate: Any) -> bool:
-    """A dataclass or a pydantic model that is not mapped: a value object with a shape."""
-    if not isinstance(candidate, type) or is_mapped(candidate):
-        return False
-    return is_dataclass(candidate) or hasattr(candidate, "model_fields")
 
 
 def _column_type(column: Any) -> Any:
@@ -153,27 +113,24 @@ class ModelIntrospection:
     """
 
     @staticmethod
-    @cache
-    def describe(entity: type) -> Meta:
-        """Context: what a caller is told about this aggregate, read off the model itself.
+    def facts(entity: type) -> StoreFacts:
+        """What the mapper knows of `entity` that the entity does not say: its identity, its
+        columns — what each holds and whether it may be NULL —, how each relation meets, and the
+        fields its extensions add.
 
-            in      the class Dataset, mapped to the `dataset` table
-            read    annotations for logical types, columns for nullability
-            out     Meta(aggregate='Dataset', identity='dataset_id', fields={...})
+            ModelIntrospection.facts(Dataset)
+                ->  StoreFacts(identity="dataset_id", stored={"name": …}, relations={"runs": …})
 
         1. Inspect the mapper; refuse a class with no table, since it has no fields to ask about.
-        2. Read the annotations for logical types, the columns for nullability, and carry the
-           class's `translations()` as it answered it.
-        3. A column whose annotation is a value object, a dataclass or a pydantic model with no
-           table, is an embedded field carrying that shape as its definition.
-        4. Final: any other annotation pointing at a mapped class, or any relation the data mapper
-           declared or inferred, is a relational field: `many2one`, `one2many` or `many2many`,
-           with the aggregate on the other side and what identifies the relation.
-
-        >>> ModelIntrospection.describe(Dataset).identity
-        'dataset_id'
-        >>> ModelIntrospection.describe(Dataset).fields["column_names"].type    # Text on disk
-        <FieldType.TEXT_LIST: 'text[]'>
+        2. Each column but the hidden ones, held as its annotation says — or as the column does,
+           for one no field declares — and empty as the column allows; a computed column has no
+           NOT NULL, so its annotation says whether it may be absent.
+        3. Any annotation pointing at a mapped class, or any relation the data mapper declared
+           or inferred, is a relation: `many2one`, `one2many` or `many2many`, with the aggregate
+           on the other side and the two fields it meets by, expanded — navigable when the
+           database keeps it (a foreign key, a many-to-many), not when a resolver or a bus brings
+           it.
+        Final: the fields each extension adds, absent on a row that is not one.
         """
         try:
             mapper = inspect(entity)
@@ -187,44 +144,25 @@ class ModelIntrospection:
                 f"{entity.__name__} is not a mapped aggregate; there is nothing to query"
             )
 
-        annotations = annotations_of(entity)
+        annotations = model_of(entity).annotations
         identity = mapper.primary_key[0].name
-        translator = getattr(entity, "translations", None)
-        aggregate_name = (
-            MultiLanguage(cast(Mapping[str, str], translator()))
-            if callable(translator)
-            else MultiLanguage(entity.__name__)
-        )
-
-        fields: dict[str, FieldMeta] = {}
+        stored: dict[str, StoredField] = {}
         for column in mapper.columns:
             if column.key in HIDDEN:
                 continue
             annotation = annotations.get(column.key) or _column_type(column)
-            # A computed field is an expression, not a column: it has no NOT NULL, so its annotation
-            # says whether it may be absent.
             nullable = (
                 bool(column.nullable)
                 if hasattr(column, "nullable")
                 else annotation != without_optional(annotation)
             )
-            shape, many = related_class(annotation)
-            if shape is not None and _is_shape(shape):
-                fields[column.key] = FieldMeta.for_embedded(
-                    describe_shape(shape), many, nullable
-                )
-            else:
-                fields[column.key] = FieldMeta.for_column(
-                    logical_type(annotation),
-                    nullable,
-                    _members_of(annotation),
-                    without_optional(annotation) is Decimal,
-                    choice_labels=choice_translations_of(annotation),
-                )
+            stored[column.key] = StoredField(annotation, nullable)
 
+        relations: dict[str, FieldMeta] = {}
+        targets: dict[str, type] = {}
         declared = mapping_registry.relations_of(entity)
         for name, annotation in annotations.items():
-            if name in fields:
+            if name in stored:
                 continue
             related, many = related_class(annotation)
             relation = declared.get(name)
@@ -241,19 +179,31 @@ class ModelIntrospection:
             nullable = logical is FieldType.MANY2ONE
             if nullable and here is not None and here in mapper.columns:
                 nullable = bool(mapper.columns[here].nullable)
-            fields[name] = FieldMeta.for_relation(
+            relations[name] = FieldMeta.for_relation(
                 logical,
                 related_name,
                 identified_by,
                 nullable,
                 parent_field=here,
                 related_field=there,
+                navigable=relation is None
+                or relation.kind in (RelationKind.FOREIGN_KEY, RelationKind.MANY_TO_MANY),
             )
+            if relation is not None:
+                targets[name] = relation.related
+            elif related is not None:
+                targets[name] = related
 
+        extended: dict[str, FieldMeta] = {}
         for extension in extensions.under(entity):
             added = ModelIntrospection.describe(extension.entity).fields
             for name in extension.fields:
-                if name in fields or name not in added:
+                if (
+                    name in stored
+                    or name in relations
+                    or name in extended
+                    or name not in added
+                ):
                     continue
                 own = added[name]
                 absent = (
@@ -267,34 +217,37 @@ class ModelIntrospection:
                     if own.relation is None and own.type is not FieldType.EMBEDDED
                     else own
                 )
-                fields[name] = absent.model_copy(update={"owner": extension.entity.__name__})
-
-        labels, helps = field_translations(entity, "label"), field_translations(
-            entity, "help"
-        )
-        if labels or helps:
-            fields = {
-                name: meta.model_copy(
-                    update={"label": labels.get(name, {}), "help": helps.get(name, {})}
+                extended[name] = absent.model_copy(
+                    update={"owner": extension.entity.__name__}
                 )
-                for name, meta in fields.items()
-            }
 
-        fields = hinted(with_computed(fields, entity), entity)
-        for ancestor in reversed(entity.__mro__):
-            for name, changes in extensions.OVERLAYS.get(ancestor, {}).items():
-                if name in fields:
-                    fields[name] = fields[name].model_copy(update=changes)
-        presented = presentation_of(entity)
-        _key_is_unique(entity, mapper.local_table, presented.get_id, identity)
-        return Meta(
-            aggregate=entity.__name__,
+        def pointed_at(name: str) -> Meta | None:
+            """The description of what the relation `name` points at, as this store holds it."""
+            return ModelIntrospection.describe(targets[name]) if name in targets else None
+
+        return StoreFacts(
             identity=identity,
-            default_order=default_order_of(entity, identity),
-            get_id=presented.get_id,
-            display=presented.display,
-            search=presented.search,
-            detail=presented.detail,
-            fields=fields,
-            name=aggregate_name,
+            stored=stored,
+            relations=relations,
+            extended=extended,
+            related=pointed_at,
         )
+
+    @staticmethod
+    @cache
+    def describe(entity: type) -> Meta:
+        """What a caller is told about this aggregate: the metamodel's description, with what
+        the mapper knows (`facts`), and a key other than the identity checked unique on disk.
+
+            in      the class Dataset, mapped to the `dataset` table
+            out     Meta(aggregate='Dataset', identity='dataset_id', fields={...})
+
+        >>> ModelIntrospection.describe(Dataset).identity
+        'dataset_id'
+        >>> ModelIntrospection.describe(Dataset).fields["column_names"].type    # Text on disk
+        <FieldType.TEXT_LIST: 'text[]'>
+        """
+        facts = ModelIntrospection.facts(entity)
+        meta = description_of(entity, facts)
+        _key_is_unique(entity, inspect(entity).local_table, meta.get_id, facts.identity)
+        return meta

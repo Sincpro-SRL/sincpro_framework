@@ -56,7 +56,7 @@ def test_the_margins_are_folded_in_the_database_and_not_added_up(store: Reposito
 
 
 def test_a_pivot_honours_the_filter_it_was_given(store: Repository, things):
-    asked = Criteria(where=Condition(field="size", value=0))
+    asked = Criteria(selection=Condition(field="size", value=0))
 
     matrix = store.pivot(
         Things, rows=["owner"], columns=["size"], criteria=asked, n=("count", "size")
@@ -92,7 +92,7 @@ def test_a_pivot_needs_both_axes_and_a_fold_it_knows(store: Repository):
 
 def test_explain_says_what_will_run_without_running_it(store: Repository, queries_run):
     asked = Criteria(
-        where=Condition(field="size", value=1),
+        selection=Condition(field="size", value=1),
         order=Sort.parse("-made_at"),
         pagination=Pagination(limit=10),
     )
@@ -111,7 +111,7 @@ def test_explain_names_what_the_model_refused(store: Repository):
     explained = store.explain(
         Things,
         Criteria(
-            where=Condition(field="legacy_flag", value=1),
+            selection=Condition(field="legacy_flag", value=1),
             specification=Specification({"nope": Criteria()}),
         ),
     )

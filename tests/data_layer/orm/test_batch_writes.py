@@ -50,7 +50,7 @@ def test_a_batch_updates_what_was_loaded_and_inserts_what_was_not(store: Reposit
 
     assert store.count(Notes).value == 5
     assert (
-        store.count(Notes, Criteria(where=Condition(field="body", value="changed"))).value
+        store.count(Notes, Criteria(selection=Condition(field="body", value="changed"))).value
         == 3
     )
     assert all(note.version == 2 for note in store.fetch_all(Notes) if note.body == "changed")

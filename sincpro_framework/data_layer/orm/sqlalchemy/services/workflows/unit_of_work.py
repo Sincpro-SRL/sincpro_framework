@@ -48,7 +48,7 @@ class UnitOfWork(RepositoryState):
         """The same database seen through a filter nothing can widen: what a tenant, a branch
         or a permission is.
 
-            books = repository.narrowed(Criteria(where=Condition(field="tenant", value="acme")))
+            books = repository.narrowed(Criteria(selection=Condition(field="tenant", value="acme")))
             books.search(Invoices, criteria)      →  … AND tenant = 'acme'
             books.save(invoice_of_another_tenant) →  ProgrammingError
 

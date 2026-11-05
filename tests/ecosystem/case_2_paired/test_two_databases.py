@@ -163,7 +163,7 @@ def test_the_timeline_is_folded_from_facts_that_crossed(two_databases: Shop):
         one.said
         for one in two_databases.store("notifications").fetch_all(
             notifications.Tolds,
-            Criteria(where=Condition(field="order_id", value=placed.order_id)),
+            Criteria(selection=Condition(field="order_id", value=placed.order_id)),
         )
     ) == sorted([OrderPlaced.name, StockReserved.name, InvoiceIssued.name])
 
@@ -187,7 +187,7 @@ def test_the_invoice_fact_arrives_in_order_because_it_was_published_on_commit(
             # Read with an order: without it the engine hands the rows back however it likes,
             # and the question was about order.
             Criteria(
-                where=Condition(field="said", value=InvoiceIssued.name),
+                selection=Condition(field="said", value=InvoiceIssued.name),
                 order=(Sort(field="id"),),
             ),
         )

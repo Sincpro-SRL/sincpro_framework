@@ -15,7 +15,7 @@ from .models import ROW_COUNT, Note, Notes, Thing, Things, a_thing
 
 
 def titled(store, title: str) -> Notes:
-    return store.search(Notes, Criteria(where=Condition(field="title", value=title)))
+    return store.search(Notes, Criteria(selection=Condition(field="title", value=title)))
 
 
 def test_get_answers_the_record_or_nothing(store):
@@ -149,7 +149,8 @@ def test_a_unit_of_work_reads_what_it_wrote_before_committing(store):
         assert (
             len(
                 repository.search(
-                    Notes, Criteria(where=Condition(field="title", value="visible inside"))
+                    Notes,
+                    Criteria(selection=Condition(field="title", value="visible inside")),
                 )
             )
             == 1

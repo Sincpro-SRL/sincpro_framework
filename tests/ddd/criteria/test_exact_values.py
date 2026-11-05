@@ -19,7 +19,8 @@ from sincpro_framework.data_layer.orm import (
 )
 from sincpro_framework.data_layer.repositories import MemoryRepository
 from sincpro_framework.ddd import Criteria, Entity
-from sincpro_framework.ddd.entity.entity_meta import FieldType, describe_class
+from sincpro_framework.ddd.entity.entity_meta import FieldType
+from sincpro_framework.ddd.metamodel import description_of
 
 
 @dataclass
@@ -46,7 +47,7 @@ map_aggregates(
 
 def _where(field_name: str, value: object) -> Criteria:
     return Criteria.model_validate(
-        {"where": {"field": field_name, "operator": "=", "value": value}}
+        {"selection": {"field": field_name, "operator": "=", "value": value}}
     )
 
 
@@ -68,7 +69,7 @@ def test_a_decimal_is_found_however_its_value_was_written(tmp_path: Path, writte
 
 
 def test_a_decimal_field_says_it_is_exact():
-    assert describe_class(Line).field("amount").exact
+    assert description_of(Line).field("amount").exact
 
 
 def test_a_uuid_identity_is_searched_ordered_and_filtered():
@@ -82,7 +83,7 @@ def test_a_uuid_identity_is_searched_ordered_and_filtered():
 
     assert len(everything) == 3
     assert [ticket.title for ticket in one] == ["1"]
-    assert describe_class(Ticket).field("id").type is FieldType.UUID
+    assert description_of(Ticket).field("id").type is FieldType.UUID
 
 
 def test_uuid_pages_are_walked_with_the_cursor():

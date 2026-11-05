@@ -6,6 +6,7 @@ from typing import Any
 from sincpro_framework.ddd.criteria.domain.expression import Expression
 from sincpro_framework.ddd.criteria.domain.resolution import ResolutionContext
 from sincpro_framework.ddd.criteria.services import evaluation
+from sincpro_framework.ddd.criteria.services.programs import Program, program_of
 
 
 class Evaluation:
@@ -15,6 +16,8 @@ class Evaluation:
         ->  True
     Evaluation.holds(Condition(field="size", operator=Operator.GT, value=1), {"size": 3}.get)
         ->  True
+    program = Evaluation.program(Condition(field="size", operator=Operator.GT, value=1))
+    [one for one in things if program(partial(getattr, one))]      compiled once, asked per record
     """
 
     @staticmethod
@@ -27,6 +30,12 @@ class Evaluation:
         row, a path into a workflow's results. With a `resolution`, a dynamic value is read when
         its condition is reached and not before."""
         return evaluation.holds(expression, read, resolution)
+
+    @staticmethod
+    def program(expression: Expression | None) -> Program:
+        """The filter compiled once, to answer many records: `program(partial(getattr, record))`
+        — what a loop over a page asks instead of `matches` per record."""
+        return program_of(expression)
 
     @staticmethod
     def matches(record: Any, expression: Expression | None) -> bool:

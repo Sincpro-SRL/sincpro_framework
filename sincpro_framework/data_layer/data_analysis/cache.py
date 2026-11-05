@@ -26,11 +26,10 @@ from sincpro_framework.ddd.criteria import CountMode, Criteria
 from sincpro_framework.ddd.entity.entity_collection import identity_name, model_and_collection
 from sincpro_framework.ddd.entity.entity_meta import (
     FieldType,
-    annotations_of,
-    describe_class,
     logical_type,
     without_optional,
 )
+from sincpro_framework.ddd.metamodel import description_of, model_of
 from sincpro_framework.ddd.repositories import IRepository
 
 FRAME_TYPES = {
@@ -65,8 +64,8 @@ def _no_rows(model: type, criteria: Criteria, where: dict | None) -> DataFrame:
     """A read before its first row, with the columns a row of it has — the identity and what the
     specification selects, or every field the model describes — typed by the model, so a read that
     answers nothing still joins, and goes to Arrow and Parquet, with its columns."""
-    described = describe_class(model).fields
-    annotations = annotations_of(model)
+    described = description_of(model).fields
+    annotations = model_of(model).annotations
     specification = criteria.specification
     columns = (
         tuple(described)
@@ -88,7 +87,7 @@ def _page(
 ) -> DataFrame:
     """One page, from `cursor` — from the first row when there is none, whatever page the
     `Criteria` was asked from: the page is not part of the read."""
-    asked = criteria.model_copy(update={"count": CountMode.NONE, "meta": False})
+    asked = criteria.model_copy(update={"count": CountMode.NONE})
     collection = repository.search(target, asked.resuming_from(cursor))
     rows = collection.to_records(criteria.specification)
     return DataFrame.from_rows(
@@ -162,7 +161,7 @@ class QueryCache:
         """
         key = repository.fingerprint(target, criteria)
         model, _ = model_and_collection(target)
-        where = criteria.model_dump(mode="json")["where"]
+        where = criteria.model_dump(mode="json")["selection"]
         with self._lock:
             held = self._held.get(key)
         if held is None:

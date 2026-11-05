@@ -37,7 +37,7 @@ from sincpro_framework.ddd.criteria import (
     Today,
 )
 from sincpro_framework.ddd.entity import Entity
-from sincpro_framework.ddd.entity.entity_meta import describe_class
+from sincpro_framework.ddd.metamodel import description_of
 
 LA_PAZ = ZoneInfo("America/La_Paz")
 MONDAY = datetime(2026, 10, 12, 15, 30, tzinfo=UTC)
@@ -342,17 +342,17 @@ def numbers(found) -> list[str]:
 def test_a_store_reads_today_when_it_runs():
     invoices = invoices_over([3, 0, -2])
 
-    overdue = invoices.search(Criteria(where=due(Today(), Operator.LT)))
+    overdue = invoices.search(Criteria(selection=due(Today(), Operator.LT)))
 
     assert numbers(overdue) == ["F-3"]
 
 
 def test_the_same_filter_asked_later_means_another_day():
     invoices = invoices_over([3, 0, -2])
-    asked = Criteria(where=due(Today(), Operator.LT))
+    asked = Criteria(selection=due(Today(), Operator.LT))
 
     first = numbers(invoices.search(asked))
-    after_a_day = Criteria(where=due(Today().after(days=1), Operator.LT))
+    after_a_day = Criteria(selection=due(Today().after(days=1), Operator.LT))
 
     assert first == ["F-3"]
     assert numbers(invoices.search(after_a_day)) == ["F-0", "F-3"]
@@ -362,7 +362,7 @@ def test_a_date_against_an_instant_column_is_its_midnight():
     invoices = invoices_over([3, 0])
     since = Condition(field="posted_at", operator=Operator.GTE, value=Today().before(days=1))
 
-    assert numbers(invoices.search(Criteria(where=since))) == ["F-0"]
+    assert numbers(invoices.search(Criteria(selection=since))) == ["F-0"]
 
 
 def test_the_period_filters_a_store():
@@ -371,12 +371,12 @@ def test_the_period_filters_a_store():
         field="due", operator=Operator.BETWEEN, value=Period(name=Periods.THIS_MONTH)
     )
 
-    assert numbers(invoices.search(Criteria(where=asked))) == ["F-0"]
+    assert numbers(invoices.search(Criteria(selection=asked))) == ["F-0"]
 
 
 def test_the_user_comes_from_the_servers_context_and_not_from_the_client():
     invoices = invoices_over([1])
-    mine = Criteria(where=Condition(field="owner_id", value=FromContext(key="user_id")))
+    mine = Criteria(selection=Condition(field="owner_id", value=FromContext(key="user_id")))
 
     with carrying({"user_id": "u-7"}):
         assert numbers(invoices.search(mine)) == ["F-1"]
@@ -386,7 +386,7 @@ def test_the_user_comes_from_the_servers_context_and_not_from_the_client():
 
 def test_a_filter_that_names_a_context_key_nobody_set_is_refused_and_not_widened():
     invoices = invoices_over([1])
-    mine = Criteria(where=Condition(field="owner_id", value=FromContext(key="user_id")))
+    mine = Criteria(selection=Condition(field="owner_id", value=FromContext(key="user_id")))
 
     with carrying({}), pytest.raises(
         ddd_exceptions.InvalidCriteria, match="the context has no 'user_id'"
@@ -406,7 +406,7 @@ def test_the_timezone_of_the_context_decides_the_day_a_store_reads():
 
     def day_in(zone: str) -> Any:
         with carrying({"timezone": zone}):
-            read, _ = describe_class(Invoice).accept(due(Today()))
+            read, _ = description_of(Invoice).accept(due(Today()))
         assert isinstance(read, Condition)
         return read.value
 
@@ -419,7 +419,7 @@ def test_a_timezone_the_context_names_wrongly_is_refused():
     with carrying({"timezone": "Mars/Olympus"}), pytest.raises(
         exceptions.ProgrammingError, match="Mars"
     ):
-        invoices.search(Criteria(where=due(Today(), Operator.EQ)))
+        invoices.search(Criteria(selection=due(Today(), Operator.EQ)))
 
 
 # ── a window of whole units ────────────────────────────────────────────────────
@@ -503,7 +503,7 @@ def test_a_column_is_compared_with_another_column_of_the_same_row():
         field="total", operator=Operator.GT, value=FromField(name="credit_limit")
     )
 
-    found = credits.search(Criteria(where=over))
+    found = credits.search(Criteria(selection=over))
 
     assert sorted(one.code for one in found) == ["b"]
 
@@ -521,7 +521,7 @@ def test_a_column_against_another_that_holds_nothing_is_not_true_as_in_sql():
         field="total", operator=Operator.GT, value=FromField(name="credit_limit")
     )
 
-    found = AggregateRepository(repository, Limit).search(Criteria(where=over))
+    found = AggregateRepository(repository, Limit).search(Criteria(selection=over))
 
     assert [one.credit_limit for one in found] == [1]
 
@@ -551,7 +551,7 @@ def test_a_column_against_another_is_dropped_and_reported_when_it_cannot_be_aske
 ):
     asked = Condition(field="total", operator=operator, value=FromField(name=other))
 
-    kept, dropped = describe_class(Credit).accept(asked)
+    kept, dropped = description_of(Credit).accept(asked)
 
     assert kept is None and [one.reason for one in dropped] == [reason]
 
@@ -577,7 +577,7 @@ def test_a_date_against_an_instant_column_is_its_midnight_in_the_timezone():
 def test_a_store_reads_a_date_for_an_instant_column_in_the_timezone_of_the_context():
     def midnight_in(zone: str) -> Any:
         with carrying({"timezone": zone}):
-            read, _ = describe_class(Invoice).accept(
+            read, _ = description_of(Invoice).accept(
                 Condition(field="posted_at", operator=Operator.GTE, value=date(2026, 10, 12))
             )
         assert isinstance(read, Condition)
@@ -591,7 +591,7 @@ def test_a_store_reads_a_date_for_an_instant_column_in_the_timezone_of_the_conte
 
 
 def test_the_definition_publishes_the_dynamic_values_it_reads():
-    published = {one.name: one for one in describe_class(Invoice).resolvers}
+    published = {one.name: one for one in description_of(Invoice).resolvers}
 
     assert set(published) == {"today", "now", "period", "context", "param", "field"}
     assert published["today"].returns == "date"

@@ -70,10 +70,10 @@ class Sale(Entity):
     @check(lambda s: s.lines)
     def each_product_once(self) -> None:
         seen: set[str] = set()
-        for position, line in enumerate(self.lines):
+        for line in self.lines:
             if line.product in seen:
                 raise ddd_exceptions.InvalidValue(
-                    f"{line.product} is already on the sale", ("lines", position, "product")
+                    f"{line.product} is already on the sale", ("lines", line.id, "product")
                 )
             seen.add(line.product)
 
@@ -126,19 +126,20 @@ def imported(store: Repository, *rows: Entity) -> None:
 
 
 def test_a_broken_rule_refuses_the_save_before_a_row_is_written(store):
+    empty = SaleLine(product="desk", qty=0)
     sale = Sale(
         customer="acme",
         state="confirmed",
-        lines=[SaleLine(product="desk"), SaleLine(product="desk", qty=0)],
+        lines=[SaleLine(product="desk"), empty],
     )
 
     with pytest.raises(ddd_exceptions.ChecksFailed) as refused:
         store.save(sale)
 
     assert [one.path for one in refused.value.failures] == [
-        ("lines", 1, "qty"),
+        ("lines", empty.id, "qty"),
         ("delivery",),
-        ("lines", 1, "product"),
+        ("lines", empty.id, "product"),
     ]
     assert store.search(Sale, Criteria(count=CountMode.EXACT)).count.value == 0
 
@@ -161,10 +162,10 @@ def test_lines_held_in_part_are_not_judged_and_the_save_says_so(store):
         store,
         Sale(customer="acme", lines=[SaleLine(product="desk"), SaleLine(product="desk")]),
     )
-    only_one = Specification({"lines": Criteria(where=Condition(field="qty", value=1))})
+    only_one = Specification({"lines": Criteria(selection=Condition(field="qty", value=1))})
     read = store.search(
         Sale,
-        Criteria(specification=only_one, where=Condition(field="customer", value="acme")),
+        Criteria(specification=only_one, selection=Condition(field="customer", value="acme")),
     ).items[0]
     read.lines = read.lines[:1]
 
@@ -206,7 +207,7 @@ def test_a_rule_the_database_counts_is_a_computed_flag_the_check_reads(store):
     flagged = store.search(
         Sale,
         Criteria(
-            where=Condition(field="missing_delivery", value=True), count=CountMode.EXACT
+            selection=Condition(field="missing_delivery", value=True), count=CountMode.EXACT
         ),
     )
 

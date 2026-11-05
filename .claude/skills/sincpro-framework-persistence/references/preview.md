@@ -70,12 +70,14 @@ owned record knowing its place, so the domain never passes an index:
 ```python
 def amount_of(self) -> Decimal:                       # SaleLine
     if self.price < self.cost:
-        warn_form("price below cost", field="price")     # → field "lines", path ("lines", 1, "price")
+        warn_form("price below cost", field="price")     # → field "lines", path ("lines", "0192…", "price")
     return self.qty * self.price
 ```
 
-The position is the one in the list the form sent — the same one an `InvalidValue` points at
-(`#/values/lines/1/price`) — so a screen marks errors and warnings with one rule.
+A line with an identity is named by it — the same key an `InvalidValue` points at
+(`#/values/lines/0192…/price`), `changed` names (`lines.0192….qty`) and the line's states are keyed
+by — so a screen marks errors and warnings with one rule; a line that is a plain value, by its
+position in the list the form sent.
 
 ## 3. A form that is not always saved: `Edit`
 
@@ -109,7 +111,7 @@ self.repository.save(invoice)        # computations recomputed, before_save hook
 - **Assigning `id` or `version` from a form.** `apply_values` refuses framework fields, and a
   preview never answers them. A line may carry its `id`: it is the line the order already
   holds, edited in place, so its row is updated — read the lines first (inside `context()`); an
-  `id` the order does not hold is refused. Lines without ids over lines never read replace
+  `id` the order does not hold is a new line built under it (the form mints it, UUID v7). Lines without ids over lines never read replace
   them, exactly as `order.lines = [...]` does — blind, so the save retains the totals and warns.
 - **Computing in a hook instead of a computation.** A `before_save` hook runs on save only; the
   preview would not show it. A value a form must see comes from `@compute`.

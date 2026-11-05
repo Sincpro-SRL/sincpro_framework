@@ -74,7 +74,7 @@ def case(
         "week_starts_on": week_starts_on,
         "context": context or {},
         "params": params or {},
-        "where": where,
+        "selection": where,
         "resolved": resolved,
     }
 
@@ -317,7 +317,7 @@ CASES: list[dict[str, Any]] = [
 
 EXAMPLES: list[dict[str, Any]] = [
     {
-        "where": {
+        "selection": {
             "all": [
                 {"field": "row_count", "operator": ">", "value": 1000},
                 {
@@ -335,10 +335,9 @@ EXAMPLES: list[dict[str, Any]] = [
             "measures": {"rows": {"function": "sum", "field": "row_count"}},
         },
         "count": "capped",
-        "meta": True,
     },
     {
-        "where": {
+        "selection": {
             "all": [
                 {"field": "due", "operator": "<", "value": {"$": "today"}},
                 {
@@ -405,7 +404,7 @@ def contract_files() -> dict[Path, str]:
 
 @pytest.mark.parametrize("one", CASES, ids=lambda one: one["name"])
 def test_a_dynamic_value_reads_to_what_the_contract_says(one: dict[str, Any]):
-    stored = Node.read(one["where"])
+    stored = Node.read(one["selection"])
 
     run = Resolution.resolve(stored, resolution_of(one))
 
@@ -413,7 +412,7 @@ def test_a_dynamic_value_reads_to_what_the_contract_says(one: dict[str, Any]):
 
 
 def test_the_cases_cover_every_kind_of_dynamic_value():
-    asked = json.dumps([one["where"] for one in CASES])
+    asked = json.dumps([one["selection"] for one in CASES])
 
     for kind in ("today", "now", "period", "context", "param", "field"):
         assert f'"$": "{kind}"' in asked, kind

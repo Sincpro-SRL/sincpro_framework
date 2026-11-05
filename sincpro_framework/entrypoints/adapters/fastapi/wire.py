@@ -35,11 +35,14 @@ from sincpro_framework.auth import AccessControl
 from sincpro_framework.common import failures
 from sincpro_framework.common.naming import kebab
 from sincpro_framework.data_layer.caching import Idempotency
+from sincpro_framework.ddd.metamodel import contract_of
+from sincpro_framework.ddd.metamodel.services.contract import entities_in
 from sincpro_framework.entrypoints.adapters.fastapi import exceptions
 from sincpro_framework.entrypoints.adapters.fastapi.calling import (
     bus_call,
     requires_idempotency_key,
 )
+from sincpro_framework.entrypoints.adapters.fastapi.contracts import CONTRACTS
 from sincpro_framework.entrypoints.adapters.fastapi.problems import (
     BODY_EXTENSION,
     INSTALLED,
@@ -62,6 +65,7 @@ from sincpro_framework.entrypoints.domain.surface import (
     Wire,
 )
 from sincpro_framework.observability.metrics import metrics
+from sincpro_framework.sincpro_abstractions import DryRunnable
 from sincpro_framework.use_bus import UseFramework
 
 TEMPLATE_FIELD = re.compile(r"\{([^{}]+)\}")
@@ -455,7 +459,9 @@ class FastApiWire(Wire[RestBinding]):
         3. Per method:
            3.1 `GET` / `DELETE` read the DTO from the URL, every field a query parameter; any
                other reads the body, without the fields the path carries.
-           3.2 `x-sincpro-dto` and `x-sincpro-layer` name what answers it.
+           3.2 `x-sincpro-dto` and `x-sincpro-layer` name what answers it, `x-sincpro-entities`
+               what it belongs to, `x-sincpro-dry-run` whether its Command may be run dry; the
+               contracts of the entities it answers ride along for `contracted_document`.
            3.3 The `POST` twin of an rpc `Query` gets `_by_body` on its `operationId`.
         Final: `add_api_route`, with `_PathIntoBody` when a body route takes fields from the
         path.
@@ -495,6 +501,14 @@ class FastApiWire(Wire[RestBinding]):
                 extra.update(_body_without(command, path_fields))
             extra["x-sincpro-dto"] = command.__name__
             extra["x-sincpro-layer"] = str(operation.layer)
+            if operation.entities:
+                extra["x-sincpro-entities"] = [one.__name__ for one in operation.entities]
+            if issubclass(command, DryRunnable):
+                extra["x-sincpro-dry-run"] = True
+            extra[CONTRACTS] = {
+                one.__name__: contract_of(one)
+                for one in entities_in(operation.response, set())
+            }
             by_body = method == "POST" and len(self._methods(resolved)) > 1
             router.add_api_route(
                 path,

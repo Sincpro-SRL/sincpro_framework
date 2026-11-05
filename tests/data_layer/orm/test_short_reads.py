@@ -25,9 +25,12 @@ from .models import ROW_COUNT, Thing, Things
 
 def test_exists_answers_without_counting_or_fetching(store: Repository, queries_run):
     with queries_run() as statements:
-        assert store.exists(Things, Criteria(where=Condition(field="size", value=3))) is True
         assert (
-            store.exists(Things, Criteria(where=Condition(field="size", value=99))) is False
+            store.exists(Things, Criteria(selection=Condition(field="size", value=3))) is True
+        )
+        assert (
+            store.exists(Things, Criteria(selection=Condition(field="size", value=99)))
+            is False
         )
 
     assert len(statements) == 2
@@ -42,28 +45,30 @@ def test_first_is_the_one_the_order_puts_in_front(store: Repository, things):
     assert biggest is not None and smallest is not None
     assert biggest.size == max(one.size for one in things)
     assert smallest.size == min(one.size for one in things)
-    assert store.first(Things, Criteria(where=Condition(field="size", value=99))) is None
+    assert store.first(Things, Criteria(selection=Condition(field="size", value=99))) is None
 
 
 def test_one_answers_none_as_not_found_and_refuses_two(store: Repository, things):
     """None is what the caller asked for not being there — `not_found` on every wire; two is
     the code's mistake: it said there would be one."""
-    only = store.one(Things, Criteria(where=Condition(field="thing_id", value="th_0007")))
+    only = store.one(Things, Criteria(selection=Condition(field="thing_id", value="th_0007")))
 
     assert only.thing_id == "th_0007"
     with pytest.raises(exceptions.ProgrammingError):
-        store.one(Things, Criteria(where=Condition(field="size", value=3)))
+        store.one(Things, Criteria(selection=Condition(field="size", value=3)))
     with pytest.raises(ddd_exceptions.AggregateNotFound) as missing:
-        store.one(Things, Criteria(where=Condition(field="size", value=99)))
+        store.one(Things, Criteria(selection=Condition(field="size", value=99)))
     assert missing.value.failure_kind is exceptions.FailureKind.NOT_FOUND
 
 
 def test_first_one_and_get_by_claim_what_they_read(store: Repository, things):
     with store.context() as unit:
-        claimed = unit.first(Things, Criteria(where=Condition(field="size", value=3)), True)
+        claimed = unit.first(
+            Things, Criteria(selection=Condition(field="size", value=3)), True
+        )
         natural = unit.get_by(Things, True, thing_id="th_0007")
         only = unit.one(
-            Things, Criteria(where=Condition(field="thing_id", value="th_0001")), True
+            Things, Criteria(selection=Condition(field="thing_id", value="th_0001")), True
         )
 
     assert claimed is not None and natural is not None and only.thing_id == "th_0001"
@@ -99,7 +104,7 @@ def test_pluck_answers_one_column_over_the_whole_result_set(store: Repository, t
 
 
 def test_pluck_honours_the_filter_and_refuses_an_unknown_column(store: Repository):
-    only = store.pluck(Things, "name", Criteria(where=Condition(field="size", value=0)))
+    only = store.pluck(Things, "name", Criteria(selection=Condition(field="size", value=0)))
 
     assert only and all(name.startswith("thing ") for name in only)
     with pytest.raises(ddd_exceptions.InvalidCriteria):
@@ -155,7 +160,7 @@ def test_a_short_reading_asks_for_no_definition_it_will_not_use(
 
 @pytest.mark.parametrize("operator", [Operator.GT, Operator.LT])
 def test_the_short_readings_speak_the_same_criteria_as_search(store: Repository, operator):
-    asked = Criteria(where=Condition(field="size", value=2, operator=operator))
+    asked = Criteria(selection=Condition(field="size", value=2, operator=operator))
 
     assert store.exists(Things, asked) is (store.count(Things, asked).value > 0)
     assert store.first(Things, asked) is not None

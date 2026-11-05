@@ -270,7 +270,7 @@ self.repository.save(invoice)          # the invoice, and its InvoiceUpdated, in
 
 history = self.repository.search(
     InvoiceUpdated,
-    Criteria(where=Condition(field="entity_id", value=invoice.id), order=Sort.parse("id")),
+    Criteria(selection=Condition(field="entity_id", value=invoice.id), order=Sort.parse("id")),
 )
 ```
 

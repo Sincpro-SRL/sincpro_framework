@@ -63,7 +63,7 @@ invoices = repository.search(Invoices, with_customer).items
 invoices[0].customer.name
 
 customers_with_invoices = Criteria.model_validate({
-    "where": {"field": "name", "value": "Ana"},
+    "selection": {"field": "name", "value": "Ana"},
     "specification": {"invoices": {"order": [{"field": "number"}], "pagination": {"limit": 2}}},
 })
 ```

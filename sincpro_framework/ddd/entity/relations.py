@@ -167,7 +167,7 @@ class Relation:
     holds there: a scope the related aggregate cannot answer is refused, never dropped.
 
         Relation.bus(ProjectEvent, project, CommandSearchEvents, identified_by="entity_id",
-                     scope=Criteria(where=Condition(field="entity_type", value="project")))
+                     scope=Criteria(selection=Condition(field="entity_type", value="project")))
 
     Declaring the order there is what makes «newest first» a property of the relation instead
     of something every caller repeats: `scope=Criteria(order=Sort.parse("-created_at"))`.
@@ -325,34 +325,34 @@ def _reflected(node: Criteria, field: str, ids: list[Any], limit: int | None) ->
     keys = Condition(field=field, operator=Operator.IN, value=ids)
     if limit is None:
         return Criteria(
-            where=Node.combined(keys, node.expression),
+            selection=Node.combined(keys, node.expression),
             order=node.order,
             pagination=Pagination(limit=10**9),
             specification=node.specification,
             count=CountMode.NONE,
-            meta=node.specification is not None,
         )
     return Criteria(
-        where=Node.combined(keys, node.expression),
+        selection=Node.combined(keys, node.expression),
         order=node.order,
         pagination=Pagination(limit=limit),
         grouping=Grouping(group_by=(GroupingLevel(field=field),)),
         specification=node.specification,
         count=CountMode.NONE,
-        meta=node.specification is not None,
     )
 
 
 def _records_of(answer: Any, limit: int | None) -> tuple[list[Any], Meta | None, bool]:
-    """What came back, whatever shape the other side chose to answer in, and whether it cut a
-    page per key: a repository of ours answers a partitioned page with no cursor and an exact
-    count, so a parent with fewer rows than the limit got all of them."""
+    """What came back, whatever shape the other side chose to answer in, the description of its
+    records when it holds one — an answer built in this process does; one read off the wire
+    does not — and whether it cut a page per key: a repository of ours answers a partitioned
+    page with no cursor and an exact count, so a parent with fewer rows than the limit got all
+    of them."""
     if isinstance(answer, ResponsePaginatedQuery):
         records = list(getattr(answer, type(answer).records_field()))
         partitioned = (
             answer.cursor is None and answer.count is not None and answer.count.exact
         )
-        return records, answer.entity_meta_data, partitioned and limit is not None
+        return records, answer._meta, partitioned and limit is not None
     if isinstance(answer, EntityCollection):
         partitioned = (
             answer.cursor is None and answer.count is not None and answer.count.exact
@@ -415,7 +415,7 @@ def resolve_elsewhere(
         # two works on shelves s1 and s2, Work.shelf resolved by `shelves_by_ids`
         resolve_elsewhere(meta, [w1, w2], Work.shelf, node, many=False, limit=None)
             ->  ({"w1": <s1>, "w2": <s2>}, <Shelf's Meta, when the resolver answered one>)
-            # shelves_by_ids called once: (["s1", "s2"], Criteria(where=id in [s1, s2], …))
+            # shelves_by_ids called once: (["s1", "s2"], Criteria(selection=id in [s1, s2], …))
         # no parent holds a key, or the relation has no resolver  ->  ({}, None)
 
     Context: with a `limit`, a page per key is asked (`grouping` by the key); a resolver

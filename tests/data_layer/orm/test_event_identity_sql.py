@@ -269,7 +269,7 @@ def test_a_filter_on_an_events_own_field_is_dropped_alike_in_memory_and_in_sql(r
     in_memory = MemoryRepository()
     for store in (repository, in_memory):
         an_item_received(store)
-    asked = Criteria(where=Condition(field="units", value=99))
+    asked = Criteria(selection=Condition(field="units", value=99))
 
     answers = [store.search(Received, asked) for store in (repository, in_memory)]
 

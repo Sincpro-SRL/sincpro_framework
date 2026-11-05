@@ -162,12 +162,14 @@ CRITERIA_TS ?= ../sincpro_criteria/packages/criteria
 criteria-contract:
 	@poetry run python tests/ddd/criteria/test_criteria_parity.py
 	@poetry run python tests/ddd/criteria/test_criteria_contract.py
+	@poetry run python -m tests.ddd.metamodel.test_contract
 	@if [ -d "$(CRITERIA_TS)" ]; then \
 		cp tests/ddd/criteria/criteria.schema.json "$(CRITERIA_TS)/criteria.schema.json"; \
 		cp tests/ddd/criteria/criteria-parity.json tests/ddd/criteria/criteria-resolution.json "$(CRITERIA_TS)/tests/"; \
+		cp tests/ddd/metamodel/contract-parity.json "$(CRITERIA_TS)/tests/"; \
 		echo "   copied the contract into $(CRITERIA_TS)"; \
 	else \
-		echo "   $(CRITERIA_TS) not found: copy criteria.schema.json, criteria-parity.json and criteria-resolution.json by hand"; \
+		echo "   $(CRITERIA_TS) not found: copy criteria.schema.json, criteria-parity.json, criteria-resolution.json and contract-parity.json by hand"; \
 	fi
 
 test:

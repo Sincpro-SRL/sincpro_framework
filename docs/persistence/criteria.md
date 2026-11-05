@@ -8,7 +8,7 @@ hands it to the repository. It is JSON, it is typed, and every part of it is opt
 
 ```json
 {
-  "where":         {"all": [{"field": "pages", "operator": ">", "value": 200},
+  "selection":         {"all": [{"field": "pages", "operator": ">", "value": 200},
                             {"any": [{"field": "kind", "operator": "in", "value": ["book", "paper"]},
                                      {"negate": {"field": "title", "operator": "like", "value": "draft"}}]}]},
   "order":         "-pages,title",
@@ -23,13 +23,12 @@ hands it to the repository. It is JSON, it is typed, and every part of it is opt
 
 | Part | What it says | Notes |
 |---|---|---|
-| `where` | the filter: a `Condition` or `all` / `any` / `negate` of more | the operators a field takes come from its type and are published in `Meta`; a value written as text is read into the field's type |
+| `selection` | the filter: a `Condition`, `all` / `any` / `negate` of more, or `through` a relation | the operators a field takes come from its type and are published in `Meta`; a value written as text is read into the field's type |
 | `order` | the ordering, `-` for descending | the identity is appended as tiebreaker so a keyset is a total order; a nullable column is refused for ordering because a keyset over NULLs loses rows |
 | `pagination` | how many and from where | `Cursor` (keyset, the default; the token is opaque and typed, it carries datetimes and decimals) or `Offset` (skip rows; costs grow with the offset) |
 | `specification` | what to bring back of each record | field → criteria, recursive; see [specification.md](specification.md) |
 | `grouping` | how to split the set when counting rather than listing | `group_by` the levels (a level's `grain` cuts a date: `day`, `week` ISO, `month`, `quarter` as `2026-Q3`, `year`; its `part` extracts a number from it; its `fill` lists the groups with no rows — see [analytics](analytics.md)), `measures` the folds (`sum avg min max count count_distinct percentile median bool_and bool_or`), `where_measures` a filter over what they folded, `order` by a level, a total or `count`, `pagination` for how many groups of the first level. One statement per level; drilling down one click at a time is opening a bucket with a grouping of its own. **With an explicit `pagination` on the criteria, a page per group**: every group of the deepest level carries the ids of its first `limit` rows, an exact count and a cursor; `search` with both answers `limit` rows for every group |
 | `count` | `none`, `capped` (stops at 10 000 and says so), `exact` | free when the first page came back short |
-| `meta` | whether the definition travels | on by default |
 
 Operators by type:
 
@@ -42,11 +41,36 @@ Operators by type:
 | text[] | `contains` `not contains` `=` `!=` |
 | translated | `like` |
 | any nullable field | `is null` as well |
-| embedded, many2one, one2many, many2many | none: filter by the key, `author_id`, which is a scalar |
+| embedded, many2one, one2many, many2many | none: filter by the key, `author_id`, which is a scalar, or cross the relation with `through` |
 
-`where` filters the rows; `where_measures` filters the groups those rows made, and reads the names in
+`selection` filters the rows; `where_measures` filters the groups those rows made, and reads the names in
 `measures` plus `count`. A name outside them is refused rather than dropped, because a filter
 that vanished there would answer groups the caller ruled out.
+
+## Crossing a relation: `through`
+
+```json
+{"selection": {"through": "lines", "selection": {"field": "qty", "operator": ">", "value": 10}}}
+```
+
+Some record the relation holds answers the inner selection: the orders with a line of more than
+ten units. It composes like any other part — inside `all`, `any` and `negate`, and inside another
+`through` — and its inner selection names the related record's fields, checked against the related
+model; what that model cannot answer is dropped with its path (`lines.colour`).
+
+| Relation | In SQL |
+|---|---|
+| a to-many by a foreign key | `EXISTS (SELECT 1 FROM line WHERE line.order_id = order.id AND …)` |
+| a to-one | `EXISTS (SELECT 1 FROM customer WHERE customer.id = order.customer_id AND …)` |
+| a many-to-many | `EXISTS` through its table in between |
+
+An `EXISTS` either way, so a parent is never repeated. Inside it the relation reads as it always
+does — its own scope, and the archived left out — so a filter never looks at a record the reading
+would not bring. `Meta` publishes `navigable` on each relation: a relation the store keeps is
+crossed; one a resolver, a bus or another service brings is not, and a filter through it is dropped
+as `not_navigable`. Memory answers the same over the records it holds. A relation named in the
+`specification` shapes what each record brings — `limit: 0` brings none of it — and never which
+records come: that is `through`.
 
 `Evaluation.matches(record, expression)`, from `sincpro_framework.ddd.criteria`, is the in-memory evaluator and the
 specification of the translator: every operator has to agree with it on every row, and the
@@ -141,10 +165,9 @@ Where the chain holds and where it does not is in [relations.md](relations.md).
 
 | Part | Law | Why |
 |---|---|---|
-| `where` | AND | both restrictions hold |
+| `selection` | AND | both restrictions hold |
 | `specification` | intersection | a mask can only take away; that is what makes it safe as a permission |
 | `order`, `pagination`, `grouping`, `count` | the more specific replaces | "twenty per page" and "fifty per page" have no combination |
-| `meta` | AND | otherwise `meta=false` could never be said |
 | cursor | never carried over | it belongs to one ordering over one filter |
 
 `criteria.resuming_from(cursor)` is how a walk continues; `Repository.stream` does it for you.
@@ -181,7 +204,7 @@ A criteria lives in URLs and saved readings, and those outlive the schema they w
 
 ## Writing one
 
-From JSON: `Criteria.model_validate(payload)`. In Python: the nodes directly, `Criteria(where=
+From JSON: `Criteria.model_validate(payload)`. In Python: the nodes directly, `Criteria(selection=
 All(all=[Condition(field=…, operator=Operator.GT, value=…)]), order=Sort.parse("-pages"))`.
 The nodes carry the names the JSON uses — `All`, `Any`, `Not` and `Condition`, from
 `sincpro_framework.ddd` — so `{"any": [...]}` is `Any(any=[...])`.

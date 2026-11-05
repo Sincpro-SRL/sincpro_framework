@@ -100,7 +100,7 @@ class ListBooks(Feature):
 The request, from anywhere:
 
 ```json
-{"where": {"field": "pages", "operator": ">", "value": 200},
+{"selection": {"field": "pages", "operator": ">", "value": 200},
  "order": [{"field": "pages", "descending": true}],
  "pagination": {"limit": 20},
  "specification": {"title": {}, "author": {"specification": {"name": {}}}}}
@@ -108,8 +108,9 @@ The request, from anywhere:
 
 The answer: twenty books of more than two hundred pages, longest first, each with `id` and
 `title` and its author as `{"id", "name"}`, plus `count`, a `cursor` for the next page, an empty
-`dropped`, and `entity_meta_data` cut to the same three fields, saying which operators `pages`
-takes and that `author` is a `many2one` identified by `author_id`. Two statements ran.
+`dropped`, and the `model_version` of `Book`. Which operators `pages` takes and that `author` is
+a `many2one` identified by `author_id` is said once, in the contract of `Book` the discovery
+document publishes. Two statements ran.
 
 ## Glossary
 

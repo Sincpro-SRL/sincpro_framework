@@ -137,7 +137,7 @@ class ReadsAggregates(ABC):
         by name. A collection class as `target` answers that class, so a domain collection
         retains its own methods.
 
-            repository.search(Invoice, Criteria(where=Condition(field="total", operator=">",
+            repository.search(Invoice, Criteria(selection=Condition(field="total", operator=">",
                                                                  value=100)))
             ->  EntityCollection(50 records of 197, more)     `cursor` resumes the next page
 

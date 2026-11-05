@@ -13,7 +13,7 @@ class Criteria(DataTransferObject):
 ```
 
 Every key is a field or a relation of the aggregate; every value is a `Criteria`, the same one
-as outside. A scalar's is `{}`. A relation's carries `where`, `order`, `pagination` and its own
+as outside. A scalar's is `{}`. A relation's carries `selection`, `order`, `pagination` and its own
 `specification`, so the vocabulary inside a node is the vocabulary outside it, recursively.
 
 `None` and `{}` are not the same thing. `None` is «nothing asked»: every scalar, no relation.
@@ -76,7 +76,7 @@ class Account(Entity):
 
     @classmethod
     def DEFAULT_LITERAL_SEARCH(cls) -> Criteria:
-        return Criteria(where=Any(any=[
+        return Criteria(selection=Any(any=[
             Condition(field="code", value=TEXT),
             Condition(field="code", operator=Operator.STARTS_WITH, value=TEXT),
             Condition(field="name", operator=Operator.LIKE, value=TEXT),
@@ -89,7 +89,7 @@ class Account(Entity):
 | `DEFAULT_READING` | What one record brings, at any depth: a `Specification` | `None`: every scalar, no relation |
 | `DEFAULT_ORDER` | The order of a list, and of this entity's records where another one holds them | `(Sort(field="id", descending=True),)`: newest first |
 | `DEFAULT_DISPLAY` | The field shown beside the identity (rule 8) | the field called `name`, when there is one |
-| `DEFAULT_LITERAL_SEARCH` | How a typed text finds records: a template whose `where` holds `TEXT` | containment on a text display; `None` without one |
+| `DEFAULT_LITERAL_SEARCH` | How a typed text finds records: a template whose `selection` holds `TEXT` | containment on a text display; `None` without one |
 
 `Partner` declares nothing and needs nothing: `name` is its display and a literal finds it by
 containment.
@@ -100,8 +100,8 @@ containment.
   refused when the class is declared.
 - **Checked when the class is described.** A key, a display or an order over a field that does
   not exist; a key that is not a text, integer or uuid field; a reading that is not a
-  `Specification` (a `where` there would hide records from every read); a template that never
-  uses `TEXT`, sets anything besides `where`, or asks a prefix of a number — each is refused
+  `Specification` (a `selection` there would hide records from every read); a template that never
+  uses `TEXT`, sets anything besides `selection`, or asks a prefix of a number — each is refused
   naming it. A mapped class whose key is not the identity needs that column unique.
 - **`DEFAULT_READING` is a `Specification`, and its nodes are criteria.** The order, page and
   depth of a relation live in its node; a relation whose node names no order comes in the
@@ -163,13 +163,13 @@ class Invoice(Entity):
     presentation = Presentation["Invoice"](
         readonly=lambda i: i.number,
         readonly_when=lambda i: When(
-            Condition.on(i.state, Operator.NE, InvoiceState.DRAFT), i.partner_id, i.amount
+            i.state != InvoiceState.DRAFT, i.partner_id, i.amount
         ),
         required_when=lambda i: When(
-            Condition.on(i.payment, Operator.EQ, Payment.CARD), i.card_reference
+            i.payment == Payment.CARD, i.card_reference
         ),
         visible_when=lambda i: When(
-            Condition.on(i.payment, Operator.EQ, Payment.CARD), i.card_reference
+            i.payment == Payment.CARD, i.card_reference
         ),
         totals=lambda i: {i.amount: MeasureFunction.SUM},
     )
@@ -185,10 +185,11 @@ class Invoice(Entity):
 | `visible_when` | shows it only while the condition holds | always shown |
 | `total` | adds it up at the foot of a list with that function — a `MeasureFunction`, one of the field's `aggregates`; a function that is no total (`"total"`, `PERCENTILE`) fails when the class is read, one the field's type cannot take when it is described | nothing is added up |
 
-A condition is the one a criteria carries, written through the entity:
-`Condition.on(i.state, Operator.NE, InvoiceState.DRAFT)` is published as
-`{"field": "state", "operator": "!=", "value": "draft"}`. `All(...)`, `Any(...)` and `Not(...)`
-combine them, as anywhere a criteria is written; a field the entity does not have is refused when
+A condition is written as Python over the entity — `i.state != InvoiceState.DRAFT` — and read once
+from the lambda's syntax tree, never run; it is published as the one a criteria carries,
+`{"field": "state", "operator": "!=", "value": "draft"}`. `and`, `or` and `not` combine them, as
+`All`, `Any` and `Not` do where a condition is built (`Condition.on(i.state, Operator.NE, …)` is
+read the same); a field the entity does not have is refused when
 the class is described, even if it is written as plain text; a field named by two `When` is covered while either holds. A client evaluates it
 with the same evaluator it filters with (`@sincpro/criteria`), reading each value as its
 field's type: an amount travels as the text `"0"`.
@@ -216,7 +217,7 @@ that asks nothing returns `dataset_id` and not `dataset`. `Meta.fields["dataset"
 client the relation exists and what identifies it, so it can ask for it or filter by the key
 without expanding anything.
 
-**Two criterias merge with two laws.** `where` accumulates with AND, because both restrictions
+**Two criterias merge with two laws.** `selection` accumulates with AND, because both restrictions
 hold. `specification` intersects, because a mask can only take away. That is what makes it safe
 as a permission: cutting twice never shows more than cutting once, and two masks with nothing
 in common leave the identity alone, never everything.
@@ -278,12 +279,12 @@ SQL partitioning live in `orm/sqlalchemy/services/relation_resolver.py`:
 ## The request and the answer
 
 ```json
-{"where": {"field": "name", "operator": "like", "value": "ventas"},
+{"selection": {"field": "name", "operator": "like", "value": "ventas"},
  "pagination": {"limit": 20},
  "specification": {
    "name": {},
    "producer": {"specification": {"stage": {}}},
-   "sources": {"where": {"field": "row_count", "operator": ">", "value": 0},
+   "sources": {"selection": {"field": "row_count", "operator": ">", "value": 0},
                "order": [{"field": "registered_at", "descending": true}],
                "pagination": {"limit": 5},
                "specification": {"name": {}}}}}

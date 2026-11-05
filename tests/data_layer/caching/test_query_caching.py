@@ -83,7 +83,7 @@ def _billing(repository: MemoryRepository, executions: list[str]) -> UseFramewor
                 Invoice,
                 Criteria.model_validate(
                     {
-                        "where": {
+                        "selection": {
                             "field": "customer_id",
                             "operator": "=",
                             "value": dto.customer_id,

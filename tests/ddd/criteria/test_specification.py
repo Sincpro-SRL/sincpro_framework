@@ -97,7 +97,7 @@ def test_merging_two_criterias_intersects_the_mask_instead_of_adding():
 def test_a_nested_criteria_merges_inside_its_node():
     """Crossing two masks also crosses what each says about a shared relation."""
     mine = Specification({"sources": Criteria(pagination=Pagination(limit=20))})
-    theirs = Specification({"sources": Criteria(where=BIGGER_THAN_A_THOUSAND)})
+    theirs = Specification({"sources": Criteria(selection=BIGGER_THAN_A_THOUSAND)})
 
     crossed = mine.narrowed_by(theirs)["sources"]
 
@@ -116,7 +116,7 @@ def test_the_mask_is_walked_as_what_it_is():
 
 def test_a_criteria_with_a_nested_specification_survives_its_own_json():
     asked = Criteria(
-        where=All(all=[BIGGER_THAN_A_THOUSAND]),
+        selection=All(all=[BIGGER_THAN_A_THOUSAND]),
         order=(Sort(field="registered_at", descending=True),),
         pagination=Pagination(limit=80, strategy=Cursor(token="eyJ")),
         specification=Specification(

@@ -31,6 +31,7 @@ LAYERED = {
     "data_layer.orm.sqlalchemy": "data_layer.orm",
     "data_layer.store": "data_layer.store",
     "ddd.criteria": "ddd.criteria",
+    "ddd.metamodel": "ddd.metamodel",
     "entrypoints": "entrypoints",
     "event_driven": "event_driven",
     "observability.metrics": "observability.metrics",

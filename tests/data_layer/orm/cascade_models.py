@@ -198,7 +198,7 @@ def declare() -> None:
                     Issue,
                     identified_by="workspace_id",
                     orphans=Orphans.DELETE,
-                    scope=Criteria(where=Condition(field="state", value="open")),
+                    scope=Criteria(selection=Condition(field="state", value="open")),
                 ),
             },
             Tag: {

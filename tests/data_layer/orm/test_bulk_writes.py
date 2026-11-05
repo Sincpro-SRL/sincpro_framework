@@ -34,7 +34,7 @@ def balances(repository: Repository) -> list[int]:
 
 
 def owned_by(owner: Owner) -> Criteria:
-    return Criteria(where=Condition(field="owner_id", value=owner.id))
+    return Criteria(selection=Condition(field="owner_id", value=owner.id))
 
 
 # ── upsert ───────────────────────────────────────────────────────────────────────────────
@@ -209,7 +209,7 @@ def test_update_all_sets_every_matching_row_and_answers_how_many(ledger, ana):
 
     changed = ledger.update_all(
         Account,
-        Criteria(where=Condition(field="balance", operator=Operator.GTE, value=2)),
+        Criteria(selection=Condition(field="balance", operator=Operator.GTE, value=2)),
         {"balance": 0},
     )
 
@@ -246,7 +246,7 @@ def test_a_write_by_criteria_refuses_a_page(ledger, ana):
 
 
 def test_a_write_by_criteria_refuses_a_condition_it_cannot_answer(ledger, ana):
-    unknown = Criteria(where=Condition(field="nothing_like_this", value=1))
+    unknown = Criteria(selection=Condition(field="nothing_like_this", value=1))
     with pytest.raises(exceptions.ProgrammingError, match="wider"):
         ledger.remove_all(Account, unknown)
 
@@ -382,7 +382,7 @@ def test_an_upsert_never_brings_an_archived_row_back(ledger, ana):
     ledger.upsert(Owner(name="ana"), on=("name",))
 
     archived = Criteria.model_validate(
-        {"where": {"field": "archived_at", "operator": "is null", "value": False}}
+        {"selection": {"field": "archived_at", "operator": "is null", "value": False}}
     )
     assert [owner.name for owner in ledger.fetch_all(Owner, archived).items] == ["ana"]
 

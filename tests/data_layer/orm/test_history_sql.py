@@ -165,7 +165,7 @@ def test_a_caller_time_filter_adds_and_its_order_replaces(repository):
         QuerySiteEvents(
             id="dev-1",
             criteria=Criteria(
-                where=Condition(
+                selection=Condition(
                     field="created_at",
                     operator=Operator.GTE,
                     value=datetime(2999, 1, 1, tzinfo=UTC),
@@ -214,7 +214,7 @@ def test_the_wire_names_keep_only_those_events_with_the_subject_and_a_time_filte
             id="dev-1",
             names=["tests.history.sandbox.v1.reserved"],
             criteria=Criteria(
-                where=Condition(
+                selection=Condition(
                     field="created_at",
                     operator=Operator.GTE,
                     value=datetime(2999, 1, 1, tzinfo=UTC),
@@ -235,7 +235,7 @@ def test_the_context_log_filters_by_wire_name_on_sql(repository):
     page = repository.search(
         SiteEvent,
         Criteria(
-            where=Condition(
+            selection=Condition(
                 field="name",
                 value=[
                     "tests.history.sandbox.v1.reserved",

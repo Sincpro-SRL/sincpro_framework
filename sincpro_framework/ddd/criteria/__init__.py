@@ -37,6 +37,7 @@ from sincpro_framework.ddd.criteria.domain.expression import (
     Node,
     Not,
     Operator,
+    Through,
 )
 from sincpro_framework.ddd.criteria.domain.grouping import (
     Grouping,
@@ -72,11 +73,16 @@ from sincpro_framework.ddd.criteria.domain.values import (
 )
 from sincpro_framework.ddd.criteria.entrypoint.aggregation import Aggregation
 from sincpro_framework.ddd.criteria.entrypoint.evaluation import Evaluation
+from sincpro_framework.ddd.criteria.entrypoint.formulas import Formulas
+from sincpro_framework.ddd.criteria.entrypoint.predicates import Predicates, expression_of
 from sincpro_framework.ddd.criteria.entrypoint.resolution import Resolution
 
 Any = Any_
 
 __all__ = [
+    "Formulas",
+    "Predicates",
+    "expression_of",
     "MULTI_VALUED",
     "RESOLVERS",
     "TEXT",
@@ -118,5 +124,6 @@ __all__ = [
     "Sort",
     "Span",
     "Specification",
+    "Through",
     "Today",
 ]

@@ -198,10 +198,13 @@ def pointer(location: Sequence[Any]) -> str:
 
 
 class FieldError(DataTransferObject):
-    """One field the request got wrong — `pointer` addresses it in the DTO (`#/total`)."""
+    """One field the request got wrong — `pointer` addresses it in the DTO (`#/total`); `rule`
+    names the rule that refused it (`Sale.delivery_when_confirmed`) when one did, so a client and
+    an agent react to the rule and not to its words."""
 
     pointer: str
     detail: str
+    rule: str | None = None
 
 
 class Problem(DataTransferObject):

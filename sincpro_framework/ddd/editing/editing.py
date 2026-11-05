@@ -29,14 +29,10 @@ from sincpro_framework.ddd.entity.entity_collection import EntityCollection, ide
 from sincpro_framework.ddd.entity.entity_meta import (
     Check,
     Computation,
-    annotations_of,
-    checks_of,
-    computations_of,
-    framework_fields,
-    related_class,
     without_optional,
 )
 from sincpro_framework.ddd.entity.relations import relation_attribute
+from sincpro_framework.ddd.metamodel import model_of
 from sincpro_framework.sincpro_logger import logger
 
 _SKIPPED: ContextVar[tuple[Any, ...] | None] = ContextVar(
@@ -63,9 +59,7 @@ def _current(record: Any, name: str) -> Any:
         return UNREAD
 
 
-def apply_values(
-    record: Any, values: Mapping[str, Any], adopt: bool = False
-) -> tuple[str, ...]:
+def apply_values(record: Any, values: Mapping[str, Any]) -> tuple[str, ...]:
     """Put a form's values on `record`, each read as its field's type, and answer which fields
     now hold another value.
 
@@ -78,9 +72,10 @@ def apply_values(
     3. Each value is read through the field's annotation: `"50"` into a `Decimal`, `"card"`
        into its enum, a list of mappings into the line records.
        3.1 A mapping carrying an identity is the record the field already holds with it,
-           edited in place, so its row is updated; an identity the field does not hold is
-           refused, naming it — or, with `adopt`, a new record built under that identity: what
-           a draft holds of a record it made, read back the same each time.
+           edited in place, so its row is updated; an identity the field does not hold is a new
+           record built under it: a form mints the identity of a line it creates (UUID v7), and
+           names it by that identity from then on — in `changed`, in the warnings, in a draft
+           read back the same each time.
        3.2 A mapping without one is a new record built through its own class, so a mapped
            one is a record its store can write.
        3.3 A value the type cannot read is refused, naming the field and why.
@@ -95,13 +90,13 @@ def apply_values(
     (`ProgrammingError`).
     """
     owner = type(record)
-    annotations = annotations_of(owner)
+    annotations = model_of(owner).annotations
     unknown = [name for name in values if name not in annotations]
     if unknown:
         raise exceptions.InvalidValue(
             f"{owner.__name__} has no field {', '.join(unknown)} to assign", (unknown[0],)
         )
-    written = sorted(set(values) & framework_fields(owner))
+    written = sorted(set(values) & model_of(owner).framework_fields)
     if written:
         raise exceptions.InvalidValue(
             f"{owner.__name__}.{', '.join(written)} is written by the framework, not assigned",
@@ -109,7 +104,7 @@ def apply_values(
         )
     changed: list[str] = []
     for name, value in values.items():
-        read = _read(record, name, annotations[name], value, adopt)
+        read = _read(record, name, annotations[name], value)
         if _current(record, name) != read:
             changed.append(name)
         setattr(record, name, read)
@@ -120,7 +115,7 @@ def _identity_of(kind: type) -> str:
     """The identity a mapping names a held record by: the framework's own (`Entity.id`); a plain
     value record has none to match on."""
     identity = identity_name(kind)
-    return identity if identity in framework_fields(kind) else ""
+    return identity if identity in model_of(kind).framework_fields else ""
 
 
 def _is_record_class(annotation: Any) -> bool:
@@ -150,9 +145,9 @@ def form_values(
        2.4 anything else left as it is.
     Final: the values a form edits, ready for `apply_values`.
     """
-    annotations = annotations_of(kind)
+    annotations = model_of(kind).annotations
     own_identity = _identity_of(kind) if nested else ""
-    left_out = framework_fields(kind) - {own_identity}
+    left_out = model_of(kind).framework_fields - {own_identity}
     written: dict[str, Any] = {}
     for name, value in values.items():
         if name in left_out:
@@ -187,7 +182,7 @@ def _tied_to(record: Any, name: str, kind: type) -> dict[str, Any]:
     if pair is None:
         return {}
     mine, theirs = pair
-    if theirs not in annotations_of(kind):
+    if theirs not in model_of(kind).annotations:
         return {}
     return {theirs: getattr(record, mine)}
 
@@ -227,14 +222,17 @@ def _records(
 
         in      [{"qty": 2}, <InvoiceLine l1>]    →  [InvoiceLine(qty=2), <InvoiceLine l1>]
         in      ["l1"]                            →  InvalidValue pointing at lines/0
+        in      [{"id": "0192…", "qty": "x"}]     →  InvalidValue pointing at lines/0192…/qty
 
     1. A mapping is a record to make — built, or a held one edited (`made`).
     2. A record of the line's class is taken as it is.
     3. Anything else — an id, a number — is refused: a list of records holds records. An id
        of another aggregate is read as its record before `apply_values` (`EntityReads.referenced`)
        only where the store names it by id; here it would be held as a bare value.
-    Final: the records; a refusal inside one points at its position (`within`).
+    Final: the records; a refusal inside one points at it (`within`) by its identity — the one
+    the mapping names, or the record's — and by its position when it has none.
     """
+    identity = _identity_of(kind)
     records: list[Any] = []
     for index, one in enumerate(value):
         try:
@@ -249,11 +247,20 @@ def _records(
                     (),
                 )
         except exceptions.InvalidValue as error:
-            raise error.within(name, index) from error
+            named = (
+                (
+                    one.get(identity)
+                    if isinstance(one, Mapping)
+                    else getattr(one, identity, None)
+                )
+                if identity
+                else None
+            )
+            raise error.within(name, str(named) if named else index) from error
     return records
 
 
-def _read(record: Any, name: str, annotation: Any, value: Any, adopt: bool) -> Any:
+def _read(record: Any, name: str, annotation: Any, value: Any) -> Any:
     """`value` as the field `name` of `record` holds it.
 
     in      list[InvoiceLine], [{"qty": 2, "price": "10"}]   →  [InvoiceLine(qty=2, price=10)]
@@ -277,12 +284,12 @@ def _read(record: Any, name: str, annotation: Any, value: Any, adopt: bool) -> A
             name,
             kind,
             value,
-            lambda one: _edited_or_built(kind, {**one, **tied}, held, adopt),
+            lambda one: _edited_or_built(kind, {**one, **tied}, held),
         )
     if _is_record_class(base) and isinstance(value, Mapping):
         held = _held_by_identity(record, name, base, [value])
         try:
-            return _edited_or_built(base, value, held, adopt)
+            return _edited_or_built(base, value, held)
         except exceptions.InvalidValue as error:
             raise error.within(name) from error
     try:
@@ -294,29 +301,26 @@ def _read(record: Any, name: str, annotation: Any, value: Any, adopt: bool) -> A
         ) from error
 
 
-def _built(kind: type, values: Mapping[str, Any], adopt: bool) -> Any:
+def _built(kind: type, values: Mapping[str, Any]) -> Any:
     """A new nested record built through its own constructor, each value read as its field's
-    type. Nothing the framework writes comes with it — its identity included, unless adopting:
-    then the record takes the identity it names."""
+    type. Nothing else the framework writes comes with it; the identity it names, it takes —
+    the one the form minted for it."""
     identity = _identity_of(kind)
-    adopted = values.get(identity) if adopt and identity else None
+    adopted = values.get(identity) if identity else None
     values = {name: one for name, one in values.items() if not (adopted and name == identity)}
-    annotations = annotations_of(kind)
+    annotations = model_of(kind).annotations
     unknown = [name for name in values if name not in annotations]
     if unknown:
         raise exceptions.InvalidValue(
             f"{kind.__name__} has no field {', '.join(unknown)} to assign", (unknown[0],)
         )
-    written = sorted(set(values) & framework_fields(kind))
+    written = sorted(set(values) & model_of(kind).framework_fields)
     if written:
         raise exceptions.InvalidValue(
             f"{kind.__name__}.{', '.join(written)} is written by the framework, not assigned",
             (written[0],),
         )
-    read = {
-        name: _plain(kind, name, annotations[name], one, adopt)
-        for name, one in values.items()
-    }
+    read = {name: _plain(kind, name, annotations[name], one) for name, one in values.items()}
     try:
         built = kind(**read)
     except TypeError as error:
@@ -328,40 +332,28 @@ def _built(kind: type, values: Mapping[str, Any], adopt: bool) -> Any:
     return built
 
 
-def _edited_or_built(
-    kind: type, values: Mapping[str, Any], held: dict[str, Any], adopt: bool
-) -> Any:
-    """The held record a mapping names by its identity, edited in place; or a new one — under
-    the identity it names, when adopting."""
+def _edited_or_built(kind: type, values: Mapping[str, Any], held: dict[str, Any]) -> Any:
+    """The held record a mapping names by its identity, edited in place; or a new one, under
+    the identity it names when it names one."""
     identity = _identity_of(kind)
-    if identity and identity in values:
-        found = held.get(str(values[identity]))
-        if found is None and adopt:
-            return _built(kind, values, adopt)
-        if found is None:
-            raise exceptions.InvalidValue(
-                f"{kind.__name__} {values[identity]} is not held here: an edited record is one "
-                "the field already holds, and a new one comes without its identity",
-                (identity,),
-            )
-        apply_values(
-            found, {name: one for name, one in values.items() if name != identity}, adopt
-        )
-        return found
-    return _built(kind, values, adopt)
+    found = held.get(str(values[identity])) if identity and identity in values else None
+    if found is None:
+        return _built(kind, values)
+    apply_values(found, {name: one for name, one in values.items() if name != identity})
+    return found
 
 
-def _plain(kind: type, name: str, annotation: Any, value: Any, adopt: bool) -> Any:
+def _plain(kind: type, name: str, annotation: Any, value: Any) -> Any:
     """A value for a record being built: nothing is held yet, so every nested one is new."""
     base = without_optional(annotation)
     members = get_args(base)
     if get_origin(base) is list and members and _is_record_class(members[0]):
         if isinstance(value, list):
             kind = members[0]
-            return _records(kind, name, kind, value, lambda one: _built(kind, one, adopt))
+            return _records(kind, name, kind, value, lambda one: _built(kind, one))
     if _is_record_class(base) and isinstance(value, Mapping):
         try:
-            return _built(base, value, adopt)
+            return _built(base, value)
         except exceptions.InvalidValue as error:
             raise error.within(name) from error
     try:
@@ -371,33 +363,6 @@ def _plain(kind: type, name: str, annotation: Any, value: Any, adopt: bool) -> A
             f"{kind.__name__}.{name} cannot take {value!r}: {error.errors()[0]['msg']}",
             (name,),
         ) from error
-
-
-@cache
-def owned(declared: type) -> tuple[str, ...]:
-    """The fields holding records a pass over `declared` has to run first: those its
-    computations read or its checks watch, and the lists of records that declare computations or
-    checks of their own. Never another aggregate it only points at.
-
-        owned(Order)    ->  ("lines",)    # Order: subtotal ← lines; OrderLine: amount ← qty
-        owned(Sale)     ->  ("lines",)    # nothing reads lines, but SaleLine derives amount
-        owned(Box)      ->  ()            # Box and Item declare no computations and no checks
-
-    Context: a single record field counts only when a computation reads it or a check watches
-    it; a list counts also when its records compute or check something themselves. Cached per
-    class.
-    """
-    read = {name for one in computations_of(declared) for name in one.depends} | {
-        name for one in checks_of(declared) for name in one.watches
-    }
-    found: list[str] = []
-    for name, annotation in annotations_of(declared).items():
-        kind, many = related_class(annotation)
-        if kind is None or not _is_record_class(kind):
-            continue
-        if name in read or (many and (computations_of(kind) or checks_of(kind))):
-            found.append(name)
-    return tuple(found)
 
 
 def _holds_whole(record: Any, name: str) -> bool:
@@ -465,7 +430,9 @@ def _split(owner: type, changed: Sequence[str]) -> tuple[set[str], dict[str, lis
             inside.setdefault(head, []).append(rest)
         else:
             named.add(head)
-    unknown = sorted((named | set(inside)) - set(annotations_of(owner))) if changed else []
+    unknown = (
+        sorted((named | set(inside)) - set(model_of(owner).annotations)) if changed else []
+    )
     if unknown:
         raise exceptions.ClientError(
             f"{owner.__name__} has no field {', '.join(unknown)} to recompute"
@@ -473,24 +440,18 @@ def _split(owner: type, changed: Sequence[str]) -> tuple[set[str], dict[str, lis
     return named, inside
 
 
-def _by_position(owner: type, name: str, paths: list[str]) -> dict[int, list[str]]:
-    """What a change names inside each record of the list `name`, by its position: `"2.qty"`
-    is `qty` of the third, `"2"` the third whole (`""`).
+def _by_key(paths: list[str]) -> dict[str, list[str]]:
+    """What a change names inside each record of a list, by the record it names first — its
+    identity, or its position for a record that has none: `"0192….qty"` is `qty` of the line
+    `0192…`, `"2"` the third whole (`""`).
 
-        _by_position(Invoice, "lines", ["2.qty", "2.price", "3"])
-            ->  {2: ["qty", "price"], 3: [""]}
-
-    A path that does not start with a position is refused, showing the form it takes.
+        _by_key(["0192….qty", "0192….price", "2"])
+            ->  {"0192…": ["qty", "price"], "2": [""]}
     """
-    found: dict[int, list[str]] = {}
+    found: dict[str, list[str]] = {}
     for path in paths:
-        position, _, rest = path.partition(".")
-        if not position.isdigit():
-            raise exceptions.ClientError(
-                f"{owner.__name__}.{name}.{path} names no record of {name}: one is named by its "
-                f"position in the list, as in {name}.2.qty"
-            )
-        found.setdefault(int(position), []).append(rest)
+        key, _, rest = path.partition(".")
+        found.setdefault(key, []).append(rest)
     return found
 
 
@@ -551,6 +512,8 @@ def _checked(
        that skip is said; a relation never read cannot have changed, so that one is silent.
     3. A failure with no path points at the first field the check watches; where the record
        sits in the aggregate goes in front (`located`), so a line's failure reaches its cell.
+       Either way it names its rule (`Sale.delivery_when_confirmed`); a warning says the save
+       would refuse it (`blocks_save`).
     """
     owner = type(record).__name__
     for one in checks:
@@ -575,10 +538,13 @@ def _checked(
                 raise
         except exceptions.InvalidValue as error:
             path = located(error.path or one.watches[:1])
+            rule = f"{owner}.{one.method}"
             if run.saving:
-                run.failures.append(exceptions.InvalidValue(str(error), path, error.field))
+                run.failures.append(
+                    exceptions.InvalidValue(str(error), path, error.field, rule)
+                )
             else:
-                warn_form_at(str(error), path)
+                warn_form_at(str(error), path, rule, True)
 
 
 def _tree(
@@ -594,11 +560,14 @@ def _tree(
 
     1. A record already visited answers nothing: a cycle of references ends here.
     2. What the change names: fields of the record, and paths inside the records it holds
-       (`lines.2.qty`); each of those fields is reached.
+       (`lines.0192….qty`); each of those fields is reached.
     3. Each owned field (`owned`) the record holds whole or in part: every record in it runs its
        own tree — every computation; the checks a path names inside it, or all of them when the
        pass checks everything or the change named the field whole — its warnings and failures
-       pointing at where it sits (`("lines", 2)`). Records a save of `record` does not write —
+       pointing at it: by its identity when it is an entity (`("lines", "0192…")`), the same
+       line wherever it moves, by its position when it is a plain value (`("lines", 2)`). A
+       path names a record either way; one that names no record is refused, showing the form
+       it takes. Records a save of `record` does not write —
        another aggregate it points at (`joined_by` is `None`) — are computed but not judged:
        their rules are their own save's.
        3.1 When one of them moved and the change named fields, the owned field is reached, so
@@ -613,7 +582,7 @@ def _tree(
     owner = type(record)
     named, inside = _split(owner, changed)
     reached = named | set(inside)
-    for name in owned(owner):
+    for name in model_of(owner).owned:
         # The records held are computed, whether the relation is held whole or in part: each
         # line's own amount reads only the line. What reads the relation is decided in `_ran`.
         if not (_holds_whole(record, name) or _held_in_part(record, name)):
@@ -621,14 +590,25 @@ def _tree(
         value = getattr(record, name)
         many = isinstance(value, (list, EntityCollection))
         paths = inside.get(name, [])
-        positions = _by_position(owner, name, paths) if many else {0: paths}
+        keyed = _by_key(paths) if many else {"": paths}
         attribute = relation_attribute(owner, name)
         written = attribute is None or attribute.joined_by(record) is not None
         moved = False
+        named_records: set[str] = set()
         for index, one in enumerate(value if many else (value,)):
             if dataclasses.is_dataclass(one) and not isinstance(one, type):
-                within = positions.get(index, [])
-                with warnings_at((name, index) if many else (name,)):
+                identity = _identity_of(type(one))
+                key: str | int = str(getattr(one, identity)) if identity else index
+                named_records |= {str(key), str(index)}
+                within = (
+                    [
+                        *keyed.get(str(key), []),
+                        *(keyed.get(str(index), []) if identity else []),
+                    ]
+                    if many
+                    else paths
+                )
+                with warnings_at((name, key) if many else (name,)):
                     moved = (
                         bool(
                             _tree(
@@ -642,11 +622,17 @@ def _tree(
                         )
                         or moved
                     )
+        unnamed = sorted(set(keyed) - named_records) if many else []
+        if unnamed:
+            raise exceptions.ClientError(
+                f"{owner.__name__}.{name}.{unnamed[0]} names no record of {name}: one is named "
+                f"by its identity — by its position when it has none —, as in {name}.2.qty"
+            )
         if moved and not every:
             reached.add(name)
-    moved_here = _ran(record, computations_of(owner), reached, every, run)
+    moved_here = _ran(record, model_of(owner).computations, reached, every, run)
     if run.checking and judged:
-        _checked(record, checks_of(owner), reached, whole, run)
+        _checked(record, model_of(owner).checks, reached, whole, run)
     return moved_here
 
 
@@ -661,7 +647,8 @@ def recompute(record: Any, changed: Iterable[str] = ()) -> tuple[str, ...]:
         in      Invoice, ()                     →  every computation, no check
 
     1. A name in `changed` that is not a field is refused, naming it; a path names a field of a
-       record the aggregate owns, by its position (`lines.2.qty`).
+       record the aggregate owns, by the record's identity (`lines.0192….qty`) — by its position
+       when it has none (`lines.2.qty`).
     2. The records it owns are computed first, whole (`owned`): a line's amount before the
        subtotal that sums it; a field whose records moved is reached.
     3. With `changed` empty every computation of the record runs, in order, but no editable one

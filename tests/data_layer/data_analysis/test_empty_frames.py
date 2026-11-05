@@ -14,7 +14,7 @@ from sincpro_framework.ddd import Criteria
 from tests.data_layer.data_analysis.conftest import CountingRepository, Line
 
 NOTHING_POSTED = Criteria.model_validate(
-    {"where": {"field": "state", "operator": "=", "value": "nowhere"}}
+    {"selection": {"field": "state", "operator": "=", "value": "nowhere"}}
 )
 
 
@@ -45,7 +45,7 @@ def test_a_read_with_no_rows_has_the_columns_its_specification_keeps(
 ):
     masked = Criteria.model_validate(
         {
-            "where": {"field": "state", "operator": "=", "value": "nowhere"},
+            "selection": {"field": "state", "operator": "=", "value": "nowhere"},
             "specification": {"journal": {}, "amount": {}},
         }
     )

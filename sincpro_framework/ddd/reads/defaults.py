@@ -13,7 +13,7 @@ from sincpro_framework.ddd.criteria import (
     Pagination,
     Specification,
 )
-from sincpro_framework.ddd.entity.entity_meta import presentation_of
+from sincpro_framework.ddd.metamodel import model_of
 
 NAME_SEARCH_LIMIT = 8
 """How many a select lists: what fits under a field without scrolling."""
@@ -36,12 +36,14 @@ def matching(model: type, text: str) -> Criteria:
     """
     literal = text.strip()
     reference = Specification({})
-    template = presentation_of(model).search
+    template = model_of(model).presented.search
     if template is None:
         limit = NAME_SEARCH_LIMIT if not literal else 0
         return Criteria(pagination=Pagination(limit=limit), specification=reference)
     return Criteria(
-        where=template.where.with_text(literal) if template.where is not None else None,
+        selection=(
+            template.selection.with_text(literal) if template.selection is not None else None
+        ),
         pagination=Pagination(limit=NAME_SEARCH_LIMIT),
         specification=reference,
     )
@@ -54,4 +56,4 @@ def detail_of(model: type) -> Criteria | None:
         in      Move (DEFAULT_READING = {"number": {}, "lines": {}})
         out     Criteria(specification={"number": {}, "lines": {}})
     """
-    return presentation_of(model).detail
+    return model_of(model).presented.detail

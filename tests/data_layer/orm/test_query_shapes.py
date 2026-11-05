@@ -13,6 +13,7 @@ import pytest
 
 from sincpro_framework.ddd.criteria import Criteria
 from sincpro_framework.ddd.entity.entity_collection import Count, Dropped, EntityCollection
+from sincpro_framework.ddd.metamodel import model_of
 from sincpro_framework.ddd.query import Query, ResponsePaginatedQuery
 
 from .models import Thing, Things, a_thing
@@ -54,29 +55,26 @@ def test_a_page_becomes_the_answer_that_goes_out():
     assert answer.dropped == [Dropped(field="gone", reason="unknown_field")]
 
 
-def test_the_model_definition_travels_unless_it_was_turned_off(store):
-    """The page carries the definition the engine read to answer, and the answer describes
-    itself — the use case never hands over the aggregate.
-
-    It is on by default because the opposite made every door need a second question asked of
-    it before it could be used. Off stays reachable for the caller that already knows the
-    model and is paging through it.
-    """
+def test_the_answer_carries_the_version_of_its_model_never_the_model(store):
+    """What may be filtered, ordered and shown is published once, in the discovery document; a
+    page answers the version of the model it read, which a client compares with the one it
+    loaded."""
     page = store.search(Things, Criteria(pagination=Pagination(limit=1)))
 
-    plain = ResponseListThings.of(page, Criteria())
-    quiet = ResponseListThings.of(page, Criteria(meta=False))
+    written = ResponseListThings.of(page, Criteria()).model_dump(mode="json")
 
-    assert plain.entity_meta_data is not None
-    assert plain.entity_meta_data.aggregate == "Thing"
-    assert quiet.entity_meta_data is None
+    assert written["model_version"] == model_of(Thing).fingerprint
+    assert "entity_meta_data" not in written
 
 
-def test_a_page_built_by_hand_carries_no_definition():
-    """Nobody read a model, so there is nothing to describe — and nothing is invented."""
+def test_a_page_built_by_hand_answers_the_version_too():
+    """The version is the model's, not the page's: a page nobody read from a store still says
+    which model its records are."""
     page = EntityCollection(items=(a_thing(1),))
 
-    assert ResponseListThings.of(page, Criteria()).entity_meta_data is None
+    assert (
+        ResponseListThings.of(page, Criteria()).model_version == model_of(Thing).fingerprint
+    )
 
 
 def test_a_response_that_declares_two_fields_is_refused():
@@ -115,12 +113,12 @@ class TestWhatTheOpenApiPublishes:
             "count",
             "cursor",
             "dropped",
-            "entity_meta_data",
+            "model_version",
             "things",
         ]
         assert published["properties"]["things"]["items"]["$ref"].endswith("Thing")
         assert "Count" in str(published["properties"]["count"])
-        assert "Meta" in str(published["properties"]["entity_meta_data"])
+        assert published["properties"]["model_version"]["type"] == "string"
 
     def test_it_says_the_same_thing_in_both_modes(self):
         """The serializer writes the declared fields and no others, so the two schemas name the

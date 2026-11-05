@@ -99,7 +99,7 @@ def test_a_hook_cannot_escape_the_guard_by_narrowing(database: Database):
             if depth["reached"] > 5:
                 raise AssertionError("the guard was escaped; this recursed")
             narrowed = self.repository.narrowed(
-                Criteria(where=Condition(field="size", value=1))
+                Criteria(selection=Condition(field="size", value=1))
             )
             narrowed.save(a_thing(99))
 

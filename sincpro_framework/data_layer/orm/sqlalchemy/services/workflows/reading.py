@@ -111,7 +111,7 @@ class Reading(RepositoryState):
     def prepare(self, model: type, criteria: Criteria) -> Prepared:
         """Everything a criteria becomes before any statement exists.
 
-            in      Dataset, Criteria(where={'field': 'row_count', 'operator': '>', 'value': '1000'})
+            in      Dataset, Criteria(selection={'field': 'row_count', 'operator': '>', 'value': '1000'})
             read    ModelIntrospection.describe(Dataset)                    fields, types, what is orderable
             accept  Condition(row_count, 1000, GT)       "1000" read as an integer
             out     (dataset.row_count > 1000, (Sort(dataset_id, desc),), Meta, [])
@@ -260,7 +260,7 @@ class Reading(RepositoryState):
     def statement(self, target: type, criteria: Criteria) -> Select:
         """The escape hatch: this criteria as an ordinary `Select`, to take further.
 
-            in      Dataset, Criteria(where={'field': 'row_count', 'operator': '>', 'value': 1000}, limit=20)
+            in      Dataset, Criteria(selection={'field': 'row_count', 'operator': '>', 'value': 1000}, limit=20)
             out     SELECT dataset.* FROM dataset
                     WHERE dataset.row_count > 1000
                     ORDER BY dataset.dataset_id DESC
@@ -334,7 +334,7 @@ class Reading(RepositoryState):
     ) -> Any:
         """The page this criteria asks for, with its cursor, its count and what was dropped.
 
-            in      Dataset, Criteria(where={'field': 'row_count', 'operator': '>', 'value': 1000}, limit=20)
+            in      Dataset, Criteria(selection={'field': 'row_count', 'operator': '>', 'value': 1000}, limit=20)
             steps   prepare once  →  build the select  →  one session  →  page + count
             out     EntityCollection(20 records of 197, more)
 
@@ -386,7 +386,7 @@ class Reading(RepositoryState):
     ) -> EntityCollection:
         """`grouping` with a page: the first `limit` rows of EVERY group, not of the set.
 
-            in      Run, Criteria(where=dataset_id in (…), order=-started_at,
+            in      Run, Criteria(selection=dataset_id in (…), order=-started_at,
                                   pagination=Pagination(limit=5),
                                   grouping=Grouping(group_by=(GroupingLevel(field="dataset_id"),)))
             out     up to five runs per dataset, ordered inside each, one statement
@@ -444,7 +444,7 @@ class Reading(RepositoryState):
     def fetch_all(self, target: type, criteria: Criteria | None = None) -> Any:
         """Every record the criteria matches, as one complete collection.
 
-            in      Dataset, Criteria(where=…, pagination=Pagination(limit=500))
+            in      Dataset, Criteria(selection=…, pagination=Pagination(limit=500))
             walk    page after page, following the cursors
             out     EntityCollection(1 240 records of 1 240)    exact count, no cursor
 
@@ -546,7 +546,7 @@ class Reading(RepositoryState):
         the entity: applying the others without it would answer a state that never existed.
         """
         about = Criteria(
-            where=Node.combined(
+            selection=Node.combined(
                 Condition(field="entity_type", value=model.__name__),
                 Condition(field="entity_id", value=identity),
             ),
@@ -652,7 +652,7 @@ class Reading(RepositoryState):
     def count(self, target: type, criteria: Criteria | None = None) -> Count:
         """How many match, capped unless the criteria asked for the exact number.
 
-            in      Dataset, Criteria(where={'field': 'row_count', 'operator': '>', 'value': 1000})
+            in      Dataset, Criteria(selection={'field': 'row_count', 'operator': '>', 'value': 1000})
             out     Count(value=118, exact=True)
 
         No page is fetched here, so the free shortcut in `_counted` does not apply.
@@ -784,7 +784,7 @@ class Reading(RepositoryState):
     def exists(self, target: type, criteria: Criteria | None = None) -> bool:
         """Whether anything at all matches, without counting or fetching.
 
-            in      Account, Criteria(where=Condition(field="code", value="1010"))
+            in      Account, Criteria(selection=Condition(field="code", value="1010"))
             out     True                       SELECT 1 … LIMIT 1
 
         The cheapest question there is: a guard before a write, a badge on a screen.
@@ -836,7 +836,7 @@ class Reading(RepositoryState):
         criteria = criteria or Criteria()
         return self.search(
             target,
-            criteria.model_copy(update={"count": CountMode.NONE, "meta": False}),
+            criteria.model_copy(update={"count": CountMode.NONE}),
             for_update,
             skip_locked,
             nowait,
@@ -886,7 +886,6 @@ class Reading(RepositoryState):
                 update={
                     "pagination": Pagination(limit=2),
                     "count": CountMode.NONE,
-                    "meta": False,
                 }
             ),
             for_update,
@@ -940,7 +939,7 @@ class Reading(RepositoryState):
                 "get_by needs at least one value, e.g. code='1010'"
             )
         asked = Criteria(
-            where=Node.combined(
+            selection=Node.combined(
                 *(
                     Condition(field=field, operator=Operator.EQ, value=value)
                     for field, value in values.items()
@@ -948,7 +947,6 @@ class Reading(RepositoryState):
             ),
             pagination=Pagination(limit=2),
             count=CountMode.NONE,
-            meta=False,
         )
         page = self.search(target, asked, for_update, skip_locked, nowait)
         if len(page) > 1:
@@ -961,7 +959,7 @@ class Reading(RepositoryState):
     def pluck(self, target: type, field: str, criteria: Criteria | None = None) -> list[Any]:
         """One column of everything the criteria matches, without building a record.
 
-            in      Line, "account_id", Criteria(where=…)
+            in      Line, "account_id", Criteria(selection=…)
             out     ['01a0…', '01a0…', …]          SELECT account_id FROM line WHERE …
 
         Over the whole result set and not over a page, like `count` and `measures`: a column of

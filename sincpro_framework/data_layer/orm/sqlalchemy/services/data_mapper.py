@@ -44,14 +44,13 @@ from sincpro_framework.data_layer.orm.sqlalchemy.services.relation_resolver impo
     resolve_whole,
 )
 from sincpro_framework.ddd.entity import relations
-from sincpro_framework.ddd.entity.computed import computed_fields_of
 from sincpro_framework.ddd.entity.entity_collection import identity_name
 from sincpro_framework.ddd.entity.entity_meta import (
-    annotations_of,
     related_class,
     without_optional,
 )
 from sincpro_framework.ddd.entity.relations import RelationKind, key_pair
+from sincpro_framework.ddd.metamodel import forget_models, model_of
 from sincpro_framework.ddd.query import serialising
 
 
@@ -169,7 +168,7 @@ class RelatedAttribute:
             or getattr(self.relation, "owned", None) is False
         ):
             return False
-        annotation = annotations_of(type(record)).get(self.name)
+        annotation = model_of(type(record)).annotations.get(self.name)
         return annotation is not None and related_class(annotation)[1]
 
     def joined_by(self, record: Any) -> tuple[str, str] | None:
@@ -309,7 +308,7 @@ def computed_properties(entity: type, table: Table) -> dict[str, Any]:
     refused here, at boot, naming the field and the column, and not on the first query.
     """
     found: dict[str, Any] = {}
-    for name, computation in computed_fields_of(entity).items():
+    for name, computation in model_of(entity).computed.items():
         if computation.sql is None:
             continue
         try:
@@ -354,6 +353,7 @@ def install(aggregate: type, declared: Mapping[str, relations.Relation]) -> None
     if added:
         # `ModelIntrospection.describe` caches per class; a definition read before this point knew no relations.
 
+        forget_models(aggregate)
         ModelIntrospection.describe.cache_clear()
 
 
@@ -395,7 +395,7 @@ def inferred_foreign_keys(
     if own is None:
         return {}
     inferred: dict[str, TableRelation] = {}
-    for name, annotation in annotations_of(aggregate).items():
+    for name, annotation in model_of(aggregate).annotations.items():
         if name in own.c:
             continue
         related, many = related_class(annotation)

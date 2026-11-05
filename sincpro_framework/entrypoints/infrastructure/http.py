@@ -1,5 +1,8 @@
-"""What the HTTP entrypoints read off a request's headers: the context the caller carried."""
+"""What the HTTP entrypoints read off a request's headers — the context the caller carried —
+and how a discovery document is tagged for a client to revalidate it."""
 
+import hashlib
+import json
 from collections.abc import Mapping
 from typing import Any
 
@@ -25,3 +28,15 @@ def merge_http_context(headers: Mapping[str, str]) -> dict[str, Any]:
     if traceparent:
         merged["carrier"] = {"traceparent": traceparent}
     return merged
+
+
+def document_tag(document: Mapping[str, Any]) -> str:
+    """The `ETag` of a discovery document: the fingerprint of its content, so every replica tags
+    the same document alike with nothing shared, and a client holding it is answered `304`.
+
+        document_tag({"openapi": "3.1.0", …})    ->  '"5d41402abc4b2a76…"'
+
+    A model that changes changes its version (`x-sincpro.version`) and so the document's tag.
+    """
+    written = json.dumps(document, sort_keys=True, separators=(",", ":"), default=str)
+    return f'"{hashlib.sha256(written.encode()).hexdigest()}"'

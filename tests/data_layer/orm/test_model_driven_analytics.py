@@ -42,7 +42,7 @@ from sincpro_framework.ddd.criteria import (
     Part,
     Sort,
 )
-from sincpro_framework.ddd.entity.entity_meta import describe_class
+from sincpro_framework.ddd.metamodel import description_of
 from sincpro_framework.runtime.testing.contracts.computed_fields import (
     ComputedFieldsContract,
 )
@@ -141,7 +141,7 @@ def grouped(
     return store.group_by_levels(
         Bill,
         Criteria(
-            where=where,
+            selection=where,
             grouping=Grouping(group_by=tuple(levels), measures=measures or {}),
         ),
     )
@@ -155,7 +155,7 @@ def counts(buckets: Any) -> dict:
 
 
 def test_a_computed_field_says_so_and_is_read_only():
-    for meta in (describe_class(Bill), ModelIntrospection.describe(Bill)):
+    for meta in (description_of(Bill), ModelIntrospection.describe(Bill)):
         field = meta.fields["balance"]
 
         assert (field.computed, field.readonly, field.groupable) == (True, True, True)
@@ -163,7 +163,7 @@ def test_a_computed_field_says_so_and_is_read_only():
 
 
 def test_a_field_says_what_it_can_be_grouped_and_folded_by():
-    fields = describe_class(Bill).fields
+    fields = description_of(Bill).fields
 
     assert fields["owner"].groupable and fields["owner"].aggregates == (
         "min",
@@ -188,7 +188,7 @@ def test_a_computed_field_is_not_an_argument_of_the_constructor():
 def test_a_computed_field_is_filtered_like_a_column(bills: Any):
     owing = Condition(field="balance", operator=Operator.GT, value=0)
 
-    found = bills.search(Bill, Criteria(where=owing))
+    found = bills.search(Bill, Criteria(selection=owing))
 
     assert sorted(one.owner for one in found) == ["ana", "beto", "caro"]
     assert sorted(one.balance for one in found) == [
@@ -225,7 +225,7 @@ def test_a_computed_field_is_grouped_and_folded_like_a_column(bills: Any):
 
 
 def test_a_loaded_record_carries_the_value_the_store_computed(bills: Any):
-    ana = bills.search(Bill, Criteria(where=Condition(field="owner", value="caro")))
+    ana = bills.search(Bill, Criteria(selection=Condition(field="owner", value="caro")))
 
     assert [one.balance for one in ana] == [Decimal("50")]
 
@@ -261,7 +261,7 @@ def test_a_memory_store_refuses_a_field_it_has_no_python_for():
     store = MemoryRepository(SqlOnly(total=2))
 
     for criteria in (
-        Criteria(where=Condition(field="doubled", operator=Operator.GT, value=1)),
+        Criteria(selection=Condition(field="doubled", operator=Operator.GT, value=1)),
         Criteria(order=(Sort(field="doubled"),)),
         Criteria(grouping=Grouping(group_by=(GroupingLevel(field="doubled"),))),
     ):
@@ -314,7 +314,7 @@ def test_a_part_cannot_be_opened_and_says_so(bills: Any):
     buckets = grouped(bills, GroupingLevel(field="posted_at", part=Part.MONTH))
 
     assert all(one.openable is False for one in buckets)
-    assert all(one.criteria.where is None for one in buckets)
+    assert all(one.criteria.selection is None for one in buckets)
 
 
 def test_an_ordinary_group_can_be_opened(bills: Any):

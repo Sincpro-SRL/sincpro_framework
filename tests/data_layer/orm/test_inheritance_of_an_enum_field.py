@@ -199,7 +199,7 @@ def test_the_core_filters_by_a_value_only_a_context_below_it_has(contexts):
 
     def by_state(value: str) -> list[tuple[str, type]]:
         found = repository.search(
-            Invoice, Criteria(where=Condition(field="state", value=value))
+            Invoice, Criteria(selection=Condition(field="state", value=value))
         ).items
         return [(one.number, type(one)) for one in found]
 

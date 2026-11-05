@@ -25,14 +25,13 @@ class Invoice(Entity):
         readonly=lambda i: [i.number, i.state],       # the domain writes them
         required=lambda i: i.partner_id,
         readonly_when=lambda i: When(
-            Condition.on(i.state, Operator.NE, InvoiceState.DRAFT), i.partner_id, i.discount
+            i.state != InvoiceState.DRAFT, i.partner_id, i.discount
         ),
         required_when=lambda i: [
-            When(Condition.on(i.payment, Operator.EQ, Payment.CARD), i.card_reference),
-            When(All(all=[Condition.on(i.state, Operator.EQ, InvoiceState.DRAFT),
-                          Condition.on(i.discount, Operator.GT, Decimal("0"))]), i.discount_reason),
+            When(i.payment == Payment.CARD, i.card_reference),
+            When(i.state == InvoiceState.DRAFT and i.discount > Decimal("0"), i.discount_reason),
         ],
-        visible_when=lambda i: When(Condition.on(i.payment, Operator.EQ, Payment.CARD), i.card_reference),
+        visible_when=lambda i: When(i.payment == Payment.CARD, i.card_reference),
     )
 ```
 
@@ -42,13 +41,15 @@ required, and each plain dataclass default is the `default`.
 
 ## 2. What a client receives
 
-`Meta.fields["partner_id"]` (in every `entity_meta_data`, e.g. from `EntityReads`):
+The property `partner_id` of the entity's contract (`contract_of(Invoice)`, published in the
+discovery document of every wire that exposes a read of it):
 
 ```json
-{"readonly": false, "required": true, "default": null,
- "readonly_when": {"field": "state", "operator": "!=", "value": "draft"},
- "required_when": null, "visible_when": null, "...": "..."}
+{"type": "string", "x-sincpro": {"type": "many2one", "widget": "many2one",
+ "readonly_when": {"field": "state", "operator": "!=", "value": "draft"}, "...": "..."}}
 ```
+
+and `"partner_id"` is listed in the schema's `required`.
 
 The client evaluates each condition over the record with the same evaluator it filters with
 (`@sincpro/criteria`), reading each value as the field's type (`FieldMeta.type`, `exact` for
@@ -84,8 +85,8 @@ stored version.
   If it matters, write a `@check`.
 - **Hiding a sensitive field only in the UI.** Hiding is not omitting: cut it on the server
   with the specification or an `after_read` hook.
-- **Writing a condition as a Python expression.** `When(i.state == "done", ...)` is refused:
-  write `When(Condition.on(i.state, Operator.EQ, State.DONE), ...)`, which is publishable data.
+- **Writing a condition the language cannot say.** `When(i.total * 2 > 10, ...)` is refused:
+  write `When(i.state == State.DONE, ...)`, which is publishable data.
 - **Asking a record with a specification that drops the fields a condition reads.** The client
   cannot evaluate `readonly_when` over `state` if the record arrived without `state`.
 - **Adding role or tenant logic to `presentation`.** It is the same for every caller; groups and

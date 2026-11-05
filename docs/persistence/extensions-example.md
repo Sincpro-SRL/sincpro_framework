@@ -266,7 +266,7 @@ assert {"route", "carrier", "zone", "cufd"} <= set(
 
 ```python
 def ids(field_name: str, value: object) -> list[str]:
-    found = store.search(Move, Criteria(where=Condition(field=field_name, value=value)))
+    found = store.search(Move, Criteria(selection=Condition(field=field_name, value=value)))
     assert not found.dropped
     return sorted(one.id for one in found)
 

@@ -1,0 +1,1546 @@
+{
+  "about": "Contracts the framework publishes and the description each one reads into. Written by tests/ddd/metamodel/test_contract.py and read by @sincpro/criteria's metaFromContract. Do not edit by hand.",
+  "cases": [
+    {
+      "name": "Order",
+      "contract": {
+        "type": "object",
+        "title": "Order",
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "ID",
+            "x-sincpro": {
+              "type": "text",
+              "widget": "text",
+              "label": {
+                "default": "ID",
+                "es": "ID"
+              },
+              "readonly": true,
+              "sortable": true,
+              "groupable": true,
+              "aggregates": [
+                "min",
+                "max",
+                "count",
+                "count_distinct"
+              ],
+              "ops": [
+                "=",
+                "!=",
+                "like",
+                "starts with",
+                "in",
+                "not in"
+              ]
+            }
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created at",
+            "x-sincpro": {
+              "type": "datetime",
+              "widget": "datetime",
+              "label": {
+                "default": "Created at",
+                "es": "Creado el"
+              },
+              "readonly": true,
+              "sortable": true,
+              "groupable": true,
+              "aggregates": [
+                "min",
+                "max",
+                "count",
+                "count_distinct"
+              ],
+              "ops": [
+                "=",
+                "!=",
+                ">",
+                ">=",
+                "<",
+                "<=",
+                "between"
+              ]
+            }
+          },
+          "updated_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Updated at",
+            "x-sincpro": {
+              "type": "datetime",
+              "widget": "datetime",
+              "label": {
+                "default": "Updated at",
+                "es": "Actualizado el"
+              },
+              "readonly": true,
+              "groupable": true,
+              "aggregates": [
+                "min",
+                "max",
+                "count",
+                "count_distinct"
+              ],
+              "ops": [
+                "=",
+                "!=",
+                ">",
+                ">=",
+                "<",
+                "<=",
+                "between",
+                "is null"
+              ]
+            }
+          },
+          "version": {
+            "type": "integer",
+            "title": "Version",
+            "x-sincpro": {
+              "type": "integer",
+              "widget": "number",
+              "label": {
+                "default": "Version",
+                "es": "Versión"
+              },
+              "readonly": true,
+              "sortable": true,
+              "groupable": true,
+              "aggregates": [
+                "sum",
+                "avg",
+                "min",
+                "max",
+                "count",
+                "count_distinct",
+                "percentile",
+                "median"
+              ],
+              "ops": [
+                "=",
+                "!=",
+                ">",
+                ">=",
+                "<",
+                "<=",
+                "between",
+                "in",
+                "not in"
+              ]
+            }
+          },
+          "stage": {
+            "type": "string",
+            "enum": [
+              "draft",
+              "confirmed"
+            ],
+            "x-sincpro": {
+              "type": "text",
+              "widget": "select",
+              "default": "draft",
+              "sortable": true,
+              "groupable": true,
+              "aggregates": [
+                "min",
+                "max",
+                "count",
+                "count_distinct"
+              ],
+              "ops": [
+                "=",
+                "!=",
+                "like",
+                "starts with",
+                "in",
+                "not in"
+              ],
+              "judged_by": [
+                "delivery_when_confirmed"
+              ]
+            }
+          },
+          "lines": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "title": "OrderLine",
+              "properties": {
+                "product": {
+                  "type": "string",
+                  "x-sincpro": {
+                    "type": "text",
+                    "widget": "text",
+                    "sortable": true,
+                    "groupable": true,
+                    "aggregates": [
+                      "min",
+                      "max",
+                      "count",
+                      "count_distinct"
+                    ],
+                    "ops": [
+                      "=",
+                      "!=",
+                      "like",
+                      "starts with",
+                      "in",
+                      "not in"
+                    ]
+                  }
+                },
+                "qty": {
+                  "type": "integer",
+                  "exclusiveMinimum": 0,
+                  "x-sincpro": {
+                    "type": "integer",
+                    "widget": "number",
+                    "default": 1,
+                    "sortable": true,
+                    "groupable": true,
+                    "aggregates": [
+                      "sum",
+                      "avg",
+                      "min",
+                      "max",
+                      "count",
+                      "count_distinct",
+                      "percentile",
+                      "median"
+                    ],
+                    "ops": [
+                      "=",
+                      "!=",
+                      ">",
+                      ">=",
+                      "<",
+                      "<=",
+                      "between",
+                      "in",
+                      "not in"
+                    ],
+                    "holds": {
+                      "field": "value",
+                      "value": 0,
+                      "operator": ">"
+                    }
+                  }
+                }
+              },
+              "required": [],
+              "x-sincpro": {
+                "entity": "OrderLine",
+                "title": {
+                  "default": "OrderLine"
+                }
+              }
+            },
+            "x-sincpro": {
+              "type": "embedded",
+              "widget": "lines",
+              "many": true,
+              "affects": [
+                "total"
+              ]
+            }
+          },
+          "discount": {
+            "type": "string",
+            "format": "decimal",
+            "x-sincpro": {
+              "type": "number",
+              "widget": "decimal",
+              "default": "0",
+              "sortable": true,
+              "groupable": true,
+              "aggregates": [
+                "sum",
+                "avg",
+                "min",
+                "max",
+                "count",
+                "count_distinct",
+                "percentile",
+                "median"
+              ],
+              "ops": [
+                "=",
+                "!=",
+                ">",
+                ">=",
+                "<",
+                "<=",
+                "between"
+              ],
+              "exact": true,
+              "holds": {
+                "all": [
+                  {
+                    "field": "value",
+                    "value": 0,
+                    "operator": ">="
+                  },
+                  {
+                    "field": "value",
+                    "value": 30,
+                    "operator": "<="
+                  }
+                ]
+              }
+            }
+          },
+          "total": {
+            "type": "string",
+            "format": "decimal",
+            "x-sincpro": {
+              "type": "number",
+              "widget": "decimal",
+              "readonly": true,
+              "default": "0",
+              "sortable": true,
+              "groupable": true,
+              "aggregates": [
+                "sum",
+                "avg",
+                "min",
+                "max",
+                "count",
+                "count_distinct",
+                "percentile",
+                "median"
+              ],
+              "ops": [
+                "=",
+                "!=",
+                ">",
+                ">=",
+                "<",
+                "<=",
+                "between"
+              ],
+              "exact": true
+            }
+          },
+          "delivery": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "x-sincpro": {
+              "type": "date",
+              "widget": "date",
+              "groupable": true,
+              "aggregates": [
+                "min",
+                "max",
+                "count",
+                "count_distinct"
+              ],
+              "ops": [
+                "=",
+                "!=",
+                ">",
+                ">=",
+                "<",
+                "<=",
+                "between",
+                "is null"
+              ],
+              "judged_by": [
+                "delivery_when_confirmed"
+              ]
+            }
+          },
+          "note": {
+            "type": "string",
+            "title": "Note",
+            "x-sincpro": {
+              "type": "text",
+              "widget": "text",
+              "label": {
+                "default": "Note",
+                "es": "Nota"
+              },
+              "readonly_when": {
+                "field": "stage",
+                "value": "draft",
+                "operator": "!="
+              },
+              "sortable": true,
+              "groupable": true,
+              "aggregates": [
+                "min",
+                "max",
+                "count",
+                "count_distinct"
+              ],
+              "ops": [
+                "=",
+                "!=",
+                "like",
+                "starts with",
+                "in",
+                "not in"
+              ]
+            }
+          },
+          "buyer": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/Buyer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "x-sincpro": {
+              "type": "many2one",
+              "widget": "many2one",
+              "relation": "Buyer"
+            }
+          }
+        },
+        "required": [
+          "buyer"
+        ],
+        "x-sincpro": {
+          "entity": "Order",
+          "identity": "id",
+          "get_id": "id",
+          "default_order": "-id",
+          "title": {
+            "default": "Order"
+          },
+          "version": "180b08527cc5e0207a8aba98de44c0ccd92ea8ef31aa3922657baef68306141d"
+        },
+        "$defs": {
+          "Buyer": {
+            "type": "object",
+            "title": "Buyer",
+            "properties": {
+              "id": {
+                "type": "string",
+                "title": "ID",
+                "x-sincpro": {
+                  "type": "text",
+                  "widget": "text",
+                  "label": {
+                    "default": "ID",
+                    "es": "ID"
+                  },
+                  "readonly": true,
+                  "sortable": true,
+                  "groupable": true,
+                  "aggregates": [
+                    "min",
+                    "max",
+                    "count",
+                    "count_distinct"
+                  ],
+                  "ops": [
+                    "=",
+                    "!=",
+                    "like",
+                    "starts with",
+                    "in",
+                    "not in"
+                  ]
+                }
+              },
+              "created_at": {
+                "type": "string",
+                "format": "date-time",
+                "title": "Created at",
+                "x-sincpro": {
+                  "type": "datetime",
+                  "widget": "datetime",
+                  "label": {
+                    "default": "Created at",
+                    "es": "Creado el"
+                  },
+                  "readonly": true,
+                  "sortable": true,
+                  "groupable": true,
+                  "aggregates": [
+                    "min",
+                    "max",
+                    "count",
+                    "count_distinct"
+                  ],
+                  "ops": [
+                    "=",
+                    "!=",
+                    ">",
+                    ">=",
+                    "<",
+                    "<=",
+                    "between"
+                  ]
+                }
+              },
+              "updated_at": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "format": "date-time"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Updated at",
+                "x-sincpro": {
+                  "type": "datetime",
+                  "widget": "datetime",
+                  "label": {
+                    "default": "Updated at",
+                    "es": "Actualizado el"
+                  },
+                  "readonly": true,
+                  "groupable": true,
+                  "aggregates": [
+                    "min",
+                    "max",
+                    "count",
+                    "count_distinct"
+                  ],
+                  "ops": [
+                    "=",
+                    "!=",
+                    ">",
+                    ">=",
+                    "<",
+                    "<=",
+                    "between",
+                    "is null"
+                  ]
+                }
+              },
+              "version": {
+                "type": "integer",
+                "title": "Version",
+                "x-sincpro": {
+                  "type": "integer",
+                  "widget": "number",
+                  "label": {
+                    "default": "Version",
+                    "es": "Versión"
+                  },
+                  "readonly": true,
+                  "sortable": true,
+                  "groupable": true,
+                  "aggregates": [
+                    "sum",
+                    "avg",
+                    "min",
+                    "max",
+                    "count",
+                    "count_distinct",
+                    "percentile",
+                    "median"
+                  ],
+                  "ops": [
+                    "=",
+                    "!=",
+                    ">",
+                    ">=",
+                    "<",
+                    "<=",
+                    "between",
+                    "in",
+                    "not in"
+                  ]
+                }
+              },
+              "name": {
+                "type": "string",
+                "x-sincpro": {
+                  "type": "text",
+                  "widget": "text",
+                  "sortable": true,
+                  "groupable": true,
+                  "aggregates": [
+                    "min",
+                    "max",
+                    "count",
+                    "count_distinct"
+                  ],
+                  "ops": [
+                    "=",
+                    "!=",
+                    "like",
+                    "starts with",
+                    "in",
+                    "not in"
+                  ]
+                }
+              }
+            },
+            "required": [],
+            "x-sincpro": {
+              "entity": "Buyer",
+              "identity": "id",
+              "get_id": "id",
+              "display": "name",
+              "default_order": "-id",
+              "search": {
+                "selection": {
+                  "field": "name",
+                  "value": {
+                    "$": "param",
+                    "name": "text"
+                  },
+                  "operator": "like"
+                },
+                "order": [],
+                "pagination": {
+                  "limit": 50,
+                  "strategy": {
+                    "token": null
+                  }
+                },
+                "specification": null,
+                "grouping": {
+                  "group_by": [],
+                  "measures": {},
+                  "where_measures": null,
+                  "order": [],
+                  "pagination": null
+                },
+                "count": "capped"
+              },
+              "title": {
+                "default": "Buyer"
+              },
+              "version": "3d65720c26351cc0d17878916903e97e6960c9b9062d9df06b5025df4e54586e"
+            }
+          }
+        }
+      },
+      "expected": {
+        "aggregate": "Order",
+        "identity": "id",
+        "default_order": "-id",
+        "fields": {
+          "id": {
+            "widget": "text",
+            "label": {
+              "default": "ID",
+              "es": "ID"
+            },
+            "readonly": true,
+            "sortable": true,
+            "groupable": true,
+            "aggregates": [
+              "min",
+              "max",
+              "count",
+              "count_distinct"
+            ],
+            "ops": [
+              "=",
+              "!=",
+              "like",
+              "starts with",
+              "in",
+              "not in"
+            ],
+            "type": "text",
+            "kind": "scalar",
+            "nullable": false
+          },
+          "created_at": {
+            "widget": "datetime",
+            "label": {
+              "default": "Created at",
+              "es": "Creado el"
+            },
+            "readonly": true,
+            "sortable": true,
+            "groupable": true,
+            "aggregates": [
+              "min",
+              "max",
+              "count",
+              "count_distinct"
+            ],
+            "ops": [
+              "=",
+              "!=",
+              ">",
+              ">=",
+              "<",
+              "<=",
+              "between"
+            ],
+            "type": "datetime",
+            "kind": "scalar",
+            "nullable": false
+          },
+          "updated_at": {
+            "widget": "datetime",
+            "label": {
+              "default": "Updated at",
+              "es": "Actualizado el"
+            },
+            "readonly": true,
+            "groupable": true,
+            "aggregates": [
+              "min",
+              "max",
+              "count",
+              "count_distinct"
+            ],
+            "ops": [
+              "=",
+              "!=",
+              ">",
+              ">=",
+              "<",
+              "<=",
+              "between",
+              "is null"
+            ],
+            "type": "datetime",
+            "kind": "scalar",
+            "nullable": true,
+            "sortable": false
+          },
+          "version": {
+            "widget": "number",
+            "label": {
+              "default": "Version",
+              "es": "Versión"
+            },
+            "readonly": true,
+            "sortable": true,
+            "groupable": true,
+            "aggregates": [
+              "sum",
+              "avg",
+              "min",
+              "max",
+              "count",
+              "count_distinct",
+              "percentile",
+              "median"
+            ],
+            "ops": [
+              "=",
+              "!=",
+              ">",
+              ">=",
+              "<",
+              "<=",
+              "between",
+              "in",
+              "not in"
+            ],
+            "type": "integer",
+            "kind": "scalar",
+            "nullable": false
+          },
+          "stage": {
+            "widget": "select",
+            "default": "draft",
+            "sortable": true,
+            "groupable": true,
+            "aggregates": [
+              "min",
+              "max",
+              "count",
+              "count_distinct"
+            ],
+            "ops": [
+              "=",
+              "!=",
+              "like",
+              "starts with",
+              "in",
+              "not in"
+            ],
+            "judged_by": [
+              "delivery_when_confirmed"
+            ],
+            "type": "text",
+            "kind": "scalar",
+            "nullable": false,
+            "choices": [
+              "draft",
+              "confirmed"
+            ]
+          },
+          "lines": {
+            "widget": "lines",
+            "many": true,
+            "affects": [
+              "total"
+            ],
+            "type": "embedded",
+            "kind": "embedded",
+            "nullable": false,
+            "sortable": false,
+            "ops": [],
+            "definition": {
+              "aggregate": "OrderLine",
+              "identity": "",
+              "default_order": "",
+              "fields": {
+                "product": {
+                  "widget": "text",
+                  "sortable": true,
+                  "groupable": true,
+                  "aggregates": [
+                    "min",
+                    "max",
+                    "count",
+                    "count_distinct"
+                  ],
+                  "ops": [
+                    "=",
+                    "!=",
+                    "like",
+                    "starts with",
+                    "in",
+                    "not in"
+                  ],
+                  "type": "text",
+                  "kind": "scalar",
+                  "nullable": false
+                },
+                "qty": {
+                  "widget": "number",
+                  "default": 1,
+                  "sortable": true,
+                  "groupable": true,
+                  "aggregates": [
+                    "sum",
+                    "avg",
+                    "min",
+                    "max",
+                    "count",
+                    "count_distinct",
+                    "percentile",
+                    "median"
+                  ],
+                  "ops": [
+                    "=",
+                    "!=",
+                    ">",
+                    ">=",
+                    "<",
+                    "<=",
+                    "between",
+                    "in",
+                    "not in"
+                  ],
+                  "holds": {
+                    "field": "value",
+                    "value": 0,
+                    "operator": ">"
+                  },
+                  "type": "integer",
+                  "kind": "scalar",
+                  "nullable": false
+                }
+              },
+              "name": {
+                "default": "OrderLine"
+              }
+            }
+          },
+          "discount": {
+            "widget": "decimal",
+            "default": "0",
+            "sortable": true,
+            "groupable": true,
+            "aggregates": [
+              "sum",
+              "avg",
+              "min",
+              "max",
+              "count",
+              "count_distinct",
+              "percentile",
+              "median"
+            ],
+            "ops": [
+              "=",
+              "!=",
+              ">",
+              ">=",
+              "<",
+              "<=",
+              "between"
+            ],
+            "exact": true,
+            "holds": {
+              "all": [
+                {
+                  "field": "value",
+                  "value": 0,
+                  "operator": ">="
+                },
+                {
+                  "field": "value",
+                  "value": 30,
+                  "operator": "<="
+                }
+              ]
+            },
+            "type": "number",
+            "kind": "scalar",
+            "nullable": false
+          },
+          "total": {
+            "widget": "decimal",
+            "readonly": true,
+            "default": "0",
+            "sortable": true,
+            "groupable": true,
+            "aggregates": [
+              "sum",
+              "avg",
+              "min",
+              "max",
+              "count",
+              "count_distinct",
+              "percentile",
+              "median"
+            ],
+            "ops": [
+              "=",
+              "!=",
+              ">",
+              ">=",
+              "<",
+              "<=",
+              "between"
+            ],
+            "exact": true,
+            "type": "number",
+            "kind": "scalar",
+            "nullable": false
+          },
+          "delivery": {
+            "widget": "date",
+            "groupable": true,
+            "aggregates": [
+              "min",
+              "max",
+              "count",
+              "count_distinct"
+            ],
+            "ops": [
+              "=",
+              "!=",
+              ">",
+              ">=",
+              "<",
+              "<=",
+              "between",
+              "is null"
+            ],
+            "judged_by": [
+              "delivery_when_confirmed"
+            ],
+            "type": "date",
+            "kind": "scalar",
+            "nullable": true,
+            "sortable": false
+          },
+          "note": {
+            "widget": "text",
+            "label": {
+              "default": "Note",
+              "es": "Nota"
+            },
+            "readonly_when": {
+              "field": "stage",
+              "value": "draft",
+              "operator": "!="
+            },
+            "sortable": true,
+            "groupable": true,
+            "aggregates": [
+              "min",
+              "max",
+              "count",
+              "count_distinct"
+            ],
+            "ops": [
+              "=",
+              "!=",
+              "like",
+              "starts with",
+              "in",
+              "not in"
+            ],
+            "type": "text",
+            "kind": "scalar",
+            "nullable": false
+          },
+          "buyer": {
+            "widget": "many2one",
+            "relation": "Buyer",
+            "type": "many2one",
+            "kind": "relation",
+            "nullable": true,
+            "sortable": false,
+            "ops": [],
+            "required": true
+          }
+        },
+        "name": {
+          "default": "Order"
+        },
+        "get_id": "id"
+      }
+    },
+    {
+      "name": "Buyer",
+      "contract": {
+        "type": "object",
+        "title": "Buyer",
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "ID",
+            "x-sincpro": {
+              "type": "text",
+              "widget": "text",
+              "label": {
+                "default": "ID",
+                "es": "ID"
+              },
+              "readonly": true,
+              "sortable": true,
+              "groupable": true,
+              "aggregates": [
+                "min",
+                "max",
+                "count",
+                "count_distinct"
+              ],
+              "ops": [
+                "=",
+                "!=",
+                "like",
+                "starts with",
+                "in",
+                "not in"
+              ]
+            }
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created at",
+            "x-sincpro": {
+              "type": "datetime",
+              "widget": "datetime",
+              "label": {
+                "default": "Created at",
+                "es": "Creado el"
+              },
+              "readonly": true,
+              "sortable": true,
+              "groupable": true,
+              "aggregates": [
+                "min",
+                "max",
+                "count",
+                "count_distinct"
+              ],
+              "ops": [
+                "=",
+                "!=",
+                ">",
+                ">=",
+                "<",
+                "<=",
+                "between"
+              ]
+            }
+          },
+          "updated_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Updated at",
+            "x-sincpro": {
+              "type": "datetime",
+              "widget": "datetime",
+              "label": {
+                "default": "Updated at",
+                "es": "Actualizado el"
+              },
+              "readonly": true,
+              "groupable": true,
+              "aggregates": [
+                "min",
+                "max",
+                "count",
+                "count_distinct"
+              ],
+              "ops": [
+                "=",
+                "!=",
+                ">",
+                ">=",
+                "<",
+                "<=",
+                "between",
+                "is null"
+              ]
+            }
+          },
+          "version": {
+            "type": "integer",
+            "title": "Version",
+            "x-sincpro": {
+              "type": "integer",
+              "widget": "number",
+              "label": {
+                "default": "Version",
+                "es": "Versión"
+              },
+              "readonly": true,
+              "sortable": true,
+              "groupable": true,
+              "aggregates": [
+                "sum",
+                "avg",
+                "min",
+                "max",
+                "count",
+                "count_distinct",
+                "percentile",
+                "median"
+              ],
+              "ops": [
+                "=",
+                "!=",
+                ">",
+                ">=",
+                "<",
+                "<=",
+                "between",
+                "in",
+                "not in"
+              ]
+            }
+          },
+          "name": {
+            "type": "string",
+            "x-sincpro": {
+              "type": "text",
+              "widget": "text",
+              "sortable": true,
+              "groupable": true,
+              "aggregates": [
+                "min",
+                "max",
+                "count",
+                "count_distinct"
+              ],
+              "ops": [
+                "=",
+                "!=",
+                "like",
+                "starts with",
+                "in",
+                "not in"
+              ]
+            }
+          }
+        },
+        "required": [],
+        "x-sincpro": {
+          "entity": "Buyer",
+          "identity": "id",
+          "get_id": "id",
+          "display": "name",
+          "default_order": "-id",
+          "search": {
+            "selection": {
+              "field": "name",
+              "value": {
+                "$": "param",
+                "name": "text"
+              },
+              "operator": "like"
+            },
+            "order": [],
+            "pagination": {
+              "limit": 50,
+              "strategy": {
+                "token": null
+              }
+            },
+            "specification": null,
+            "grouping": {
+              "group_by": [],
+              "measures": {},
+              "where_measures": null,
+              "order": [],
+              "pagination": null
+            },
+            "count": "capped"
+          },
+          "title": {
+            "default": "Buyer"
+          },
+          "version": "3d65720c26351cc0d17878916903e97e6960c9b9062d9df06b5025df4e54586e"
+        }
+      },
+      "expected": {
+        "aggregate": "Buyer",
+        "identity": "id",
+        "default_order": "-id",
+        "fields": {
+          "id": {
+            "widget": "text",
+            "label": {
+              "default": "ID",
+              "es": "ID"
+            },
+            "readonly": true,
+            "sortable": true,
+            "groupable": true,
+            "aggregates": [
+              "min",
+              "max",
+              "count",
+              "count_distinct"
+            ],
+            "ops": [
+              "=",
+              "!=",
+              "like",
+              "starts with",
+              "in",
+              "not in"
+            ],
+            "type": "text",
+            "kind": "scalar",
+            "nullable": false
+          },
+          "created_at": {
+            "widget": "datetime",
+            "label": {
+              "default": "Created at",
+              "es": "Creado el"
+            },
+            "readonly": true,
+            "sortable": true,
+            "groupable": true,
+            "aggregates": [
+              "min",
+              "max",
+              "count",
+              "count_distinct"
+            ],
+            "ops": [
+              "=",
+              "!=",
+              ">",
+              ">=",
+              "<",
+              "<=",
+              "between"
+            ],
+            "type": "datetime",
+            "kind": "scalar",
+            "nullable": false
+          },
+          "updated_at": {
+            "widget": "datetime",
+            "label": {
+              "default": "Updated at",
+              "es": "Actualizado el"
+            },
+            "readonly": true,
+            "groupable": true,
+            "aggregates": [
+              "min",
+              "max",
+              "count",
+              "count_distinct"
+            ],
+            "ops": [
+              "=",
+              "!=",
+              ">",
+              ">=",
+              "<",
+              "<=",
+              "between",
+              "is null"
+            ],
+            "type": "datetime",
+            "kind": "scalar",
+            "nullable": true,
+            "sortable": false
+          },
+          "version": {
+            "widget": "number",
+            "label": {
+              "default": "Version",
+              "es": "Versión"
+            },
+            "readonly": true,
+            "sortable": true,
+            "groupable": true,
+            "aggregates": [
+              "sum",
+              "avg",
+              "min",
+              "max",
+              "count",
+              "count_distinct",
+              "percentile",
+              "median"
+            ],
+            "ops": [
+              "=",
+              "!=",
+              ">",
+              ">=",
+              "<",
+              "<=",
+              "between",
+              "in",
+              "not in"
+            ],
+            "type": "integer",
+            "kind": "scalar",
+            "nullable": false
+          },
+          "name": {
+            "widget": "text",
+            "sortable": true,
+            "groupable": true,
+            "aggregates": [
+              "min",
+              "max",
+              "count",
+              "count_distinct"
+            ],
+            "ops": [
+              "=",
+              "!=",
+              "like",
+              "starts with",
+              "in",
+              "not in"
+            ],
+            "type": "text",
+            "kind": "scalar",
+            "nullable": false
+          }
+        },
+        "name": {
+          "default": "Buyer"
+        },
+        "display": "name",
+        "get_id": "id",
+        "search": {
+          "selection": {
+            "field": "name",
+            "value": {
+              "$": "param",
+              "name": "text"
+            },
+            "operator": "like"
+          },
+          "order": [],
+          "pagination": {
+            "limit": 50,
+            "strategy": {
+              "token": null
+            }
+          },
+          "specification": null,
+          "grouping": {
+            "group_by": [],
+            "measures": {},
+            "where_measures": null,
+            "order": [],
+            "pagination": null
+          },
+          "count": "capped"
+        }
+      }
+    }
+  ],
+  "formulas": [
+    {
+      "name": "a decimal times a whole number keeps the decimal's places",
+      "formula": {
+        "op": "*",
+        "args": [
+          {
+            "$": "field",
+            "name": "qty"
+          },
+          {
+            "$": "field",
+            "name": "price"
+          }
+        ]
+      },
+      "record": {
+        "qty": 2,
+        "price": "12.50"
+      },
+      "expected": "25.00"
+    },
+    {
+      "name": "whole numbers stay whole",
+      "formula": {
+        "op": "*",
+        "args": [
+          {
+            "$": "field",
+            "name": "qty"
+          },
+          {
+            "$": "field",
+            "name": "qty"
+          }
+        ]
+      },
+      "record": {
+        "qty": 3
+      },
+      "expected": 9
+    },
+    {
+      "name": "decimals multiplied add their places; a sum keeps the most",
+      "formula": {
+        "op": "+",
+        "args": [
+          {
+            "op": "-",
+            "args": [
+              {
+                "$": "field",
+                "name": "subtotal"
+              },
+              {
+                "op": "*",
+                "args": [
+                  {
+                    "$": "field",
+                    "name": "discount"
+                  },
+                  "1.13"
+                ]
+              }
+            ]
+          },
+          {
+            "op": "-",
+            "args": [
+              {
+                "$": "field",
+                "name": "discount"
+              }
+            ]
+          }
+        ]
+      },
+      "record": {
+        "subtotal": "25.30",
+        "discount": "1.5"
+      },
+      "expected": "22.105"
+    },
+    {
+      "name": "a sum over the records a field holds, from a decimal zero",
+      "formula": {
+        "op": "sum",
+        "of": "lines",
+        "each": {
+          "$": "field",
+          "name": "amount"
+        },
+        "from": "0"
+      },
+      "record": {
+        "lines": [
+          {
+            "amount": "25.00"
+          },
+          {
+            "amount": "0.30"
+          }
+        ]
+      },
+      "expected": "25.30"
+    },
+    {
+      "name": "a sum over no record is its start",
+      "formula": {
+        "op": "sum",
+        "of": "lines",
+        "each": {
+          "$": "field",
+          "name": "amount"
+        },
+        "from": "0"
+      },
+      "record": {
+        "lines": []
+      },
+      "expected": "0"
+    },
+    {
+      "name": "a sum of whole numbers from a whole zero",
+      "formula": {
+        "op": "sum",
+        "of": "lines",
+        "each": {
+          "$": "field",
+          "name": "qty"
+        },
+        "from": 0
+      },
+      "record": {
+        "lines": [
+          {
+            "qty": 2
+          },
+          {
+            "qty": 5
+          }
+        ]
+      },
+      "expected": 7
+    }
+  ]
+}

@@ -78,7 +78,6 @@ def test_a_paged_answer_shows_the_named_fields_and_the_identity(store):
     on_the_wire = answer.model_dump()
 
     assert all(set(record) == {"thing_id", "name"} for record in on_the_wire["things"])
-    assert list(on_the_wire["entity_meta_data"]["fields"]) == ["thing_id", "name"]
     assert on_the_wire["dropped"] == [{"field": "legacy_flag", "reason": "unknown_field"}]
     assert answer.things[0].size is not None  # inside the process the record is whole
 
@@ -96,4 +95,3 @@ def test_without_a_specification_the_answer_is_whole(store):
         "made_at",
         "owner",
     }
-    assert set(on_the_wire["entity_meta_data"]["fields"]) == set(META.fields)

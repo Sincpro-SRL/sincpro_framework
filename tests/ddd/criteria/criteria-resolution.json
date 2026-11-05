@@ -157,7 +157,7 @@
       "week_starts_on": 0,
       "context": {},
       "params": {},
-      "where": {
+      "selection": {
         "field": "due",
         "operator": "<",
         "value": {
@@ -177,7 +177,7 @@
       "week_starts_on": 0,
       "context": {},
       "params": {},
-      "where": {
+      "selection": {
         "field": "due",
         "operator": ">=",
         "value": {
@@ -200,7 +200,7 @@
       "week_starts_on": 0,
       "context": {},
       "params": {},
-      "where": {
+      "selection": {
         "field": "due",
         "operator": "<",
         "value": {
@@ -223,7 +223,7 @@
       "week_starts_on": 0,
       "context": {},
       "params": {},
-      "where": {
+      "selection": {
         "field": "due",
         "operator": "<",
         "value": {
@@ -244,7 +244,7 @@
       "week_starts_on": 0,
       "context": {},
       "params": {},
-      "where": {
+      "selection": {
         "field": "due",
         "operator": "<",
         "value": {
@@ -265,7 +265,7 @@
       "week_starts_on": 0,
       "context": {},
       "params": {},
-      "where": {
+      "selection": {
         "field": "due",
         "operator": "<",
         "value": {
@@ -286,7 +286,7 @@
       "week_starts_on": 0,
       "context": {},
       "params": {},
-      "where": {
+      "selection": {
         "field": "due",
         "operator": ">=",
         "value": {
@@ -307,7 +307,7 @@
       "week_starts_on": 6,
       "context": {},
       "params": {},
-      "where": {
+      "selection": {
         "field": "due",
         "operator": ">=",
         "value": {
@@ -328,7 +328,7 @@
       "week_starts_on": 0,
       "context": {},
       "params": {},
-      "where": {
+      "selection": {
         "field": "due",
         "operator": "<",
         "value": {
@@ -351,7 +351,7 @@
       "week_starts_on": 0,
       "context": {},
       "params": {},
-      "where": {
+      "selection": {
         "field": "due",
         "operator": "<",
         "value": {
@@ -374,7 +374,7 @@
       "week_starts_on": 0,
       "context": {},
       "params": {},
-      "where": {
+      "selection": {
         "field": "due",
         "operator": "<",
         "value": {
@@ -398,7 +398,7 @@
       "week_starts_on": 0,
       "context": {},
       "params": {},
-      "where": {
+      "selection": {
         "field": "at",
         "operator": ">=",
         "value": {
@@ -421,7 +421,7 @@
       "week_starts_on": 0,
       "context": {},
       "params": {},
-      "where": {
+      "selection": {
         "field": "due",
         "operator": "<",
         "value": {
@@ -441,7 +441,7 @@
       "week_starts_on": 0,
       "context": {},
       "params": {},
-      "where": {
+      "selection": {
         "field": "at",
         "operator": ">=",
         "value": {
@@ -462,7 +462,7 @@
       "week_starts_on": 0,
       "context": {},
       "params": {},
-      "where": {
+      "selection": {
         "field": "at",
         "operator": ">=",
         "value": {
@@ -487,7 +487,7 @@
         "user_id": "u-7"
       },
       "params": {},
-      "where": {
+      "selection": {
         "field": "owner_id",
         "operator": "=",
         "value": {
@@ -510,7 +510,7 @@
         "report_date": "2026-06-15"
       },
       "params": {},
-      "where": {
+      "selection": {
         "field": "due",
         "operator": ">=",
         "value": {
@@ -541,7 +541,7 @@
           }
         }
       },
-      "where": {
+      "selection": {
         "field": "total",
         "operator": ">",
         "value": {
@@ -564,7 +564,7 @@
       "params": {
         "text": "1.2"
       },
-      "where": {
+      "selection": {
         "field": "code",
         "operator": "in",
         "value": [
@@ -591,7 +591,7 @@
       "week_starts_on": 0,
       "context": {},
       "params": {},
-      "where": {
+      "selection": {
         "field": "due",
         "operator": "between",
         "value": {
@@ -621,7 +621,7 @@
       "week_starts_on": 0,
       "context": {},
       "params": {},
-      "where": {
+      "selection": {
         "field": "due",
         "operator": "between",
         "value": {
@@ -651,7 +651,7 @@
       "week_starts_on": 0,
       "context": {},
       "params": {},
-      "where": {
+      "selection": {
         "field": "due",
         "operator": "between",
         "value": {
@@ -681,7 +681,7 @@
       "week_starts_on": 0,
       "context": {},
       "params": {},
-      "where": {
+      "selection": {
         "field": "due",
         "operator": "between",
         "value": {
@@ -711,7 +711,7 @@
       "week_starts_on": 0,
       "context": {},
       "params": {},
-      "where": {
+      "selection": {
         "field": "due",
         "operator": "between",
         "value": {
@@ -742,7 +742,7 @@
       "week_starts_on": 0,
       "context": {},
       "params": {},
-      "where": {
+      "selection": {
         "field": "due",
         "operator": "between",
         "value": {
@@ -774,7 +774,7 @@
       "week_starts_on": 0,
       "context": {},
       "params": {},
-      "where": {
+      "selection": {
         "field": "due",
         "operator": "between",
         "value": {
@@ -806,7 +806,7 @@
       "week_starts_on": 0,
       "context": {},
       "params": {},
-      "where": {
+      "selection": {
         "field": "due",
         "operator": "between",
         "value": {
@@ -837,7 +837,7 @@
       "week_starts_on": 0,
       "context": {},
       "params": {},
-      "where": {
+      "selection": {
         "field": "total",
         "operator": ">",
         "value": {
@@ -861,7 +861,7 @@
       "week_starts_on": 0,
       "context": {},
       "params": {},
-      "where": {
+      "selection": {
         "all": [
           {
             "field": "due",
@@ -936,7 +936,7 @@
       "week_starts_on": 0,
       "context": {},
       "params": {},
-      "where": {
+      "selection": {
         "all": [
           {
             "field": "due",

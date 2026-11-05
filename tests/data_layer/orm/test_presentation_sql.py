@@ -46,7 +46,7 @@ class Ledger(Entity):
     @classmethod
     def DEFAULT_LITERAL_SEARCH(cls) -> Criteria:
         return Criteria(
-            where=Any(
+            selection=Any(
                 any=[
                     Condition(field="code", value=TEXT),
                     Condition(field="code", operator=Operator.STARTS_WITH, value=TEXT),
@@ -246,16 +246,18 @@ def test_a_key_other_than_the_identity_must_be_unique_on_disk():
             return "code"
 
     keyed = registry()
+    with pytest.raises(exceptions.ProgrammingError, match="loose_code.code is not unique"):
+        map_aggregates(
+            keyed,
+            {Coded: entity_table("loose_code", keyed.metadata, Column("code", Text))},
+        )
     map_aggregates(
         keyed,
         {
-            Coded: entity_table("loose_code", keyed.metadata, Column("code", Text)),
             Unique: entity_table(
                 "unique_code", keyed.metadata, Column("code", Text, unique=True)
-            ),
+            )
         },
     )
 
-    with pytest.raises(exceptions.ProgrammingError, match="loose_code.code is not unique"):
-        ModelIntrospection.describe(Coded)
     assert ModelIntrospection.describe(Unique).get_id == "code"

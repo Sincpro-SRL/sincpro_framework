@@ -47,7 +47,7 @@ def test_a_one2many_by_a_business_key_brings_its_children(forge_repository):
         Workspace,
         Criteria.model_validate(
             {
-                "where": {"field": "code", "value": "sp-1"},
+                "selection": {"field": "code", "value": "sp-1"},
                 "specification": {"repositories": {}},
             }
         ),
@@ -59,7 +59,7 @@ def test_a_many2one_by_a_business_key_brings_its_parent(forge_repository):
     found = forge_repository.first(
         CodeRepository,
         Criteria.model_validate(
-            {"where": {"field": "name", "value": "c"}, "specification": {"workspace": {}}}
+            {"selection": {"field": "name", "value": "c"}, "specification": {"workspace": {}}}
         ),
     )
     assert found.workspace.code == "sp-2"

@@ -25,7 +25,10 @@ from sincpro_framework.entrypoints.adapters.rest.routing import (
     failure_answer,
     payload_from_query,
 )
-from sincpro_framework.entrypoints.infrastructure.http import merge_http_context
+from sincpro_framework.entrypoints.infrastructure.http import (
+    document_tag,
+    merge_http_context,
+)
 
 REST_MISSING = (
     "Starlette/uvicorn is not installed. Install with: pip install sincpro-framework[rest]"
@@ -100,6 +103,7 @@ def routes(
         from starlette.responses import (  # pyright: ignore[reportMissingImports]
             HTMLResponse,
             JSONResponse,
+            Response,
         )
         from starlette.routing import Route  # pyright: ignore[reportMissingImports]
     except ImportError as error:
@@ -151,9 +155,14 @@ def routes(
     ]
     if openapi_path is not None:
 
-        async def openapi(_request: Request) -> JSONResponse:
-            """The OpenAPI document, built per request — it follows the catalog."""
-            return JSONResponse(document())
+        async def openapi(request: Request) -> Response:
+            """The OpenAPI document, built per request — it follows the catalog —, tagged with
+            its content's fingerprint: a client that already holds it is answered `304`."""
+            written = document()
+            tag = document_tag(written)
+            if request.headers.get("if-none-match") == tag:
+                return Response(status_code=304, headers={"ETag": tag})
+            return JSONResponse(written, headers={"ETag": tag})
 
         served.append(Route(openapi_path, openapi, methods=["GET"]))
     if docs_path is not None and openapi_path is not None:

@@ -123,7 +123,7 @@ def test_a_cursor_keeps_the_type_of_every_key(keys):
 def test_merging_criteria_keeps_every_condition(names):
     merged = Criteria()
     for name in names:
-        merged = merged.merged_with(Criteria(where=Condition(field=name, value=1)))
+        merged = merged.merged_with(Criteria(selection=Condition(field=name, value=1)))
 
     where = merged.expression
     assert ([leaf.field for leaf in where.conditions()] if where else []) == names

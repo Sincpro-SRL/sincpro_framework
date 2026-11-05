@@ -39,7 +39,8 @@ from sincpro_framework.ddd.criteria.domain.expression import (
     Any_,
 )
 from sincpro_framework.ddd.entity import Entity
-from sincpro_framework.ddd.entity.entity_meta import Meta, describe_class
+from sincpro_framework.ddd.entity.entity_meta import Meta
+from sincpro_framework.ddd.metamodel import StoreFacts, contract_of, description_of
 from sincpro_framework.ddd.reads.reads import states_of
 from sincpro_framework.ddd.repositories import Hook, Hooks
 
@@ -108,7 +109,9 @@ def holds(published: dict[str, Any] | None, record: Any) -> bool:
     `None` means no condition: the hint is off."""
     if published is None:
         return False
-    read, dropped = describe_class(type(record), "id").accept(Node.read(published))
+    read, dropped = description_of(type(record), StoreFacts(identity="id")).accept(
+        Node.read(published)
+    )
     assert not dropped, dropped
     return Evaluation.matches(record, read)
 
@@ -119,7 +122,7 @@ def holds(published: dict[str, Any] | None, record: Any) -> bool:
 
 
 def test_with_nothing_declared_the_structure_says_what_a_form_needs():
-    fields = as_the_client_reads(describe_class(Partner, "id"))
+    fields = as_the_client_reads(description_of(Partner, StoreFacts(identity="id")))
 
     assert [name for name, one in fields.items() if one["readonly"]] == [
         "id",
@@ -134,7 +137,7 @@ def test_with_nothing_declared_the_structure_says_what_a_form_needs():
 
 
 def test_the_defaults_a_new_invoice_form_starts_with():
-    fields = as_the_client_reads(describe_class(Invoice, "id"))
+    fields = as_the_client_reads(description_of(Invoice, StoreFacts(identity="id")))
 
     assert {
         name: one["default"] for name, one in fields.items() if one["default"] is not None
@@ -169,7 +172,7 @@ class SaleOrder(Entity):
 
 
 def test_what_the_framework_computes_is_published_read_only_and_never_asked_for():
-    fields = as_the_client_reads(describe_class(SaleOrder, "id"))
+    fields = as_the_client_reads(description_of(SaleOrder, StoreFacts(identity="id")))
     states = states_of(SaleOrder(customer_id="c1", customer_name="customer c1"))
 
     computed_by_the_framework = ["customer_name", "balance"]
@@ -192,7 +195,7 @@ class StockMove(Entity):
 
 
 def test_a_list_adds_up_what_the_entity_says_and_nothing_else():
-    fields = as_the_client_reads(describe_class(StockMove, "id"))
+    fields = as_the_client_reads(description_of(StockMove, StoreFacts(identity="id")))
 
     assert {name: one["total"] for name, one in fields.items() if one["total"]} == {
         "quantity": "sum",
@@ -203,7 +206,7 @@ def test_a_list_adds_up_what_the_entity_says_and_nothing_else():
 
 
 def test_nothing_is_added_up_when_the_entity_declares_nothing():
-    fields = as_the_client_reads(describe_class(Partner, "id"))
+    fields = as_the_client_reads(description_of(Partner, StoreFacts(identity="id")))
 
     assert all(one["total"] is None for one in fields.values())
 
@@ -222,7 +225,7 @@ def test_a_total_the_field_cannot_be_folded_with_is_refused_naming_what_it_takes
         exceptions.ProgrammingError,
         match="Shipment.presentation adds up carrier by sum; a text adds up by min, max",
     ):
-        describe_class(Shipment, "id")
+        description_of(Shipment, StoreFacts(identity="id"))
 
 
 def test_totals_are_written_as_a_mapping_of_field_to_function():
@@ -244,7 +247,7 @@ def test_totals_are_written_as_a_mapping_of_field_to_function():
 
 
 def test_a_draft_invoice_lets_the_partner_be_changed_and_a_confirmed_one_greys_it():
-    fields = as_the_client_reads(describe_class(Invoice, "id"))
+    fields = as_the_client_reads(description_of(Invoice, StoreFacts(identity="id")))
     draft = Invoice(partner_id="p1")
     confirmed = Invoice(partner_id="p1", number="F-0001", state=InvoiceState.CONFIRMED)
 
@@ -256,7 +259,7 @@ def test_a_draft_invoice_lets_the_partner_be_changed_and_a_confirmed_one_greys_i
 
 
 def test_the_card_reference_appears_and_is_asked_for_only_when_paying_by_card():
-    fields = as_the_client_reads(describe_class(Invoice, "id"))
+    fields = as_the_client_reads(description_of(Invoice, StoreFacts(identity="id")))
     cash = Invoice(partner_id="p1")
     card = Invoice(partner_id="p1", payment=Payment.CARD)
     transfer = Invoice(partner_id="p1", payment=Payment.TRANSFER)
@@ -281,14 +284,14 @@ def test_the_card_reference_appears_and_is_asked_for_only_when_paying_by_card():
 
 
 def test_a_field_without_a_visibility_condition_is_always_shown():
-    fields = as_the_client_reads(describe_class(Invoice, "id"))
+    fields = as_the_client_reads(description_of(Invoice, StoreFacts(identity="id")))
 
     assert fields["partner_id"]["visible_when"] is None
     assert fields["amount"]["visible_when"] is None
 
 
 def test_what_the_client_evaluates_from_json_agrees_with_the_server_on_every_record():
-    meta = describe_class(Invoice, "id")
+    meta = description_of(Invoice, StoreFacts(identity="id"))
     published = as_the_client_reads(meta)
     records = [
         Invoice(partner_id="p", state=state, payment=payment)
@@ -346,7 +349,7 @@ class Order(Entity):
 
 
 def test_a_reason_is_asked_only_for_a_discount_on_a_draft():
-    fields = as_the_client_reads(describe_class(Order, "id"))
+    fields = as_the_client_reads(description_of(Order, StoreFacts(identity="id")))
     reason = fields["discount_reason"]["required_when"]
 
     assert holds(reason, Order(customer_id="c", discount=Decimal("10"))) is True
@@ -361,7 +364,7 @@ def test_a_reason_is_asked_only_for_a_discount_on_a_draft():
 
 
 def test_a_field_covered_twice_is_covered_while_either_holds():
-    fields = as_the_client_reads(describe_class(Order, "id"))
+    fields = as_the_client_reads(description_of(Order, StoreFacts(identity="id")))
     discount = fields["discount"]["readonly_when"]
 
     assert holds(discount, Order(customer_id="c")) is False
@@ -425,7 +428,7 @@ def test_a_subclass_declares_its_own_hints():
     class CashSale(Invoice):
         presentation = Presentation["CashSale"](readonly=lambda s: (s.payment,))
 
-    fields = as_the_client_reads(describe_class(CashSale, "id"))
+    fields = as_the_client_reads(description_of(CashSale, StoreFacts(identity="id")))
 
     assert fields["payment"]["readonly"] is True
     assert fields["number"]["readonly"] is False
@@ -442,7 +445,7 @@ def test_a_condition_on_a_field_that_does_not_exist_is_refused_when_the_class_is
         )
 
     with pytest.raises(exceptions.ProgrammingError, match="stat"):
-        describe_class(Broken, "id")
+        description_of(Broken, StoreFacts(identity="id"))
 
 
 def test_a_condition_written_with_a_name_the_entity_lacks_is_refused_even_as_plain_text():
@@ -457,7 +460,7 @@ def test_a_condition_written_with_a_name_the_entity_lacks_is_refused_even_as_pla
     with pytest.raises(
         exceptions.ProgrammingError, match="asks about stat, which is not a field of Typo"
     ):
-        describe_class(Typo, "id")
+        description_of(Typo, StoreFacts(identity="id"))
 
 
 def test_a_condition_on_takes_a_name_and_nothing_else():
@@ -467,18 +470,37 @@ def test_a_condition_on_takes_a_name_and_nothing_else():
         Condition.on(3, Operator.EQ, "x")
 
 
-def test_a_condition_written_as_a_bare_value_is_refused_showing_the_form():
+def test_a_condition_written_as_python_is_read_from_the_lambda():
     @dataclass
     class Loose(Entity):
         state: str = ""
         notes: str = ""
 
         presentation = Presentation["Loose"](
-            readonly_when=lambda l: (When(l.state == "done", l.notes),),  # type: ignore[arg-type]
+            readonly_when=lambda l: (When(l.state == "done", l.notes),),
         )
 
-    with pytest.raises(exceptions.ProgrammingError, match="Condition, All, Any or Not"):
-        describe_class(Loose, "id")
+    described = description_of(Loose, StoreFacts(identity="id"))
+
+    assert described.fields["notes"].readonly_when == Condition(field="state", value="done")
+
+
+def test_a_condition_that_reads_no_field_is_refused_naming_it():
+    @dataclass
+    class Loose(Entity):
+        state: str = ""
+        notes: str = ""
+
+        presentation = Presentation["Loose"](
+            readonly_when=lambda l: (
+                When("done", l.notes),  # pyright: ignore[reportArgumentType]
+            ),
+        )
+
+    with pytest.raises(
+        exceptions.ProgrammingError, match="is not an expression of the language"
+    ):
+        description_of(Loose, StoreFacts(identity="id"))
 
 
 def test_a_hint_list_that_is_not_made_of_when_is_refused():
@@ -491,7 +513,7 @@ def test_a_hint_list_that_is_not_made_of_when_is_refused():
         )
 
     with pytest.raises(exceptions.ProgrammingError, match="takes When"):
-        describe_class(Mixed, "id")
+        description_of(Mixed, StoreFacts(identity="id"))
 
 
 # ---------------------------------------------------------------------------------------------
@@ -507,7 +529,7 @@ class QueryGetInvoice(Get[Invoice, ResponseInvoice]):
     pass
 
 
-def test_the_screen_gets_the_record_and_its_hints_in_one_answer():
+def test_the_screen_gets_the_record_from_the_read_and_its_hints_from_the_contract():
     bus = UseFramework("billing-screen", log_after_execution=False)
     confirmed = Invoice(partner_id="p1", number="F-0001", state=InvoiceState.CONFIRMED)
     bus.add_dependency("repository", MemoryRepository().add(confirmed))
@@ -517,9 +539,11 @@ def test_the_screen_gets_the_record_and_its_hints_in_one_answer():
         pass
 
     answer = bus(QueryGetInvoice(id=confirmed.id), ResponseInvoice).model_dump(mode="json")
-    fields = answer["entity_meta_data"]["fields"]
+    contract = contract_of(Invoice)
+    fields = {name: one["x-sincpro"] for name, one in contract["properties"].items()}
 
     assert answer["invoice"]["state"] == "confirmed"
+    assert answer["model_version"] == contract["x-sincpro"]["version"]
     assert fields["number"]["readonly"] is True
     assert holds(fields["partner_id"]["readonly_when"], confirmed) is True
     assert fields["card_reference"]["visible_when"] == {

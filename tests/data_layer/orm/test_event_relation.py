@@ -72,7 +72,7 @@ def invoice_of(world: World, number: str, asked: Criteria = EVERYTHING):
     page = world.invoices.search(
         world.invoices_collection,
         asked.model_copy(
-            update={"where": Condition(field="id", value=world.records[number].id)}
+            update={"selection": Condition(field="id", value=world.records[number].id)}
         ),
     )
     return page.first()
@@ -239,7 +239,7 @@ def test_a_caller_may_narrow_a_scoped_relation_further(world: World):
         specification=Specification(
             {
                 "lines": Criteria(
-                    where=Condition(field="amount", operator=Operator.GTE, value=100)
+                    selection=Condition(field="amount", operator=Operator.GTE, value=100)
                 )
             }
         )
@@ -255,8 +255,8 @@ def test_a_caller_cannot_widen_past_the_scope_on_sql_or_on_the_bus(world: World)
     asked = Criteria(
         specification=Specification(
             {
-                "lines": Criteria(where=Condition(field="void", value=True)),
-                "events": Criteria(where=Condition(field="entity_type", value="Draft")),
+                "lines": Criteria(selection=Condition(field="void", value=True)),
+                "events": Criteria(selection=Condition(field="entity_type", value="Draft")),
             }
         )
     )
@@ -314,7 +314,9 @@ def test_a_scope_the_related_aggregate_cannot_answer_is_refused_not_dropped():
     """The one failure a declared scope must never have. A field the other side does not know
     would be dropped on the way across, and a dropped filter answers WIDER than the mapper
     declared — so it raises here instead, the way `Repository.narrowed` already does."""
-    world = same_database(events_scope=Criteria(where=Condition(field="no_such", value=1)))
+    world = same_database(
+        events_scope=Criteria(selection=Condition(field="no_such", value=1))
+    )
 
     with pytest.raises(exceptions.ProgrammingError, match="cannot answer the scope"):
         invoice_of(world, "F-1")

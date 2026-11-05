@@ -75,7 +75,7 @@ def lines_of(ledger: Repository, entry_id: str) -> Lines:
     return ledger.fetch_all(
         Lines,
         Criteria(
-            where=Condition(field="entry_id", value=entry_id),
+            selection=Condition(field="entry_id", value=entry_id),
             pagination=Pagination(limit=200),
         ),
     )
@@ -178,7 +178,7 @@ def reporting_bus(
             measures = self.repository.measures(
                 Line,
                 Criteria(
-                    where=All(
+                    selection=All(
                         all=[
                             Condition(field="account_id", value=account_id),
                             Condition(field="entry_state", value="posted"),

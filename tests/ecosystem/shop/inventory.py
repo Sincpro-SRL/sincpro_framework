@@ -114,7 +114,7 @@ def build(repository: Repository, publisher) -> UseFramework:
         def execute(self, dto: CommandReleaseStock) -> ResponseHeard:
             with self.repository.context() as unit:
                 item = unit.search(
-                    StockItems, Criteria(where=Condition(field="sku", value=dto.sku))
+                    StockItems, Criteria(selection=Condition(field="sku", value=dto.sku))
                 ).first()
                 if item is not None:
                     item.on_hand += dto.quantity
@@ -139,7 +139,7 @@ def build(repository: Repository, publisher) -> UseFramework:
             with self.repository.context() as unit:
                 item = unit.search(
                     StockItems,
-                    Criteria(where=Condition(field="sku", value=dto.sku)),
+                    Criteria(selection=Condition(field="sku", value=dto.sku)),
                 ).first()
                 enough = item is not None and item.enough_for(dto.quantity)
                 if enough and item is not None:
@@ -172,7 +172,7 @@ def history_of(repository: Repository, order_id: str) -> list[InventoryEvent]:
         repository.fetch_all(
             InventoryEvents,
             Criteria(
-                where=Condition(field="order_id", value=order_id),
+                selection=Condition(field="order_id", value=order_id),
                 order=(Sort(field="id"),),
             ),
         )
@@ -181,6 +181,6 @@ def history_of(repository: Repository, order_id: str) -> list[InventoryEvent]:
 
 def on_hand(repository: Repository, sku: str) -> int:
     item = repository.search(
-        StockItems, Criteria(where=Condition(field="sku", value=sku))
+        StockItems, Criteria(selection=Condition(field="sku", value=sku))
     ).first()
     return item.on_hand if item is not None else 0

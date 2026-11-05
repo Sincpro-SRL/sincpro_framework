@@ -86,12 +86,12 @@ class InvoiceForms(EntityEdits[Invoice]):
 A field the record does not have, a value its type cannot read, a field the framework writes, a
 line named by an id the record does not hold: the request is wrong, and `apply_values` refuses it with
 `InvalidValue` — a `ClientError` — naming the field, 422 on every wire, its message told to the
-caller. It carries where the value is, a line's cell included, so the `Problem` points at it and a
-screen marks that cell:
+caller. It carries where the value is, a line's cell included — the line by its identity —, so the
+`Problem` points at it and a screen marks that cell:
 
 ```json
 {"kind": "invalid", "reason": "INVALID_VALUE", "status": 422,
- "errors": [{"pointer": "#/values/lines/1/qty", "detail": "InvoiceLine.qty cannot take 'dos': …"}]}
+ "errors": [{"pointer": "#/values/lines/0192…/qty", "detail": "InvoiceLine.qty cannot take 'dos': …"}]}
 ```
 
 ## Two tabs, and someone who saved meanwhile
@@ -161,5 +161,5 @@ Who may post is the bus's access control on `CommandPostInvoice`, as for any com
 `PreviewEntity` answers "what would the record become" and stores nothing; an `Edit` with `SAVE_DRAFT` is
 the same computation, stored. The draft holds the record's values as a form sends them (`form_values`):
 nothing the framework writes, a nested record named by its id; reading it back puts them on the
-stored record with `apply_values(record, values, adopt=True)`, so a line the draft created is built under
-the id it already has. [Drafts](../core/drafts.md) says how a draft is stored and versioned.
+stored record with `apply_values(record, values)`, so a line the draft created is built under
+the id it already has — the one the form minted for it. [Drafts](../core/drafts.md) says how a draft is stored and versioned.

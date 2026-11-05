@@ -52,6 +52,7 @@ from sincpro_framework.ddd.criteria import Condition, Criteria
 from sincpro_framework.ddd.editing.editing import apply_values, form_values, recompute
 from sincpro_framework.ddd.editing.preview import FormWarning, read_only
 from sincpro_framework.ddd.entity import extensions
+from sincpro_framework.ddd.metamodel import model_of
 from sincpro_framework.ddd.query import DraftState, ResponseRecord
 from sincpro_framework.ddd.reads.reads import (
     EntityReads,
@@ -137,11 +138,11 @@ class EntityEdits[T](EntityReads[T]):
         stale: bool,
         warnings: list[FormWarning],
     ) -> Any:
-        """The record whole — what the form shows and sends back — with the model's definition,
-        each field's state, the warnings and the draft it is now."""
+        """The record whole — what the form shows and sends back — with the version of its
+        model, each field's state, the warnings and the draft it is now."""
         answer = response(
             **{response.record_field(): record},
-            entity_meta_data=self.described(entity, Criteria()).meta,
+            model_version=model_of(entity).fingerprint,
             states=states_of(record),
             warnings=list(warnings),
         )
@@ -208,7 +209,7 @@ class EntityEdits[T](EntityReads[T]):
                 dto.values,
             )
             if existing is not None:
-                apply_values(record, self.referenced(type(record), existing.values), True)
+                apply_values(record, self.referenced(type(record), existing.values))
             self.change(record, dto)
             recompute(record, dto.changed)
             pull = getattr(record, "pull_events", None)
@@ -292,7 +293,7 @@ class EntityEdits[T](EntityReads[T]):
                 dto.values,
             )
         if existing is not None:
-            apply_values(record, self.referenced(type(record), existing.values), True)
+            apply_values(record, self.referenced(type(record), existing.values))
         self.change(record, dto)
         self.reads_from().save(record)
         if existing is not None:

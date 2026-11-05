@@ -40,6 +40,7 @@ from contextlib import contextmanager
 from contextvars import ContextVar
 from copy import copy
 from decimal import Decimal
+from functools import partial
 from typing import Any, Self, overload
 
 from sincpro_framework.common.reads import note_read
@@ -58,6 +59,7 @@ from sincpro_framework.ddd.criteria import (
     Criteria,
     CursorKeys,
     Evaluation,
+    Expression,
     Grouping,
     GroupingLevel,
     Measure,
@@ -66,9 +68,9 @@ from sincpro_framework.ddd.criteria import (
     Operator,
     Resolution,
     Sort,
+    Through,
 )
 from sincpro_framework.ddd.entity import ArchivableMixin, Entity, extensions, utc_now
-from sincpro_framework.ddd.entity.computed import computed_fields_of
 from sincpro_framework.ddd.entity.entity_collection import (
     Count,
     Dropped,
@@ -81,7 +83,7 @@ from sincpro_framework.ddd.entity.entity_meta import (
     FieldMeta,
     Meta,
     ambient_resolution,
-    describe_class,
+    related_class,
 )
 from sincpro_framework.ddd.entity.mixins.event_sourced import EventSourcedMixin
 from sincpro_framework.ddd.events.domain_event import NAME, DomainEvent
@@ -89,6 +91,8 @@ from sincpro_framework.ddd.events.mixins.deliverable import (
     DELIVERY_FIELDS,
     DeliverableEventMixin,
 )
+from sincpro_framework.ddd.metamodel import StoreFacts, description_of, model_of
+from sincpro_framework.ddd.metamodel.services.description import held_relations
 from sincpro_framework.ddd.repositories.capabilities import (
     Analyzes,
     Extends,
@@ -189,7 +193,7 @@ def _by(values: dict[str, Any]) -> Criteria:
         Condition(field=field, operator=Operator.EQ, value=value)
         for field, value in values.items()
     ]
-    return Criteria(where=Node.combined(*conditions))
+    return Criteria(selection=Node.combined(*conditions))
 
 
 def _flattened_buckets(buckets: list[Bucket], path: tuple = ()) -> list[tuple[tuple, Bucket]]:
@@ -323,7 +327,7 @@ def _tree(
             if level.part is not None
             else criteria.merged_with(
                 Criteria(
-                    where=Condition(field=level.field, operator=Operator.EQ, value=value)
+                    selection=Condition(field=level.field, operator=Operator.EQ, value=value)
                 )
             ).model_copy(update={"grouping": Grouping()})
         )
@@ -561,13 +565,14 @@ class MemoryRepository(
             repository.definition(Move).fields["route"].owner   ->  "MoveDelivery"
 
         An added field is described as nullable whatever its type says; a field two held
-        subclasses add is described by the shallowest one.
+        subclasses add is described by the shallowest one. A field holding another entity is a
+        relation a filter may cross (`Through`): this store holds the records themselves.
         """
-        meta = describe_class(aggregate, identity_name(aggregate))
-        inherited = set(meta.fields)
+        inherited = set(model_of(aggregate).annotations)
         added: dict[str, FieldMeta] = {}
         for kind in self._extensions_held(aggregate):
-            for name, field in describe_class(kind, identity_name(kind)).fields.items():
+            own = description_of(kind, StoreFacts(identity=identity_name(kind)))
+            for name, field in own.fields.items():
                 if name not in inherited and name not in added:
                     added[name] = FieldMeta.for_column(
                         field.type,
@@ -576,7 +581,26 @@ class MemoryRepository(
                         field.exact,
                         choice_labels=field.choice_labels,
                     ).model_copy(update={"owner": kind.__name__})
-        return meta.model_copy(update={"fields": {**meta.fields, **added}}) if added else meta
+        held = {
+            name: (kind, many)
+            for name, annotation in model_of(aggregate).annotations.items()
+            for kind, many in [related_class(annotation)]
+            if isinstance(kind, type) and issubclass(kind, Entity)
+        }
+
+        def pointed_at(name: str) -> Meta | None:
+            """The description of what the relation `name` points at, as this store holds it."""
+            return self.definition(held[name][0]) if name in held else None
+
+        return description_of(
+            aggregate,
+            StoreFacts(
+                identity=identity_name(aggregate),
+                relations=held_relations(model_of(aggregate), True),
+                extended=added,
+                related=pointed_at,
+            ),
+        )
 
     def _held_as(self, aggregate: type) -> list[dict[Any, Any]]:
         """Everything stored as `aggregate` or as an extension of it: a record is read as the class
@@ -591,7 +615,7 @@ class MemoryRepository(
         """The record with its computed fields set from `python`, which is what a store in memory
         answers where a database would run the field's `sql`. A field with only `sql` stays at its
         default here, and `_refuse_unanswerable` stops a criteria from asking for it."""
-        for name, computation in computed_fields_of(type(record)).items():
+        for name, computation in model_of(type(record)).computed.items():
             if computation.python is not None:
                 setattr(record, name, computation.python(record))
         return record
@@ -601,7 +625,7 @@ class MemoryRepository(
         value would be a second implementation that quietly differs: it is refused, naming it.
         """
         for name in names:
-            computation = computed_fields_of(aggregate).get(name)
+            computation = model_of(aggregate).computed.get(name)
             if computation is not None and computation.python is None:
                 raise exceptions.InvalidCriteria(
                     f"{aggregate.__name__}.{name} is computed in SQL and has no `python`: a "
@@ -624,7 +648,7 @@ class MemoryRepository(
         }
         # The delivery columns are the table's, so a base event class that is not deliverable
         # itself is still filtered by them — which events went out, asked of the base class.
-        delivery = describe_class(DeliverableEventMixin).fields
+        delivery = description_of(DeliverableEventMixin).fields
         return meta.model_copy(update={"fields": {**delivery, **envelope_fields}})
 
     def _rows(self, aggregate: type) -> list[Any]:
@@ -654,6 +678,37 @@ class MemoryRepository(
             one.field == "archived_at" for one in where.conditions()
         )
 
+    def _crossing_live(
+        self, aggregate: type, expression: Expression | None
+    ) -> Expression | None:
+        """The filter with every crossing of a relation reading as the relation reads: the
+        archived records it holds left out, unless the selection named `archived_at` — so a
+        filter never looks at a record a reading would not bring, as SQL's `EXISTS` does.
+
+            Through("lines", product = "desk")   ->  Through("lines", product = "desk" and
+                                                      archived_at is null)    lines archivable
+        """
+        if expression is None:
+            return None
+        annotations = model_of(aggregate).annotations
+
+        def live(node: Through) -> Through:
+            """One crossing, and the crossings inside it, reading the live records only."""
+            related = related_class(annotations.get(node.through, None))[0]
+            if related is None:
+                return node
+            inner = self._crossing_live(related, node.selection)
+            if issubclass(related, ArchivableMixin) and not any(
+                one.field == "archived_at" for one in (inner.conditions() if inner else [])
+            ):
+                inner = Node.combined(
+                    inner,
+                    Condition(field="archived_at", operator=Operator.IS_NULL, value=True),
+                )
+            return node.model_copy(update={"selection": inner})
+
+        return expression.mapped(lambda one: one, live)
+
     def _matching(
         self, aggregate: type, criteria: Criteria, handed_back: bool = True
     ) -> tuple[list[Any], list[Dropped]]:
@@ -672,11 +727,13 @@ class MemoryRepository(
             [leaf.field for leaf in where.conditions()] if where is not None else [],
         )
         expression, dropped = self._filterable(aggregate).accept(criteria.expression)
+        expression = self._crossing_live(aggregate, expression)
         _, unanswerable = meta.accept_specification(criteria.specification)
+        program = Evaluation.program(expression)
         rows = [
             self._read(record) if handed_back else record
             for record in self._rows(aggregate)
-            if Evaluation.matches(_Lenient(record), expression)
+            if program(partial(getattr, _Lenient(record)))
         ]
         if self._live(aggregate, criteria):
             rows = [record for record in rows if not record.is_archived]
@@ -832,8 +889,8 @@ class MemoryRepository(
         4. Resumed past the cursor's keys when it carries one; then the offset skipped.
         5. The page: up to `limit` records, each handed back through `after_read`; more past
            it means a cursor from the last one.
-        Final: the collection `target` names — the count exact unless none was asked, the
-        definition only when `criteria.meta` asks.
+        Final: the collection `target` names — the count exact unless none was asked, with the
+        definition its specification masks the records by.
         """
         criteria = criteria or Criteria()
         aggregate, holder = model_and_collection(target)
@@ -867,7 +924,7 @@ class MemoryRepository(
                     else Count(value=len(rows), exact=True)
                 ),
                 dropped=tuple(dropped),
-                meta=self.definition(aggregate) if criteria.meta else None,
+                meta=self.definition(aggregate),
             ),
         )
 
@@ -884,7 +941,7 @@ class MemoryRepository(
     def fetch_all(self, target: type, criteria: Criteria | None = None) -> Any:
         """Every record the criteria matches, as one complete collection.
 
-            over_100 = Criteria(where={"field": "total", "operator": ">", "value": 100})
+            over_100 = Criteria(selection={"field": "total", "operator": ">", "value": 100})
             repository.fetch_all(Invoice, over_100)
                 ->  EntityCollection(4 items, no cursor, count=Count(4, exact=True))
 
@@ -900,7 +957,7 @@ class MemoryRepository(
                 items=tuple(ordered),
                 count=Count(value=len(ordered), exact=True),
                 dropped=tuple(dropped),
-                meta=self.definition(aggregate) if criteria.meta else None,
+                meta=self.definition(aggregate),
             ),
         )
 
@@ -1012,7 +1069,7 @@ class MemoryRepository(
         """The single record the criteria matches: none is `AggregateNotFound`, several a
         `ProgrammingError`.
 
-            code_1010 = Criteria(where={"field": "code", "operator": "=", "value": "1010"})
+            code_1010 = Criteria(selection={"field": "code", "operator": "=", "value": "1010"})
             repository.one(Account, code_1010)   ->  Account(code="1010", …)
             no match                             ->  AggregateNotFound("no Account matches …")
             two matches                          ->  ProgrammingError("expected exactly one
@@ -1474,7 +1531,7 @@ class MemoryRepository(
         """The engine's `update_all`, over the records held: values set, version raised,
         `updated_at` stamped, no hook.
 
-            expired = Criteria(where={"field": "state", "operator": "=", "value": "expired"})
+            expired = Criteria(selection={"field": "state", "operator": "=", "value": "expired"})
             repository.update_all(Session, expired, {"state": "closed"})   ->  3
             repository.update_all(Session, expired, {"version": 9})
                 ->  ProgrammingError("update_all cannot set version on Session: …")
@@ -1519,7 +1576,7 @@ class MemoryRepository(
     def remove_all(self, target: type, criteria: Criteria) -> int:
         """The engine's `remove_all`, over the records held: no hook, no cascade.
 
-            expired = Criteria(where={"field": "state", "operator": "=", "value": "expired"})
+            expired = Criteria(selection={"field": "state", "operator": "=", "value": "expired"})
             repository.remove_all(Session, expired)   ->  3, none of them held any more
 
         Refused for a page, or a condition the aggregate cannot answer — as the engine.

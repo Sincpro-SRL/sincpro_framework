@@ -94,7 +94,7 @@ def timeline_of(repository: Repository, order_id: str) -> Timeline:
     facts = repository.fetch_all(
         Tolds,
         Criteria(
-            where=Condition(field="order_id", value=order_id), order=(Sort(field="id"),)
+            selection=Condition(field="order_id", value=order_id), order=(Sort(field="id"),)
         ),
     )
     status = "unknown"

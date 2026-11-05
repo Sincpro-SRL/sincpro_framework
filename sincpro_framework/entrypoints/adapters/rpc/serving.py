@@ -30,6 +30,7 @@ from sincpro_framework.entrypoints.adapters.rpc.wire import (
     dispatch,
     http_status,
 )
+from sincpro_framework.entrypoints.infrastructure.http import document_tag
 
 RPC_MISSING = (
     "Starlette/uvicorn is not installed. Install with: pip install sincpro-framework[rpc]"
@@ -189,9 +190,13 @@ def routes(
         )
         return answered(reply)
 
-    async def openrpc_endpoint(_request: Request) -> JSONResponse:
-        """`GET /openrpc.json`: the document of the surface the routes were built from."""
-        return JSONResponse(surface.document)
+    async def openrpc_endpoint(request: Request) -> Response:
+        """`GET /openrpc.json`: the document of the surface the routes were built from, tagged
+        with its content's fingerprint — a client that already holds it is answered `304`."""
+        tag = document_tag(surface.document)
+        if request.headers.get("if-none-match") == tag:
+            return Response(status_code=304, headers={"ETag": tag})
+        return JSONResponse(surface.document, headers={"ETag": tag})
 
     served = [
         Route(rpc_path, rpc_endpoint, methods=["POST"]),

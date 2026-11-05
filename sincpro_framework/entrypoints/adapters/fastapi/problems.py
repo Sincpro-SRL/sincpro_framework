@@ -33,6 +33,7 @@ from starlette.responses import JSONResponse
 from sincpro_framework.auth import security
 from sincpro_framework.common import failures
 from sincpro_framework.entrypoints.adapters.fastapi import exceptions
+from sincpro_framework.entrypoints.adapters.fastapi.contracts import contracted_document
 from sincpro_framework.observability import process
 from sincpro_framework.observability.tracing.propagation import trace_id_of
 from sincpro_framework.sincpro_logger import logger
@@ -351,7 +352,8 @@ def install_problem_handlers(app: FastAPI) -> FastAPI:
     1. `RequestValidationError` and Starlette's `HTTPException` — 404 and 405 too.
     2. `ProblemMiddleware` for anything else: a domain refusal, an auth refusal, an idempotency
        refusal, a 500.
-    3. `app.openapi` wrapped by `problem_document`.
+    3. `app.openapi` wrapped by `problem_document`, then by `contracted_document`: each entity a
+       route answers described by its published contract.
     Final: the app marked as installed — what `FastApiGateway.verify` checks.
     """
     app.add_exception_handler(RequestValidationError, _handled)
@@ -360,8 +362,8 @@ def install_problem_handlers(app: FastAPI) -> FastAPI:
     generate = app.openapi
 
     def openapi() -> dict[str, Any]:
-        """FastAPI's document, then `problem_document` over it."""
-        return problem_document(generate())
+        """FastAPI's document, then `problem_document` and `contracted_document` over it."""
+        return contracted_document(problem_document(generate()))
 
     app.openapi = openapi  # pyright: ignore[reportAttributeAccessIssue]
     setattr(app.state, INSTALLED, True)

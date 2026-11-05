@@ -14,6 +14,7 @@ from typing import Any
 
 from sincpro_framework.auth import AccessControl
 from sincpro_framework.entrypoints.adapters.rest.routing import RestRoute, is_plain
+from sincpro_framework.sincpro_abstractions import DryRunnable
 from sincpro_framework.sincpro_logger import logger
 
 OPENAPI_VERSION = "3.1.0"
@@ -192,8 +193,10 @@ def _operation(route: RestRoute, method: str, components: _Components) -> dict[s
     1. The DTO's schema and the answer's registered in `components` — qualified by the alias when
        another bus published a model of the same name and another shape.
     2. `operationId` — `_by_body` on the `POST` twin of a `GET` — summary (the description's
-       first line), tags (alias, layer and the entities it concerns), a 200 and every failure as `Error`, the DTO and
-       the layer as `x-sincpro-*`, and the operation's security.
+       first line), tags (alias, layer and the entities it concerns), a 200 and every failure as
+       `Error`, the DTO and the layer as `x-sincpro-*`, and the operation's security; the
+       entities it belongs to as `x-sincpro-entities`, and `x-sincpro-dry-run` when its Command
+       may be run dry (`DryRunnable`) — what a screen builds an entity's actions from.
     3. The path fields as path parameters.
     Final: on `GET` the other fields as query parameters, on any other method the DTO as an
     optional JSON body.
@@ -241,6 +244,10 @@ def _operation(route: RestRoute, method: str, components: _Components) -> dict[s
         "x-sincpro-layer": operation.layer,
         **operation_security(route.bus, route.operation.dto),
     }
+    if operation.entities:
+        described["x-sincpro-entities"] = [one.__name__ for one in operation.entities]
+    if isinstance(operation.dto, type) and issubclass(operation.dto, DryRunnable):
+        described["x-sincpro-dry-run"] = True
     parameters = [
         {
             "name": name,

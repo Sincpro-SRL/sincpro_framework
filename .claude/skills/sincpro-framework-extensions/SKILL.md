@@ -89,7 +89,7 @@ delivery_table = Table("move_delivery", tables,
 map_aggregates(registry, {MoveDelivery: delivery_table},
                requires={Move: "2.1"}, uses={Move: ("number", "total")})
 
-store.search(Move, Criteria(where=Condition(field="route", value="R7")))   # the core's own query
+store.search(Move, Criteria(selection=Condition(field="route", value="R7")))   # the core's own query
 ```
 
 A `Get`/`Search`/`Edit` written for `Move` before the module existed now answers `route`, flat, and

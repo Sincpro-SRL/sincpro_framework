@@ -40,7 +40,7 @@ class ExtendedReads(World):
     def test_the_base_is_filtered_by_a_field_only_an_extension_has(self) -> None:
         k, store = self.populated()
 
-        found = store.search(k.Move, Criteria(where=Condition(field="route", value="R7")))
+        found = store.search(k.Move, Criteria(selection=Condition(field="route", value="R7")))
 
         assert sorted(one.id for one in found) == ["B", "C"] and not found.dropped
 

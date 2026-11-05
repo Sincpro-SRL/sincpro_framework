@@ -182,10 +182,11 @@ def test_one_and_get_by_claim_and_answer_not_found_as_the_engine():
     with hall.context() as unit:
         assert unit.get_by(Seat, True, code="A1") is seat
         assert (
-            unit.one(Seat, Criteria(where=Condition(field="code", value="A1")), True) is seat
+            unit.one(Seat, Criteria(selection=Condition(field="code", value="A1")), True)
+            is seat
         )
         with pytest.raises(ddd_exceptions.AggregateNotFound):
-            unit.one(Seat, Criteria(where=Condition(field="code", value="Z9")))
+            unit.one(Seat, Criteria(selection=Condition(field="code", value="Z9")))
 
 
 class CommandTakeSeat(DataTransferObject):

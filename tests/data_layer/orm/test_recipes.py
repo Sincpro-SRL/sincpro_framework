@@ -98,7 +98,7 @@ def test_an_aggregate_identified_by_two_columns_is_stored_and_read_like_any_othe
         ]
     )
 
-    mine = Criteria(where=Condition(field="table_fingerprint", value="fp1"))
+    mine = Criteria(selection=Condition(field="table_fingerprint", value="fp1"))
     assert sorted(one.lineage_id for one in store.fetch_all(Lineages, mine)) == ["a", "b"]
     assert store.count(Lineages).value == 3
 

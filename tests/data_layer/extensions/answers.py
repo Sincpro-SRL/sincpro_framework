@@ -11,7 +11,9 @@ def answer_for(k, store, key: str, specification: Specification | None = None) -
     class ResponseMoves(ResponsePaginatedQuery):
         moves: list[k.Move]  # type: ignore[name-defined]
 
-    criteria = Criteria(where=Condition(field="id", value=key), specification=specification)
+    criteria = Criteria(
+        selection=Condition(field="id", value=key), specification=specification
+    )
     page = store.search(k.Move, criteria)
     written = ResponseMoves.of(page, criteria).model_dump(mode="json")["moves"][0]
     return {

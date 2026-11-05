@@ -15,7 +15,7 @@ import pytest
 from sincpro_framework import exceptions
 from sincpro_framework.ddd import DomainEvent
 from sincpro_framework.ddd.entity import ArchivableMixin, AuditedMixin, Entity
-from sincpro_framework.ddd.entity.entity_meta import describe_class
+from sincpro_framework.ddd.metamodel import StoreFacts, description_of
 
 
 @pytest.mark.parametrize("reserved", ["id", "created_at", "updated_at", "version"])
@@ -116,7 +116,7 @@ def test_a_field_the_framework_writes_comes_with_its_label_since_no_subclass_can
     class Folder(AuditedMixin, ArchivableMixin, Entity):
         title: str = ""
 
-    fields = describe_class(Folder, "id").fields
+    fields = description_of(Folder, StoreFacts(identity="id")).fields
 
     assert {name: fields[name].label for name in fields if name != "title"} == {
         "id": {"default": "ID", "es": "ID"},

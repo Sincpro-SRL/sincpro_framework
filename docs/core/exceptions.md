@@ -134,16 +134,16 @@ class TaxAuthorityDown(exceptions.ServiceUnavailableError):
 ```python
 from sincpro_framework.ddd import exceptions as ddd_exceptions
 
-raise ddd_exceptions.InvalidValue("the quantity exceeds the stock", ("lines", 2, "qty"))
-# errors=[{"pointer": "#/values/lines/2/qty", "detail": "the quantity exceeds the stock"}]
+raise ddd_exceptions.InvalidValue("the quantity exceeds the stock", ("lines", line.id, "qty"))
+# errors=[{"pointer": "#/values/lines/0192…/qty", "detail": "the quantity exceeds the stock"}]
 
 raise ddd_exceptions.InvalidValue("not a valid tax id", ("tax_id",), field="customer")
 # errors=[{"pointer": "#/customer/tax_id", …}] — the field of its own request
 ```
 
 `field` is the request's field that carries the record — `values` by default, as in an `Edit` and
-a `PreviewEntity`. `error.within("lines", 2)` is the same refusal seen from the record that holds the
-line.
+a `PreviewEntity`. `error.within("lines", line.id)` is the same refusal seen from the record that holds
+the line — named by its identity, or by its position when it is a plain value with none.
 
 ## What the framework raises
 

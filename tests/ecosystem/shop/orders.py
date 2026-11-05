@@ -226,7 +226,7 @@ def history_of(repository: Repository, order_id: str) -> list[OrderEvent]:
         repository.fetch_all(
             OrderEvents,
             Criteria(
-                where=Condition(field="order_id", value=order_id),
+                selection=Condition(field="order_id", value=order_id),
                 order=(Sort(field="id"),),
             ),
         )

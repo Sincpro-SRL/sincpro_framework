@@ -38,7 +38,7 @@ The columns:
 
 | Use case | Vocabulary | Framework · SQLAlchemy | SQLAlchemy directly | Status |
 |---|---|---|---|---|
-| Filter | `Criteria(where=…)`: `= != in not in > >= < <= between like is null contains not contains` | translated to WHERE | `select().where()` | ✅ |
+| Filter | `Criteria(selection=…)`: `= != in not in > >= < <= between like is null contains not contains` | translated to WHERE | `select().where()` | ✅ |
 | Combine | `all` / `any` / `negate` | AND / OR / NOT | `and_`, `or_`, `not_` | ✅ |
 | Text search, case-insensitive | `contains` on text | `lower(col) LIKE '%…%'` | `ilike` | ✅ |
 | Full-text search, ranked | — | — | `func.to_tsvector`, `@@` (Postgres) | ⬜ |

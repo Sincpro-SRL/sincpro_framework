@@ -222,8 +222,8 @@ enforce:
 repository.upsert(rates, on=("currency",))                       # insert or overwrite by a unique key
 repository.upsert(rates, on=("currency",), update=("per_usd",))  # overwrite only these
 done = repository.upsert(rates, on=("currency",))                # done.written, done.skipped
-count = repository.update_all(Session, Criteria(where=expired), {"state": "closed"})
-count = repository.remove_all(Session, Criteria(where=expired))
+count = repository.update_all(Session, Criteria(selection=expired), {"state": "closed"})
+count = repository.remove_all(Session, Criteria(selection=expired))
 ```
 
 - `upsert`: answers `Upserted(written, skipped)`; the key must be unique in the table; no
@@ -244,7 +244,7 @@ from sincpro_framework.ddd import Condition, Criteria
 repository.get(Invoice, invoice_id)                # one or None
 repository.get_by(Invoice, number="F-001")         # natural key; two matches → ProgrammingError
 repository.browse(Invoices, [id_3, id_1])          # by ids, in the order given, missing skipped
-repository.exists(Invoice, Criteria(where=Condition(field="number", value="F-001")))
+repository.exists(Invoice, Criteria(selection=Condition(field="number", value="F-001")))
 repository.count(Invoice).value                    # Count(value, exact)
 repository.pluck(Invoice, "number")                # one column of the whole result set
 repository.distinct(Invoice, "state")
@@ -262,7 +262,7 @@ only write — what the criteria allows; a write outside it raises `ProgrammingE
 aggregate that cannot answer the scope is refused rather than read wide:
 
 ```python
-anas_books = repository.narrowed(Criteria(where=Condition(field="customer_id", value=ana.id)))
+anas_books = repository.narrowed(Criteria(selection=Condition(field="customer_id", value=ana.id)))
 anas_books.count(Invoice).value
 ```
 

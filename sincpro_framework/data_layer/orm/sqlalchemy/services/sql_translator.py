@@ -35,6 +35,9 @@ from sqlalchemy.orm import QueryableAttribute
 from sqlalchemy.sql.elements import UnaryExpression
 
 from sincpro_framework.data_layer import exceptions
+from sincpro_framework.data_layer.orm.sqlalchemy.infrastructure.mapping_registry import (
+    mapping_registry,
+)
 from sincpro_framework.data_layer.orm.sqlalchemy.services import extension_typing
 from sincpro_framework.ddd.criteria import (
     All,
@@ -45,13 +48,17 @@ from sincpro_framework.ddd.criteria import (
     FromField,
     Grain,
     GroupingLevel,
+    Node,
     Not,
     Operator,
     Pagination,
     Sort,
+    Through,
 )
-from sincpro_framework.ddd.entity import extensions
-from sincpro_framework.ddd.entity.entity_meta import Meta
+from sincpro_framework.ddd.entity import ArchivableMixin, extensions
+from sincpro_framework.ddd.entity.entity_meta import Meta, related_class
+from sincpro_framework.ddd.entity.relations import RelationKind, key_pair
+from sincpro_framework.ddd.metamodel import model_of
 
 
 def _as_stored_text(column: Any) -> Any:
@@ -220,7 +227,9 @@ def _comparison(column: Any, operator: Operator, value: Any) -> ColumnElement[bo
 
 
 def clause_over(
-    resolve: Callable[[str], Any], expression: Expression | None
+    resolve: Callable[[str], Any],
+    expression: Expression | None,
+    through: Callable[[Through], ColumnElement[bool]] | None = None,
 ) -> ColumnElement[bool] | None:
     """An expression as a clause, with `resolve` saying what a field name is a column of.
 
@@ -239,6 +248,8 @@ def clause_over(
     3. `All` and `Any_`: each part translated, the empty ones left out, joined by AND / OR.
     4. `Not`: the inner clause is not true — so a row whose comparison is NULL stays in, as
        memory answers it.
+    5. `Through`: what `through` builds for it — a `WHERE` crosses relations, a `HAVING` has
+       none, so it refuses one.
     Final: the clause, ready for `where` or `having`.
     """
     match expression:
@@ -250,17 +261,23 @@ def clause_over(
                 value = resolve(value.name)
             return _comparison(resolve(expression.field), expression.operator, value)
         case All():
-            parts = (clause_over(resolve, part) for part in expression.all)
+            parts = (clause_over(resolve, part, through) for part in expression.all)
             return and_(*(one for one in parts if one is not None))
         case Any_():
-            parts = (clause_over(resolve, part) for part in expression.any)
+            parts = (clause_over(resolve, part, through) for part in expression.any)
             return or_(*(one for one in parts if one is not None))
         case Not():
             # The complement of what the inner expression matches, as memory and the client
             # answer it. A bare `NOT` over a comparison with a NULL is NULL, which drops the row:
             # `not owner = 'ana'` would leave out the records with no owner.
-            inner = clause_over(resolve, expression.negate)
+            inner = clause_over(resolve, expression.negate, through)
             return not_(inner.is_(true())) if inner is not None else None
+        case Through():
+            if through is None:
+                raise exceptions.ProgrammingError(
+                    f"{expression.through} is a relation: a clause over groups cannot cross it"
+                )
+            return through(expression)
 
 
 def stored_by_an_extension(entity: type, field: str) -> Any:
@@ -315,18 +332,90 @@ def column_attribute(entity: type, field: str) -> Any:
     return getattr(entity, mapper.get_property_by_column(column).key)
 
 
+def _crossing(entity: type, node: Through) -> ColumnElement[bool]:
+    """A filter that crosses a relation as a correlated `EXISTS`: some record the relation holds,
+    read as the relation reads it, answers the selection.
+
+        Order.lines (a foreign key)    EXISTS (SELECT 1 FROM order_line
+                                               WHERE order_line.order_id = "order".id AND …)
+        Book.topics (many-to-many)     EXISTS (SELECT 1 FROM book_topic JOIN topic ON …
+                                               WHERE book_topic.book_id = book.id AND …)
+        Book.writer (a to-one)         EXISTS (SELECT 1 FROM writer WHERE writer.id = book.writer_id …)
+
+    1. The relation as the data mapper declared or inferred it; one the database does not keep
+       — a resolver, a bus — has been dropped by the model already, and is refused here.
+    2. Inside, what the relation reads too: its own scope and, for an archivable record, the
+       archived left out — so a filter never looks at a record the reading would not bring.
+    3. A to-many or a to-one meets by the two fields the relation declares (`key_pair`); a
+       many-to-many through its table in between. An `EXISTS` either way, so no parent row is
+       repeated.
+    Final: the `EXISTS`, correlated to the statement over `entity`.
+    """
+    relation = mapping_registry.relations_of(entity).get(node.through)
+    if relation is None or relation.kind not in (
+        RelationKind.FOREIGN_KEY,
+        RelationKind.MANY_TO_MANY,
+    ):
+        raise exceptions.ProgrammingError(
+            f"{entity.__name__}.{node.through} is not a relation the database keeps: a filter "
+            "cannot cross it"
+        )
+    related: Any = relation.related  # a mapped class: its mapper is there
+    inner = Node.combined(
+        relation.scope.expression if relation.scope is not None else None, node.selection
+    )
+    if issubclass(related, ArchivableMixin) and not any(
+        one.field == "archived_at"
+        for one in (inner.conditions() if inner is not None else [])
+    ):
+        inner = Node.combined(
+            inner, Condition(field="archived_at", operator=Operator.IS_NULL, value=True)
+        )
+    identity = sqlalchemy.inspect(entity).primary_key[0].key
+    related_mapper: Any = sqlalchemy.inspect(related)
+    related_identity = related_mapper.primary_key[0].key
+    held = where_clause(related, inner)
+    if relation.kind is RelationKind.MANY_TO_MANY:
+        table = getattr(relation, "through")
+        related_key = getattr(relation, "related_key")
+        statement = (
+            select(1)
+            .select_from(
+                table.join(
+                    related_mapper.local_table,
+                    table.c[related_key] == column_attribute(related, related_identity),
+                )
+            )
+            .where(table.c[relation.identified_by] == column_attribute(entity, identity))
+        )
+    else:
+        many = related_class(model_of(entity).annotations.get(node.through))[1]
+        here, there = key_pair(identity, relation, many)
+        statement = select(1).where(
+            column_attribute(related, there) == column_attribute(entity, here)
+        )
+    return sqlalchemy.exists(statement.where(held) if held is not None else statement)
+
+
 def where_clause(entity: type, expression: Expression | None) -> ColumnElement[bool] | None:
-    """A validated expression as a `WHERE` clause.
+    """A validated expression as a `WHERE` clause, crossing relations with `EXISTS`.
 
         in      All([Condition(row_count, GT, 1000), Condition(name, LIKE, "labs")])
         out     dataset.row_count > 1000 AND lower(dataset.name) LIKE '%labs%'
+
+        in      Through("runs", Condition(state, EQ, "failed"))
+        out     EXISTS (SELECT 1 FROM run WHERE run.dataset_id = dataset.id AND run.state = …)
 
         in      None
         out     None                            no filter asked, no clause built
 
     Every leaf has already been checked against the model, so nothing here refuses.
     """
-    return clause_over(lambda field: column_attribute(entity, field), expression)
+    return clause_over(
+        lambda field: column_attribute(entity, field),
+        expression,
+        lambda node: _crossing(entity, node),
+    )
 
 
 def ordering_for(criteria: Criteria, meta: Meta) -> tuple[Sort, ...]:

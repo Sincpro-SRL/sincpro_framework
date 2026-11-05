@@ -34,6 +34,7 @@ from sincpro_framework.ddd.criteria import (
 )
 from sincpro_framework.ddd.entity.entity_collection import EntityCollection
 from sincpro_framework.ddd.entity.entity_meta import FieldType
+from sincpro_framework.ddd.metamodel import model_of
 from sincpro_framework.ddd.query import ResponsePaginatedQuery
 
 from .every_kind_models import Author, Format, Work, Works, declare, open_pair, populate
@@ -179,7 +180,7 @@ def test_only_cuts_scalars_embedded_shapes_and_relations_by_the_same_mask(meta):
 # ── one criteria over everything ──────────────────────────────────────────────
 
 EVERYTHING = Criteria(
-    where=All(
+    selection=All(
         all=[
             Condition(field="published", value=True),
             Condition(field="pages", value=100, operator=Operator.GT),
@@ -206,7 +207,7 @@ EVERYTHING = Criteria(
             "author": Criteria(specification=Specification({"name": Criteria()})),
             "tags": Criteria(order=Sort.parse("label")),
             "reviews": Criteria(
-                where=Condition(field="stars", value=3, operator=Operator.GTE),
+                selection=Condition(field="stars", value=3, operator=Operator.GTE),
                 order=Sort.parse("-stars"),
                 pagination=Pagination(limit=1),
             ),
@@ -236,9 +237,8 @@ def test_one_criteria_filters_orders_pages_masks_and_expands_everything(works):
 
 
 def test_the_wire_shows_every_kind_under_its_own_name_cut_by_the_mask(works):
-    on_the_wire = ResponseWorks.of(works.search(Works, EVERYTHING), EVERYTHING).model_dump(
-        mode="json"
-    )
+    page = works.search(Works, EVERYTHING)
+    on_the_wire = ResponseWorks.of(page, EVERYTHING).model_dump(mode="json")
 
     [compiler, engine] = on_the_wire["works"]
     assert set(engine) == {
@@ -267,7 +267,8 @@ def test_the_wire_shows_every_kind_under_its_own_name_cut_by_the_mask(works):
     assert engine["publisher"]["name"] == "Penguin"
     assert compiler["size"] == {"width": 20}
 
-    definition = on_the_wire["entity_meta_data"]
+    assert page.meta is not None
+    definition = page.meta.only(EVERYTHING.specification).model_dump(mode="json")
     assert list(definition["fields"]) == [
         "id",
         "title",
@@ -315,8 +316,4 @@ def test_without_a_specification_keys_travel_and_relations_do_not(works):
     record = on_the_wire["works"][0]
     assert {"author_id", "publisher_id", "size", "sizes"} <= set(record)
     assert not ({"author", "tags", "reviews", "publisher"} & set(record))
-    assert (
-        on_the_wire["entity_meta_data"]["relations"] == {}
-        if "relations" in on_the_wire["entity_meta_data"]
-        else True
-    )
+    assert on_the_wire["model_version"] == model_of(Work).fingerprint

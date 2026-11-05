@@ -114,7 +114,7 @@ class ResponseMoves(ResponsePaginatedQuery):
 def written(delegated: bool):
     if delegated:
         map_aggregates(mapper_registry, {}, delegated=[Move])
-    page = store.search(Move, Criteria(where=Condition(field="id", value="B")))
+    page = store.search(Move, Criteria(selection=Condition(field="id", value="B")))
     answer = ResponseMoves.of(page, Criteria()).model_dump(mode="json")["moves"][0]
     return {name: answer[name] for name in ("number", "route", "delivery") if name in answer}
 
@@ -134,7 +134,7 @@ The core's criteria names a field of an extension like any other. A record witho
 holds NULL there:
 
 ```python
-found = store.search(Move, Criteria(where=Condition(field="route", value="R7")))
+found = store.search(Move, Criteria(selection=Condition(field="route", value="R7")))
 
 assert [one.number for one in found] == ["F-B"]
 ```

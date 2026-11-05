@@ -14,6 +14,15 @@ payment term of the customer picked). Full page: `docs/persistence/rules.md`.
 | an action (confirm, share, change tenant) | a Command + the entity's method |
 | what a screen shows (readonly, required, visible) | `presentation` — hints, never enforced |
 
+## Check or hook — one question
+
+Can the rule be judged with the record alone? → `@check` (domain; no dependencies; the form
+sees it while typing). Needs a dependency, the caller or another aggregate? → hook
+`before_save` (application; `self.<dep>`, `self.context`, `self.bus`; inside the save's
+transaction; ordered with `after=`/`sequence=`; gated). Save order: computations → checks →
+`before_save` hooks. Hooks do not run in drafts/previews and are not skipped by
+`SKIP_CHECKS` (a hook or a gate reads the key to skip too).
+
 ## Declare
 
 ```python
@@ -28,6 +37,8 @@ class SaleLine:
     amount: Decimal = Decimal("0")
 
     @compute(lambda l: l.price, depends=lambda l: l.product, editable=True)   # onchange
+    # A body that is one `return` of + - * over own fields, or sum(x.f for x in self.lines),
+    # is published as a formula (x-sincpro.computes): the browser computes it offline.
     def price_of(self) -> Decimal:
         return PRICES.get(self.product, Decimal("0"))
 
@@ -66,8 +77,9 @@ class Sale(Entity):
 | `recompute` outside `read_only()` | as above | as above | none (the save checks) |
 | `upsert` / `update_all` / `remove_all` / reads | none | none | none |
 
-`changed` names a line's cell by position: `"lines.1.qty"`; `"lines.1"` = every check of that
-line; `"lines"` = every line. A check over a relation not held whole is not judged on save
+`changed` names a line's cell by the line's identity — `"lines.0192….qty"`; by its position,
+`"lines.1.qty"`, for a line with none —; `"lines.0192…"` = every check of that line; `"lines"` =
+every line; a path that names no line is refused. A check over a relation not held whole is not judged on save
 (warned when held in part). Records of another aggregate it points at (many-to-many,
 reference) are not judged by this save — only the records the save writes. A subclass overriding the method without the decorator keeps the
 declaration and changes the body.

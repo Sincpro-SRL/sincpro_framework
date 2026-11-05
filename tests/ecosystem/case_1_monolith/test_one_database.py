@@ -66,7 +66,7 @@ def test_the_same_reference_read_by_criteria_instead(one_database: Shop):
 
     lines = one_database.store("orders").fetch_all(
         orders.OrderLines,
-        Criteria(where=Condition(field="order_id", value=placed.order_id)),
+        Criteria(selection=Condition(field="order_id", value=placed.order_id)),
     )
 
     assert [one.sku for one in lines] == ["MUG"]
@@ -225,7 +225,7 @@ def test_a_timeline_is_rebuilt_from_facts_and_never_stored(one_database: Shop):
     told = one_database.store("notifications").fetch_all(
         notifications.Tolds,
         Criteria(
-            where=Condition(field="order_id", value=placed.order_id),
+            selection=Condition(field="order_id", value=placed.order_id),
             order=(Sort(field="id"),),
         ),
     )
@@ -263,7 +263,7 @@ def test_a_synchronous_queue_delivers_depth_first_and_the_order_shows_it(
         for one in one_database.store("notifications").fetch_all(
             notifications.Tolds,
             Criteria(
-                where=Condition(field="order_id", value=placed.order_id),
+                selection=Condition(field="order_id", value=placed.order_id),
                 order=(Sort(field="id"),),
             ),
         )

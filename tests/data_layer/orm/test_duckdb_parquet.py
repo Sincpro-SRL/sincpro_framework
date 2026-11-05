@@ -120,7 +120,7 @@ def test_a_page_of_a_parquet_file_is_a_page(store):
     page = store.search(
         Sales,
         Criteria(
-            where=Condition(field="amount", operator=Operator.GTE, value=900),
+            selection=Condition(field="amount", operator=Operator.GTE, value=900),
             order=(Sort(field="at", descending=True), Sort(field="sale_id")),
             pagination=Pagination(limit=5),
         ),
@@ -197,7 +197,7 @@ def test_a_bucket_of_a_file_opens_like_any_other(store):
     """The claim that makes this worth having: what a screen does with a bucket does not change
     because the rows live in a file."""
     reading = Criteria(
-        where=Condition(field="region", operator=Operator.EQ, value="north"),
+        selection=Condition(field="region", operator=Operator.EQ, value="north"),
         grouping=Grouping(
             group_by=(GroupingLevel(field="at", grain=Grain.MONTH),),
             measures={"total": Measure(function=MeasureFunction.SUM, field="amount")},
@@ -217,7 +217,7 @@ def test_the_two_engines_answer_the_same_reading_the_same_way(store, parquet):
     counts, same totals. Which is what makes the adapter an adapter and not a second product.
     """
     reading = Criteria(
-        where=Condition(field="amount", operator=Operator.GT, value=500),
+        selection=Condition(field="amount", operator=Operator.GT, value=500),
         grouping=Grouping(
             group_by=(GroupingLevel(field="region"),),
             measures={"total": Measure(function=MeasureFunction.SUM, field="amount")},

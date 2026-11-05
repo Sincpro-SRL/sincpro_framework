@@ -48,7 +48,7 @@ entity holds are `@check` methods: both are in [Rules and computations](rules.md
 |---|---|
 | `recompute(invoice)` | every computation that is not editable, in order; answers the fields whose value moved |
 | `recompute(invoice, ["discount"])` | only what the change reaches: `total`, not `subtotal` |
-| `recompute(invoice, ["lines.2.qty"])` | the third line's computations of `qty`, then what reads the lines |
+| `recompute(invoice, ["lines.0192….qty"])` | the computations of `qty` of the line `0192…` — `lines.2.qty` for the third line when lines have no identity —, then what reads the lines |
 | `repository.save(invoice)` | computes every field that is not editable, the lines first, then every check, before the `before_save` hooks |
 
 **A save computes them too**, so what a preview showed is what is stored and the hooks see the
@@ -88,7 +88,8 @@ changed = apply_values(invoice, {"discount": "12.50", "lines": [{"product": "x",
 
 Each value is read as its field's type, so the JSON a form sends becomes the record's own
 values. A name that is not a field, or a value the type cannot read, is refused naming it with
-`InvalidValue`, whose `path` says where it is — `("lines", 1, "qty")` for a line's cell. A
+`InvalidValue`, whose `path` says where it is — `("lines", "0192…", "qty")` for a line's cell,
+by the line's identity; `("lines", 1, "qty")` for a line that is a plain value, by its position. A
 form hint refuses nothing: `apply_values(invoice, {"number": "F-9"})` sets a field the form shows
 read-only — a hint is the client's default, never a rule. A hand-written edit Command uses it
 the same way: `apply_values`, then `save`.
@@ -101,7 +102,7 @@ A to-many the entity owns (an order's lines) travels as a list of mappings:
 |---|---|
 | a line without `id` | builds a new one; the key pointing back at the order (`order_id`) is filled from the relation — the form never sends it, and one it echoes from an earlier preview is replaced |
 | a line with the `id` of one the order holds | edits that line in place, so a save updates its row |
-| an `id` the order does not hold | refused, naming it |
+| a line with an `id` the order does not hold | builds a new one under that `id`: a form mints the identity of a line it creates (UUID v7) and names it by it from then on |
 | no longer a line the order holds | what the relation declares: `Orphans.DELETE` deletes it, `Orphans.DETACH` sets its key to NULL, nothing declared refuses the save |
 
 ```python
@@ -198,8 +199,9 @@ another hands its warnings to the outer one too.
 A warning says where it is, as an error does. `field` is a field of the record whose code is
 running; where that record sits inside the aggregate is put in front of it, because `recompute`
 runs each record the aggregate owns knowing its place. A warning a line gives from its own
-computation lands on that line, by its position in the list the form sent — the same position an
-`InvalidValue` points at:
+computation lands on that line, by the line's identity — the same line wherever it moves, and the
+same key an `InvalidValue`, `changed` and the line's states name it by; a line that is a plain
+value, with no identity, is named by its position in the list the form sent:
 
 ```python
 @dataclass
@@ -211,7 +213,7 @@ class SaleLine(Entity):
 
     def amount_of(self) -> Decimal:
         if self.price < self.cost:
-            warn_form("price below cost", field="price")    # the second line: path ("lines", 1, "price")
+            warn_form("price below cost", field="price")    # path ("lines", "0192…", "price")
         return self.qty * self.price
 ```
 
@@ -219,8 +221,9 @@ class SaleLine(Entity):
 |---|---|---|
 | the aggregate, `warn_form("…")` | `None` | `()` |
 | the aggregate, `warn_form("…", field="discount")` | `"discount"` | `("discount",)` |
-| the third line, `warn_form("…", field="price")` | `"lines"` | `("lines", 2, "price")` |
-| the third line, `warn_form("…")` | `"lines"` | `("lines", 2)` |
+| the line `0192…`, `warn_form("…", field="price")` | `"lines"` | `("lines", "0192…", "price")` |
+| the line `0192…`, `warn_form("…")` | `"lines"` | `("lines", "0192…")` |
+| the third line, a plain value with no identity | `"lines"` | `("lines", 2, …)` |
 
 A stored record is previewed from a copy, read as its `DEFAULT_READING` brings it and with every
 relation its computations read, so a total over lines the reading does not name still sums them. Values are

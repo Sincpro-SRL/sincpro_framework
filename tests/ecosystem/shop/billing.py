@@ -78,7 +78,7 @@ def facts(repository: Repository) -> list[DomainEvent]:
 def pending(repository: Repository) -> int:
     """The deliverable events not delivered yet."""
     undelivered = Criteria(
-        where=Condition(field="delivered_at", operator=Operator.IS_NULL, value=True)
+        selection=Condition(field="delivered_at", operator=Operator.IS_NULL, value=True)
     )
     return repository.count(IssuedInvoice, undelivered).value
 

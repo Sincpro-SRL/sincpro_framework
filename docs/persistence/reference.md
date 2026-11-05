@@ -16,9 +16,9 @@ catalogue before it moved here.
 | Thing | What it is | Where it travels |
 |---|---|---|
 | `Entity` | The four fields every aggregate carries: `id` (UUID v7, 32 hex chars), `created_at`, `updated_at`, `version` | A dataclass base; a subclass still declares its own fields positionally |
-| `Criteria` | What a caller asks: `where`, `order`, `pagination`, `grouping`, `count`, `meta` | A DTO; it is what a URL, a queue or a POST body carries |
+| `Criteria` | What a caller asks: `selection`, `specification`, `order`, `pagination`, `grouping`, `count` | A DTO; it is what a URL, a queue or a POST body carries |
 | `EntityCollection[T]` | What comes back: the records, the `cursor`, a typed `Count`, what was `dropped`, and the model's `meta` | Frozen; every derived collection drops its page metadata |
-| `Meta` | What the model publishes: fields, types, operators, what is sortable | Reaches the client as `entity_meta_data` |
+| `Meta` | The description a store answers of a model: fields, types, operators, what is sortable | Reaches a client rendered as the entity's contract (`contract_of`: JSON Schema with `x-sincpro`) in the discovery document; a read answers only the model's version (`model_version`) |
 | `Query` / `ResponsePaginatedQuery` | The two shapes every read inherits | Command and Response bases |
 | `IRepository` | The baseline every store answers: `ReadsAggregates` + `WritesAggregates`, and the hooks | The aggregate port; request additional capabilities explicitly |
 | `Analyzes` · `WritesInBulk` · `Transacts` | Capabilities a store adds when it can honour them: folding numbers, writing past the aggregate, a unit of work | A shared component asks for exactly the ones it calls |
@@ -219,7 +219,7 @@ wrapper:
 
 ```python
 with self.repository.context() as repository:
-    for batch in repository.stream(Line, Criteria(where=…, pagination=Pagination(limit=500))):
+    for batch in repository.stream(Line, Criteria(selection=…, pagination=Pagination(limit=500))):
         measures = repository.session.execute(select(Line.account_id, func.sum(Line.amount))…)
         for group in reconcile(batch, measures):
             with repository.savepoint():                 # one group fails, the rest stand

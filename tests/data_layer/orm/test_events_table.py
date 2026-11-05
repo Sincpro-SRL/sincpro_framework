@@ -169,7 +169,7 @@ def test_an_entity_history_is_its_events_filtered_by_the_envelope(repository):
     a_paid_bill(repository, 5)
 
     about = Criteria(
-        where=Condition(field="entity_id", value=bill.id), order=Sort.parse("id")
+        selection=Condition(field="entity_id", value=bill.id), order=Sort.parse("id")
     )
     assert [one.amount for one in repository.fetch_all(Paid, about).items] == [10, 20]
 

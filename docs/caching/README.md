@@ -328,7 +328,7 @@ class Balance(ApplicationService):
         customer = self.repository.get(Customer, dto.customer_id)
         invoices = self.repository.fetch_all(
             Invoice,
-            Criteria.model_validate({"where": {"field": "customer_id", "operator": "=", "value": dto.customer_id}}),
+            Criteria.model_validate({"selection": {"field": "customer_id", "operator": "=", "value": dto.customer_id}}),
         )
         return ResponseBalance(customer=customer.name, balance=sum(one.total for one in invoices))
 ```

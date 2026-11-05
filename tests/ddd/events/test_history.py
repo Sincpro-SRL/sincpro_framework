@@ -208,7 +208,7 @@ def test_a_caller_time_filter_adds_to_the_record_and_its_order_replaces_the_defa
         QueryIssueEvents(
             id=issue.id,
             criteria=Criteria(
-                where=Condition(field="created_at", operator=Operator.GTE, value=later)
+                selection=Condition(field="created_at", operator=Operator.GTE, value=later)
             ),
         ),
         ResponseProjectEvents,
@@ -221,7 +221,7 @@ def test_a_caller_time_filter_adds_to_the_record_and_its_order_replaces_the_defa
         QueryIssueEvents(
             id=issue.id,
             criteria=Criteria(
-                where=Condition(
+                selection=Condition(
                     field="created_at",
                     operator=Operator.GTE,
                     value=datetime(2999, 1, 1, tzinfo=UTC),
@@ -341,7 +341,7 @@ def test_the_wire_names_combine_with_a_caller_time_filter():
     bus, repository = project()
     issue = an_issue_opened_and_closed(repository, "login")
     future = Criteria(
-        where=Condition(
+        selection=Condition(
             field="created_at", operator=Operator.GTE, value=datetime(2999, 1, 1, tzinfo=UTC)
         )
     )
@@ -366,7 +366,9 @@ def test_the_context_log_filters_by_wire_name_like_any_field():
 
     closings = repository.search(
         ProjectEvent,
-        Criteria(where=Condition(field="name", value=["IssueClosed"], operator=Operator.IN)),
+        Criteria(
+            selection=Condition(field="name", value=["IssueClosed"], operator=Operator.IN)
+        ),
     )
 
     assert [type(one).__name__ for one in closings.items] == ["IssueClosed", "IssueClosed"]

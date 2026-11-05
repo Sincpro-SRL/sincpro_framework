@@ -27,7 +27,8 @@ from sincpro_framework.ddd.criteria import (
     Sort,
     Specification,
 )
-from sincpro_framework.ddd.entity.entity_meta import describe_class, presentation_of
+from sincpro_framework.ddd.entity.entity_meta import presentation_of
+from sincpro_framework.ddd.metamodel import StoreFacts, description_of, model_of
 from sincpro_framework.ddd.query import ResponsePaginatedQuery
 from sincpro_framework.ddd.repositories import AggregateRepository
 
@@ -49,7 +50,7 @@ class Account(Entity):
     @classmethod
     def DEFAULT_LITERAL_SEARCH(cls) -> Criteria:
         return Criteria(
-            where=Any(
+            selection=Any(
                 any=[
                     Condition(field="code", value=TEXT),
                     Condition(field="code", operator=Operator.STARTS_WITH, value=TEXT),
@@ -113,28 +114,28 @@ def accounts() -> AggregateRepository[Account]:
 def test_presentation_and_the_defaults_are_never_fields():
     names = [one.name for one in fields(Account)]
     assert "presentation" not in names and "DEFAULT_ORDER" not in names
-    assert "presentation" not in describe_class(Account, "id").fields
+    assert "presentation" not in description_of(Account, StoreFacts(identity="id")).fields
 
 
 def test_nothing_declared_makes_the_field_called_name_the_display_searched_by_containment():
-    meta = describe_class(Partner, "id")
+    meta = description_of(Partner, StoreFacts(identity="id"))
 
     assert meta.display == "name"
     assert meta.search == Criteria(
-        where=Condition(field="name", operator=Operator.LIKE, value=TEXT)
+        selection=Condition(field="name", operator=Operator.LIKE, value=TEXT)
     )
     assert meta.default_order == "-id"
     assert (meta.get_id, meta.detail) == ("id", None)
 
 
 def test_a_class_with_no_name_field_has_no_display_and_nothing_to_search():
-    meta = describe_class(Line, "id")
+    meta = description_of(Line, StoreFacts(identity="id"))
 
     assert (meta.display, meta.search) == ("", None)
 
 
 def test_the_definition_publishes_what_the_entity_declared():
-    meta = describe_class(Account, "id")
+    meta = description_of(Account, StoreFacts(identity="id"))
 
     assert meta.display == "name"
     assert meta.search == Account.DEFAULT_LITERAL_SEARCH()
@@ -146,7 +147,7 @@ def test_the_definition_publishes_what_the_entity_declared():
 
 
 def test_a_subclass_overrides_some_defaults_and_inherits_the_others():
-    meta = describe_class(Journal, "id")
+    meta = description_of(Journal, StoreFacts(identity="id"))
 
     assert meta.search == Account.DEFAULT_LITERAL_SEARCH()
     assert meta.display == "code"
@@ -178,9 +179,9 @@ def test_an_unknown_field_is_refused_when_the_class_is_described():
         )
 
     with pytest.raises(exceptions.ProgrammingError, match="DEFAULT_DISPLAY answers 'cde'"):
-        describe_class(Typo, "id")
+        description_of(Typo, StoreFacts(identity="id"))
     with pytest.raises(exceptions.ProgrammingError, match="HintTypo.presentation names cde"):
-        describe_class(HintTypo, "id")
+        description_of(HintTypo, StoreFacts(identity="id"))
 
 
 def test_a_prefix_on_a_number_is_refused_instead_of_widening_the_search():
@@ -191,17 +192,17 @@ def test_a_prefix_on_a_number_is_refused_instead_of_widening_the_search():
         @classmethod
         def DEFAULT_LITERAL_SEARCH(cls) -> Criteria:
             return Criteria(
-                where=Condition(field="number", operator=Operator.STARTS_WITH, value=TEXT)
+                selection=Condition(field="number", operator=Operator.STARTS_WITH, value=TEXT)
             )
 
     with pytest.raises(exceptions.ProgrammingError, match="searches number by starts with"):
-        describe_class(Numbered, "id")
+        description_of(Numbered, StoreFacts(identity="id"))
 
 
 def test_matching_fills_the_template_for_a_short_page_of_references():
     criteria = matching(Account, " 1.2.3 ")
 
-    assert criteria.where == Any(
+    assert criteria.selection == Any(
         any=[
             Condition(field="code", value="1.2.3", operator=Operator.EQ),
             Condition(field="code", value="1.2.3", operator=Operator.STARTS_WITH),
@@ -246,18 +247,18 @@ def test_a_select_carries_the_identity_and_the_display_on_the_wire(accounts):
     answer = ResponseListAccounts.of(accounts.search(asked), asked).model_dump()
 
     assert all(set(record) == {"id", "name"} for record in answer["accounts"])
-    assert list(answer["entity_meta_data"]["fields"]) == ["id", "name"]
+    assert answer["model_version"] == model_of(Account).fingerprint
 
 
 def test_get_without_a_detail_is_the_stored_record(accounts):
-    one = accounts.first(Criteria(where=Condition(field="code", value="1.2.3")))
+    one = accounts.first(Criteria(selection=Condition(field="code", value="1.2.3")))
     assert one is not None
 
     assert accounts.get(one.id) == one
 
 
 def test_get_with_the_detail_is_still_the_one_record(accounts):
-    one = accounts.first(Criteria(where=Condition(field="code", value="1.2.3")))
+    one = accounts.first(Criteria(selection=Condition(field="code", value="1.2.3")))
     assert one is not None
 
     assert accounts.get(one.id, detail=detail_of(Account)) == one

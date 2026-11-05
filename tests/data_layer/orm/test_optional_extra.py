@@ -18,7 +18,7 @@ from sincpro_framework.ddd import EntityCollection, Criteria, Entity, Pagination
 from sincpro_framework.ddd.criteria import Condition, Evaluation, Operator
 
 page = EntityCollection(items=("a", "b"))
-asked = Criteria(where=Condition(field="size", operator=Operator.GT, value=1), pagination=Pagination(limit=2))
+asked = Criteria(selection=Condition(field="size", operator=Operator.GT, value=1), pagination=Pagination(limit=2))
 assert Criteria.model_validate_json(asked.model_dump_json()) == asked
 assert page.filtered_by(None).ids == ["a", "b"]
 

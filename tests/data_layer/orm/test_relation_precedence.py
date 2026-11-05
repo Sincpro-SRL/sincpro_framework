@@ -206,7 +206,7 @@ def test_empty_values_come_back_empty_not_missing(desk_repository):
 
 def test_a_page_with_no_records_and_a_full_specification_is_just_empty(desk_repository):
     asked = Criteria(
-        where=Condition(field="title", value="Nobody"),
+        selection=Condition(field="title", value="Nobody"),
         specification=Specification(
             {"author": Criteria(), "chapters": Criteria(), "dimensions": Criteria()}
         ),
@@ -217,7 +217,8 @@ def test_a_page_with_no_records_and_a_full_specification_is_just_empty(desk_repo
 
     assert len(page) == 0 and page.dropped == ()
     assert on_the_wire["manuscripts"] == []
-    assert on_the_wire["entity_meta_data"]["fields"]["author"]["type"] == "many2one"
+    assert page.meta is not None
+    assert page.meta.only(asked.specification).fields["author"].type == "many2one"
 
 
 def test_an_empty_specification_node_on_an_embedded_value_brings_it_whole(desk_repository):

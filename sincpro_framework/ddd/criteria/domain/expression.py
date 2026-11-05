@@ -111,6 +111,7 @@ class Node(Strict):
 
             in   {"any": [{...}, {...}]}      →  Any_([Condition(…), Condition(…)])
             in   {"negate": {...}}            →  Not(Condition(…))
+            in   {"through": "lines", "selection": {...}}   →  Through("lines", Condition(…))
 
         **A condition is an object with `field`, `operator` and `value`; a group is an object
         with `all`, `any` or `negate`.** There is no positional or abbreviated form: what arrives
@@ -124,7 +125,8 @@ class Node(Strict):
         2. `any` or `all` (`any` looked at first): a key beside it is refused — dropped when
            `tolerant` — and each child is read in turn into an `Any_` or an `All`.
         3. `negate`: the same rule for the other keys, its child read into a `Not`.
-        4. `field`: a `Condition` of the keys it takes, the others refused or dropped.
+        4. `through`: the relation it crosses and its `selection`, read into a `Through`.
+        5. `field`: a `Condition` of the keys it takes, the others refused or dropped.
         Final: a dict with none of those keys is `InvalidCriteria`, naming the keys it had.
         """
         if not isinstance(written, dict):
@@ -139,14 +141,20 @@ class Node(Strict):
         if "negate" in written:
             Not.known_keys_of(written, tolerant)
             return Not(negate=Node.read(written["negate"], tolerant))
+        if "through" in written:
+            Through.known_keys_of(written, tolerant)
+            return Through(
+                through=written["through"],
+                selection=Node.read(written.get("selection"), tolerant),
+            )
         if "field" in written:
             # Built, not handed back raw: left as a dict, a criteria did not survive its own
             # `model_dump`, so sending it in a POST or through a queue failed.
             return Condition(**Condition.known_keys_of(written, tolerant))
 
         raise exceptions.InvalidCriteria(
-            "a filter is {'field', 'operator', 'value'} or an object with 'all', 'any' or "
-            f"'negate'; got {sorted(written)}"
+            "a filter is {'field', 'operator', 'value'} or an object with 'all', 'any', "
+            f"'negate' or 'through'; got {sorted(written)}"
         )
 
     @classmethod
@@ -181,12 +189,15 @@ class Node(Strict):
         return All(all=parts)
 
     def conditions(self) -> "list[Condition]":
-        """Every leaf of the tree, in reading order.
+        """Every leaf of the tree over this record's own fields, in reading order.
 
             All([Any_([Condition(a), Condition(b)]), Not(Condition(c))]).conditions()
                 ->  [Condition(a), Condition(b), Condition(c)]
+            All([Condition(a), Through("lines", Condition(qty))]).conditions()
+                ->  [Condition(a)]          qty is a field of a line, not of this record
 
         Context: a `Not` hands its leaf on as it is — what it negates is not this list's to say.
+        A `Through` hands on none: its leaves name the fields of the records it crosses to.
         """
         match self:
             case Condition():
@@ -197,6 +208,8 @@ class Node(Strict):
                 return [leaf for part in self.any for leaf in part.conditions()]
             case Not():
                 return self.negate.conditions()
+            case Through():
+                return []
         raise exceptions.InvalidCriteria(f"not a filter expression: {self!r}")
 
     def canonical(self) -> "Expression":
@@ -213,7 +226,8 @@ class Node(Strict):
 
         1. A condition: its value in one spelling.
         2. An `all` or an `any`: each part made canonical first, then the parts in a fixed order.
-        3. Final: a `not` makes canonical what it negates.
+        3. A `not` makes canonical what it negates.
+        Final: a `through` makes canonical its selection.
         """
         match self:
             case Condition():
@@ -224,9 +238,15 @@ class Node(Strict):
                 return Any_(any=_in_order(part.canonical() for part in self.any))
             case Not():
                 return Not(negate=self.negate.canonical())
+            case Through():
+                return Through(through=self.through, selection=self.selection.canonical())
         raise exceptions.InvalidCriteria(f"not a filter expression: {self!r}")
 
-    def mapped(self, leaf: "Callable[[Condition], Expression | None]") -> "Expression | None":
+    def mapped(
+        self,
+        leaf: "Callable[[Condition], Expression | None]",
+        through: "Callable[[Through], Expression | None] | None" = None,
+    ) -> "Expression | None":
         """The tree with each condition replaced by what `leaf` says, and what is left collapsed.
 
             in      All([a, b]), leaf = a → a2, b → None
@@ -240,19 +260,29 @@ class Node(Strict):
         group that loses all of its parts disappears instead of becoming empty — an empty `all`
         matches everything and an empty `any` nothing, and neither was asked for — and a `not`
         of nothing is nothing.
+
+        A `through` is another record's question: `leaf` never sees its conditions. `through`
+        decides what becomes of it — checked against the related model, resolved, dropped — and
+        without one it stays as it is.
         """
         match self:
             case Condition():
                 return leaf(self)
             case All():
-                parts = [one for one in (part.mapped(leaf) for part in self.all) if one]
+                parts = [
+                    one for one in (part.mapped(leaf, through) for part in self.all) if one
+                ]
                 return All(all=parts) if len(parts) > 1 else (parts[0] if parts else None)
             case Any_():
-                parts = [one for one in (part.mapped(leaf) for part in self.any) if one]
+                parts = [
+                    one for one in (part.mapped(leaf, through) for part in self.any) if one
+                ]
                 return Any_(any=parts) if len(parts) > 1 else (parts[0] if parts else None)
             case Not():
-                inner = self.negate.mapped(leaf)
+                inner = self.negate.mapped(leaf, through)
                 return Not(negate=inner) if inner is not None else None
+            case Through():
+                return through(self) if through is not None else self
         raise exceptions.InvalidCriteria(f"not a filter expression: {self!r}")
 
     def with_text(self, text: str) -> "Expression | None":
@@ -354,8 +384,16 @@ class Not(Node):
     negate: "Expression"
 
 
-Expression = Union[Condition, All, Any_, Not]
+# Some record the relation holds answers the selection — `{"through": "lines", "selection":
+# {...}}` on the wire, a correlated EXISTS in SQL.
+class Through(Node):
+    through: str
+    selection: "Expression"
+
+
+Expression = Union[Condition, All, Any_, Not, Through]
 
 All.model_rebuild()
 Any_.model_rebuild()
 Not.model_rebuild()
+Through.model_rebuild()
