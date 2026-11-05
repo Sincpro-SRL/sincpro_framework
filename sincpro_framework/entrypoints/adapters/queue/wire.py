@@ -49,8 +49,8 @@ from sincpro_framework.entrypoints.adapters.queue.verdicts import (
 )
 from sincpro_framework.entrypoints.domain.bindings import QueueBinding
 from sincpro_framework.entrypoints.domain.surface import Group, Operation, Resolved, Wire
-from sincpro_framework.entrypoints.infrastructure import json_schema
 from sincpro_framework.event_driven import ATTEMPTS_HEADER, Broker, Delivery, Envelope
+from sincpro_framework.introspection.schemas import adapter
 from sincpro_framework.observability.metrics import Instrument, InstrumentKind, metrics
 from sincpro_framework.observability.tracing.propagation import within_trace
 from sincpro_framework.sincpro_abstractions import DataTransferObject
@@ -200,7 +200,7 @@ def _decoded(command: type, body: bytes) -> Any:
         return command.from_json(body.decode())  # type: ignore[attr-defined]
     if issubclass(command, BaseModel):
         return command.model_validate_json(body)
-    return json_schema.adapter(command).validate_json(body)
+    return adapter(command).validate_json(body)
 
 
 def _validated(command: type, value: Any) -> Any:
@@ -224,7 +224,7 @@ def _validated(command: type, value: Any) -> Any:
         return command.from_json(json.dumps(value))  # type: ignore[attr-defined]
     if issubclass(command, BaseModel):
         return command.model_validate(value)
-    return json_schema.adapter(command).validate_python(value)
+    return adapter(command).validate_python(value)
 
 
 def arrival_channel(message: Delivery) -> str | None:

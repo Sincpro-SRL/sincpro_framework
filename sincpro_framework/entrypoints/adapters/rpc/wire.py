@@ -173,6 +173,10 @@ class JsonRpcWire(Wire[RpcBinding]):
         """The method name — what the manifest lists the operation under."""
         return method_name_of(resolved)
 
+    def reached_by(self, resolved: Resolved[RpcBinding]) -> dict[str, Any]:
+        """The JSON-RPC method a client calls: `{"method": "billing.issue_invoice"}`."""
+        return {"method": self.name_of(resolved)}
+
     def validate(self, surface: Sequence[Resolved[RpcBinding]]) -> list[str]:
         """Every reason the surface cannot be served on JSON-RPC — empty when it can.
 

@@ -39,8 +39,8 @@ from sincpro_framework.ddd.metamodel.services.description import held_relations
 from sincpro_framework.ddd.query import Query, ResponsePaginatedQuery
 from sincpro_framework.entrypoints import FastApiGateway, McpGateway, RestGateway, RpcGateway
 from sincpro_framework.entrypoints.entrypoint.decorators import mcp, rest, rpc
-from sincpro_framework.entrypoints.infrastructure.json_schema import json_schema_for
 from sincpro_framework.introspection import entity_tags
+from sincpro_framework.introspection.schemas import json_schema_for
 
 Discount = ValueObject(Decimal, name="Discount", holds=lambda v: 0 <= v <= 30)
 Quantity = ValueObject(int, name="Quantity", holds=lambda v: v > 0)

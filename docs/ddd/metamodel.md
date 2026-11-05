@@ -108,60 +108,56 @@ A field holding another record's key says whose it is by its type — never by i
 ```python
 from uuid import UUID
 
-from sincpro_framework.ddd import EntityID, Reference, StrictEntityID
+from sincpro_framework.ddd import EntityID, EntityKey, Reference
 
 class Tenant(Reference, context="auth"):       # shared/: auth's tenant, never imported
     """auth's tenant."""
 
 class CommandMoveIssue(DataTransferObject):
-    issue: EntityID[Issue]                       # an issue's key, in a field of any name
-    destination: EntityID[Project]
-    partner: EntityID[Partner, int]              # a key that is a whole number
-    device: EntityID[Device, UUID]               # a standard UUID, as pydantic reads and writes one
+    issue: EntityID[Issue]                       # the framework's id: a UUID v7, 32 hex
+    destination: EntityID[Project]               # in a field of any name
     tenant: EntityID[Tenant]                     # another context's: "auth.Tenant"
-    approver: StrictEntityID[User]               # only a UUID v7, as the framework mints it
+    owner: EntityKey[User]                       # a context's own key: an email, a slug
+    partner: EntityKey[Partner, int]             # a whole number — an Odoo record
+    device: EntityKey[Device, UUID]              # a standard UUID, as pydantic reads and writes one
 
 @dataclass(kw_only=True)
 class Issue(Entity):
     project_id: EntityID[Project] | None = None
 ```
 
-- **Open by default, read by pydantic's own rules.** An `EntityID` takes what the plain value it
-  holds takes: typing a key says whose it is and changes nothing a caller may send. A context
-  with keys of its own — an email, a slug, an Odoo integer, another system's UUID — types them
-  the same way.
+- **`EntityID` is the framework's id — always a UUID v7; `EntityKey` a context's own key.**
+  Each is read and written by pydantic's own rules:
 
   | Annotation | Holds | Takes | Writes |
   |---|---|---|---|
-  | `EntityID[E]` | `str` | any text; a `uuid.UUID` as its 32 hex | the text |
-  | `EntityID[E, int]` | `int` | what an `int` field takes | the number |
-  | `EntityID[E, UUID]` | `uuid.UUID` | any spelling of a UUID (pydantic's `UUID`) | the standard's 36, `format: uuid` |
-  | `StrictEntityID[E]` | `str` | a UUID v7 in any spelling (pydantic's `UUID7`) | 32 lowercase hex, its pattern |
+  | `EntityID[E]` | `str` | a UUID v7 in any spelling (pydantic's `UUID7`) | 32 lowercase hex, its pattern |
+  | `EntityKey[E]` | `str` | any text; a `uuid.UUID` as its 32 hex | the text |
+  | `EntityKey[E, int]` | `int` | what an `int` field takes | the number |
+  | `EntityKey[E, UUID]` | `uuid.UUID` | any spelling of a UUID (pydantic's `UUID`) | the standard's 36, `format: uuid` |
 
-  `StrictEntityID` is the framework's own id (`new_entity_id`): 32 hex and not the standard's
-  36, because every id already stored, drafted, recorded and held by a client is written so; a
-  dashed or capital spelling, or a `uuid.UUID`, is read into it, and anything else refused as
-  pydantic refuses it (`uuid_version`, `uuid_parsing`). A text key rewrites no text: whoever
-  needs the spellings normalized says `StrictEntityID`, or `EntityID[E, UUID]` for the
-  standard's own. Outside a model a key is read as pydantic reads any type:
-  `TypeAdapter(StrictEntityID[Issue]).validate_python(value)`.
+  An `EntityID` is what `new_entity_id` mints: 32 hex and not the standard's 36, because every
+  id already stored, drafted, recorded and held by a client is written so; a dashed or capital
+  spelling, or a `uuid.UUID`, is read into it, anything else refused as pydantic refuses it
+  (`uuid_version`, `uuid_parsing`). An `EntityKey` rewrites no text: a slug may hold dashes.
+  Outside a model a key is read as pydantic reads any type:
+  `TypeAdapter(EntityID[Issue]).validate_python(value)`.
 - **In the editor** it is the value it holds — any `str` is an `EntityID[Issue]`, an
-  `EntityID[Partner, int]` is an `int`, an `EntityID[Device, UUID]` a `UUID` —, so nothing is
-  wrapped at a call site. A type checker
-  cannot bound an alias's parameter, so whose a key is is checked when its schema is built: an
-  `EntityID[int]` fails at import, naming what it got.
+  `EntityKey[Partner, int]` is an `int`, an `EntityKey[Device, UUID]` a `UUID` —, so nothing is
+  wrapped at a call site. A type checker cannot bound an alias's parameter, so whose a key is
+  is checked when its schema is built: an `EntityID[int]` fails at import, naming what it got.
 - **Published** as what it holds, whose it is under `x-sincpro.relation` — the word a relation
   already says the aggregate on the other side with; the field's `type` (`text`, `integer`,
-  `uuid`) says it holds a key, never the record, and no filter crosses it. An entity of this context is
-  named alone (`"Project"`, a key of `models`), another context's with its context
-  (`"auth.Tenant"`, from its `Reference`); a strict key adds the pattern of a UUID v7 to the
+  `uuid`) says it holds a key, never the record, and no filter crosses it. An entity of this
+  context is named alone (`"Project"`, a key of `models`), another context's with its context
+  (`"auth.Tenant"`, from its `Reference`); an `EntityID` adds the pattern of a UUID v7 to the
   operation's input — never `format: uuid`, which asks for dashes.
 
 ```json
-{"type": "string", "x-sincpro": {"relation": "Project"}}
+{"type": "string", "pattern": "^[0-9a-f]{12}7[0-9a-f]{3}[89ab][0-9a-f]{15}$", "x-sincpro": {"relation": "Project"}}
+{"type": "string", "x-sincpro": {"relation": "User"}}
 {"type": "integer", "x-sincpro": {"relation": "Partner"}}
 {"type": "string", "format": "uuid", "x-sincpro": {"relation": "Device"}}
-{"type": "string", "pattern": "^[0-9a-f]{12}7[0-9a-f]{3}[89ab][0-9a-f]{15}$", "x-sincpro": {"relation": "auth.Tenant"}}
 ```
 
 - **Read**: the field an operation runs on (`targets`), and the entities it concerns — a key of
@@ -180,12 +176,59 @@ operation that wire exposes reads or answers it.
 
 | Wire | Where |
 |---|---|
-| REST (`FastApiGateway`, `RestGateway`) | `/openapi.json`, `components.schemas.<Entity>`; each operation says `x-sincpro-role`, `x-sincpro-entities` and `x-sincpro-dry-run` |
-| JSON-RPC | the OpenRPC document (`rpc.discover`, `/openrpc.json`); each method says `x-sincpro-role` |
+| REST (`FastApiGateway`, `RestGateway`) | `/openapi.json`, `components.schemas.<Entity>`; each operation says `x-sincpro-role`, `x-sincpro-entities`, `x-sincpro-dry-run`, and `x-sincpro-query` when it only reads; a JSON URL parameter points at its definitions, written once |
+| JSON-RPC | the OpenRPC document (`rpc.discover`, `/openrpc.json`); each method says `x-sincpro-role`, and `x-idempotent` on a read |
 | gRPC | `sincpro.Introspection/Describe`: each method says its `role` |
-| MCP | the resource `metamodel://<context>`: `metamodel_of` of what the tools expose — roles, targets and shapes included |
+| MCP | the resource `metamodel://<context>`: `metamodel_of` of what the tools expose — roles, targets and shapes included; a read's tool is read-only |
 
 A discovery document is tagged by its content (`ETag`): a client that holds it is answered `304`.
+
+### The client contract: what an operation is, and how each wire reaches it
+
+The document a client generates its domain and its client from joins the metamodel to how each
+wire reaches every operation, by the Command's identity — one file per bounded context:
+
+```python
+from sincpro_framework.entrypoints import client_contracts, export_client_contract
+
+export_client_contract([rest, rpc, grpc, mcp], "web/src/contracts")
+# {"tracker": Path("web/src/contracts/tracker.contract.json")}
+```
+
+```json
+{
+  "format": "sincpro.client-contract/1", "context": "tracker", "version": "9b1c…",
+  "models": {"…": "…"}, "operations": {"tracker.CommandMoveIssue": {"…": "…",
+    "deprecated": false, "sunset": null, "replacement": null}}, "$defs": {"…": "…"},
+  "bindings": {
+    "rest": {"tracker.CommandMoveIssue": {"method": "PUT",
+             "path": "/tracker/issues/{issue_id}/move", "path_fields": ["issue_id"]}},
+    "rpc":  {"tracker.CommandMoveIssue": {"method": "tracker.move_issue"}},
+    "grpc": {"tracker.CommandMoveIssue": {"method": "/tracker.v1.TrackerService/MoveIssue"}},
+    "mcp":  {"tracker.CommandMoveIssue": {"tool": "move_issue"}}}
+}
+```
+
+- **Only what the gateways expose**: an `@internal` use case is in no contract, a wire that does
+  not publish an operation has no binding for it. How a wire is reached is the wire's own word
+  (`Wire.reached_by`): REST the verb, the full path and `path_fields` — the Command's fields its
+  `{name}`s take, filled from the body —; JSON-RPC and gRPC the `method`; MCP the `tool`.
+- **Deprecation**: an operation every wire deprecates alike says it (`deprecated`, `sunset`,
+  `replacement`); a binding deprecated on its own wire says so in the binding.
+- **The same code, the same bytes**: keys sorted, indented, a final newline; `version` is the
+  fingerprint of the whole file, and each model keeps its own (`model_version`).
+- **Without serving anything**, for a build or a CI step:
+
+  ```make
+  contract:
+      poetry run python -m sincpro_framework.entrypoints export-client-contract \
+          app.http:gateways web/src/contracts
+  ```
+
+- **Live**: every HTTP gateway (FastAPI, JSON-RPC) serves `GET /client-contract/<context>.json`
+  — the bytes the export writes for it, built when asked, so a use case registered or a model
+  changed while the service runs is the next answer —, its `version` the `ETag`, `304` to a
+  client that holds it, out of the OpenAPI document. `app(contract_path=None)` serves none.
 Every read answers the version of its model (`model_version`) — `ResponsePaginatedQuery`,
 `ResponseRecord`, `ResponseRecords` and an `Edit` alike — and never the model again: another
 version means read the document again.

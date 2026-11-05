@@ -41,7 +41,11 @@ my_service/
 | `Profile.RPC` (`profile=Profile.RPC`) | every use case (`CATALOG`), each one logged | `POST /{group}/{kebab(Dto)}`; a `Query` on `GET`, and on `POST` for a criteria too long for a URL. This is RPC over HTTP, not REST |
 
 What a binding leaves out is derived: `GET` for a `Query`, `POST` for any other Command, `204` for a
-use case whose `execute` answers `None`. The `operationId` is the DTO's name. When two contexts
+use case whose `execute` answers `None`. A framework read that is no `Query` — `Get`, `GetMany`,
+`LiteralSearch` — may be bound as `GET` (`@rest.get("/issues/{id}")`): its key from the path,
+criteria as the JSON parameter `Search` takes. Bound with no verb, it stays `POST`; a
+`PreviewEntity` keeps `POST`, carrying the whole record. Each is published as a read
+(`x-sincpro-query`) and asks for no `Idempotency-Key`. The `operationId` is the DTO's name. When two contexts
 publish the same name, it becomes `{alias}_{Dto}`. A path field (`{invoice_id}`) must be a field of
 the Command, and a `location` field (`{number}`) a field of the response. The gateway refuses the
 surface otherwise, and it also refuses two operations on one method and path, or two with one
@@ -178,8 +182,12 @@ assert (removed.status_code, removed.content) == (204, b"")
 - A Command's body is annotated with its DTO. FastAPI validates it once and passes the instance
   on. Fields the path carries (`/invoices/{invoice_id}/cancel`) are merged into the body **before**
   that validation, and the path wins over the body. The document shows the body without them.
-- A `Query` on `GET` (and a `DELETE`) is read by a dependency from the path and the query string,
-  with a non-plain field such as `criteria` as JSON, and validated once.
+- A read on `GET` (and a `DELETE`) is read by a dependency from the path and the query string,
+  with a non-plain field such as `criteria` as JSON, and validated once. The document points
+  that JSON parameter at its definition, written once under `components/schemas`, and
+  `/openapi.json` answers its `ETag` — `304` to a client that holds it.
+- Each context's client contract is served at `GET /client-contract/<context>.json`
+  (`app(contract_path=None)` serves none), out of the document.
 - The route calls the bus. It never calls `execute`, and never the dictionary-in executor, which
   would validate again. That is also why `add(..., wrap=...)` is refused on this gateway: use an
   interceptor.

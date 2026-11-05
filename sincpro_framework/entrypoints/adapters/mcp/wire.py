@@ -21,11 +21,11 @@ from pydantic import ConfigDict
 
 from sincpro_framework.common.naming import snake
 from sincpro_framework.data_layer.caching import Idempotency
-from sincpro_framework.ddd.query import Query
 from sincpro_framework.entrypoints.domain.bindings import Deprecation, McpBinding
 from sincpro_framework.entrypoints.domain.packed import PackedFeatureOrAppService
 from sincpro_framework.entrypoints.domain.surface import Group, Operation, Resolved, Wire
 from sincpro_framework.entrypoints.infrastructure.registry import entrypoint_bindings
+from sincpro_framework.introspection.entity_tags import only_reads
 from sincpro_framework.sincpro_abstractions import DataTransferObject
 
 TOOL_NAME = re.compile(r"[A-Za-z0-9_-]{1,64}")
@@ -84,14 +84,14 @@ def catalog_hints(operation: PackedFeatureOrAppService) -> dict[str, Any]:
     """
     handler = operation.handler or operation.dto
     declared = entrypoint_bindings.of(handler).get(McpBinding.wire)
-    is_query = isinstance(operation.dto, type) and issubclass(operation.dto, Query)
+    reads = only_reads(operation.dto)
     fields = (
         {}
         if declared is None
         else {name: getattr(declared, name) for name in declared.model_fields_set}
     )
     fields.pop("name", None)
-    binding = McpBinding(**{"read_only": is_query, "destructive": not is_query, **fields})
+    binding = McpBinding(**{"read_only": reads, "destructive": not reads, **fields})
     return hints_of(binding, Idempotency.declared_by(handler))
 
 
@@ -147,16 +147,16 @@ class McpWire(Wire[McpBinding]):
         self._settled: dict[tuple[str, type], str] = {}
 
     def derive(self, operation: Operation, group: Group) -> McpBinding:
-        """What the facts prove: the DTO's tool name, read-only for a Query, destructive for a
-        write — the MCP default, since nothing proves a write harmless.
+        """What the facts prove: the DTO's tool name, read-only for a read (`Operation.reads`),
+        destructive for a write — the MCP default, since nothing proves a write harmless.
 
             derive(Operation(command=QueryInvoice, is_query=True, ...), group)
             ->  McpBinding(name="invoice", read_only=True, destructive=False)
         """
         return McpBinding(
             name=tool_name_of(operation.command),
-            read_only=operation.is_query,
-            destructive=not operation.is_query,
+            read_only=operation.reads,
+            destructive=not operation.reads,
         )
 
     def _is_derived(self, resolved: Resolved[McpBinding]) -> bool:
@@ -186,6 +186,10 @@ class McpWire(Wire[McpBinding]):
             (operation.alias, operation.command), str(resolved.binding.name)
         )
 
+    def reached_by(self, resolved: Resolved[McpBinding]) -> dict[str, Any]:
+        """The tool an agent calls: `{"tool": "issue_invoice"}`."""
+        return {"tool": self.name_of(resolved)}
+
     def validate(self, surface: Sequence[Resolved[McpBinding]]) -> list[str]:
         """Every reason the surface cannot be served as MCP tools — empty when it can.
 
@@ -203,8 +207,8 @@ class McpWire(Wire[McpBinding]):
         answering: dict[str, list[str]] = {}
         for one, name in zip(surface, names, strict=True):
             where = f"{one.operation.command.__name__} (mcp)"
-            if one.operation.is_query and one.binding.destructive is True:
-                problems.append(f"{where}: destructive=True on a Query — a Query only reads")
+            if one.operation.reads and one.binding.destructive is True:
+                problems.append(f"{where}: destructive=True on a read — it only reads")
             if not TOOL_NAME.fullmatch(name):
                 problems.append(
                     f"{where}: tool name {name!r} — an MCP tool name is 1 to 64 characters of "

@@ -9,6 +9,7 @@ the Starlette routes, app and uvicorn its serving.
 
 import re
 from collections.abc import Iterable, Mapping, Sequence
+from functools import partial
 from typing import Any
 
 from sincpro_framework.auth import Credentials, security
@@ -26,6 +27,8 @@ from sincpro_framework.entrypoints.adapters.rpc.wire import (
 )
 from sincpro_framework.entrypoints.domain.bindings import RpcBinding
 from sincpro_framework.entrypoints.domain.surface import Exposure, Resolved, Wire
+from sincpro_framework.entrypoints.infrastructure.http import contract_route
+from sincpro_framework.entrypoints.services.client_contract import contract_of
 from sincpro_framework.entrypoints.services.gateway import DEFAULT_LAYERS, Buses, Gateway
 from sincpro_framework.use_bus import UseFramework
 
@@ -192,9 +195,11 @@ class RpcGateway(Gateway):
         discover_path: str = "/openrpc.json",
         health_path: str | None = "/healthz",
         ready_path: str | None = "/readyz",
+        contract_path: str | None = "/client-contract",
     ) -> list[Any]:
         """This gateway's Starlette `Route`s, mountable into any app: JSON-RPC, OpenRPC
-        discovery and — by default — the liveness and readiness checks (`serving.routes`).
+        discovery, each context's client contract at `{contract_path}/{context}.json` and — by
+        default — the liveness and readiness checks (`serving.routes`).
 
         The composable primitive: `Starlette(routes=[*gateway.routes(), *my_own_routes])`,
         or `Mount("/payments", routes=gateway.routes())` to namespace one gateway among
@@ -205,11 +210,17 @@ class RpcGateway(Gateway):
                  Route("/readyz", GET)]
 
         1. The surface built once (`build`) — the routes serve that one.
-        Final: its routes, with the liveness and readiness routes unless their path is `None`.
+        Final: its routes, with the contract, the liveness and the readiness routes unless their
+        path is `None`.
         """
         probes = [
             *([self.health_route(health_path)] if health_path is not None else []),
             *([self.ready_route(ready_path)] if ready_path is not None else []),
+            *(
+                [contract_route(contract_path, partial(contract_of, self))]
+                if contract_path is not None
+                else []
+            ),
         ]
         return serving.routes(self.build(), rpc_path, discover_path, probes)
 
@@ -220,10 +231,12 @@ class RpcGateway(Gateway):
         lifespan: Any | None = None,
         health_path: str | None = "/healthz",
         ready_path: str | None = "/readyz",
+        contract_path: str | None = "/client-contract",
         **starlette_kwargs: Any,
     ) -> Any:
         """A standalone ASGI app: `POST /rpc` (JSON-RPC 2.0), `GET /openrpc.json`,
-        and — by default — `GET /healthz` and `GET /readyz`.
+        `GET /client-contract/{context}.json`, and — by default — `GET /healthz` and
+        `GET /readyz`.
 
         The convenience path, for a process that serves only this gateway. `middleware` is a
         list of Starlette `Middleware(...)` instances (CORS, an auth check, request logging);
@@ -240,7 +253,14 @@ class RpcGateway(Gateway):
         name inside the body.
         """
         return serving.app(
-            [*self.routes(health_path=health_path, ready_path=ready_path), *(routes or ())],
+            [
+                *self.routes(
+                    health_path=health_path,
+                    ready_path=ready_path,
+                    contract_path=contract_path,
+                ),
+                *(routes or ()),
+            ],
             middleware,
             lifespan,
             **starlette_kwargs,

@@ -16,6 +16,7 @@ from pydantic import ConfigDict
 
 from sincpro_framework.entrypoints.domain.bindings import Binding
 from sincpro_framework.entrypoints.domain.layers import CallFn, Layer, RunFn
+from sincpro_framework.introspection.entity_tags import only_reads
 from sincpro_framework.sincpro_abstractions import DataTransferObject
 from sincpro_framework.use_bus import UseFramework
 
@@ -71,7 +72,8 @@ class Operation(DataTransferObject):
     json_schema: dict[str, Any]
     response_json_schema: dict[str, Any] | None
     is_query: bool
-    """A `Query` DTO: it reads — REST `GET`, MCP read-only."""
+    """A `Query` DTO — what REST derives a `GET` for by default; whether it only reads is
+    `reads`."""
     idempotent: bool
     """`@idempotency.once` declared: a retry is safe."""
     access: str | None
@@ -82,6 +84,14 @@ class Operation(DataTransferObject):
     """`run` inside the context, the trace and the identity a wire carried — what a wire calls."""
     entities: tuple[type, ...] = ()
     """The entities it concerns (`entity_tags`) — a wire adds their names to its tags."""
+
+    @property
+    def reads(self) -> bool:
+        """Whether it writes nothing (`only_reads`): a `Query`, or a framework read of an entity
+        — `Get`, `GetMany`, `LiteralSearch`, `PreviewEntity`. Every wire publishes it as a read
+        — MCP read-only, JSON-RPC idempotent, the manifest's `query`, no `Idempotency-Key` —;
+        how REST serves it by default is `is_query`'s, so no route moves."""
+        return only_reads(self.command)
 
 
 class Resolved[B: Binding](DataTransferObject):
@@ -142,6 +152,15 @@ class Wire[B: Binding](ABC):
     def name_of(self, resolved: Resolved[B]) -> str:
         """What the wire calls the operation — its manifest name. The Command's by default."""
         return resolved.operation.command.__name__
+
+    def reached_by(self, resolved: Resolved[B]) -> dict[str, Any]:
+        """How a client reaches the operation over this wire — what a client contract lists
+        under the wire's bindings. Its name by default; a wire says what its client needs:
+
+            {"name": "CommandIssueInvoice"}                              a project's own wire
+            {"method": "PUT", "path": "/v1/invoices/{id}", "path_fields": ["id"]}    REST
+        """
+        return {"name": self.name_of(resolved)}
 
     @abstractmethod
     def validate(self, surface: Sequence[Resolved[B]]) -> list[str]:

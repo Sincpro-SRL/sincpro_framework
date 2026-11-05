@@ -17,6 +17,7 @@ wire never makes.
 """
 
 from collections.abc import Iterable, Mapping
+from functools import partial
 from typing import TYPE_CHECKING, Any
 
 from anyio import CapacityLimiter
@@ -33,6 +34,8 @@ from sincpro_framework.entrypoints.adapters.fastapi.wire import (
 from sincpro_framework.entrypoints.domain.bindings import RestBinding
 from sincpro_framework.entrypoints.domain.layers import Wrapper
 from sincpro_framework.entrypoints.domain.surface import Exposure, Profile, Resolved
+from sincpro_framework.entrypoints.infrastructure.http import contract_route
+from sincpro_framework.entrypoints.services.client_contract import contract_of
 from sincpro_framework.entrypoints.services.gateway import DEFAULT_LAYERS, Buses, Gateway
 from sincpro_framework.use_bus import UseFramework
 
@@ -169,18 +172,23 @@ class FastApiGateway(Gateway):
         health_path: str | None = "/healthz",
         metrics_path: str | None = "/metrics",
         ready_path: str | None = "/readyz",
+        contract_path: str | None = "/client-contract",
         **fastapi_kwargs: Any,
     ) -> "FastAPI":
         """Every context's router in one FastAPI app, its problem handlers installed, the
-        liveness check, the readiness check of `readiness`, and — when the process's metrics are
-        scraped (`PrometheusRecorder`) — the scrape at `metrics_path` (`wire.fastapi_app`).
+        liveness check, the readiness check of `readiness`, each context's client contract at
+        `{contract_path}/{context}.json`, and — when the process's metrics are scraped
+        (`PrometheusRecorder`) — the scrape at `metrics_path` (`wire.fastapi_app`).
         `fastapi_kwargs` go to `FastAPI(...)`.
 
             gateway.app()                     ->  FastAPI with /healthz, /readyz and every route
             gateway.app(health_path=None, docs_url=None)
             ->  no health check, no Swagger UI
+            GET /client-contract/billing.json ->  what `export_client_contract` writes, its ETag
+
+        A `None` path serves nothing there.
         """
-        return fastapi_app(
+        app = fastapi_app(
             self._title,
             self._version,
             self.router(),
@@ -191,6 +199,11 @@ class FastApiGateway(Gateway):
             ready_path,
             **fastapi_kwargs,
         )
+        if contract_path is not None:
+            app.router.routes.append(
+                contract_route(contract_path, partial(contract_of, self))
+            )
+        return app
 
     def verify(self, app: "FastAPI | None" = None) -> list[str]:
         """Every reason the surface would be refused — and, given `app`, what its routes break

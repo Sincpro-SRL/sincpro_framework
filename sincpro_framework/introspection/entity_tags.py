@@ -35,6 +35,7 @@ from sincpro_framework import exceptions
 from sincpro_framework.ddd.editing.edits import Edit
 from sincpro_framework.ddd.entity.entity import Entity
 from sincpro_framework.ddd.entity.entity_id import key_of
+from sincpro_framework.ddd.query import Query
 from sincpro_framework.ddd.reads.reads import (
     DomainEvents,
     Get,
@@ -94,6 +95,23 @@ def role_of(dto: type) -> Role:
         if isinstance(dto, type) and issubclass(dto, framework):
             return role
     return Role.COMMAND
+
+
+def only_reads(dto: type) -> bool:
+    """Whether the operation answering `dto` writes nothing — a retry, a cache, a `GET` and a
+    read-only hint are safe: a `Query`, or a framework read of an entity, its own subclass too.
+
+        only_reads(QueryGetIssue)       ->  True    # Get[Issue, …]: no `Query`, still a read
+        only_reads(QueryPreviewIssue)   ->  True    # PreviewEntity: computes a form, stores nothing
+        only_reads(CommandEditIssue)    ->  False   # Edit: stores a draft, or the record
+        only_reads(CommandMoveIssue)    ->  False   # a command of the context's own
+
+    Context: what every wire publishes as a read and the metamodel's `query` say — one rule.
+    """
+    return (isinstance(dto, type) and issubclass(dto, Query)) or role_of(dto) not in (
+        Role.EDIT,
+        Role.COMMAND,
+    )
 
 
 def entity_tags[T: type](*entities: type) -> Callable[[T], T]:

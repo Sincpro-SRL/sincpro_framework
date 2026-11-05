@@ -55,6 +55,10 @@ from sincpro_framework.entrypoints.entrypoint.rest import RestGateway
 from sincpro_framework.entrypoints.entrypoint.rpc import RpcGateway
 from sincpro_framework.entrypoints.entrypoint.workers import Loop, Poll, Process
 from sincpro_framework.entrypoints.services.catalog import Catalog
+from sincpro_framework.entrypoints.services.client_contract import (
+    client_contracts,
+    export_client_contract,
+)
 from sincpro_framework.entrypoints.services.gateway import Buses, Gateway
 from sincpro_framework.entrypoints.services.readiness import ReadinessChecks
 
@@ -95,7 +99,9 @@ __all__ = [
     "RpcGateway",
     "Wire",
     "bus_call",
+    "client_contracts",
     "declare",
+    "export_client_contract",
     "grpc",
     "internal",
     "mcp",
