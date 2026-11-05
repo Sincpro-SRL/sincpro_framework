@@ -14,6 +14,7 @@ from pydantic import ValidationError
 
 from sincpro_framework.auth import Credentials
 from sincpro_framework.context import EntrypointKind
+from sincpro_framework.ddd.metamodel import contract_of
 from sincpro_framework.entrypoints.adapters.rpc import exceptions
 from sincpro_framework.entrypoints.adapters.rpc.errors import (
     ERROR_DATA_SCHEMA,
@@ -403,6 +404,12 @@ def method_object(
     published: dict[str, Any] = schemas if schemas is not None else {}
     params = hoisted(operation.json_schema, published, name)
     result = hoisted(operation.response_json_schema or {"type": "object"}, published, name)
+    # The contract of each entity it belongs to, under its name — a read's answer may say
+    # nothing of it when `execute` declares no type.
+    for one in operation.entities:
+        contract = contract_of(one)
+        related = contract.pop("$defs", {})
+        hoisted({"$defs": {**related, one.__name__: contract}}, published, name)
     method: dict[str, Any] = {
         "name": name,
         "summary": operation.description.split("\n", 1)[0],

@@ -13,6 +13,7 @@ from collections.abc import Iterable, Mapping
 from typing import Any
 
 from sincpro_framework.auth import AccessControl
+from sincpro_framework.ddd.metamodel import contract_of
 from sincpro_framework.entrypoints.adapters.rest.routing import RestRoute, is_plain
 from sincpro_framework.sincpro_abstractions import DryRunnable
 from sincpro_framework.sincpro_logger import logger
@@ -246,6 +247,10 @@ def _operation(route: RestRoute, method: str, components: _Components) -> dict[s
     }
     if operation.entities:
         described["x-sincpro-entities"] = [one.__name__ for one in operation.entities]
+        # The contract of each entity it belongs to, published beside it — a read's answer may
+        # say nothing of it when `execute` declares no type.
+        for one in operation.entities:
+            components.register(one.__name__, contract_of(one))
     if isinstance(operation.dto, type) and issubclass(operation.dto, DryRunnable):
         described["x-sincpro-dry-run"] = True
     parameters = [
