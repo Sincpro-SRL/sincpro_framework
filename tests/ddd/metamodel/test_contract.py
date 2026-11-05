@@ -16,9 +16,13 @@ from typing import Any
 import pytest
 
 from sincpro_framework import Feature, UseFramework
+from sincpro_framework.data_layer.repositories import MemoryRepository
 from sincpro_framework.ddd import (
     Entity,
+    EntityReads,
+    Get,
     Presentation,
+    ResponseRecord,
     ValueObject,
     When,
     check,
@@ -32,8 +36,8 @@ from sincpro_framework.ddd.metamodel import StoreFacts, contract_of, description
 from sincpro_framework.ddd.metamodel.services.contract import SAID
 from sincpro_framework.ddd.metamodel.services.description import held_relations
 from sincpro_framework.ddd.query import Query, ResponsePaginatedQuery
-from sincpro_framework.entrypoints import FastApiGateway, McpGateway, RestGateway
-from sincpro_framework.entrypoints.entrypoint.decorators import mcp, rest
+from sincpro_framework.entrypoints import FastApiGateway, McpGateway, RestGateway, RpcGateway
+from sincpro_framework.entrypoints.entrypoint.decorators import mcp, rest, rpc
 from sincpro_framework.entrypoints.infrastructure.json_schema import json_schema_for
 from sincpro_framework.introspection import entity_tags
 
@@ -434,3 +438,44 @@ def test_an_agent_reads_the_models_of_what_the_mcp_wire_exposes():
     assert listed == ["metamodel://shop-mcp"]
     assert metamodel["models"]["Order"]["x-sincpro"]["version"] == model_of(Order).fingerprint
     assert metamodel["operations"]["QueryMcpOrders"]["entities"] == ["Order"]
+
+
+class ResponseOrderRead(ResponseRecord):
+    order: Order
+
+
+class QueryGetOrder(Get[Order, ResponseOrderRead], Query):
+    pass
+
+
+def a_bus_whose_read_declares_no_answer() -> UseFramework:
+    """The usual read: `EntityReads` answers `Get[Order, …]` and its `execute` declares nothing,
+    so the answer's schema says nothing of `Order` — the operation still belongs to it."""
+    shop = UseFramework("shop-reads", log_after_execution=False)
+    shop.add_dependency("repository", MemoryRepository())
+
+    @shop.feature(QueryGetOrder)
+    @rest.get("/orders/{id}")
+    @rpc()
+    class OrderReads(EntityReads[Order]):
+        pass
+
+    return shop
+
+
+def test_every_document_publishes_the_entity_a_read_belongs_to():
+    expected = contract_of(Order)
+    expected.pop("$defs")
+
+    fastapi = FastApiGateway([a_bus_whose_read_declares_no_answer()], unguarded=True)
+    rest_wire = RestGateway([a_bus_whose_read_declares_no_answer()])
+    rpc_wire = RpcGateway([a_bus_whose_read_declares_no_answer()], unguarded=True)
+
+    for document in (
+        fastapi.app().openapi(),
+        rest_wire.openapi(),
+        rpc_wire.discover(),
+    ):
+        schemas = document["components"]["schemas"]
+        assert schemas["Order"]["x-sincpro"] == expected["x-sincpro"]
+        assert schemas["Buyer"]["x-sincpro"]["entity"] == "Buyer"

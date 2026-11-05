@@ -505,9 +505,13 @@ class FastApiWire(Wire[RestBinding]):
                 extra["x-sincpro-entities"] = [one.__name__ for one in operation.entities]
             if issubclass(command, DryRunnable):
                 extra["x-sincpro-dry-run"] = True
+            # The entities it belongs to — a read's (`Get[Project, …]`) is named by its DTO,
+            # even when `execute` declares no answer — and the ones its answer reaches.
             extra[CONTRACTS] = {
                 one.__name__: contract_of(one)
-                for one in entities_in(operation.response, set())
+                for one in dict.fromkeys(
+                    [*operation.entities, *entities_in(operation.response, set())]
+                )
             }
             by_body = method == "POST" and len(self._methods(resolved)) > 1
             router.add_api_route(
