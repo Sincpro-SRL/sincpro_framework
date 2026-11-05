@@ -389,7 +389,7 @@ class _HeaderKeys(AuthProvider):
         return (identity.subject, permission) in self.api
 
     def scope(self, identity: Identity, aggregate: type) -> Criteria | None:
-        return Criteria(where=Condition(field="tenant", value=identity.tenant or ""))
+        return Criteria(selection=Condition(field="tenant", value=identity.tenant or ""))
 
     def challenge(self) -> str | None:
         return 'ApiKey realm="billing"'

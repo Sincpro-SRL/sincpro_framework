@@ -33,7 +33,7 @@ from sincpro_framework.ddd import (
 from sincpro_framework.ddd import exceptions as ddd_exceptions
 from sincpro_framework.ddd import presentation_of
 from sincpro_framework.ddd.entity import Entity
-from sincpro_framework.ddd.entity.entity_meta import describe_class
+from sincpro_framework.ddd.metamodel import StoreFacts, description_of, model_of
 from sincpro_framework.ddd.reads.reads import declared_by
 
 
@@ -50,7 +50,7 @@ class Account(Entity):
     @classmethod
     def DEFAULT_LITERAL_SEARCH(cls) -> Criteria:
         return Criteria(
-            where=Any(
+            selection=Any(
                 any=[
                     Condition(field="code", value=TEXT),
                     Condition(field="code", operator=Operator.STARTS_WITH, value=TEXT),
@@ -117,7 +117,7 @@ def test_get_answers_the_one_record():
     answer = bus(QueryGetAccount(id=CAJA.id), ResponseAccount)
 
     assert answer.account.code == "1.2.3"
-    assert answer.entity_meta_data is not None
+    assert answer.model_version == model_of(Account).fingerprint
     assert answer.model_dump(mode="json")["account"]["city"] == "La Paz"
 
 
@@ -229,7 +229,7 @@ def test_get_many_answers_the_records_in_the_order_asked_and_names_the_missing()
     assert [one.code for one in answer.accounts] == ["1.2.30", "1.2.3"]
     assert answer.missing == ["gone"]
     written = answer.model_dump(mode="json")
-    assert set(written) == {"accounts", "missing", "entity_meta_data", "dropped"}
+    assert set(written) == {"accounts", "missing", "model_version", "dropped"}
     assert written["accounts"][0]["city"] == "Santa Cruz"
 
 
@@ -280,7 +280,7 @@ class Ledger(Entity):
     @classmethod
     def DEFAULT_LITERAL_SEARCH(cls) -> Criteria:
         return Criteria(
-            where=All(
+            selection=All(
                 all=[
                     Condition(field="name", operator=Operator.LIKE, value=TEXT),
                     Condition(field="active", value=True),
@@ -373,7 +373,7 @@ def test_a_caller_specification_replaces_the_reading_even_to_ask_for_more():
 
 def test_a_caller_filter_adds_to_the_key_instead_of_replacing_it():
     bus = ledgers(CASH, CLOSED)
-    only_active = Criteria(where=Condition(field="active", value=True))
+    only_active = Criteria(selection=Condition(field="active", value=True))
 
     with pytest.raises(ddd_exceptions.AggregateNotFound):
         bus(QueryGetLedger(id="1.3", criteria=only_active), ResponseLedger)
@@ -398,7 +398,9 @@ def test_a_search_takes_the_entity_order_and_reading_unless_the_caller_names_the
 
 def test_a_scope_merged_into_the_criteria_does_not_hide_the_entity_defaults():
     bus = ledgers(CASH, BANK)
-    scoped = Criteria(where=Condition(field="city", value="La Paz")).merged_with(Criteria())
+    scoped = Criteria(selection=Condition(field="city", value="La Paz")).merged_with(
+        Criteria()
+    )
 
     answer = bus(QueryListLedgers(criteria=scoped), ResponseListLedgers)
 
@@ -418,7 +420,7 @@ def test_a_literal_fills_the_template_and_keeps_what_it_asks_besides_the_text():
 
 
 def test_meta_publishes_what_the_entity_answers():
-    meta = describe_class(Ledger, "id")
+    meta = description_of(Ledger, StoreFacts(identity="id"))
 
     assert (meta.get_id, meta.display, meta.default_order) == ("code", "name", "-code")
     assert meta.detail == Criteria(specification=Ledger.DEFAULT_READING())
@@ -459,7 +461,7 @@ def test_a_reading_must_be_a_specification_of_its_fields():
     class Filtered(Entity):
         @classmethod
         def DEFAULT_READING(cls) -> Specification:
-            return Criteria(where=Condition(field="id", value="x"))  # type: ignore[return-value]
+            return Criteria(selection=Condition(field="id", value="x"))  # type: ignore[return-value]
 
     @dataclass
     class Misnamed(Entity):
@@ -480,7 +482,7 @@ def test_a_literal_search_is_a_where_holding_text_on_fields_that_answer_it():
 
         @classmethod
         def DEFAULT_LITERAL_SEARCH(cls) -> Criteria:
-            return Criteria(where=Condition(field="name", value="x"))
+            return Criteria(selection=Condition(field="name", value="x"))
 
     @dataclass
     class Paged(Entity):
@@ -489,7 +491,7 @@ def test_a_literal_search_is_a_where_holding_text_on_fields_that_answer_it():
         @classmethod
         def DEFAULT_LITERAL_SEARCH(cls) -> Criteria:
             return Criteria(
-                where=Condition(field="name", operator=Operator.LIKE, value=TEXT),
+                selection=Condition(field="name", operator=Operator.LIKE, value=TEXT),
                 order=(Sort(field="name"),),
             )
 
@@ -500,7 +502,7 @@ def test_a_literal_search_is_a_where_holding_text_on_fields_that_answer_it():
         @classmethod
         def DEFAULT_LITERAL_SEARCH(cls) -> Criteria:
             return Criteria(
-                where=Condition(field="size", operator=Operator.STARTS_WITH, value=TEXT)
+                selection=Condition(field="size", operator=Operator.STARTS_WITH, value=TEXT)
             )
 
     with pytest.raises(exceptions.ProgrammingError, match="never uses TEXT"):
@@ -551,7 +553,7 @@ def test_the_entity_defaults_need_nothing_declared():
         None,
     )
     assert read.search == Criteria(
-        where=Condition(field="name", operator=Operator.LIKE, value=TEXT)
+        selection=Condition(field="name", operator=Operator.LIKE, value=TEXT)
     )
 
 
@@ -563,7 +565,7 @@ def test_a_literal_fills_text_inside_a_list_too():
         @classmethod
         def DEFAULT_LITERAL_SEARCH(cls) -> Criteria:
             return Criteria(
-                where=Condition(field="code", operator=Operator.IN, value=[TEXT, "0"])
+                selection=Condition(field="code", operator=Operator.IN, value=[TEXT, "0"])
             )
 
     bus = UseFramework("coded", log_after_execution=False)

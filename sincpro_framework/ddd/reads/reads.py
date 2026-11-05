@@ -70,7 +70,7 @@ from sincpro_framework.ddd.criteria import (
     Sort,
     Specification,
 )
-from sincpro_framework.ddd.editing.editing import adapter_of, apply_values, owned, recompute
+from sincpro_framework.ddd.editing.editing import adapter_of, apply_values, recompute
 from sincpro_framework.ddd.editing.preview import FormWarning, read_only
 from sincpro_framework.ddd.entity.entity_collection import (
     Count,
@@ -79,13 +79,11 @@ from sincpro_framework.ddd.entity.entity_collection import (
     identity_of,
 )
 from sincpro_framework.ddd.entity.entity_meta import (
-    annotations_of,
-    framework_fields,
-    presentation_of,
     related_class,
 )
 from sincpro_framework.ddd.entity.relations import relation_attribute
 from sincpro_framework.ddd.events import DomainEvent
+from sincpro_framework.ddd.metamodel import model_of
 from sincpro_framework.ddd.query import (
     DraftState,
     Query,
@@ -158,7 +156,7 @@ class DomainEvents[T, R: ResponsePaginatedQuery](Query):
 
     QueryIssueEvents(id="01a1…")                                      every event, oldest first
     QueryIssueEvents(id="01a1…", names=["project.issue.v1.closed"])   only those wire names
-    QueryIssueEvents(id="01a1…", criteria=Criteria(where=…))          a time range: added
+    QueryIssueEvents(id="01a1…", criteria=Criteria(selection=…))          a time range: added
 
     The record is named by its key (`DEFAULT_GET_ID`), as `Get` reads it, and its type is the
     class the DTO names — never what a caller sends — so two kinds of record that share an id
@@ -186,10 +184,10 @@ class FieldState(DataTransferObject):
     readonly: bool = False
     required: bool = False
     visible: bool = True
-    items: list[dict[str, "FieldState"]] = []
-    """For a list of records — an invoice's lines —, how a form shows each one's fields, in the
-    order the list holds them. Empty for any other field, for a relation nobody read and for
-    the records a many-to-many references."""
+    items: dict[str, dict[str, "FieldState"]] = {}
+    """For a list of records — an invoice's lines —, how a form shows each one's fields, by the
+    record: its identity, or its position for a record that has none (`"2"`). Empty for any
+    other field, for a relation nobody read and for the records a many-to-many references."""
 
 
 class ResponsePreviewEntity(DataTransferObject):
@@ -205,7 +203,7 @@ class ResponsePreviewEntity(DataTransferObject):
     For a new record with nothing changed yet, every value: the form it starts from."""
     states: dict[str, FieldState] = {}
     """Each field's state — read-only, required, visible — evaluated over the new record; a
-    list of records carries each one's own in `items`, in order."""
+    list of records carries each one's own in `items`, by its identity."""
     warnings: list[FormWarning] = []
     """What the domain warned the form about (`warn_form`), each saying where it points."""
 
@@ -233,7 +231,7 @@ def key_of(entity: type) -> str:
     in      Account (DEFAULT_GET_ID = "code")   →  out  "code"
     in      Note (Entity's default)             →  out  "id"
     """
-    return presentation_of(entity).get_id or identity_name(entity)
+    return model_of(entity).presented.get_id or identity_name(entity)
 
 
 def named_in_type(dto: type) -> tuple[type, type] | None:
@@ -284,7 +282,7 @@ def held(record: Any) -> dict[str, Any]:
     asking.
     """
     found: dict[str, Any] = {}
-    for name in annotations_of(type(record)):
+    for name in model_of(type(record)).annotations:
         try:
             value = getattr(record, name)
         except exceptions.RelationNotResolved:
@@ -337,7 +335,7 @@ def history_of(*records: Any) -> Criteria:
         subject(type(one).__name__, str(getattr(one, identity_name(type(one)))))
         for one in records
     ]
-    return Criteria(where=pairs[0] if len(pairs) == 1 else Any_(any=pairs))
+    return Criteria(selection=pairs[0] if len(pairs) == 1 else Any_(any=pairs))
 
 
 class EntityReads[T](Feature):
@@ -400,7 +398,7 @@ class EntityReads[T](Feature):
         read = (detail_of(entity) or Criteria()).replaced_by(asked)
         return read.model_copy(
             update={
-                "where": Node.combined(where, read.expression),
+                "selection": Node.combined(where, read.expression),
                 "pagination": Pagination(limit=limit),
                 "count": CountMode.NONE,
             }
@@ -458,7 +456,7 @@ class EntityReads[T](Feature):
         identity = identity_name(kind)
         wanted = list(dict.fromkeys(ids))
         criteria = Criteria(
-            where=Condition(field=identity, value=wanted, operator=Operator.IN),
+            selection=Condition(field=identity, value=wanted, operator=Operator.IN),
             pagination=Pagination(limit=max(len(wanted), 1)),
             count=CountMode.NONE,
         )
@@ -492,7 +490,7 @@ class EntityReads[T](Feature):
         Final: the values, each reference the record it names; a refusal points at the field
         and the item.
         """
-        annotations = annotations_of(owner)
+        annotations = model_of(owner).annotations
         resolved = dict(values)
         for name, value in values.items():
             attribute = relation_attribute(owner, name)
@@ -561,7 +559,7 @@ class EntityReads[T](Feature):
         """
         stored = self.stored(entity, key)
         record = stored if stored is not None else keyed(blank(entity), entity, key)
-        apply_values(record, self.referenced(type(record), draft.values), True)
+        apply_values(record, self.referenced(type(record), draft.values))
         answer = response.of(record, self.described(entity, criteria), criteria)
         answer.draft = DraftState(
             version=draft.version,
@@ -638,7 +636,7 @@ class EntityReads[T](Feature):
             drafted_page(Invoice, Criteria())
                 ->  EntityCollection(items=(<F-9 drafted>, <F-7 drafted>),
                                      count=Count(2, exact=True), meta=<Invoice's>)
-            drafted_page(Invoice, Criteria(where=Condition(field="total",
+            drafted_page(Invoice, Criteria(selection=Condition(field="total",
                                                            operator=Operator.GT, value=100)))
                 ->  only the drafted invoices above 100
 
@@ -662,7 +660,7 @@ class EntityReads[T](Feature):
             key = subject.removeprefix(prefix)
             stored = self.stored(entity, key)
             record = stored if stored is not None else keyed(blank(entity), entity, key)
-            apply_values(record, self.referenced(type(record), draft.values), True)
+            apply_values(record, self.referenced(type(record), draft.values))
             records.append(record)
         page = EntityCollection(items=tuple(records)).filtered_by(criteria.expression)
         for sort in reversed(criteria.order):
@@ -683,7 +681,7 @@ class EntityReads[T](Feature):
         """The page the criteria asks for, each record as the entity reads it unless the
         criteria names what to bring. The store applies the entity's order when none is named.
 
-            drafts_only = Criteria(where=Condition(field="state", value="draft"))
+            drafts_only = Criteria(selection=Condition(field="state", value="draft"))
             QuerySearchInvoices(criteria=drafts_only)
                 ->  ResponseInvoices(invoices=[…], cursor=…, count=…)
             QuerySearchInvoices(criteria=…, drafts=True)
@@ -730,7 +728,7 @@ class EntityReads[T](Feature):
             found = self.reads_from().search(
                 entity,
                 Criteria(
-                    where=Condition(field=key_of(entity), value=key),
+                    selection=Condition(field=key_of(entity), value=key),
                     pagination=Pagination(limit=1),
                     count=CountMode.NONE,
                 ),
@@ -744,7 +742,7 @@ class EntityReads[T](Feature):
             where = Node.combined(
                 where, Condition(field="name", value=cast(Any, wanted), operator=Operator.IN)
             )
-        criteria = Criteria(where=where, order=Sort.parse("id")).replaced_by(dto.criteria)
+        criteria = Criteria(selection=where, order=Sort.parse("id")).replaced_by(dto.criteria)
         return response.of(self.reads_from().search(events, criteria), criteria)
 
     def preview(self, dto: Any) -> Any:
@@ -765,8 +763,10 @@ class EntityReads[T](Feature):
         4. Events the domain recorded are dropped: nothing happened.
         Final: the values that differ from what the form sent, compared as values (`0` and
         `0.00` are one amount) — never a field the framework writes, which a form must not
-        send back —, each field's state, the warnings. A new record with nothing changed
-        answers every value.
+        send back —, each field's state, the warnings. A list of records is compared as it is
+        written once the form's values are in, so its lines come back when a computation moved
+        one of them — each with its identity, which the warnings name it by. A new record with
+        nothing changed answers every value.
         """
         entity, response = declared_by(type(dto))
         with read_only() as warnings:
@@ -774,18 +774,28 @@ class EntityReads[T](Feature):
             sent = held(record)
             apply_values(record, self.referenced(type(record), dto.values))
             sent.update({name: getattr(record, name) for name in dto.values})
+            lists = {
+                name: one
+                for name, one in dumped(record).items()
+                if isinstance(sent.get(name), list)
+            }
             recompute(record, dto.changed)
             pull = getattr(record, "pull_events", None)
             if callable(pull):
                 pull()
-        system = framework_fields(entity)
+        system = model_of(entity).framework_fields
         values = {name: one for name, one in dumped(record).items() if name not in system}
         if dto.changed or dto.id is not None:
             now = held(record)
             values = {
                 name: one
                 for name, one in values.items()
-                if name not in sent or sent[name] != now.get(name)
+                if name not in sent
+                or (
+                    one != lists.get(name)
+                    if isinstance(now.get(name), list)
+                    else sent[name] != now.get(name)
+                )
             }
         return response(values=values, states=states_of(record), warnings=list(warnings))
 
@@ -832,7 +842,7 @@ def with_computed_relations(entity: type, criteria: Criteria) -> Criteria:
     Context: only what is missing is added, sorted by name, after what the caller named; the
     criteria comes back as it is when nothing is missing.
     """
-    read = set(owned(entity))
+    read = set(model_of(entity).owned)
     named = criteria.specification.root if criteria.specification is not None else {}
     missing = read - set(named)
     if not missing:
@@ -972,7 +982,7 @@ def dumped(record: Any) -> dict[str, Any]:
     Final: dumped as JSON through the field's own adapter, inside `writing_out()` so nested
     records do not try to resolve what nobody loaded.
     """
-    annotations = annotations_of(type(record))
+    annotations = model_of(type(record)).annotations
     written: dict[str, Any] = {}
     for name, annotation in annotations.items():
         try:
@@ -999,18 +1009,19 @@ def states_of(record: Any) -> dict[str, FieldState]:
 
         Invoice(state=confirmed, lines=[line 1, line 2])
             ->  {"partner_id": FieldState(readonly=True), …,
-                 "lines": FieldState(items=[{"quantity": FieldState(…), …}, {…}])}
+                 "lines": FieldState(items={"0192…": {"quantity": FieldState(…), …}, …})}
 
     1. Each field read-only, required and visible as its class declared, the conditions
        evaluated over this record.
     2. A list of records it holds, already read — the lines —, each one's own states, by
-       the line's class; a relation nobody read is skipped, as `dumped` does, and so are the
-       records a many-to-many references (`named_by_id`): another aggregate's, not parts.
+       the line's class, under the line's identity — its position when it has none; a relation
+       nobody read is skipped, as `dumped` does, and so are the records a many-to-many
+       references (`named_by_id`): another aggregate's, not parts.
     Final: the states by field name.
     """
-    presented = presentation_of(type(record))
+    presented = model_of(type(record)).presented
     states: dict[str, FieldState] = {}
-    for name in annotations_of(type(record)):
+    for name in model_of(type(record)).annotations:
         try:
             value = getattr(record, name)
         except exceptions.RelationNotResolved:
@@ -1029,6 +1040,14 @@ def states_of(record: Any) -> dict[str, FieldState]:
             or _holds(record, presented.required_when.get(name)),
             visible=name not in presented.visible_when
             or _holds(record, presented.visible_when[name]),
-            items=[states_of(one) for one in held if dataclasses.is_dataclass(one)],
+            items={
+                (
+                    str(getattr(one, identity_name(type(one))))
+                    if identity_name(type(one)) in model_of(type(one)).framework_fields
+                    else str(position)
+                ): states_of(one)
+                for position, one in enumerate(held)
+                if dataclasses.is_dataclass(one)
+            },
         )
     return states

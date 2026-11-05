@@ -40,7 +40,7 @@ def every_line(database, census) -> Lines:
     """The whole set of lines in memory, loaded once for the module: what the SQL answers
     are compared against."""
     return Repository(database).fetch_all(
-        Lines, Criteria(where=POPULATION, pagination=Pagination(limit=1000))
+        Lines, Criteria(selection=POPULATION, pagination=Pagination(limit=1000))
     )
 
 
@@ -48,7 +48,9 @@ def test_a_keyset_walk_visits_every_line_once_in_order(
     ledger: Repository, census: Census, timed
 ):
     criteria = Criteria(
-        where=POPULATION, order=Sort.parse("-posted_at"), pagination=Pagination(limit=PAGE)
+        selection=POPULATION,
+        order=Sort.parse("-posted_at"),
+        pagination=Pagination(limit=PAGE),
     )
 
     with timed("keyset walk, pages of 500", census.lines):
@@ -63,8 +65,8 @@ def test_a_keyset_walk_visits_every_line_once_in_order(
 
 
 def test_the_capped_count_says_when_it_stopped_counting(ledger: Repository, census: Census):
-    capped = ledger.count(Line, Criteria(where=POPULATION))
-    exact = ledger.count(Line, Criteria(where=POPULATION, count=CountMode.EXACT))
+    capped = ledger.count(Line, Criteria(selection=POPULATION))
+    exact = ledger.count(Line, Criteria(selection=POPULATION, count=CountMode.EXACT))
 
     assert exact.value == census.lines and exact.exact
     if census.lines <= DEFAULT_COUNT_CAP:
@@ -108,7 +110,9 @@ def test_the_sql_answer_is_the_in_memory_answer(
     )
     assert not dropped
 
-    fetched = ledger.fetch_all(Lines, Criteria(where=read, pagination=Pagination(limit=1000)))
+    fetched = ledger.fetch_all(
+        Lines, Criteria(selection=read, pagination=Pagination(limit=1000))
+    )
     expected = {line.id for line in every_line if Evaluation.matches(line, read)}
 
     assert expected, "a filter that matches nothing proves nothing"
@@ -133,15 +137,15 @@ def test_set_algebra_over_two_readings_is_one_combined_reading(
     journal = masters["journals"][0]
     account = masters["accounts"][0]
     of_journal = ledger.fetch_all(
-        Lines, Criteria(where=Condition(field="journal_id", value=journal.id))
+        Lines, Criteria(selection=Condition(field="journal_id", value=journal.id))
     )
     of_account = ledger.fetch_all(
-        Lines, Criteria(where=Condition(field="account_id", value=account.id))
+        Lines, Criteria(selection=Condition(field="account_id", value=account.id))
     )
     combined = ledger.fetch_all(
         Lines,
         Criteria(
-            where=All(
+            selection=All(
                 all=[
                     Condition(field="journal_id", value=journal.id),
                     Condition(field="account_id", value=account.id),
@@ -157,7 +161,7 @@ def test_set_algebra_over_two_readings_is_one_combined_reading(
 
 def test_the_entries_of_one_month_page_by_fifty(ledger: Repository, census: Census):
     month = Criteria(
-        where=Condition(
+        selection=Condition(
             field="posted_at",
             value=["2024-03-01T00:00:00", "2024-04-01T00:00:00"],
             operator=Operator.BETWEEN,
@@ -187,7 +191,7 @@ def test_a_keyset_walk_ordered_by_an_amount_visits_every_line(
 ):
     """`debit` is a Numeric column: the cursor has to carry a Decimal and give it back as one."""
     criteria = Criteria(
-        where=POPULATION, order=Sort.parse("-debit"), pagination=Pagination(limit=PAGE)
+        selection=POPULATION, order=Sort.parse("-debit"), pagination=Pagination(limit=PAGE)
     )
 
     visited = [line for page in ledger.stream(Lines, criteria) for line in page]

@@ -19,6 +19,9 @@
               },
               {
                 "$ref": "#/$defs/Not"
+              },
+              {
+                "$ref": "#/$defs/Through"
               }
             ]
           },
@@ -49,6 +52,9 @@
               },
               {
                 "$ref": "#/$defs/Not"
+              },
+              {
+                "$ref": "#/$defs/Through"
               }
             ]
           },
@@ -97,7 +103,7 @@
     "Criteria": {
       "additionalProperties": false,
       "properties": {
-        "where": {
+        "selection": {
           "anyOf": [
             {
               "$ref": "#/$defs/Condition"
@@ -112,12 +118,15 @@
               "$ref": "#/$defs/Not"
             },
             {
+              "$ref": "#/$defs/Through"
+            },
+            {
               "type": "null"
             }
           ],
           "default": null,
-          "description": "The filter: a `Condition`, or an `All`/`Any`/`Not` grouping more of them.\n\n**The declared type is exactly what is accepted.** No abbreviated spelling and no\nconversion, so pydantic and the type checker see the same thing and `criteria.where` reads\nwith an exhaustive `match`. All the validator does is build the nodes when the tree\narrives serialised from JSON — which is the same tree, not another form.",
-          "title": "Where"
+          "description": "The filter: a `Condition`, or an `All`/`Any`/`Not` grouping more of them.\n\n**The declared type is exactly what is accepted.** No abbreviated spelling and no\nconversion, so pydantic and the type checker see the same thing and `criteria.selection` reads\nwith an exhaustive `match`. All the validator does is build the nodes when the tree\narrives serialised from JSON — which is the same tree, not another form.",
+          "title": "Selection"
         },
         "order": {
           "default": [],
@@ -150,12 +159,6 @@
         "count": {
           "$ref": "#/$defs/CountMode",
           "default": "capped"
-        },
-        "meta": {
-          "default": true,
-          "description": "Whether the answer carries the model definition — what may be filtered, ordered and\nshown, and with which operators.\n\n**On by default, and off only when somebody says `meta=false`.** It was opt-in first, to\nsave the kilobyte and a half on every page of a listing. What that bought in bytes it cost\nin surprise: a client asking a resource got an answer it could not build a form, a column\nmenu or a filter from, and had to know to ask a second time for the part that explains the\nfirst. A door that describes itself is worth more than the kilobyte.",
-          "title": "Meta",
-          "type": "boolean"
         }
       },
       "title": "Criteria",
@@ -296,6 +299,9 @@
             },
             {
               "$ref": "#/$defs/Not"
+            },
+            {
+              "$ref": "#/$defs/Through"
             },
             {
               "type": "null"
@@ -493,6 +499,9 @@
             },
             {
               "$ref": "#/$defs/Not"
+            },
+            {
+              "$ref": "#/$defs/Through"
             }
           ],
           "title": "Negate"
@@ -852,8 +861,43 @@
         "$ref": "#/$defs/Criteria"
       },
       "default": {},
-      "description": "Field name → the criteria that says how to bring it.\n\n    in      {\"name\": {}, \"lines\": {\"pagination\": {\"limit\": 20}}}\n    out     Specification with two fields, the second carrying its own page\n\n**One type and no union**: every value is a `Criteria`, the same one as outside, so a\nconsumer deserialises `dict[str, Criteria]` in any language and never has to tell a string\nfrom an object. A scalar's is empty, because there is nothing to say about how to bring a\nnumber. A relation's carries where, order, pagination and its own specification, so the\nvocabulary inside a node is the vocabulary outside it, at any depth.\n\nA `RootModel` and not an object with one field inside: in JSON it is the bare mapping,\nwithout a key that means nothing, and in here it has the methods that belong to it.",
+      "description": "Field name → the criteria that says how to bring it.\n\n    in      {\"name\": {}, \"lines\": {\"pagination\": {\"limit\": 20}}}\n    out     Specification with two fields, the second carrying its own page\n\n**One type and no union**: every value is a `Criteria`, the same one as outside, so a\nconsumer deserialises `dict[str, Criteria]` in any language and never has to tell a string\nfrom an object. A scalar's is empty, because there is nothing to say about how to bring a\nnumber. A relation's carries selection, order, pagination and its own specification, so the\nvocabulary inside a node is the vocabulary outside it, at any depth.\n\nA `RootModel` and not an object with one field inside: in JSON it is the bare mapping,\nwithout a key that means nothing, and in here it has the methods that belong to it.",
       "title": "Specification",
+      "type": "object"
+    },
+    "Through": {
+      "additionalProperties": false,
+      "properties": {
+        "through": {
+          "title": "Through",
+          "type": "string"
+        },
+        "selection": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Condition"
+            },
+            {
+              "$ref": "#/$defs/All"
+            },
+            {
+              "$ref": "#/$defs/Any_"
+            },
+            {
+              "$ref": "#/$defs/Not"
+            },
+            {
+              "$ref": "#/$defs/Through"
+            }
+          ],
+          "title": "Selection"
+        }
+      },
+      "required": [
+        "through",
+        "selection"
+      ],
+      "title": "Through",
       "type": "object"
     },
     "Today": {
@@ -911,7 +955,7 @@
   "$ref": "#/$defs/Criteria",
   "examples": [
     {
-      "where": {
+      "selection": {
         "all": [
           {
             "field": "row_count",
@@ -966,11 +1010,10 @@
           }
         }
       },
-      "count": "capped",
-      "meta": true
+      "count": "capped"
     },
     {
-      "where": {
+      "selection": {
         "all": [
           {
             "field": "due",

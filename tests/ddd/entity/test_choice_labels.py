@@ -14,7 +14,7 @@ import pytest
 
 from sincpro_framework.ddd import MultiLanguage, exceptions
 from sincpro_framework.ddd.entity import Entity
-from sincpro_framework.ddd.entity.entity_meta import describe_class
+from sincpro_framework.ddd.metamodel import StoreFacts, description_of
 
 
 class Priority(StrEnum):
@@ -52,20 +52,22 @@ class Ticket(Entity):
 
 
 def test_a_field_that_says_nothing_is_called_what_its_enum_calls_itself():
-    fields = describe_class(Ticket, "id").fields
+    fields = description_of(Ticket, StoreFacts(identity="id")).fields
 
     assert fields["priority"].label == {"default": "Priority", "es": "Prioridad"}
     assert fields["escalation"].label == {"default": "Priority", "es": "Prioridad"}
 
 
 def test_the_field_own_label_wins_over_its_enum():
-    label = describe_class(Ticket, "id").fields["customer_priority"].label
+    label = (
+        description_of(Ticket, StoreFacts(identity="id")).fields["customer_priority"].label
+    )
 
     assert label == {"default": "Customer priority", "es": "Prioridad del cliente"}
 
 
 def test_every_field_of_the_enum_carries_what_each_value_is_called():
-    fields = describe_class(Ticket, "id").fields
+    fields = description_of(Ticket, StoreFacts(identity="id")).fields
     expected = {
         "low": {"default": "Low", "es": "Baja"},
         "high": {"default": "High", "es": "Alta"},
@@ -75,15 +77,15 @@ def test_every_field_of_the_enum_carries_what_each_value_is_called():
     assert fields["priority"].choice_labels == expected
     assert fields["customer_priority"].choice_labels == expected
     assert (
-        describe_class(Ticket, "id").model_dump(mode="json")["fields"]["priority"][
-            "choice_labels"
-        ]
+        description_of(Ticket, StoreFacts(identity="id")).model_dump(mode="json")["fields"][
+            "priority"
+        ]["choice_labels"]
         == expected
     )
 
 
 def test_an_enum_that_says_nothing_publishes_its_values_alone():
-    channel = describe_class(Ticket, "id").fields["channel"]
+    channel = description_of(Ticket, StoreFacts(identity="id")).fields["channel"]
 
     assert channel.choices == ["email", "phone"]
     assert channel.label == {} and channel.choice_labels == {}
@@ -107,7 +109,7 @@ def test_the_labels_follow_the_order_the_enum_declares_its_values_in():
     class Document(Entity):
         stage: Stage = Stage.DRAFT
 
-    stage = describe_class(Document, "id").fields["stage"]
+    stage = description_of(Document, StoreFacts(identity="id")).fields["stage"]
 
     assert stage.choices == ["draft", "review", "approved"]
     assert list(stage.choice_labels) == stage.choices
@@ -126,4 +128,4 @@ def test_a_value_the_enum_does_not_have_is_refused_when_described():
         state: Typo = Typo.OPEN
 
     with pytest.raises(exceptions.ProgrammingError, match="'opne'"):
-        describe_class(Case, "id")
+        description_of(Case, StoreFacts(identity="id"))

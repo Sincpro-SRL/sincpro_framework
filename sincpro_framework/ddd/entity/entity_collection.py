@@ -7,6 +7,7 @@ itself. See `docs/persistence/reference.md`.
 
 from collections.abc import Callable, Hashable, Iterable, Iterator
 from dataclasses import dataclass, fields, is_dataclass
+from functools import partial
 from typing import TYPE_CHECKING, Any, get_args, get_origin
 
 from sincpro_framework.ddd import exceptions
@@ -402,8 +403,9 @@ class EntityCollection[T]:
         >>> page.filtered_by(criteria.expression).ids
         ['ds_01b2…']
         """
+        program = Evaluation.program(expression)
         return self._derived(
-            record for record in self.items if Evaluation.matches(record, expression)
+            record for record in self.items if program(partial(getattr, record))
         )
 
     def partition(

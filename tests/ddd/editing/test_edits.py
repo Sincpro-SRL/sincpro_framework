@@ -36,6 +36,7 @@ from sincpro_framework.ddd.criteria import (
 )
 from sincpro_framework.ddd.entity import Entity
 from sincpro_framework.ddd.events import DomainEvent
+from sincpro_framework.ddd.metamodel import model_of
 
 
 @dataclass
@@ -121,6 +122,7 @@ ANA = {"tenant_id": "shop-1", "user_id": "ana"}
 BOB = {"tenant_id": "shop-1", "user_id": "bob"}
 ANA_ELSEWHERE = {"tenant_id": "shop-2", "user_id": "ana"}
 LINES = [{"product": "cuaderno", "qty": 10, "price": "12.50"}]
+VERSION = model_of(Invoice).fingerprint
 
 
 def drafted(answer: ResponseRecord) -> DraftState:
@@ -429,7 +431,9 @@ def test_what_was_i_editing_is_a_search_over_the_cashiers_drafts(shop: Shop):
     by_partner = shop.drafts(ANA, Criteria(order=Sort.parse("partner_id"))).invoices
     big = shop.drafts(
         ANA,
-        Criteria.model_validate({"where": {"field": "total", "operator": ">", "value": 100}}),
+        Criteria.model_validate(
+            {"selection": {"field": "total", "operator": ">", "value": 100}}
+        ),
     ).invoices
 
     assert [one.id for one in mine] == [invoice.id, "0192ffff"]
@@ -498,7 +502,7 @@ PARTNER_ONLY = Criteria(specification=Specification.model_validate({"partner_id"
 
 
 def test_a_draft_goes_out_as_the_stored_record_does_for_the_same_criteria(shop: Shop):
-    """One question, one shape: the fields the criteria names and the model's definition, whether
+    """One question, one shape: the fields the criteria names and the model's version, whether
     the answer is the stored record or the caller's draft — only `draft` tells them apart."""
     invoice = a_stored_invoice(shop)
     shop.edit(ANA, id=invoice.id, values={"partner_id": "p2"})
@@ -511,20 +515,20 @@ def test_a_draft_goes_out_as_the_stored_record_does_for_the_same_criteria(shop: 
     listed_drafts = shop.drafts(ANA, PARTNER_ONLY).model_dump(mode="json")
 
     assert sorted(drafted_one["invoice"]) == sorted(stored["invoice"]) == ["id", "partner_id"]
-    assert drafted_one["entity_meta_data"] == stored["entity_meta_data"] is not None
+    assert drafted_one["model_version"] == stored["model_version"] == VERSION
     assert (stored["invoice"]["partner_id"], drafted_one["invoice"]["partner_id"]) == (
         "p1",
         "p2",
     )
     assert sorted(listed_drafts["invoices"][0]) == sorted(listed["invoices"][0])
-    assert listed_drafts["entity_meta_data"] == listed["entity_meta_data"] is not None
+    assert listed_drafts["model_version"] == listed["model_version"] == VERSION
     assert (stored["draft"], drafted_one["draft"]["version"] > 0) == (None, True)
 
 
-def test_an_edit_answers_the_record_whole_with_the_models_definition(shop: Shop):
+def test_an_edit_answers_the_record_whole_with_the_models_version(shop: Shop):
     answered = shop.edit(ANA, values={"partner_id": "p1", "lines": LINES}).model_dump(
         mode="json"
     )
 
     assert answered["invoice"]["lines"][0]["product"] == "cuaderno"
-    assert answered["entity_meta_data"]["fields"]["total"] is not None
+    assert answered["model_version"] == VERSION

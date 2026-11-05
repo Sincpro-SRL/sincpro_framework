@@ -195,7 +195,7 @@ model is an ordinary aggregate saved beside the events, and the events stay quer
 same `Criteria` as everything else:
 
 ```python
-repository.measures(MoneyDeposited, Criteria(where=Condition(field="entity_id", value="acc-1")),
+repository.measures(MoneyDeposited, Criteria(selection=Condition(field="entity_id", value="acc-1")),
                     total=("count", "id"))
 ```
 

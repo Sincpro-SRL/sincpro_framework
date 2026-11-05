@@ -1,5 +1,6 @@
 """One comparison, the way the translator would have SQL answer it."""
 
+from collections.abc import Callable
 from typing import Any
 
 from sincpro_framework.ddd import exceptions
@@ -77,3 +78,57 @@ def compare(actual: Any, operator: Operator, value: Any) -> bool:
             raise exceptions.InvalidCriteria(
                 f"no in-memory evaluation for operator '{operator}'"
             )
+
+
+def comparator(operator: Operator, value: Any) -> Callable[[Any], bool]:
+    """`compare` with the operator and the value decided once: the function a compiled filter
+    calls for every record, answering exactly as `compare(actual, operator, value)` does.
+
+        comparator(Operator.GT, 1)(3)                  ->  True
+        comparator(Operator.GT, 1)(None)               ->  False    NULL compares to nothing
+        comparator(Operator.LIKE, "PRO")("Sincpro")    ->  True     the value lowered once
+
+    Context: what `compare` asks of every record — which operator, whether the value is the empty
+    list, the value's lower case — does not change between records, so it is asked here once.
+    """
+    if operator is Operator.IS_NULL:
+        if value:
+            return lambda actual: actual is None
+        return lambda actual: actual is not None
+    if operator is Operator.EQ and _is_empty_list(value):
+        return lambda actual: actual is None or actual == []
+    if operator is Operator.NE and _is_empty_list(value):
+        return lambda actual: actual is not None and actual != []
+    match operator:
+        case Operator.EQ:
+            return lambda actual: actual is not None and actual == value
+        case Operator.NE:
+            return lambda actual: actual is not None and actual != value
+        case Operator.IN:
+            return lambda actual: actual is not None and actual in value
+        case Operator.NOT_IN:
+            return lambda actual: actual is not None and actual not in value
+        case Operator.GT:
+            return lambda actual: actual is not None and actual > value
+        case Operator.GTE:
+            return lambda actual: actual is not None and actual >= value
+        case Operator.LT:
+            return lambda actual: actual is not None and actual < value
+        case Operator.LTE:
+            return lambda actual: actual is not None and actual <= value
+        case Operator.BETWEEN:
+            low, high = value[0], value[1]
+            return lambda actual: actual is not None and low <= actual <= high
+        case Operator.LIKE:
+            lowered = str(value).lower()
+            return lambda actual: actual is not None and lowered in str(actual).lower()
+        case Operator.STARTS_WITH:
+            lowered = str(value).lower()
+            return lambda actual: actual is not None and str(actual).lower().startswith(
+                lowered
+            )
+        case Operator.CONTAINS:
+            return lambda actual: actual is not None and value in actual
+        case Operator.NOT_CONTAINS:
+            return lambda actual: actual is not None and value not in actual
+    raise exceptions.InvalidCriteria(f"no in-memory evaluation for operator '{operator}'")

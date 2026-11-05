@@ -90,14 +90,16 @@ def test_a_reading_leaves_the_archived_out_unless_it_asks(clients):
     archived = clients.search(
         Clients,
         Criteria(
-            where=Condition(field="archived_at", operator=Operator.IS_NULL, value=False)
+            selection=Condition(field="archived_at", operator=Operator.IS_NULL, value=False)
         ),
     )
     assert [one.name for one in archived] == ["Gone"]
 
     both = clients.search(
         Clients,
-        Criteria(where=Condition(field="archived_at", operator=Operator.IS_NULL, value=True)),
+        Criteria(
+            selection=Condition(field="archived_at", operator=Operator.IS_NULL, value=True)
+        ),
     )
     assert [one.name for one in both] == ["Live"]
 

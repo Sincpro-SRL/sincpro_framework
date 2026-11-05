@@ -360,6 +360,18 @@ def test_routes_mount_into_an_app_of_the_projects_with_its_middleware() -> None:
     assert seen == ["/api/sales/command-list-orders", "/api/openapi.json"]
 
 
+def test_the_document_is_tagged_by_its_content_and_a_client_that_holds_it_gets_304(
+    client: TestClient,
+) -> None:
+    first = client.get("/openapi.json")
+    tag = first.headers["etag"]
+
+    assert client.get("/openapi.json").headers["etag"] == tag
+    revalidated = client.get("/openapi.json", headers={"If-None-Match": tag})
+    assert (revalidated.status_code, revalidated.content) == (304, b"")
+    assert client.get("/openapi.json", headers={"If-None-Match": '"old"'}).status_code == 200
+
+
 def test_the_docs_page_and_the_health_check_are_served(client: TestClient) -> None:
     assert "swagger-ui" in client.get("/docs").text
     assert client.get("/healthz").json() == {"status": "ok"}

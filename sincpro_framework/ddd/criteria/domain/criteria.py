@@ -44,7 +44,7 @@ class Bucket(DataTransferObject):
     """One group: what its rows share, how many there are, and how to see them.
 
         out     Bucket(field='produced_by', value=None, count=187,
-                       measures={'filas': 4012933}, criteria=Criteria(where=…))
+                       measures={'filas': 4012933}, criteria=Criteria(selection=…))
 
     `criteria` is the whole point. It is this reading plus «and this bucket's value», so
     opening the group is `self.repository.search(Dataset, bucket.criteria)` and nothing else — no client
@@ -88,7 +88,7 @@ class Specification(RootModel[dict[str, "Criteria"]]):
     **One type and no union**: every value is a `Criteria`, the same one as outside, so a
     consumer deserialises `dict[str, Criteria]` in any language and never has to tell a string
     from an object. A scalar's is empty, because there is nothing to say about how to bring a
-    number. A relation's carries where, order, pagination and its own specification, so the
+    number. A relation's carries selection, order, pagination and its own specification, so the
     vocabulary inside a node is the vocabulary outside it, at any depth.
 
     A `RootModel` and not an object with one field inside: in JSON it is the bare mapping,
@@ -145,16 +145,16 @@ class Specification(RootModel[dict[str, "Criteria"]]):
 
 # No class docstring: pydantic publishes it as the description in the committed
 # `criteria.schema.json` contract, which the TypeScript package copies.
-# One reading of an aggregate: which rows (`where`), in what order, which page, what of each
+# One reading of an aggregate: which rows (`selection`), in what order, which page, what of each
 # (`specification`), and how to group them when counted instead of listed. The same object on
 # every wire, and strict: a key it does not have is refused. `Criteria()` is the store's first
 # page of everything, in the store's order.
 class Criteria(Strict):
-    where: Expression | None = None
+    selection: Expression | None = None
     """The filter: a `Condition`, or an `All`/`Any`/`Not` grouping more of them.
 
     **The declared type is exactly what is accepted.** No abbreviated spelling and no
-    conversion, so pydantic and the type checker see the same thing and `criteria.where` reads
+    conversion, so pydantic and the type checker see the same thing and `criteria.selection` reads
     with an exhaustive `match`. All the validator does is build the nodes when the tree
     arrives serialised from JSON — which is the same tree, not another form."""
 
@@ -179,17 +179,7 @@ class Criteria(Strict):
 
     count: CountMode = CountMode.CAPPED
 
-    meta: bool = True
-    """Whether the answer carries the model definition — what may be filtered, ordered and
-    shown, and with which operators.
-
-    **On by default, and off only when somebody says `meta=false`.** It was opt-in first, to
-    save the kilobyte and a half on every page of a listing. What that bought in bytes it cost
-    in surprise: a client asking a resource got an answer it could not build a form, a column
-    menu or a filter from, and had to know to ask a second time for the part that explains the
-    first. A door that describes itself is worth more than the kilobyte."""
-
-    @field_validator("where", mode="before")
+    @field_validator("selection", mode="before")
     @classmethod
     def _reads_the_filter(cls, value: Any, info: ValidationInfo) -> Any:
         """The filter in the one form there is — and in its serialisation, which is the same thing.
@@ -200,7 +190,7 @@ class Criteria(Strict):
             in      '{"field": "row_count", "operator": ">", "value": 1000}'      what a URL carries
             out     Condition(row_count, 1000, GT)
 
-        >>> Criteria(where={'field': 'row_count', 'operator': '>', 'value': 1000}).expression
+        >>> Criteria(selection={'field': 'row_count', 'operator': '>', 'value': 1000}).expression
         Condition(field='row_count', value=1000, operator=<Operator.GT: '>'>)
         """
         if isinstance(value, str):
@@ -208,7 +198,7 @@ class Criteria(Strict):
                 value = json.loads(value)
             except ValueError as error:
                 raise exceptions.InvalidCriteria(
-                    f"'where' does not read as JSON: {error}"
+                    f"'selection' does not read as JSON: {error}"
                 ) from error
 
         return Node.read(value, tolerates(info))
@@ -282,20 +272,20 @@ class Criteria(Strict):
 
     @property
     def expression(self) -> Expression | None:
-        """The filter. The name internals read it by, because `where` is what a caller writes.
+        """The filter. The name internals read it by, because `selection` is what a caller writes.
 
-        >>> Criteria(where={'field': 'row_count', 'operator': '>', 'value': 1000}).expression
+        >>> Criteria(selection={'field': 'row_count', 'operator': '>', 'value': 1000}).expression
         Condition(field='row_count', value=1000, operator=<Operator.GT: '>'>)
         >>> Criteria().expression is None
         True
         """
-        return cast(Expression | None, self.where)
+        return cast(Expression | None, self.selection)
 
     def merged_with(self, other: "Criteria") -> "Criteria":
         """This criteria plus a more specific one.
 
-            in      Criteria(where={'field': 'a', 'operator': '=', 'value': 1}, limit=20) + Criteria(where={'field': 'b', 'operator': '=', 'value': 2})
-            out     Criteria(where=All([a==1, b==2]), limit=20)
+            in      Criteria(selection={'field': 'a', 'operator': '=', 'value': 1}, limit=20) + Criteria(selection={'field': 'b', 'operator': '=', 'value': 2})
+            out     Criteria(selection=All([a==1, b==2]), limit=20)
 
         The rule has to be total or two readings quietly disagree.
 
@@ -308,7 +298,7 @@ class Criteria(Strict):
         filter, and a merge that changed either would page through a set that no longer exists.
         """
         merged = Criteria(
-            where=Node.combined(self.expression, other.expression),
+            selection=Node.combined(self.expression, other.expression),
             order=other.order or self.order,
             pagination=(
                 other.pagination
@@ -324,10 +314,6 @@ class Criteria(Strict):
             ),
             grouping=other.grouping if other.grouping.asked else self.grouping,
             count=other.count,
-            # AND, not OR: with the definition travelling by default, an OR would mean nobody
-            # could ever turn it off — the more specific criteria would always be overruled by
-            # the default of the one it refines.
-            meta=self.meta and other.meta,
         )
         # What either side asked stays asked, and nothing more: a merge must not turn an
         # untouched default into a request that would hide the entity's own (`replaced_by`).
@@ -355,7 +341,7 @@ class Criteria(Strict):
             name: getattr(other if name in asked else self, name)
             for name in Criteria.model_fields
         }
-        values["where"] = Node.combined(self.expression, other.expression)
+        values["selection"] = Node.combined(self.expression, other.expression)
         return Criteria.model_construct(self.model_fields_set | asked, **values)
 
 

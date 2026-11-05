@@ -35,7 +35,7 @@ with the row and is filtered, ordered and grouped like a column:
 from sincpro_framework.ddd import Condition, Criteria, Operator
 from sincpro_framework.ddd.criteria import Grouping, GroupingLevel, Measure
 
-owing = Criteria(where=Condition(field="balance", operator=Operator.GT, value=0))
+owing = Criteria(selection=Condition(field="balance", operator=Operator.GT, value=0))
 
 by_owner = Criteria(
     grouping=Grouping(

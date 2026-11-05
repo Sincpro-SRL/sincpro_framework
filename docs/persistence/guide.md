@@ -281,7 +281,7 @@ repository.archive(luis)
 assert luis.id not in [customer.id for customer in repository.search(Customers).items]
 
 archived = Criteria(
-    where=Condition(field="archived_at", operator=Operator.IS_NULL, value=False)
+    selection=Condition(field="archived_at", operator=Operator.IS_NULL, value=False)
 )
 assert [customer.name for customer in repository.search(Customers, archived).items] == ["Luis"]
 ```
@@ -315,19 +315,19 @@ Inside the block, relations load lazily on first touch; outside it, only what a
 The short questions:
 
 ```python
-assert repository.exists(Invoice, Criteria(where=Condition(field="number", value="F-001")))
+assert repository.exists(Invoice, Criteria(selection=Condition(field="number", value="F-001")))
 assert repository.get_by(Invoice, number="F-404") is None
 assert repository.count(Invoice).value == 4
 assert sorted(repository.pluck(Invoice, "number")) == ["F-001", "F-002", "F-003", "F-004"]
 assert sorted(repository.distinct(Invoice, "state")) == ["draft", "posted"]
 ```
 
-**`Criteria`** is the one way to ask: `where`, `order`, `pagination`, `specification`. It is a
+**`Criteria`** is the one way to ask: `selection`, `order`, `pagination`, `specification`. It is a
 DTO, so it can arrive as JSON from a screen or another service and be validated:
 
 ```python
 big_ones = Criteria.model_validate({
-    "where": {"field": "total", "operator": ">=", "value": 75},
+    "selection": {"field": "total", "operator": ">=", "value": 75},
     "order": [{"field": "total", "descending": True}],
     "pagination": {"limit": 2},
 })
@@ -363,7 +363,7 @@ default), `!=`, `>`, `>=`, `<`, `<=`, `in`, `not in`, `like`, `contains`, `not c
 
 ```python
 anas_drafts = Criteria.model_validate({
-    "where": {"all": [
+    "selection": {"all": [
         {"field": "customer_id", "value": ana.id},
         {"field": "state", "value": "draft"},
     ]},
@@ -390,7 +390,7 @@ assert repository.measures(Invoice, None, total=("sum", "total")) == {"total": 4
 see — and only write — what the criteria allows. The usual case is a tenant:
 
 ```python
-anas_books = repository.narrowed(Criteria(where=Condition(field="customer_id", value=ana.id)))
+anas_books = repository.narrowed(Criteria(selection=Condition(field="customer_id", value=ana.id)))
 assert anas_books.count(Invoice).value == 3
 ```
 
@@ -412,7 +412,7 @@ class InvoiceBook(DatabaseAggregateRepository[Invoice]):
 
     def drafts_of(self, customer: Customer) -> EntityCollection[Invoice]:
         return self.search(Criteria.model_validate({
-            "where": {"all": [
+            "selection": {"all": [
                 {"field": "customer_id", "value": customer.id},
                 {"field": "state", "value": "draft"},
             ]},
@@ -447,7 +447,7 @@ invoices = repository.search(Invoices, with_customer).items
 assert invoices[0].customer.name == "Ana"
 
 customers_with_invoices = Criteria.model_validate({
-    "where": {"field": "name", "value": "Ana"},
+    "selection": {"field": "name", "value": "Ana"},
     "specification": {
         "invoices": {"order": [{"field": "number"}], "pagination": {"limit": 2}},
     },
@@ -671,7 +671,7 @@ payment.amount = 130
 repository.save(payment)                    # the payment, and its PaymentUpdated, one commit
 
 about_the_payment = Criteria(
-    where=Condition(field="entity_id", value=payment.id), order=Sort.parse("id")
+    selection=Condition(field="entity_id", value=payment.id), order=Sort.parse("id")
 )
 [stored] = repository.fetch_all(PaymentUpdated, about_the_payment).items   # its history
 assert stored.changes == {"amount": (120, 130)}
@@ -840,7 +840,7 @@ published it, in a unit of work of its own.
 Both are on the row, so what never went out is a `Criteria` over the same repository:
 
 ```python
-never_sent = Criteria(where=Condition(field="delivered_at", operator=Operator.IS_NULL, value=True))
+never_sent = Criteria(selection=Condition(field="delivered_at", operator=Operator.IS_NULL, value=True))
 assert delivering.count(InvoiceSent, never_sent).value == 0
 ```
 

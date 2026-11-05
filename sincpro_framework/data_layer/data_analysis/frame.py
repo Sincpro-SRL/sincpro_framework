@@ -29,6 +29,7 @@ from sincpro_framework.ddd.criteria import (
     Evaluation,
     Expression,
     Not,
+    Through,
 )
 
 WIDER = {
@@ -153,7 +154,8 @@ def _coerced(
         {"field": "qty", "operator": ">", "value": "3"}  ->  Condition(qty > 3)   (an integer)
 
     A condition on a column the frame does not have is refused as `KeyError`; a value that is
-    not of its column's type as `ValueError`, naming both.
+    not of its column's type as `ValueError`, naming both; a filter that crosses a relation as
+    `ValueError` too — a frame holds columns.
     """
     match expression:
         case Condition():
@@ -177,6 +179,11 @@ def _coerced(
             return Any_(any=[_coerced(one, kinds, samples) for one in expression.any])
         case Not():
             return Not(negate=_coerced(expression.negate, kinds, samples))
+        case Through():
+            raise ValueError(
+                f"a frame holds columns, not relations: {expression.through} cannot be crossed "
+                "here — narrow the read that fills the frame instead"
+            )
 
 
 @dataclass(frozen=True)
@@ -357,7 +364,7 @@ class DataFrame:
                 f"this frame holds {len(self)} rows of a read that has more — fetch_all it before "
                 "narrowing, or read the narrower filter as its own query"
             )
-        expression = Criteria.model_validate({"where": where}).expression
+        expression = Criteria.model_validate({"selection": where}).expression
         rows = self.rows()
         kinds = dict(zip(self.columns, self.types))
         samples = {
@@ -365,7 +372,8 @@ class DataFrame:
             for name, column in zip(self.columns, self.values)
         }
         condition = _coerced(expression, kinds, samples) if expression is not None else None
-        matching = [row for row in rows if Evaluation.holds(condition, row.get)]
+        program = Evaluation.program(condition)
+        matching = [row for row in rows if program(row.get)]
         combined = {"all": [self.where, where]} if self.where else where
         return self._with_rows(matching, combined)
 

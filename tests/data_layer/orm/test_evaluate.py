@@ -32,7 +32,7 @@ EVERYTHING = ROW_COUNT + 10
 def in_sql(store, expression) -> set[str]:
     return set(
         store.search(
-            Things, Criteria(where=expression, pagination=Pagination(limit=EVERYTHING))
+            Things, Criteria(selection=expression, pagination=Pagination(limit=EVERYTHING))
         ).ids
     )
 

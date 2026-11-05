@@ -3,7 +3,7 @@ bounded context already has — for when the domain wants its questions named.
 
     class Invoices(AggregateRepository[Invoice]):
         def overdue(self, today: date) -> EntityCollection[Invoice]:
-            return self.search(Criteria(where=Condition(field="due", operator="<", value=today)))
+            return self.search(Criteria(selection=Condition(field="due", operator="<", value=today)))
 
     invoices = Invoices(self.repository)
     invoice = invoices.get(invoice_id)            no type to pass: the aggregate is the class's

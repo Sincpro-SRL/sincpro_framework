@@ -402,7 +402,7 @@ def bucketed(
                 opens[path[:-1]]
                 if not level.opens
                 else opens[path[:-1]].merged_with(
-                    Criteria(where=sql_translator.bucket_condition(level, path[-1]))
+                    Criteria(selection=sql_translator.bucket_condition(level, path[-1]))
                 )
             ).model_copy(update={"grouping": Grouping()})
 

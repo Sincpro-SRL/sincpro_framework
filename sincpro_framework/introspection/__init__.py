@@ -8,6 +8,8 @@ needs to read the registries. Nobody owns this; everybody reads it.
     dtos(billing)["CommandIssue"].type                    ->  CommandIssue
     operations_of(billing)["CommandIssue"].required_input ->  {"invoice_id"}
     operations_of(forge)["CommandMoveIssue"].entities     ->  (Issue, Project)
+    metamodel_of(billing)["models"]["Invoice"]            ->  its contract: JSON Schema + x-sincpro
+    export_metamodel(billing, "web/metamodel.json")       ->  its version, the file written
 """
 
 from sincpro_framework.introspection.entity_tags import entity_tags
@@ -21,6 +23,7 @@ from sincpro_framework.introspection.inspector import (
     dtos,
     features,
 )
+from sincpro_framework.introspection.metamodel import export_metamodel, metamodel_of
 from sincpro_framework.introspection.operations import OperationDescription, operations_of
 
 __all__ = [
@@ -33,6 +36,8 @@ __all__ = [
     "describe",
     "dtos",
     "entity_tags",
+    "export_metamodel",
     "features",
+    "metamodel_of",
     "operations_of",
 ]

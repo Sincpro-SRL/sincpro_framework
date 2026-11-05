@@ -42,6 +42,12 @@ class FormWarning(DataTransferObject):
     message: str
     field: str | None = None
     path: tuple[str | int, ...] = ()
+    rule: str | None = None
+    """The rule that warned (`Sale.delivery_when_confirmed`), when an `@check` did; `None` for
+    advice the domain gave with `warn_form`."""
+    blocks_save: bool = False
+    """Whether saving the record as it is would be refused: an `@check` that fails here fails the
+    save; `warn_form` only advises."""
 
 
 _WARNINGS: ContextVar[list[FormWarning] | None] = ContextVar(
@@ -103,19 +109,31 @@ def located(path: tuple[str | int, ...]) -> tuple[str | int, ...]:
     return (*_AT.get(), *path)
 
 
-def warn_form_at(message: str, path: tuple[str | int, ...]) -> None:
+def warn_form_at(
+    message: str,
+    path: tuple[str | int, ...],
+    rule: str | None = None,
+    blocks_save: bool = False,
+) -> None:
     """A warning to the form pointing at `path` inside the aggregate, already located — what a
     rule that points into one of its lines gives. Collected inside `read_only()`, ignored
     outside it.
 
-        warn_form_at("name repeated", ("repositories", 3, "name"))
-            ->  FormWarning(field="repositories", path=("repositories", 3, "name"))
+        warn_form_at("name repeated", ("repositories", 3, "name"), "Project.unique_names", True)
+            ->  FormWarning(field="repositories", path=("repositories", 3, "name"),
+                            rule="Project.unique_names", blocks_save=True)
     """
     collected = _WARNINGS.get()
     if collected is None:
         return
     collected.append(
-        FormWarning(message=message, field=str(path[0]) if path else None, path=path)
+        FormWarning(
+            message=message,
+            field=str(path[0]) if path else None,
+            path=path,
+            rule=rule,
+            blocks_save=blocks_save,
+        )
     )
 
 

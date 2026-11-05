@@ -79,7 +79,7 @@ def test_a_filter_is_answered_by_the_same_evaluator_the_engine_is_checked_agains
     ledger, accounts
 ):
     asked = Criteria(
-        where=All(
+        selection=All(
             all=[
                 Condition(field="kind", value="asset"),
                 Condition(field="balance", value=30, operator=Operator.GT),
@@ -116,7 +116,9 @@ def test_an_offset_skips_and_the_count_is_still_the_whole_set(ledger, accounts):
 
 
 def test_what_the_aggregate_cannot_answer_is_dropped_and_said(ledger):
-    page = ledger.search(Accounts, Criteria(where=Condition(field="legacy_flag", value=1)))
+    page = ledger.search(
+        Accounts, Criteria(selection=Condition(field="legacy_flag", value=1))
+    )
 
     assert [(one.field, one.reason) for one in page.dropped] == [
         ("legacy_flag", "unknown_field")
@@ -124,16 +126,18 @@ def test_what_the_aggregate_cannot_answer_is_dropped_and_said(ledger):
 
 
 def test_the_short_readings_answer_the_same_as_the_adapter(ledger, accounts):
-    assert ledger.exists(Accounts, Criteria(where=Condition(field="code", value="0003")))
+    assert ledger.exists(Accounts, Criteria(selection=Condition(field="code", value="0003")))
     assert ledger.first(Accounts, Criteria(order=Sort.parse("code"))).code == "0000"
     assert (
-        ledger.one(Accounts, Criteria(where=Condition(field="code", value="0003"))).balance
+        ledger.one(
+            Accounts, Criteria(selection=Condition(field="code", value="0003"))
+        ).balance
         == 30
     )
     assert ledger.get_by(Accounts, code="0004").balance == 40
     assert ledger.get_by(Accounts, code="nobody") is None
     assert ledger.pluck(
-        Accounts, "balance", Criteria(where=Condition(field="kind", value="debt"))
+        Accounts, "balance", Criteria(selection=Condition(field="kind", value="debt"))
     )
     assert ledger.distinct(Accounts, "kind") == ["asset", "debt"]
     with pytest.raises(exceptions.ProgrammingError):
@@ -141,7 +145,7 @@ def test_the_short_readings_answer_the_same_as_the_adapter(ledger, accounts):
     with pytest.raises(exceptions.ProgrammingError):
         ledger.one(Accounts)
     with pytest.raises(ddd_exceptions.AggregateNotFound):
-        ledger.one(Accounts, Criteria(where=Condition(field="code", value="nobody")))
+        ledger.one(Accounts, Criteria(selection=Condition(field="code", value="nobody")))
 
 
 def test_folds_are_answered_over_the_whole_result_set(ledger, accounts):
@@ -237,7 +241,7 @@ def test_archiving_puts_it_away_and_a_reading_leaves_it_out(ledger, accounts):
     asked_for = ledger.search(
         Accounts,
         Criteria(
-            where=Condition(field="archived_at", operator=Operator.IS_NULL, value=False)
+            selection=Condition(field="archived_at", operator=Operator.IS_NULL, value=False)
         ),
     )
     assert [one.id for one in asked_for] == [gone.id]
@@ -251,7 +255,9 @@ def test_remove_takes_it_out_of_the_repository_altogether(ledger, accounts):
         ledger.search(
             Accounts,
             Criteria(
-                where=Condition(field="archived_at", operator=Operator.IS_NULL, value=False)
+                selection=Condition(
+                    field="archived_at", operator=Operator.IS_NULL, value=False
+                )
             ),
         ).items
         == ()

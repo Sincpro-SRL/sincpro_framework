@@ -2,7 +2,7 @@
 
 ```json
 {
-  "where":         {"all": [{"field": "pages", "operator": ">", "value": 200},
+  "selection":         {"all": [{"field": "pages", "operator": ">", "value": 200},
                             {"any": [{"field": "kind", "operator": "in", "value": ["book", "paper"]},
                                      {"negate": {"field": "title", "operator": "like", "value": "draft"}}]}]},
   "order":         [{"field": "pages", "descending": true}, {"field": "title"}],
@@ -17,13 +17,12 @@
 
 | Part | What it says | Notes |
 |---|---|---|
-| `where` | a `Condition` or `all`/`any`/`negate` of more | also accepted as a JSON string (how it survives a URL) |
+| `selection` | a `Condition`, `all`/`any`/`negate` of more, or `through` a relation | also accepted as a JSON string (how it survives a URL) |
 | `order` | a list of `{"field", "descending"}` | the identity is appended as tiebreaker; nullable fields are refused |
 | `pagination` | `limit` (default 50) and `strategy` | `{"token": …}` is a `Cursor` (default), `{"rows": n}` an `Offset` |
 | `specification` | field → criteria, recursive | what to bring back; relations named here are resolved |
 | `grouping` | `group_by`, `measures`, `where_measures`, `order`, `pagination` | used by `group_by_levels`, and by `search` for "a page per group" |
 | `count` | `none`, `capped` (default), `exact` | |
-| `meta` | whether the model definition travels | `true` by default |
 
 Unknown keys are refused: `op`, `desc`, a top-level `limit` or `grouping.by` raise a
 `ValidationError` naming them, so a typo never silently falls back to a default. Use the names
@@ -39,7 +38,7 @@ The nodes carry the names the JSON uses, from `sincpro_framework.ddd`: `Conditio
 from sincpro_framework.ddd import All, Condition, Criteria, Operator, Pagination, Sort
 
 Criteria(
-    where=All(all=[
+    selection=All(all=[
         Condition(field="state", value="draft"),                       # operator defaults to "="
         Condition(field="total", operator=Operator.GT, value=100),
     ]),
@@ -69,7 +68,7 @@ It is a Python helper: the JSON `order` is always the list form. `Condition.valu
 `page.meta` publishes exactly these per field (`ops`), so a client builds its filter form from the
 answer. A value written as text is read into the field's type (`"1000"` → `1000`).
 
-## `dropped`: never a 400 — for `where` and `specification`
+## `dropped`: never a 400 — for `selection` and `specification`
 
 ```json
 "dropped": [{"field": "legacy_flag", "reason": "unknown_field"},
@@ -93,13 +92,12 @@ nothing, a `percentile` on SQLite.
 
 | Part | Law |
 |---|---|
-| `where` | AND — both restrictions hold |
+| `selection` | AND — both restrictions hold |
 | `specification` | intersection — a mask can only take away |
 | `order` | `theirs` when it set one, else `mine` |
 | `pagination` | `theirs` when it differs from the default, else `mine` with `theirs`' strategy |
 | `grouping` | `theirs` when it groups, else `mine` |
 | `count` | `theirs` |
-| `meta` | AND — otherwise `meta=false` could never be said |
 | cursor | never carried over from `mine`: it belongs to one ordering over one filter |
 
 The axis rule for building a filter from query parameters: `?origin=a&origin=b&runs=none` means
@@ -109,10 +107,21 @@ The axis rule for building a filter from query parameters: `?origin=a&origin=b&r
 ## Query and ResponsePaginatedQuery
 
 `Query` is the Command base: one field, `criteria: Criteria = Criteria()`.
-`ResponsePaginatedQuery` is the answer base: `cursor`, `count`, `entity_meta_data`, `dropped`, plus
+`ResponsePaginatedQuery` is the answer base: `cursor`, `count`, `model_version`, `dropped`, plus
 **exactly one** field of the subclass's own holding the records (two raise `ProgrammingError`).
 `ResponseX.of(page, criteria)` fills it and applies the specification on the wire: each record shows
 the named fields plus its identity, a to-one as an object or `null`, a to-many as
 `{"items", "count", "cursor"}`. Inside the process the records stay full typed aggregates.
 
 The same pair is what the other side of a cross-context relation (`Relation.bus`) implements.
+
+## Crossing a relation: `through`
+
+`{"through": "lines", "selection": {"field": "qty", "operator": ">", "value": 10}}` — some record the
+relation holds answers the inner selection (`Through(through="lines", selection=...)` in Python).
+Composes inside `all`/`any`/`negate` and another `through`. The inner fields are the related
+record's, checked against its model; a loss comes back with its path (`lines.colour`). SQL: a
+correlated `EXISTS` (foreign key, to-one, or through a many-to-many's table), the relation's scope
+and the archived rule applied inside. Only a relation the store keeps is crossed (`navigable` in
+`Meta`); a resolver/bus relation is dropped as `not_navigable`. A relation in the `specification`
+never filters parents — `limit: 0` there brings no records of it and every parent.

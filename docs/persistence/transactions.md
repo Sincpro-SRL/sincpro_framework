@@ -279,7 +279,7 @@ how many:
 ```python
 from sincpro_framework.ddd import Condition, Criteria, Operator
 
-small = Criteria(where=Condition(field="amount", operator=Operator.GT, value=-10))
+small = Criteria(selection=Condition(field="amount", operator=Operator.GT, value=-10))
 assert repository.update_all(Movement, small, {"memo": "petty cash"}) == 1
 assert repository.remove_all(Movement, small) == 1
 ```

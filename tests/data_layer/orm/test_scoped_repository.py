@@ -13,8 +13,8 @@ from sincpro_framework.ddd.criteria import Condition, Criteria, Operator
 
 from .models import ROW_COUNT, Note, Notes, Thing, Things, a_thing
 
-MINE = Criteria(where=Condition(field="owner", value="owner-1"))
-BIG = Criteria(where=Condition(field="size", value=2, operator=Operator.GTE))
+MINE = Criteria(selection=Condition(field="owner", value="owner-1"))
+BIG = Criteria(selection=Condition(field="size", value=2, operator=Operator.GTE))
 
 
 @pytest.fixture
@@ -30,7 +30,7 @@ def test_every_reading_is_filtered(scoped: Repository, store: Repository, things
         one.thing_id for one in mine
     }
     assert (
-        scoped.exists(Things, Criteria(where=Condition(field="owner", value="owner-2")))
+        scoped.exists(Things, Criteria(selection=Condition(field="owner", value="owner-2")))
         is False
     )
     assert store.count(Things).value == ROW_COUNT  # the wide one is untouched

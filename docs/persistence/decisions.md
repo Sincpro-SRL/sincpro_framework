@@ -33,8 +33,8 @@ the vocabulary unusable exactly where it is most useful, at the edges.
 ## 2. `Criteria` is the boundary language; inside a Feature, SQLAlchemy is whole
 
 **Decision.** Everything that crosses a boundary, an HTTP request, a command to another context, a
-saved reading, a relation to resolve, is a `Criteria`: `where`, `order`, `pagination`,
-`specification`, `grouping`, `count`, `meta`. Inside a Feature, `repository.context()` hands the
+saved reading, a relation to resolve, is a `Criteria`: `selection`, `order`, `pagination`,
+`specification`, `grouping`, `count`. Inside a Feature, `repository.context()` hands the
 real session and the whole of SQLAlchemy.
 
 **Why.** A boundary language has to be small, serialisable and the same on every side, or every
@@ -86,7 +86,7 @@ in surprise than it saved in bytes.
 ## 5. `Specification`: field → criteria, recursive
 
 **Decision.** `Criteria.specification` is a mapping from a name to a `Criteria`. A scalar's is
-`{}`. A relation's carries its own `where`, `order`, `pagination` and `specification`. It is the
+`{}`. A relation's carries its own `selection`, `order`, `pagination` and `specification`. It is the
 one way to say what to bring back of each record, at the first level and at any depth.
 
 **Why.** Because it composes: `q(g(f(x)))`. Each node is the same type as its parent, so the
@@ -99,7 +99,7 @@ thing with more syntax. It also makes a mask safe as a permission: two specifica
 **Rejected.** A `resolve` field beside the mask, proposed once during this work. It split one idea
 into two names and reinvented half of what already existed. A dotted-path list (`fields=a.b.c`)
 as the canonical form: fine for URLs, and it expands to the mapping, but it cannot carry a
-per-relation `where`.
+per-relation `selection`.
 
 **The rules that took arguing.** Without a specification, every scalar and every key, no relation:
 a `dataset_id` is a scalar, so the client already has it. Naming a bare relation is the whole
@@ -265,7 +265,7 @@ into every reading and checked against every write, with the evaluator. An aggre
 cannot express the scope is refused outright.
 
 **Why.** A tenant, a branch and a permission are all the same shape, and the laws they need are
-the ones `merged_with` already has: `where` accumulates with AND, `specification` intersects.
+the ones `merged_with` already has: `selection` accumulates with AND, `specification` intersects.
 Handing a Feature a repository that is already narrowed is stronger than asking it to remember
 a filter, and it composes: narrowing again narrows further.
 
@@ -396,8 +396,12 @@ named after the pattern it implements and against the one it avoids, Active Reco
 
 ## 18. What is deliberately still open
 
-- Filtering or ordering a parent *by* a relation does not compose; it needs the value in the
-  parent's own table, maintained by an event (`Line.entry_state` in the ledger is the pattern).
+- Ordering a parent *by* a relation does not compose; it needs the value in the parent's own
+  table, maintained by an event (`Line.entry_state` in the ledger is the pattern). Filtering by
+  one does: `through` ([criteria](criteria.md#crossing-a-relation-through)).
+- A relation named in the `specification` shapes what each record brings and never which records
+  come; `limit: 0` brings none of it. Memory holds each record with its relations whole, so it
+  answers a nested `specification` with everything it holds.
 - A page of groups applies to the first level; a deeper level answers for the groups that
   survived it. Ordering groups by an aggregate has no stable keyset, so the page is an offset.
 - A message broker as a third `Queue`; an async engine; a second persistence backend.

@@ -24,11 +24,13 @@ from sincpro_framework.ddd.criteria.domain.expression import (
     Condition,
     Expression,
     Not,
+    Through,
 )
 from sincpro_framework.ddd.criteria.domain.resolution import ResolutionContext
 from sincpro_framework.ddd.criteria.domain.values import FromField
 from sincpro_framework.ddd.criteria.services.comparison import compare
 from sincpro_framework.ddd.criteria.services.dynamic_values import has_dynamic_values, resolve
+from sincpro_framework.ddd.criteria.services.programs import held, program_of, reader
 
 
 def holds(
@@ -46,7 +48,9 @@ def holds(
     so `all` and `any` still stop at the first part that decides and a value that is out of
     reach is never asked for.
 
-    1. No filter holds.
+    1. With nothing to read lazily — no resolution, or no dynamic value — the filter's compiled
+       program answers (`program_of`). Otherwise, walking the tree:
+    1.1 No filter holds.
     2. A condition:
        2.1 with a `resolution` and a dynamic value, it is resolved and asked again, plain;
        2.2 a `FromField` value is the other field's, read — a `None` there never holds;
@@ -54,8 +58,11 @@ def holds(
     3. `All` — every part holds, stopping at the first that does not.
     4. `Any_` — one part holds, stopping at the first that does.
     5. `Not` — the part does not hold.
+    6. `Through` — some record the relation holds answers the selection; none held, none does.
     Final: anything else is not a filter — `InvalidCriteria`.
     """
+    if resolution is None or not has_dynamic_values(expression):
+        return program_of(expression)(read)
     match expression:
         case None:
             return True
@@ -74,6 +81,11 @@ def holds(
             return any(holds(part, read, resolution) for part in expression.any)
         case Not():
             return not holds(expression.negate, read, resolution)
+        case Through():
+            return any(
+                holds(expression.selection, reader(one), resolution)
+                for one in held(read(expression.through))
+            )
     raise exceptions.InvalidCriteria(f"not a filter expression: {expression!r}")
 
 
@@ -87,4 +99,4 @@ def matches(record: Any, expression: Expression | None) -> bool:
     >>> matches(thing, criteria.expression)
     True
     """
-    return holds(expression, partial(getattr, record))
+    return program_of(expression)(partial(getattr, record))

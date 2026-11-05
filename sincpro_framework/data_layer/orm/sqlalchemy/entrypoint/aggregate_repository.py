@@ -3,10 +3,10 @@ capability the database repository has, with the aggregate already given.
 
     class Invoices(DatabaseAggregateRepository[Invoice]):
         def overdue(self, today: date) -> EntityCollection[Invoice]:
-            return self.search(Criteria(where=Condition(field="due", operator="<", value=today)))
+            return self.search(Criteria(selection=Condition(field="due", operator="<", value=today)))
 
         def unpaid_by_customer(self) -> list[dict[str, Any]]:
-            return self.group_by(["customer_id"], Criteria(where=…))
+            return self.group_by(["customer_id"], Criteria(selection=…))
 
         def aged(self, today: date) -> EntityCollection[Invoice]:
             asked = Criteria(order_by=["due"])

@@ -61,7 +61,7 @@ class Invoice(Entity):
     presentation = Presentation["Invoice"](
         readonly=lambda i: [i.number, i.state, i.total],
         readonly_when=lambda i: When(
-            Condition.on(i.state, Operator.NE, InvoiceState.DRAFT), i.partner_id, i.lines
+            i.state != InvoiceState.DRAFT, i.partner_id, i.lines
         ),
     )
 ```
@@ -78,12 +78,12 @@ map_aggregates(registry, {Invoice: invoices, InvoiceLine: invoice_lines}, relati
 | What the form needs | Where it is declared | What the client receives |
 |---|---|---|
 | a line's amount, the total | `@compute` on each class | `values` of a preview, recomputed only as far as `changed` reaches |
-| the price of the product picked (onchange) | `@compute(..., editable=True)` | `values` when `changed` names the cell (`lines.2.product_id`); a save keeps what was typed |
+| the price of the product picked (onchange) | `@compute(..., editable=True)` | `values` when `changed` names the cell (`lines.0192….product_id`); a save keeps what was typed |
 | a rule over the fields (a line sells something) | `@check` | `warnings[]` while drafting; `ChecksFailed` → one field error per failure on save |
 | read-only, required, visible — per state | `presentation` | `Meta` hints, and `states` of a preview evaluated for this record (`states.lines.items[i]` per line) |
 | the sum at the foot of the lines | `presentation(totals=…)` | `FieldMeta.total` |
 | a warning that does not refuse | `warn_form(...)` in a computation | `warnings[]` with `field` and `path` (`["lines", 2, "price"]`) |
-| a refusal pointing at a cell | `raise exceptions.InvalidValue("…", ("lines", 2, "qty"))` | `Problem.errors[].pointer` = `#/values/lines/2/qty`, 422 |
+| a refusal pointing at a cell | `raise exceptions.InvalidValue("…", ("lines", line.id, "qty"))` | `Problem.errors[].pointer` = `#/values/lines/0192…/qty`, 422 |
 | what a removed line becomes | `orphans=` on the relation | nothing: it is the store's rule |
 
 ## 2. One Feature answers the whole form
@@ -122,10 +122,12 @@ class PostInvoice(EntityEdits[Invoice]):
 ## 3. The lines travel as the whole list
 
 - **Every line the form holds, in its order.** A line it got back carries its `id`; a new line
-  carries none — an `id` the document does not hold is refused, so a client keeps its own key
-  for a new line apart from the record. A line no longer in the list is settled by `orphans=`.
-- **Positions are the list the form sent.** `#/values/lines/2/qty`, `states.lines.items[2]` and
-  `warnings[].path == ["lines", 2, …]` all mean the third line sent: one rule marks them all.
+  carries the `id` the form minted for it (UUID v7), and is built under it. A line no longer in
+  the list is settled by `orphans=`.
+- **A line is named by its identity.** `#/values/lines/0192…/qty`, `states.lines.items["0192…"]`,
+  `warnings[].path == ["lines", "0192…", …]` and `changed: ["lines.0192….qty"]` all mean the same
+  line wherever it moves: one rule marks them all. A line that is a plain value, with no identity,
+  is named by its position in the list the form sent.
 - **The version always travels.** A whole list without the version it was read at would delete
   a line somebody else added meanwhile; with it, the save is refused (`StaleAggregate`,
   `DraftConflict`) and the client reads again.

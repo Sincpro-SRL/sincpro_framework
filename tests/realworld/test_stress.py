@@ -33,7 +33,9 @@ POSTINGS = 100
 
 def test_walk_every_line_in_pages_of_a_thousand(ledger: Repository, census: Census, timed):
     criteria = Criteria(
-        where=POPULATION, order=Sort.parse("-posted_at"), pagination=Pagination(limit=1000)
+        selection=POPULATION,
+        order=Sort.parse("-posted_at"),
+        pagination=Pagination(limit=1000),
     )
 
     with timed("stress: keyset walk, pages of 1000", census.lines):
@@ -44,9 +46,9 @@ def test_walk_every_line_in_pages_of_a_thousand(ledger: Repository, census: Cens
 
 def test_exact_and_capped_counts(ledger: Repository, census: Census, timed):
     with timed("stress: capped count", census.lines):
-        capped = ledger.count(Line, Criteria(where=POPULATION))
+        capped = ledger.count(Line, Criteria(selection=POPULATION))
     with timed("stress: exact count", census.lines):
-        exact = ledger.count(Line, Criteria(where=POPULATION, count=CountMode.EXACT))
+        exact = ledger.count(Line, Criteria(selection=POPULATION, count=CountMode.EXACT))
 
     assert exact.value == census.lines
     assert capped.value <= exact.value
@@ -82,7 +84,7 @@ def test_a_pivot_of_journals_by_month(ledger: Repository, census: Census, timed)
             Line,
             rows=["journal_id"],
             columns=[GroupingLevel(field="posted_at", grain=Grain.MONTH)],
-            criteria=Criteria(where=POPULATION),
+            criteria=Criteria(selection=POPULATION),
             debit=("sum", "debit"),
         )
 
@@ -93,7 +95,7 @@ def test_a_pivot_of_journals_by_month(ledger: Repository, census: Census, timed)
 
 def test_the_heaviest_accounts_over_everything(ledger: Repository, census: Census, timed):
     top = Criteria(
-        where=POPULATION,
+        selection=POPULATION,
         grouping=Grouping(
             group_by=(GroupingLevel(field="account_id"),),
             measures={"debit": Measure(function=MeasureFunction.SUM, field="debit")},
@@ -136,5 +138,6 @@ def test_a_batch_of_five_thousand_lines(ledger: Repository, masters: dict[str, l
         ledger.save(batch)
 
     assert ledger.count(
-        Line, Criteria(where=Condition(field="label", value="bulk", operator=Operator.LIKE))
+        Line,
+        Criteria(selection=Condition(field="label", value="bulk", operator=Operator.LIKE)),
     ).value == len(batch)

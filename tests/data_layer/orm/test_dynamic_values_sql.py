@@ -84,7 +84,7 @@ def ids(found) -> list[str]:
 
 
 def test_the_database_runs_today_as_the_day_it_is_asked(bills: Repository):
-    asked = Criteria(where=Condition(field="due", operator=Operator.LT, value=Today()))
+    asked = Criteria(selection=Condition(field="due", operator=Operator.LT, value=Today()))
 
     assert ids(bills.search(Bill, asked)) == ["B1", "B10"]
 
@@ -92,13 +92,13 @@ def test_the_database_runs_today_as_the_day_it_is_asked(bills: Repository):
 def test_thirty_days_ago_is_a_bound_of_the_statement(bills: Repository):
     since = Condition(field="due", operator=Operator.GTE, value=Today().before(days=5))
 
-    assert ids(bills.search(Bill, Criteria(where=since))) == ["B-3", "B0", "B1"]
+    assert ids(bills.search(Bill, Criteria(selection=since))) == ["B-3", "B0", "B1"]
 
 
 def test_an_instant_column_compares_to_a_date_as_its_midnight(bills: Repository):
     since = Condition(field="posted_at", operator=Operator.GTE, value=Today().before(days=1))
 
-    assert ids(bills.search(Bill, Criteria(where=since))) == ["B-3", "B0", "B1"]
+    assert ids(bills.search(Bill, Criteria(selection=since))) == ["B-3", "B0", "B1"]
 
 
 def test_a_period_is_two_bounds_and_the_end_is_not_included(bills: Repository):
@@ -107,7 +107,7 @@ def test_a_period_is_two_bounds_and_the_end_is_not_included(bills: Repository):
         field="due", operator=Operator.BETWEEN, value=Period(name=Periods.THIS_MONTH)
     )
 
-    found = ids(bills.search(Bill, Criteria(where=this_month)))
+    found = ids(bills.search(Bill, Criteria(selection=this_month)))
 
     expected = [
         f"B{ago}"
@@ -118,7 +118,7 @@ def test_a_period_is_two_bounds_and_the_end_is_not_included(bills: Repository):
 
 
 def test_the_user_is_the_one_of_the_servers_context(bills: Repository):
-    mine = Criteria(where=Condition(field="owner", value=FromContext(key="user_id")))
+    mine = Criteria(selection=Condition(field="owner", value=FromContext(key="user_id")))
 
     with carrying({"user_id": "beto"}):
         assert ids(bills.search(Bill, mine)) == ["B-3"]
@@ -127,7 +127,7 @@ def test_the_user_is_the_one_of_the_servers_context(bills: Repository):
 
 
 def test_a_missing_context_key_refuses_the_search_and_does_not_widen_it(bills: Repository):
-    mine = Criteria(where=Condition(field="owner", value=FromContext(key="user_id")))
+    mine = Criteria(selection=Condition(field="owner", value=FromContext(key="user_id")))
 
     with carrying({}), pytest.raises(
         exceptions.InvalidCriteria, match="the context has no 'user_id'"
@@ -138,7 +138,7 @@ def test_a_missing_context_key_refuses_the_search_and_does_not_widen_it(bills: R
 def test_a_column_is_compared_with_another_column_in_the_database(bills: Repository):
     over = Condition(field="amount", operator=Operator.GT, value=FromField(name="allowed"))
 
-    assert ids(bills.search(Bill, Criteria(where=over))) == ["B1", "B10"]
+    assert ids(bills.search(Bill, Criteria(selection=over))) == ["B1", "B10"]
 
 
 def test_a_window_of_days_is_two_bounds_of_the_statement(bills: Repository):
@@ -146,7 +146,7 @@ def test_a_window_of_days_is_two_bounds_of_the_statement(bills: Repository):
         field="due", operator=Operator.BETWEEN, value=Period(unit=Grain.DAY, last=5)
     )
 
-    assert ids(bills.search(Bill, Criteria(where=last))) == ["B1"]
+    assert ids(bills.search(Bill, Criteria(selection=last))) == ["B1"]
 
 
 def test_a_group_filter_may_read_the_servers_context_too(bills: Repository):

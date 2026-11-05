@@ -38,7 +38,7 @@ def matching(store, expression) -> set[str]:
     """The ids the database answers for this expression."""
     return set(
         store.search(
-            Things, Criteria(where=expression, pagination=Pagination(limit=EVERYTHING))
+            Things, Criteria(selection=expression, pagination=Pagination(limit=EVERYTHING))
         ).ids
     )
 
@@ -209,7 +209,7 @@ def test_a_range_asks_for_both_of_its_bounds(store):
     value that does not fit, and reports it."""
     page = store.search(
         Things,
-        Criteria(where=Condition(field="size", operator=Operator.BETWEEN, value=[1])),
+        Criteria(selection=Condition(field="size", operator=Operator.BETWEEN, value=[1])),
     )
 
     assert [one.reason for one in page.dropped] == ["bad_value"]
@@ -324,10 +324,11 @@ def test_a_long_list_of_values_is_an_ordinary_in_elsewhere(store):
     names = [f"nobody{i}" for i in range(MANY_MEMBERS + 50)]
 
     found = store.search(
-        Thing, Criteria(where=Condition(field="name", operator=Operator.IN, value=names))
+        Thing, Criteria(selection=Condition(field="name", operator=Operator.IN, value=names))
     )
     everything = store.search(
-        Thing, Criteria(where=Condition(field="name", operator=Operator.NOT_IN, value=names))
+        Thing,
+        Criteria(selection=Condition(field="name", operator=Operator.NOT_IN, value=names)),
     )
 
     assert len(found) == 0 and len(everything) == store.count(Thing).value

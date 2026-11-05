@@ -17,7 +17,7 @@ class ArchivableMixin:
         repository.archive(account)         →  archived_at stamped, the row stays
         repository.remove(account)          →  DELETE, when it really has to go
         repository.search(Accounts)         →  the live ones
-        Criteria(where=Condition(field="archived_at", operator=Operator.IS_NULL, value=False))
+        Criteria(selection=Condition(field="archived_at", operator=Operator.IS_NULL, value=False))
                                             →  the archived ones, asked for by name
 
     **A read leaves the archived out unless the criteria names `archived_at`.** What a business

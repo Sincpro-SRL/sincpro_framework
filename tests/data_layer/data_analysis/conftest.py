@@ -66,5 +66,9 @@ POSTED = {"field": "state", "operator": "=", "value": "posted"}
 
 def criteria(limit: int = 100, where: dict | None = None) -> Criteria:
     return Criteria.model_validate(
-        {"where": where or POSTED, "order": [{"field": "id"}], "pagination": {"limit": limit}}
+        {
+            "selection": where or POSTED,
+            "order": [{"field": "id"}],
+            "pagination": {"limit": limit},
+        }
     )

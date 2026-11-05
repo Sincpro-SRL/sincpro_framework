@@ -55,7 +55,7 @@ def test_a_bucket_carries_the_criteria_that_opens_it(store):
 
 def test_the_outer_filter_still_holds_inside_the_bucket(store):
     large = Criteria(
-        where=Condition(field="size", operator=Operator.GTE, value=10),
+        selection=Condition(field="size", operator=Operator.GTE, value=10),
         grouping=BY_OWNER,
     )
 
@@ -460,7 +460,7 @@ def test_one_reading_says_everything_at_once(store):
     """
     reading = Criteria(
         # the rows
-        where=All(
+        selection=All(
             all=[
                 Condition(field="size", operator=Operator.BETWEEN, value=[1, 1000]),
                 Any(

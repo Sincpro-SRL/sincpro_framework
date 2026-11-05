@@ -57,13 +57,18 @@ class InvalidValue(ClientError):
     """
 
     def __init__(
-        self, message: str, path: tuple[str | int, ...] = (), field: str = "values"
+        self,
+        message: str,
+        path: tuple[str | int, ...] = (),
+        field: str = "values",
+        rule: str | None = None,
     ) -> None:
         """`message` is what the caller reads; `path` and `field` say where it points. An
         `@check` that raises it with no `path` points at the first field it watches."""
         super().__init__(message)
         self.path = path
         self.field = field
+        self.rule = rule
 
     def within(self, *outer: str | int) -> "InvalidValue":
         """The same refusal seen from the record that holds it: `outer` before its path.
@@ -73,14 +78,18 @@ class InvalidValue(ClientError):
         What a list of lines raises when one of them refuses a value, so the pointer reaches
         the cell and the message stays the one the line wrote.
         """
-        return InvalidValue(str(self), (*outer, *self.path), self.field)
+        return InvalidValue(str(self), (*outer, *self.path), self.field, self.rule)
 
     def refine_problem(self, problem: Problem) -> Problem:
         """The problem with the value it points at: `#/<field>/<path>`."""
         return problem.model_copy(
             update={
                 "errors": [
-                    FieldError(pointer=pointer((self.field, *self.path)), detail=str(self))
+                    FieldError(
+                        pointer=pointer((self.field, *self.path)),
+                        detail=str(self),
+                        rule=self.rule,
+                    )
                 ]
             }
         )
@@ -114,7 +123,11 @@ class ChecksFailed(InvalidValue):
         return problem.model_copy(
             update={
                 "errors": [
-                    FieldError(pointer=pointer((one.field, *one.path)), detail=str(one))
+                    FieldError(
+                        pointer=pointer((one.field, *one.path)),
+                        detail=str(one),
+                        rule=one.rule,
+                    )
                     for one in self.failures
                 ]
             }

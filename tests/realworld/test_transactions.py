@@ -164,7 +164,7 @@ def test_a_row_lock_holds_the_second_writer_until_the_first_commits(
     with ledger.context() as unit:
         page = unit.search(
             Account,
-            Criteria(where=Condition(field="id", value=account_id)),
+            Criteria(selection=Condition(field="id", value=account_id)),
             for_update=True,
             skip_locked=True,
         )
@@ -174,7 +174,9 @@ def test_a_row_lock_holds_the_second_writer_until_the_first_commits(
 
     with ledger.context() as unit:
         after = unit.search(
-            Account, Criteria(where=Condition(field="id", value=account_id)), for_update=True
+            Account,
+            Criteria(selection=Condition(field="id", value=account_id)),
+            for_update=True,
         )
 
     assert seen_while_held == [0]

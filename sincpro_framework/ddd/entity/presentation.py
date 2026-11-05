@@ -7,17 +7,19 @@
             readonly=lambda i: i.number,
             required=lambda i: i.partner_id,
             readonly_when=lambda i: When(
-                Condition.on(i.state, Operator.NE, InvoiceState.DRAFT), i.partner_id, i.amount
+                i.state != InvoiceState.DRAFT, i.partner_id, i.amount
             ),
             visible_when=lambda i: When(
-                Condition.on(i.payment, Operator.EQ, Payment.CARD), i.card_reference
+                i.payment == Payment.CARD, i.card_reference
             ),
             totals=lambda i: {i.amount: "sum", i.weight: "avg"},
         )
 
 Each lambda names its fields through the entity, so a type checker reads `i.number` against
 `Invoice` and a rename reaches it. It runs once, when the class is described, against `Fields`:
-a stand-in whose attributes are the field names. It never sees a record.
+a stand-in whose attributes are the field names. It never sees a record. A `When` whose condition
+is written as Python (`i.state != InvoiceState.DRAFT`) is read from the lambda's syntax tree
+instead of run: compared with a field name it would mean nothing.
 
 **These are hints, never rules.** `Meta` publishes them so a screen shows an asterisk, greys
 a field, hides it or adds it up at the foot of a list without being told twice; a component that says otherwise wins. The
@@ -31,9 +33,32 @@ finds it — is not here: it is the entity's own `DEFAULT_*` class methods (`Ent
 
 from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass
+from enum import StrEnum
 
 from sincpro_framework.ddd import exceptions
 from sincpro_framework.ddd.criteria import Expression
+
+
+class Widget(StrEnum):
+    """The widgets a field is shown with by default, chosen from its type. A screen may register
+    others; `presentation(widgets=…)` names any of them, these or its own."""
+
+    TEXT = "text"
+    TEXTAREA = "textarea"
+    NUMBER = "number"
+    DECIMAL = "decimal"
+    MONEY = "money"
+    DATE = "date"
+    DATETIME = "datetime"
+    CHECKBOX = "checkbox"
+    SELECT = "select"
+    TAGS = "tags"
+    TRANSLATED = "translated"
+    MANY2ONE = "many2one"
+    LINES = "lines"
+    MANY2MANY = "many2many"
+    EMBEDDED = "embedded"
+    IDENTIFIER = "identifier"
 
 
 class FieldRef(str):
@@ -88,18 +113,23 @@ def field_name(value: object, form: str) -> str:
 
 @dataclass(frozen=True, init=False)
 class When:
-    """The fields a hint covers while a condition holds. The condition is a criteria's own:
-    `Condition`, `All`, `Any` or `Not`.
+    """The fields a hint covers while a condition holds — a condition of the language, written
+    as Python over the entity or built.
 
-    When(Condition.on(i.state, Operator.NE, InvoiceState.DRAFT), i.partner_id, i.amount)
+    When(i.state != InvoiceState.DRAFT, i.partner_id, i.amount)
+    When(i.state != InvoiceState.DRAFT, i.partner_id, i.amount)
     """
 
     condition: Expression
     fields: tuple[object, ...]
 
-    def __init__(self, condition: Expression, *fields: object) -> None:
+    def __init__(self, condition: Expression | bool, *fields: object) -> None:
         """The condition first, then the fields it covers, as many as there are — read through
-        the entity (`i.partner_id`), checked when the class is described."""
+        the entity (`i.partner_id`), checked when the class is described.
+
+        The condition is written as Python over the entity — `i.state != InvoiceState.DRAFT`,
+        typed by the type checker — or built (`Condition.on(…)`); written as Python, the lambda's
+        syntax tree is read, never run, when the class is described."""
         object.__setattr__(self, "condition", condition)
         object.__setattr__(self, "fields", fields)
 
@@ -110,7 +140,9 @@ class Presentation[T]:
 
     `readonly` and `required` always; `readonly_when`, `required_when` and `visible_when`
     while a condition holds over the record (`When(...)`); `totals`, the function a list folds
-    each field with at its foot — one of the field's own `aggregates` (`sum`, `avg`, …). Left
+    each field with at its foot — one of the field's own `aggregates` (`sum`, `avg`, …);
+    `widgets`, the widget a field is shown with instead of the one its type gives (`Widget`, or
+    any name a screen registers). Left
     alone, the fields the framework writes or computes (`id`, `version`, a `computed` one, one
     a `Compute` computes) are read-only, a field with no default that cannot be `None` is
     required, and nothing is added up: an amount is summed, a unit price is not, and only the
@@ -123,3 +155,4 @@ class Presentation[T]:
     required_when: Callable[[T], When | Sequence[When]] | None = None
     visible_when: Callable[[T], When | Sequence[When]] | None = None
     totals: Callable[[T], Mapping[object, str]] | None = None
+    widgets: Callable[[T], Mapping[object, str]] | None = None

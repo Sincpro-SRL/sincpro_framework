@@ -39,17 +39,17 @@ from sincpro_framework.ddd.entity.entity_collection import EntityCollection
 from sincpro_framework.ddd.events import DomainEvent
 from sincpro_framework.ddd.query import Query, ResponsePaginatedQuery
 
-OWN_KIND = Criteria(where=Condition(field="entity_type", value="Invoice"))
+OWN_KIND = Criteria(selection=Condition(field="entity_type", value="Invoice"))
 """The events scope: this log is addressed by `entity_type`/`entity_id`, and an id space is
 shared, so without this a `Draft`'s event filed under an invoice's id would come along."""
 
-NOT_VOID = Criteria(where=Condition(field="void", value=False))
+NOT_VOID = Criteria(selection=Condition(field="void", value=False))
 """The lines scope: a voided line stays in the table and out of the invoice."""
 
-TRUSTED = Criteria(where=Condition(field="trusted", value=True))
+TRUSTED = Criteria(selection=Condition(field="trusted", value=True))
 """The owner scope: what the provider is asked for, whether or not it honours it."""
 
-ACTIVE = Criteria(where=Condition(field="active", value=True))
+ACTIVE = Criteria(selection=Condition(field="active", value=True))
 """The customer scope, on a TO-ONE: a closed account resolves to `None` rather than to a
 record this invoice may no longer show."""
 

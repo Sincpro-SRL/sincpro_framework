@@ -33,7 +33,9 @@ from sincpro_framework.ddd.criteria import (
     PivotCell,
     Sort,
     Specification,
+    Through,
     Today,
+    expression_of,
 )
 from sincpro_framework.ddd.editing.editing import apply_values, recompute
 from sincpro_framework.ddd.editing.edits import Edit, EditAction, EntityEdits, ResponseEdit
@@ -64,6 +66,7 @@ from sincpro_framework.ddd.entity.entity_meta import (
 from sincpro_framework.ddd.entity.presentation import (
     Presentation,
     When,
+    Widget,
 )
 from sincpro_framework.ddd.entity.relations import (
     BusResolver,
@@ -217,6 +220,7 @@ __all__ = [
     "Search",
     "Sort",
     "Specification",
+    "Through",
     "StaleAggregate",
     "StoreCapabilities",
     "TEXT",
@@ -228,10 +232,12 @@ __all__ = [
     "ValueObject",
     "Violation",
     "When",
+    "Widget",
     "WritesAggregates",
     "WritesInBulk",
     "warn_form",
     "apply_values",
+    "expression_of",
     "check",
     "compute",
     "computed",

@@ -70,7 +70,7 @@ def test_folding_nothing_is_refused_and_says_how_it_should_read(store):
 
 def test_counting_and_grouping_both_honour_the_filter(store):
     narrow = Criteria.model_validate(
-        {"where": {"field": "size", "operator": "=", "value": 0}}
+        {"selection": {"field": "size", "operator": "=", "value": 0}}
     )
 
     assert store.count(Things, narrow).value == 5
@@ -135,7 +135,7 @@ def test_a_narrowed_count_reaches_the_ceiling_query(store, queries_run):
         page = store.search(
             Things,
             Criteria(
-                where=Condition(field="size", operator=Operator.GTE, value=0),
+                selection=Condition(field="size", operator=Operator.GTE, value=0),
                 pagination=Pagination(limit=2),
             ),
         )
@@ -148,7 +148,7 @@ def test_the_exact_count_honours_the_filter_too(store):
     """Context: the capped count and the exact one are two statements, and only one of them
     is walked by default — a filter the exact branch ignored would answer the whole table."""
     narrow = Criteria(
-        where=Condition(field="size", operator=Operator.EQ, value=0),
+        selection=Condition(field="size", operator=Operator.EQ, value=0),
         count=CountMode.EXACT,
         pagination=Pagination(limit=1),
     )

@@ -179,7 +179,9 @@ def test_the_core_filters_by_its_own_fields_whatever_the_extensions_are(engine_u
     store.save(Move(id="A", number="F-A", total=Decimal("1")))
     store.save(MoveDelivery(id="B", number="F-B", total=Decimal("9"), route="R7"))
 
-    found = store.search(Move, Criteria(where=Condition(field="total", value=Decimal("9"))))
+    found = store.search(
+        Move, Criteria(selection=Condition(field="total", value=Decimal("9")))
+    )
 
     assert [(type(one).__name__, one.number) for one in found] == [("MoveDelivery", "F-B")]
 
@@ -234,7 +236,7 @@ def test_a_column_the_extension_owns_is_filtered_like_any_other(engine_url):
     store.save(MoveZone(id="B", number="F-B", zone="Z1"))
     store.save(MoveZone(id="C", number="F-C", zone="Z2"))
 
-    found = store.search(MoveZone, Criteria(where=Condition(field="zone", value="Z2")))
+    found = store.search(MoveZone, Criteria(selection=Condition(field="zone", value="Z2")))
 
     assert [one.number for one in found] == ["F-C"]
 
@@ -409,6 +411,6 @@ def test_the_core_is_filtered_by_a_column_an_extension_keeps_in_the_cores_own_ta
     store.save(MoveZone(id="B", number="F-B", zone="Z1"))
     store.save(MoveZone(id="C", number="F-C", zone="Z2"))
 
-    found = store.search(Move, Criteria(where=Condition(field="zone", value="Z2")))
+    found = store.search(Move, Criteria(selection=Condition(field="zone", value="Z2")))
 
     assert [one.number for one in found] == ["F-C"] and not found.dropped

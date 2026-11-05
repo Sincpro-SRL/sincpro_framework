@@ -32,7 +32,7 @@ from sincpro_framework.ddd import read_only, recompute, warn_form
 from sincpro_framework.ddd.criteria import Operator
 from sincpro_framework.ddd.editing.preview import warnings_at
 from sincpro_framework.ddd.entity import Entity
-from sincpro_framework.ddd.reads.reads import copied
+from sincpro_framework.ddd.reads.reads import copied, states_of
 
 
 class Payment(StrEnum):
@@ -317,11 +317,11 @@ def test_each_line_comes_back_with_how_a_form_shows_its_fields():
         ResponsePreviewInvoice,
     )
 
-    assert [sorted(line) for line in answer.states["lines"].items] == [
-        ["price", "product", "qty"],
-        ["price", "product", "qty"],
-    ]
-    assert answer.states["discount"].items == []
+    assert {key: sorted(line) for key, line in answer.states["lines"].items.items()} == {
+        "0": ["price", "product", "qty"],
+        "1": ["price", "product", "qty"],
+    }
+    assert answer.states["discount"].items == {}
 
 
 def test_editing_a_stored_invoice_answers_what_moved_and_leaves_the_stored_one_alone():
@@ -662,19 +662,15 @@ class QueryPreviewSale(PreviewEntity[Sale, ResponsePreviewSale]):
     pass
 
 
-def test_the_advice_a_line_gives_points_at_that_line_and_that_cell():
-    sale = Sale(
-        lines=[
-            SaleLine("cuaderno", 1, Decimal("10"), Decimal("4")),
-            SaleLine("lapiz", 2, Decimal("1"), Decimal("3")),
-        ]
-    )
+def test_the_advice_a_line_gives_points_at_that_line_by_its_identity_and_that_cell():
+    pencil = SaleLine("lapiz", 2, Decimal("1"), Decimal("3"))
+    sale = Sale(lines=[SaleLine("cuaderno", 1, Decimal("10"), Decimal("4")), pencil])
 
     with read_only() as warnings:
         recompute(sale)
 
     assert [(one.message, one.field, one.path) for one in warnings] == [
-        ("price below cost", "lines", ("lines", 1, "price")),
+        ("price below cost", "lines", ("lines", pencil.id, "price")),
     ]
 
 
@@ -714,10 +710,36 @@ def test_a_preview_answers_the_advice_of_a_line_typed_in_a_new_form():
         ResponsePreviewSale,
     )
 
+    pencil = answer.values["lines"][1]["id"]
     assert answer.values["total"] == "12"
     assert answer.model_dump(mode="json")["warnings"] == [
-        {"message": "price below cost", "field": "lines", "path": ["lines", 1, "price"]},
+        {
+            "message": "price below cost",
+            "field": "lines",
+            "path": ["lines", pencil, "price"],
+            "rule": None,
+            "blocks_save": False,
+        },
     ]
+
+
+def test_a_line_with_an_identity_is_named_by_it_everywhere():
+    """The same line wherever it moves: what the form says changed, where advice lands, how each
+    line is shown and where a refused value points all name it by its identity."""
+    notebook = SaleLine("cuaderno", 1, Decimal("10"), Decimal("4"))
+    pencil = SaleLine("lapiz", 2, Decimal("1"), Decimal("3"))
+    sale = Sale(lines=[notebook, pencil])
+
+    with read_only() as warnings:
+        recompute(sale, [f"lines.{pencil.id}.qty"])
+
+    assert [one.path for one in warnings] == [("lines", pencil.id, "price")]
+    assert list(states_of(sale)["lines"].items) == [notebook.id, pencil.id]
+    with pytest.raises(ddd_exceptions.InvalidValue) as refused:
+        apply_values(sale, {"lines": [{"id": pencil.id, "qty": "many"}]})
+    assert problem_of(refused.value).errors[0].pointer == f"#/values/lines/{pencil.id}/qty"
+    with pytest.raises(ddd_exceptions.ClientError, match="names no record of lines"):
+        recompute(sale, ["lines.0192-gone.qty"])
 
 
 def test_advice_given_inside_nested_blocks_adds_their_places_up():

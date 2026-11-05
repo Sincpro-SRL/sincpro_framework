@@ -319,7 +319,7 @@ def test_a_field_read_out_of_the_json_slot_is_filtered_and_grouped_like_a_column
     assert world.store is not None
 
     in_north = world.store.search(
-        world.invoice, Criteria(where=Condition(field="zone", value="N"))
+        world.invoice, Criteria(selection=Condition(field="zone", value="N"))
     )
     by_zone = world.store.group_by_levels(
         world.invoice,
@@ -489,7 +489,7 @@ def test_data_that_lives_in_another_context_is_resolved_by_its_bus_one_call_per_
 
     assert routes == ["R0", "R1", "R2"]
     assert len(calls) == 1  # thirty invoices, one question to the other context
-    assert len(calls[0].where.value) == 30  # type: ignore[union-attr]
+    assert len(calls[0].selection.value) == 30  # type: ignore[union-attr]
 
 
 def test_invoices_are_filtered_by_a_field_the_other_context_owns_by_asking_it_for_the_ids(
@@ -509,11 +509,12 @@ def test_invoices_are_filtered_by_a_field_the_other_context_owns_by_asking_it_fo
     ids = [
         one.invoice_id
         for one in distribution.search(
-            Delivery, Criteria(where=Condition(field="route", value="R7"))
+            Delivery, Criteria(selection=Condition(field="route", value="R7"))
         )
     ]
     found = world.store.search(
-        world.invoice, Criteria(where=Condition(field="id", operator=Operator.IN, value=ids))
+        world.invoice,
+        Criteria(selection=Condition(field="id", operator=Operator.IN, value=ids)),
     )
 
     assert sorted(one.number for one in found) == ["F-0", "F-10", "F-20"]

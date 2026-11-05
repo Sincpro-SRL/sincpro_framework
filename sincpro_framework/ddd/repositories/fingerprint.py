@@ -18,7 +18,7 @@ from sincpro_framework.ddd.criteria import (
     Criteria,
     ResolutionContext,
 )
-from sincpro_framework.ddd.entity.entity_meta import describe_class
+from sincpro_framework.ddd.metamodel import description_of
 
 
 def fingerprint_of(
@@ -29,8 +29,8 @@ def fingerprint_of(
 ) -> str:
     """The key of one read of `model`: 32 hex characters, the same for every page of it.
 
-        fingerprint_of(Invoice, Criteria(where=Condition(field="total", value="100")))
-        ==  fingerprint_of(Invoice, Criteria(where=Condition(field="total", value=100),
+        fingerprint_of(Invoice, Criteria(selection=Condition(field="total", value="100")))
+        ==  fingerprint_of(Invoice, Criteria(selection=Condition(field="total", value=100),
                                              pagination={"limit": 10}))
 
     1. The filter accepted by the model — values read as their fields' types, dynamic
@@ -39,7 +39,7 @@ def fingerprint_of(
     3. Final: the aggregate's qualified name, filter, scope, order and specification as
        sorted JSON, hashed with SHA-256 and cut to 32 characters; the pagination left out.
     """
-    meta = describe_class(model)
+    meta = description_of(model)
     accepted = meta.accept(criteria.expression, resolution)[0]
     where = accepted.canonical() if accepted is not None else None
     in_scope = meta.accept(scope.expression, resolution)[0] if scope is not None else None
@@ -47,7 +47,7 @@ def fingerprint_of(
     dumped = criteria.model_dump(mode="json")
     body = {
         "aggregate": f"{model.__module__}.{model.__qualname__}",
-        "where": where and where.model_dump(mode="json"),
+        "selection": where and where.model_dump(mode="json"),
         "scope": scoped and scoped.model_dump(mode="json"),
         "order": dumped["order"],
         "specification": dumped["specification"],

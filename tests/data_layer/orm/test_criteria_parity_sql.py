@@ -75,9 +75,9 @@ def rows(engine_url: str) -> Repository:
 def test_the_database_answers_each_parity_case_as_the_file_says(
     rows: Repository, case: dict[str, Any]
 ):
-    where = None if case["where"] is None else Node.read(case["where"])
+    where = None if case["selection"] is None else Node.read(case["selection"])
     everything = Pagination(limit=len(PARITY["rows"]) + 1)
 
-    found = rows.search(ParityRow, Criteria(where=where, pagination=everything))
+    found = rows.search(ParityRow, Criteria(selection=where, pagination=everything))
 
     assert sorted(one.id for one in found) == sorted(case["expected"])

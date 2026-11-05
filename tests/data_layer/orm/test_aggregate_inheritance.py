@@ -104,7 +104,7 @@ def test_a_criteria_reads_inherited_and_own_fields_alike(repository: Repository)
         DiscountedInvoices,
         Criteria.model_validate(
             {
-                "where": {
+                "selection": {
                     "all": [
                         {"field": "total", "operator": ">", "value": 200},
                         {"field": "discount", "value": 7},

@@ -20,6 +20,7 @@ from sincpro_framework.ddd.criteria.domain.expression import (
     Condition,
     Expression,
     Operator,
+    Through,
 )
 from sincpro_framework.ddd.criteria.domain.resolution import ResolutionContext
 from sincpro_framework.ddd.criteria.domain.values import RESOLVABLE, Period
@@ -50,9 +51,18 @@ def _resolved(condition: Condition, resolution: ResolutionContext) -> Expression
 
 def has_dynamic_values(expression: Expression | None) -> bool:
     """Whether any condition of the tree holds a value that is read when it is used, alone or as
-    an item of a list."""
+    an item of a list — the conditions a `Through` asks of the records it crosses to as well.
+    """
     if expression is None:
         return False
+    crossed: list[Through] = []
+
+    def noted(one: Through) -> Through:
+        """A `Through` kept as it is, and remembered to look inside."""
+        crossed.append(one)
+        return one
+
+    expression.mapped(lambda one: one, noted)
     return any(
         isinstance(one.value, RESOLVABLE)
         or (
@@ -60,7 +70,7 @@ def has_dynamic_values(expression: Expression | None) -> bool:
             and any(isinstance(item, RESOLVABLE) for item in one.value)
         )
         for one in expression.conditions()
-    )
+    ) or any(has_dynamic_values(one.selection) for one in crossed)
 
 
 def resolve(
@@ -77,4 +87,9 @@ def resolve(
     """
     if expression is None or not has_dynamic_values(expression):
         return expression
-    return expression.mapped(lambda condition: _resolved(condition, resolution))
+    return expression.mapped(
+        lambda condition: _resolved(condition, resolution),
+        lambda crossed: crossed.model_copy(
+            update={"selection": resolve(crossed.selection, resolution)}
+        ),
+    )

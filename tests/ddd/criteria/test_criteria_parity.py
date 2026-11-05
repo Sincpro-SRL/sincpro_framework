@@ -81,80 +81,86 @@ ROWS = [
 ]
 
 CASES: list[dict[str, Any]] = [
-    {"name": "equality", "where": {"field": "owner", "operator": "=", "value": "ana"}},
-    {"name": "inequality", "where": {"field": "owner", "operator": "!=", "value": "ana"}},
+    {"name": "equality", "selection": {"field": "owner", "operator": "=", "value": "ana"}},
+    {"name": "inequality", "selection": {"field": "owner", "operator": "!=", "value": "ana"}},
     {
         "name": "a null is not a value, so it answers neither",
-        "where": {"field": "owner", "operator": "!=", "value": "beto"},
+        "selection": {"field": "owner", "operator": "!=", "value": "beto"},
     },
-    {"name": "is null", "where": {"field": "owner", "operator": "is null", "value": True}},
+    {
+        "name": "is null",
+        "selection": {"field": "owner", "operator": "is null", "value": True},
+    },
     {
         "name": "is not null",
-        "where": {"field": "owner", "operator": "is null", "value": False},
+        "selection": {"field": "owner", "operator": "is null", "value": False},
     },
-    {"name": "greater than", "where": {"field": "size", "operator": ">", "value": 120}},
-    {"name": "greater or equal", "where": {"field": "size", "operator": ">=", "value": 120}},
-    {"name": "less than", "where": {"field": "size", "operator": "<", "value": 120}},
-    {"name": "less or equal", "where": {"field": "size", "operator": "<=", "value": 120}},
+    {"name": "greater than", "selection": {"field": "size", "operator": ">", "value": 120}},
+    {
+        "name": "greater or equal",
+        "selection": {"field": "size", "operator": ">=", "value": 120},
+    },
+    {"name": "less than", "selection": {"field": "size", "operator": "<", "value": 120}},
+    {"name": "less or equal", "selection": {"field": "size", "operator": "<=", "value": 120}},
     {
         "name": "zero is a value, not an absence",
-        "where": {"field": "size", "operator": "=", "value": 0},
+        "selection": {"field": "size", "operator": "=", "value": 0},
     },
     {
         "name": "between, both ends included",
-        "where": {"field": "size", "operator": "between", "value": [120, 300]},
+        "selection": {"field": "size", "operator": "between", "value": [120, 300]},
     },
     {
         "name": "in",
-        "where": {"field": "name", "operator": "in", "value": ["labs.csv", "stock.csv"]},
+        "selection": {"field": "name", "operator": "in", "value": ["labs.csv", "stock.csv"]},
     },
     {
         "name": "not in leaves the nulls out",
-        "where": {"field": "owner", "operator": "not in", "value": ["ana"]},
+        "selection": {"field": "owner", "operator": "not in", "value": ["ana"]},
     },
     {
         "name": "like is case-insensitive and partial",
-        "where": {"field": "name", "operator": "like", "value": "labs"},
+        "selection": {"field": "name", "operator": "like", "value": "labs"},
     },
     {
         "name": "like reads a percent sign as itself, not as a wildcard",
-        "where": {"field": "name", "operator": "like", "value": "%"},
+        "selection": {"field": "name", "operator": "like", "value": "%"},
     },
     {
         "name": "like reads an underscore as itself, not as any one character",
-        "where": {"field": "name", "operator": "like", "value": "s_c"},
+        "selection": {"field": "name", "operator": "like", "value": "s_c"},
     },
     {
         "name": "starts with is case-insensitive and anchored at the start",
-        "where": {"field": "name", "operator": "starts with", "value": "LAB"},
+        "selection": {"field": "name", "operator": "starts with", "value": "LAB"},
     },
     {
         "name": "starts with does not match in the middle",
-        "where": {"field": "name", "operator": "starts with", "value": "csv"},
+        "selection": {"field": "name", "operator": "starts with", "value": "csv"},
     },
     {
         "name": "contains asks about one member of a list",
-        "where": {"field": "tags", "operator": "contains", "value": "raw"},
+        "selection": {"field": "tags", "operator": "contains", "value": "raw"},
     },
     {
         "name": "not contains",
-        "where": {"field": "tags", "operator": "not contains", "value": "raw"},
+        "selection": {"field": "tags", "operator": "not contains", "value": "raw"},
     },
     {
         "name": "the empty-list question",
-        "where": {"field": "tags", "operator": "=", "value": []},
+        "selection": {"field": "tags", "operator": "=", "value": []},
     },
     {
         "name": "the empty-list question, negated",
-        "where": {"field": "tags", "operator": "!=", "value": []},
+        "selection": {"field": "tags", "operator": "!=", "value": []},
     },
     {
         "name": "a date compared as text, the way JSON carries it",
-        "where": {"field": "made_at", "operator": ">=", "value": "2026-03-01T00:00:00Z"},
+        "selection": {"field": "made_at", "operator": ">=", "value": "2026-03-01T00:00:00Z"},
     },
     {
         "name": "and",
-        "where": {
+        "selection": {
             "all": [
                 {"field": "size", "operator": ">", "value": 100},
                 {"field": "owner", "operator": "=", "value": "ana"},
@@ -163,7 +169,7 @@ CASES: list[dict[str, Any]] = [
     },
     {
         "name": "or",
-        "where": {
+        "selection": {
             "any": [
                 {"field": "owner", "operator": "=", "value": "beto"},
                 {"field": "size", "operator": ">", "value": 500},
@@ -172,15 +178,15 @@ CASES: list[dict[str, Any]] = [
     },
     {
         "name": "not",
-        "where": {"negate": {"field": "owner", "operator": "=", "value": "ana"}},
+        "selection": {"negate": {"field": "owner", "operator": "=", "value": "ana"}},
     },
     {
         "name": "not over a null: an absence is not the value, and is not its negation either",
-        "where": {"negate": {"field": "owner", "operator": "is null", "value": True}},
+        "selection": {"negate": {"field": "owner", "operator": "is null", "value": True}},
     },
     {
         "name": "three levels deep",
-        "where": {
+        "selection": {
             "all": [
                 {"field": "size", "operator": ">", "value": 0},
                 {
@@ -192,13 +198,90 @@ CASES: list[dict[str, Any]] = [
             ]
         },
     },
-    {"name": "no filter answers everything", "where": None},
+    {"name": "no filter answers everything", "selection": None},
 ]
 
 
-def _answered(case: dict[str, Any]) -> list[str]:
-    expression = None if case["where"] is None else Node.read(case["where"])
-    return [row.id for row in ROWS if Evaluation.matches(row, expression)]
+@dataclass
+class Line:
+    """A record a sale holds: what a filter that crosses a relation reads."""
+
+    product: str
+    qty: int
+
+
+@dataclass
+class Customer:
+    city: str
+
+
+@dataclass
+class Sale:
+    """A record holding others — several lines, one customer, maybe none — for the cases that
+    cross a relation (`through`). Apart from `ROWS`, which a flat table answers too."""
+
+    id: str
+    lines: list[Line] = field(default_factory=list)
+    customer: Customer | None = None
+
+
+SALES = [
+    Sale(id="s1", lines=[Line("desk", 12), Line("chair", 1)], customer=Customer("La Paz")),
+    Sale(id="s2", lines=[Line("lamp", 2)], customer=Customer("Sucre")),
+    Sale(id="s3", lines=[], customer=None),
+    Sale(id="s4", lines=[Line("desk", 3)], customer=Customer("La Paz")),
+]
+
+CROSSING: list[dict[str, Any]] = [
+    {
+        "name": "some line answers the selection",
+        "selection": {
+            "through": "lines",
+            "selection": {"field": "qty", "operator": ">", "value": 10},
+        },
+    },
+    {
+        "name": "a record holding no line answers no crossing",
+        "selection": {
+            "through": "lines",
+            "selection": {"field": "qty", "operator": ">=", "value": 0},
+        },
+    },
+    {
+        "name": "every line answers: no line answers the opposite",
+        "selection": {
+            "negate": {
+                "through": "lines",
+                "selection": {"negate": {"field": "qty", "operator": ">", "value": 1}},
+            }
+        },
+    },
+    {
+        "name": "the one record a to-one relation holds",
+        "selection": {
+            "through": "customer",
+            "selection": {"field": "city", "operator": "=", "value": "La Paz"},
+        },
+    },
+    {
+        "name": "a crossing beside a condition of the record",
+        "selection": {
+            "all": [
+                {"field": "id", "operator": "!=", "value": "s1"},
+                {
+                    "through": "lines",
+                    "selection": {"field": "product", "operator": "=", "value": "desk"},
+                },
+            ]
+        },
+    },
+]
+"""Cases over `SALES`: a filter that crosses a relation, answered over the records it holds."""
+
+
+def _answered(case: dict[str, Any], rows: list[Any] = ROWS) -> list[str]:
+    expression = None if case["selection"] is None else Node.read(case["selection"])
+    return [row.id for row in rows if Evaluation.matches(row, expression)]
 
 
 def test_every_case_is_answered_by_the_in_memory_evaluator():
@@ -212,6 +295,9 @@ def test_every_case_is_answered_by_the_in_memory_evaluator():
 
     for case, saved in zip(CASES, written["cases"]):
         assert saved["expected"] == _answered(case), case["name"]
+    assert written["crossing"]["rows"] == [asdict(one) for one in SALES]
+    for case, saved in zip(CROSSING, written["crossing"]["cases"], strict=True):
+        assert saved["expected"] == _answered(case, SALES), case["name"]
 
 
 def test_the_cases_cover_every_operator_the_engine_declares():
@@ -223,8 +309,8 @@ def test_the_cases_cover_every_operator_the_engine_declares():
     asked = {
         condition.operator
         for case in CASES
-        if case["where"] is not None
-        for condition in Node.read(case["where"]).conditions()
+        if case["selection"] is not None
+        for condition in Node.read(case["selection"]).conditions()
     }
 
     assert asked == set(Operator), f"no parity case for {sorted(set(Operator) - asked)}"
@@ -252,9 +338,28 @@ def write_parity() -> Path:
                 ),
                 "rows": [asdict(row) for row in ROWS],
                 "cases": [
-                    {"name": one["name"], "where": one["where"], "expected": _answered(one)}
+                    {
+                        "name": one["name"],
+                        "selection": one["selection"],
+                        "expected": _answered(one),
+                    }
                     for one in CASES
                 ],
+                "crossing": {
+                    "about": (
+                        "Filters that cross a relation (`through`): some record the relation "
+                        "holds — several, one or none — answers the selection."
+                    ),
+                    "rows": [asdict(one) for one in SALES],
+                    "cases": [
+                        {
+                            "name": one["name"],
+                            "selection": one["selection"],
+                            "expected": _answered(one, SALES),
+                        }
+                        for one in CROSSING
+                    ],
+                },
             },
             indent=2,
             ensure_ascii=False,

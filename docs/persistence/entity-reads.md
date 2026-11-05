@@ -43,7 +43,7 @@ class Account(Entity):
 
     @classmethod
     def DEFAULT_LITERAL_SEARCH(cls) -> Criteria:
-        return Criteria(where=Any(any=[
+        return Criteria(selection=Any(any=[
             Condition(field="code", operator=Operator.STARTS_WITH, value=TEXT),
             Condition(field="name", operator=Operator.LIKE, value=TEXT),
         ]))
@@ -102,7 +102,7 @@ nothing requires a prefix, and the records have their own name (`account`, `acco
 ### What the caller sends wins, part by part
 
 What the entity answers is the default. The caller's `criteria` replaces each part it **names**
-— `specification`, `order`, `pagination`, `count`… — and its `where` adds to the read's own
+— `specification`, `order`, `pagination`, `count`… — and its `selection` adds to the read's own
 filter (the key for a `Get`, the template for a select). This is `Criteria.replaced_by`.
 
 | The caller sends | It reads |
@@ -110,7 +110,7 @@ filter (the key for a `Get`, the template for a select). This is `Criteria.repla
 | nothing, or `Criteria()` | exactly what the entity answers |
 | `Criteria(specification=...)` | that specification, even one asking for more than `DEFAULT_READING` |
 | `Criteria(order=(Sort(field="name"),))` | in that order |
-| `Criteria(where=active = true)` | the key **and** `active = true`: a `Get` of an inactive record is not found |
+| `Criteria(selection=active = true)` | the key **and** `active = true`: a `Get` of an inactive record is not found |
 
 "Names" is what pydantic records as set (`model_fields_set`), not what differs from a default:
 `Criteria(order=())` names the order on purpose. A scope merged with `merged_with` carries only
@@ -121,7 +121,7 @@ the entity's defaults:
 @accounting.feature(QueryListAccounts)
 class ListAccounts(EntityReads[Account]):
     def search(self, dto: QueryListAccounts) -> ResponseListAccounts:
-        scope = Criteria(where=Condition(field="tenant_id", value=dto.tenant_id))
+        scope = Criteria(selection=Condition(field="tenant_id", value=dto.tenant_id))
         return super().search(dto.model_copy(update={"criteria": scope.merged_with(dto.criteria)}))
 ```
 
@@ -139,7 +139,7 @@ class ListAccounts(EntityReads[Account]):
   deep lists: a caller that wants a light one names a specification.
 
 `Get` and `GetMany` read as a page filtered by the key, not through `repository.get`. That
-way the definition (`entity_meta_data`) and the relations come back the same from every store,
+way the model's version (`model_version`) and the relations come back the same from every store,
 and the answer is cut by the same specification a page is. A Feature that is about to change
 the record reads it with `repository.get(id, detail=detail_of(Account))`, which hands back the
 live aggregate.
@@ -160,7 +160,7 @@ class IssueReads(EntityReads[Issue]):
 project(QueryIssueEvents(id=issue_id))                             # every event, oldest first
 project(QueryIssueEvents(id=issue_id, names=["project.issue.v1.closed"]))   # only those wire names
 project(QueryIssueEvents(id=issue_id, criteria=Criteria(
-    where=Condition(field="created_at", operator=Operator.GTE, value=start),
+    selection=Condition(field="created_at", operator=Operator.GTE, value=start),
 )))                                                                 # since a moment
 ```
 
@@ -178,7 +178,7 @@ project(QueryIssueEvents(id=issue_id, criteria=Criteria(
 - **`names`** selects the events whose wire name is one of them (`name in names`); a single
   name works as a one-item list. A name no class records answers no rows — it is not checked
   against the classes imported, which may not be yet.
-- **Oldest first** (`id`, a UUIDv7); the caller's criteria lays over it — its `where` adds, its
+- **Oldest first** (`id`, a UUIDv7); the caller's criteria lays over it — its `selection` adds, its
   `order` and `pagination` replace (`order=Sort.parse("-id")` for newest first).
 - **Several records at once** — an issue with its runs — is `history_of(issue, *runs)`: the
   criteria a `Search` on the context's event class reads them with, each by its type and

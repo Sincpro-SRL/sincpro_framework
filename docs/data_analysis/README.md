@@ -61,7 +61,7 @@ for n in range(2_500):
 
 posted = Criteria.model_validate(
     {
-        "where": {"field": "state", "operator": "=", "value": "posted"},
+        "selection": {"field": "state", "operator": "=", "value": "posted"},
         "order": [{"field": "id"}],
         "pagination": {"limit": 500},
     }

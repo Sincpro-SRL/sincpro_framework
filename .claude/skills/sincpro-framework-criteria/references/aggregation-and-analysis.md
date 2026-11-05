@@ -33,7 +33,7 @@ row count:
 
 ```python
 criteria = Criteria.model_validate({
-    "where": {"field": "state", "value": "posted"},
+    "selection": {"field": "state", "value": "posted"},
     "grouping": {
         "group_by": [{"field": "customer_id"}, {"field": "posted_at", "grain": "month"}],
         "measures": {"total": {"function": "sum", "field": "total"}},
@@ -89,7 +89,7 @@ For joins across tables, window functions or bulk statements inside a transactio
 ## Narrowing (multi-tenant, permissions)
 
 ```python
-anas_books = repository.narrowed(Criteria(where=Condition(field="customer_id", value=ana.id)))
+anas_books = repository.narrowed(Criteria(selection=Condition(field="customer_id", value=ana.id)))
 ```
 
 `narrowed(criteria)` is the same database seen through a filter **nothing can widen**: every

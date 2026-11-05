@@ -19,6 +19,8 @@ from typing import Any, get_args, get_origin
 
 from pydantic import BaseModel, TypeAdapter
 
+from sincpro_framework.ddd.metamodel import contract_of
+from sincpro_framework.ddd.metamodel.services.contract import entities_in
 from sincpro_framework.entrypoints.domain.layers import BINARY_JSON_FORMATS, BINARY_TYPES
 
 
@@ -99,6 +101,36 @@ def field_annotations(dto_type: Any) -> dict[str, Any]:
     return {}
 
 
+def contracted(schema: dict[str, Any], annotation: Any) -> dict[str, Any]:
+    """`schema` with every entity `annotation` reaches described by its published contract —
+    JSON Schema with `x-sincpro` (`contract_of`) — in place of what pydantic read off the class.
+
+        contracted(<ResponseSales' schema>, ResponseSales)
+            ->  the same schema, `$defs.Sale` the contract of Sale, `$defs.Customer` the one of
+                the entity Sale points at
+
+    1. The entities reached (`entities_in`); none, the schema as it is.
+    2. Each one's contract under `$defs` by its name, the entities its relations point at beside
+       it; the schema itself when it describes the entity.
+    Final: one description, whichever wire publishes it.
+    """
+    entities = entities_in(annotation, set())
+    if not entities:
+        return schema
+    written = dict(schema)
+    defs = dict(written.get("$defs") or {})
+    for entity in entities:
+        contract = contract_of(entity)
+        defs.update(contract.pop("$defs", {}))
+        if entity is annotation:
+            written = {**contract, "$defs": defs}
+        else:
+            defs[entity.__name__] = contract
+    if defs:
+        written["$defs"] = defs
+    return written
+
+
 def json_schema_for(annotation: Any) -> dict[str, Any]:
     """JSON Schema for a DTO, a dataclass, `list[...]`, a union — or a fallback.
 
@@ -113,14 +145,15 @@ def json_schema_for(annotation: Any) -> dict[str, Any]:
         ->  {"type": "object", "title": "Socket"}
 
     A pydantic model answers its own `model_json_schema`; anything else goes through a
-    cached `TypeAdapter`.
+    cached `TypeAdapter`. An entity it reaches is described by its published contract
+    (`contracted`), not by what pydantic reads off the dataclass.
     """
     if annotation is None:
         return {"type": "object"}
     try:
         if isinstance(annotation, type) and issubclass(annotation, BaseModel):
-            return annotation.model_json_schema()
-        return adapter(annotation).json_schema()
+            return contracted(annotation.model_json_schema(), annotation)
+        return contracted(adapter(annotation).json_schema(), annotation)
     except Exception:
         title = getattr(annotation, "__name__", None)
         return {"type": "object", "title": title} if title else {"type": "object"}

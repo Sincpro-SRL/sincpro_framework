@@ -12,6 +12,7 @@ from sqlalchemy.orm import registry
 from structlog.testing import capture_logs
 
 from sincpro_framework import UseFramework, exceptions
+from sincpro_framework.common.ids import new_entity_id
 from sincpro_framework.context import Drafts, InMemoryContexts
 from sincpro_framework.data_layer.orm import map_aggregates
 from sincpro_framework.data_layer.orm.sqlalchemy.adapters.numbering import DatabaseNumbering
@@ -403,10 +404,12 @@ def test_a_page_with_no_rows_describes_the_model_as_a_page_with_rows_does(databa
 
     with store.context() as repository:
         full = repository.search(
-            Sale, reading.model_copy(update={"where": Condition(field="id", value=sale.id)})
+            Sale,
+            reading.model_copy(update={"selection": Condition(field="id", value=sale.id)}),
         )
         empty = repository.search(
-            Sale, reading.model_copy(update={"where": Condition(field="id", value="nobody")})
+            Sale,
+            reading.model_copy(update={"selection": Condition(field="id", value="nobody")}),
         )
 
     assert full.items and not empty.items and empty.meta is not None
@@ -418,7 +421,7 @@ def test_a_page_with_no_rows_describes_the_model_as_a_page_with_rows_does(databa
 
 def test_a_drafted_sale_goes_out_with_its_lines_as_the_stored_one_does(database):
     """Over a database, with a relation in the entity's reading: the draft answers the same
-    fields, the same lines and the same definition as the stored sale."""
+    fields, the same lines and the same model version as the stored sale."""
     store = Repository(database)
     sale = a_stored_sale(store)
     desk = a_sales_desk(store)
@@ -438,7 +441,7 @@ def test_a_drafted_sale_goes_out_with_its_lines_as_the_stored_one_does(database)
     assert [sorted(line) for line in drafted_written["sale"]["lines"]] == [
         sorted(line) for line in written["sale"]["lines"]
     ]
-    assert drafted_written["entity_meta_data"] == written["entity_meta_data"] is not None
+    assert drafted_written["model_version"] == written["model_version"] != ""
     assert (written["sale"]["customer_id"], drafted_written["sale"]["customer_id"]) == (
         "c1",
         "c2",
@@ -632,7 +635,7 @@ def two_line_order(store: Repository) -> Order:
 
 def test_a_save_over_lines_cut_by_a_specification_keeps_the_stored_totals(order_store):
     order = two_line_order(order_store)
-    only_nine = Specification({"lines": Criteria(where=Condition(field="qty", value=9))})
+    only_nine = Specification({"lines": Criteria(selection=Condition(field="qty", value=9))})
     read = order_store.search(Order, Criteria(specification=only_nine)).items[0]
     assert [line.qty for line in read.lines] == [9]
 
@@ -747,7 +750,9 @@ def test_a_preview_computes_the_lines_before_the_order_as_the_save_does(order_st
         saved = Order(customer_id="c9")
         apply_values(saved, {"lines": lines})
         repository.save(saved)
-    stored = order_store.search(Order, Criteria(where=Condition(field="id", value=saved.id)))
+    stored = order_store.search(
+        Order, Criteria(selection=Condition(field="id", value=saved.id))
+    )
 
     for answer in (existing, fresh):
         assert (Decimal(answer.values["subtotal"]), Decimal(answer.values["total"])) == (
@@ -815,16 +820,29 @@ def test_a_line_assigned_with_its_id_over_an_order_read_without_lines(order_stor
     assert order_store.count(OrderLine).value == 1
 
 
-def test_a_line_id_the_order_does_not_hold_is_refused_naming_it(order_store):
+def test_a_line_the_form_created_is_saved_under_the_identity_the_form_minted(order_store):
     order = a_stored_order(order_store)
+    held = order.lines[0].id
+    minted = new_entity_id()
 
     with order_store.context() as repository:
         kept = repository.get(Order, order.id)
         assert kept is not None
-        with pytest.raises(exceptions.ClientError, match="gone-line"):
-            apply_values(
-                kept, {"lines": [{"id": "gone-line", "order_id": order.id, "qty": 1}]}
-            )
+        apply_values(
+            kept,
+            {
+                "lines": [
+                    {"id": held, "order_id": order.id, "qty": 2, "price": "10"},
+                    {"id": minted, "order_id": order.id, "qty": 1, "price": "5"},
+                ]
+            },
+        )
+        repository.save(kept)
+
+    with order_store.context() as repository:
+        stored = repository.get(Order, order.id)
+        assert stored is not None
+        assert sorted(line.id for line in stored.lines) == sorted([held, minted])
 
 
 def test_an_edited_line_keeps_its_row_in_memory_too():
@@ -889,7 +907,7 @@ def _warnings(logs: list) -> list[str]:
 
 def test_a_save_over_cut_lines_with_an_edited_line_keeps_the_totals_and_warns(order_store):
     order = two_line_order(order_store)
-    only_nine = Specification({"lines": Criteria(where=Condition(field="qty", value=9))})
+    only_nine = Specification({"lines": Criteria(selection=Condition(field="qty", value=9))})
     read = order_store.search(Order, Criteria(specification=only_nine)).items[0]
     read.lines[0].qty = 3
 

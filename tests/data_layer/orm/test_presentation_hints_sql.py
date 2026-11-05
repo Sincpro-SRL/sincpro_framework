@@ -27,7 +27,7 @@ from sincpro_framework.ddd import (
 )
 from sincpro_framework.ddd.criteria import Operator
 from sincpro_framework.ddd.entity import Entity
-from sincpro_framework.ddd.entity.entity_meta import describe_class
+from sincpro_framework.ddd.metamodel import StoreFacts, contract_of, description_of, model_of
 
 
 class SaleState(StrEnum):
@@ -75,7 +75,9 @@ HINTS = ("readonly", "required", "default", "readonly_when", "required_when", "v
 
 
 def test_the_mapped_class_publishes_the_hints_its_declaration_says():
-    on_the_class = describe_class(Sale, "id").model_dump(mode="json")["fields"]
+    on_the_class = description_of(Sale, StoreFacts(identity="id")).model_dump(mode="json")[
+        "fields"
+    ]
     on_the_table = ModelIntrospection.describe(Sale).model_dump(mode="json")["fields"]
 
     for name in on_the_class:
@@ -117,7 +119,9 @@ def test_a_confirmed_sale_still_saves_a_new_customer_and_the_screen_is_told_to_g
     answer = bus(QueryGetSale(id=sale.id), ResponseSale).model_dump(mode="json")
 
     assert answer["sale"]["customer_id"] == "c2"
-    assert answer["entity_meta_data"]["fields"]["customer_id"]["readonly_when"] == {
+    customer = contract_of(Sale)["properties"]["customer_id"]["x-sincpro"]
+    assert answer["model_version"] == model_of(Sale).fingerprint
+    assert customer["readonly_when"] == {
         "field": "state",
         "operator": "!=",
         "value": "draft",

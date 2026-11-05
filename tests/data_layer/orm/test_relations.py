@@ -122,7 +122,7 @@ def test_the_cursor_of_a_relation_pages_inside_that_parent(shelf, library):
     first = shelf.search(
         Authors,
         Criteria(
-            where=Condition(field="id", value=ada.id),
+            selection=Condition(field="id", value=ada.id),
             specification=Specification(
                 {
                     "books": Criteria(
@@ -136,7 +136,7 @@ def test_the_cursor_of_a_relation_pages_inside_that_parent(shelf, library):
     rest = shelf.search(
         Books,
         Criteria(
-            where=Condition(field="author_id", value=ada.id),
+            selection=Condition(field="author_id", value=ada.id),
             order=Sort.parse("-pages"),
             pagination=Pagination(limit=2).model_copy(
                 update={
@@ -182,7 +182,7 @@ def test_a_list_of_ids_in_a_column_resolves_and_filters(shelf):
             specification=Specification(
                 {
                     "sources": Criteria(
-                        where=Condition(field="pages", value=400, operator=Operator.GT)
+                        selection=Condition(field="pages", value=400, operator=Operator.GT)
                     )
                 }
             )
@@ -204,7 +204,7 @@ def test_another_context_answers_through_its_bus_with_the_reflected_criteria(she
             specification=Specification(
                 {
                     "reviews": Criteria(
-                        where=Condition(field="stars", value=3, operator=Operator.GTE),
+                        selection=Condition(field="stars", value=3, operator=Operator.GTE),
                         order=Sort.parse("-stars"),
                         pagination=Pagination(limit=1),
                     )
@@ -356,7 +356,7 @@ def test_the_definition_publishes_the_key_and_the_expanded_target(shelf):
 
 def test_the_answer_on_the_wire_shows_the_mask_and_the_relations_by_name(shelf):
     asked = Criteria(
-        where=Condition(field="title", value="Engine"),
+        selection=Condition(field="title", value="Engine"),
         specification=Specification(
             {
                 "title": Criteria(),
@@ -370,7 +370,8 @@ def test_the_answer_on_the_wire_shows_the_mask_and_the_relations_by_name(shelf):
         ),
     )
 
-    on_the_wire = ResponseBooks.of(shelf.search(Books, asked), asked).model_dump(mode="json")
+    page = shelf.search(Books, asked)
+    on_the_wire = ResponseBooks.of(page, asked).model_dump(mode="json")
 
     [engine] = on_the_wire["books"]
     assert set(engine) == {"id", "title", "author", "tags", "publisher"}
@@ -381,8 +382,9 @@ def test_the_answer_on_the_wire_shows_the_mask_and_the_relations_by_name(shelf):
         and engine["tags"]["cursor"] is None
     )
     assert engine["publisher"] == {"publisher_id": "pub_1", "name": "Penguin"}
-    fields = on_the_wire["entity_meta_data"]["fields"]
-    assert [n for n, f in fields.items() if f["type"] in RELATIONAL] == [
+    assert page.meta is not None
+    fields = page.meta.only(asked.specification).fields
+    assert [n for n, f in fields.items() if f.type in RELATIONAL] == [
         "author",
         "tags",
         "publisher",
@@ -390,7 +392,8 @@ def test_the_answer_on_the_wire_shows_the_mask_and_the_relations_by_name(shelf):
 
 
 def test_without_a_specification_the_wire_shows_scalars_and_keys_only(shelf):
-    on_the_wire = ResponseBooks.of(shelf.search(Books), Criteria()).model_dump()
+    page = shelf.search(Books)
+    on_the_wire = ResponseBooks.of(page, Criteria()).model_dump()
 
     assert set(on_the_wire["books"][0]) == {
         "id",
@@ -403,11 +406,8 @@ def test_without_a_specification_the_wire_shows_scalars_and_keys_only(shelf):
         "publisher_id",
         "source_ids",
     }
-    assert not [
-        f
-        for f in on_the_wire["entity_meta_data"]["fields"].values()
-        if f["type"] in RELATIONAL
-    ]
+    assert page.meta is not None
+    assert not [f for f in page.meta.only(None).fields.values() if f.type in RELATIONAL]
 
 
 def test_inside_a_unit_of_work_a_page_left_on_the_record_gives_way_to_the_whole(
@@ -418,7 +418,7 @@ def test_inside_a_unit_of_work_a_page_left_on_the_record_gives_way_to_the_whole(
     not what a rule can be decided on."""
     ada = library["authors"][0]
     cut = Criteria(
-        where=Condition(field="id", value=ada.id),
+        selection=Condition(field="id", value=ada.id),
         specification=Specification({"books": Criteria(pagination=Pagination(limit=1))}),
     )
 
@@ -436,7 +436,7 @@ def test_a_page_per_key_travels_to_the_bus_so_no_parent_starves_another(shelf):
     page = shelf.search(
         Books,
         Criteria(
-            where=Condition(
+            selection=Condition(
                 field="title", value=["Engine", "Compiler"], operator=Operator.IN
             ),
             specification=Specification(

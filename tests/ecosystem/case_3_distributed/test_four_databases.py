@@ -111,7 +111,7 @@ def test_the_same_fact_is_kept_four_times_and_every_copy_is_right(four_databases
     in_notifications = four_databases.store("notifications").fetch_all(
         notifications.Tolds,
         Criteria(
-            where=Condition(field="said", value=StockReserved.name),
+            selection=Condition(field="said", value=StockReserved.name),
             order=(Sort(field="id"),),
         ),
     )
@@ -161,7 +161,7 @@ def test_the_fact_and_the_invoice_commit_together_and_nothing_else_can(
         four_databases.store("notifications")
         .count(
             notifications.Tolds,
-            Criteria(where=Condition(field="said", value=InvoiceIssued.name)),
+            Criteria(selection=Condition(field="said", value=InvoiceIssued.name)),
         )
         .value
         == 0

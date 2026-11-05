@@ -13,6 +13,7 @@ Without these two, every listing writes the same five fields again and the sixth
 them slightly differently.
 """
 
+import dataclasses
 from collections.abc import Callable, Iterator
 from contextlib import contextmanager
 from contextvars import ContextVar
@@ -21,6 +22,7 @@ from functools import cache
 from typing import Any, Literal, Self, get_args, get_origin
 
 from pydantic import (
+    BaseModel,
     GetJsonSchemaHandler,
     PrivateAttr,
     SerializationInfo,
@@ -43,9 +45,8 @@ from sincpro_framework.ddd.entity.entity_collection import (
 from sincpro_framework.ddd.entity.entity_meta import (
     FieldType,
     Meta,
-    annotations_of,
-    presentation_of,
 )
+from sincpro_framework.ddd.metamodel import model_of
 from sincpro_framework.sincpro_abstractions import DataTransferObject
 
 _SERIALISING: ContextVar[bool] = ContextVar("sincpro_serialising", default=False)
@@ -192,7 +193,7 @@ def _cut(
     if meta is not None:
         selected = {meta.identity, *meta.masked(specification)}
     else:
-        display = presentation_of(type(record)).display
+        display = model_of(type(record)).presented.display
         named = specification.named or ([display] if display else [])
         selected = {identity_name(type(record)), *named}
     written = {name: value for name, value in written.items() if name in selected}
@@ -248,9 +249,9 @@ def _extended(schema: dict[str, Any], declared: Any) -> dict[str, Any]:
         written: dict[str, Any] = {}
         for name in one.fields:
             try:
-                written[name] = TypeAdapter(annotations_of(one.entity)[name]).json_schema(
-                    mode="serialization"
-                )
+                written[name] = TypeAdapter(
+                    model_of(one.entity).annotations[name]
+                ).json_schema(mode="serialization")
             except (PydanticSchemaGenerationError, PydanticInvalidForJsonSchema):
                 # a type pydantic cannot say: the field is there, untyped
                 written[name] = {}
@@ -263,6 +264,25 @@ def _extended(schema: dict[str, Any], declared: Any) -> dict[str, Any]:
     if not added:
         return schema
     return {"allOf": [schema], "properties": added}
+
+
+def _version_of(annotation: Any) -> str:
+    """The version of the model of the records a field holds — `list[Sale]`, `Sale`,
+    `Sale | None` —: the fingerprint its contract published, which a client compares with the
+    one it loaded; empty for what the metamodel does not describe.
+
+        _version_of(list[Sale])     ->  "3f9c…"
+        _version_of(list[dict])     ->  ""
+    """
+    for argument in get_args(annotation):
+        found = _version_of(argument)
+        if found:
+            return found
+    if isinstance(annotation, type) and (
+        dataclasses.is_dataclass(annotation) or issubclass(annotation, BaseModel)
+    ):
+        return model_of(annotation).fingerprint
+    return ""
 
 
 def _properties(
@@ -278,7 +298,7 @@ class ResponsePaginatedQuery(DataTransferObject):
     """What any paged answer returns beside its records.
 
         class ResponseListDatasets(ResponsePaginatedQuery):
-            datasets: list[Dataset]         →   .datasets .cursor .count .entity_meta_data
+            datasets: list[Dataset]         →   .datasets .cursor .count .model_version
 
     The records carry the subclass's own name — `datasets`, `runs`, `plans` — because a reader
     of a response should see what it is about, not `items`.
@@ -291,12 +311,10 @@ class ResponsePaginatedQuery(DataTransferObject):
     """How many match in total, capped unless the criteria asked for the exact number.
     `exact=False` means *at least* that many."""
 
-    entity_meta_data: Meta | None = None
-    """What may be filtered, ordered and walked, and with which operators, so a client can
-    build a filter form, a column menu or a URL without carrying a schema.
-
-    Travels with every answer unless the criteria said `meta=false` — a caller that already
-    knows the model, and is paging, can turn it off."""
+    model_version: str = ""
+    """The version of the model of the records — the fingerprint its published contract carries
+    (`x-sincpro.version`). What may be filtered, ordered and shown is described once, in the
+    discovery document; a client that holds another version loads the document again."""
 
     dropped: list[Dropped] = []
     """Conditions the model could not answer — an unknown field, an operator its type does not
@@ -349,11 +367,7 @@ class ResponsePaginatedQuery(DataTransferObject):
                 ],
                 "cursor": self.cursor,
                 "count": self.count.model_dump(mode=mode) if self.count else None,
-                "entity_meta_data": (
-                    self.entity_meta_data.model_dump(mode=mode)
-                    if self.entity_meta_data
-                    else None
-                ),
+                "model_version": self.model_version,
                 "dropped": [one.model_dump(mode=mode) for one in self.dropped],
             }
         for name in type(self).model_fields:
@@ -370,7 +384,7 @@ class ResponsePaginatedQuery(DataTransferObject):
 
         **Without this, every paginated answer is published as `{"type": "object"}`.** A model
         with a plain serializer tells pydantic "I write an object" and nothing else, so the
-        schema loses `cursor`, `count`, `entity_meta_data`, `dropped` and the records — which is
+        schema loses `cursor`, `count`, `model_version`, `dropped` and the records — which is
         exactly what a client generating types needs, and why the TypeScript package had to
         write those types by hand.
 
@@ -403,23 +417,20 @@ class ResponsePaginatedQuery(DataTransferObject):
             in      EntityCollection(20 records of 197, more), the criteria it answered
             out     ResponseListDatasets(datasets=[...], cursor='eyJ…', count=Count(197, True))
 
-        The page already carries the definition of the model it came from — the engine read it
-        to answer — so a use case never has to know that describing a model is a thing that
-        exists. The criteria says whether the definition was asked for, and its specification
-        is the one mask over the records and the definition alike.
+        The page carries the description of the model it came from — the engine read it to
+        answer —: its specification is the mask over the records, and the version of the model
+        goes out with them, so a use case never has to know that describing a model is a thing
+        that exists.
 
         >>> ResponseListDatasets.of(page, criteria).datasets[0].name
         'labs.csv'
         """
+        records = cls.records_field()
         response = cls(
-            **{cls.records_field(): list(page.items)},
+            **{records: list(page.items)},
             cursor=page.cursor,
             count=page.count,
-            entity_meta_data=(
-                page.meta.only(criteria.specification)
-                if criteria.meta and page.meta is not None
-                else None
-            ),
+            model_version=_version_of(cls.model_fields[records].annotation),
             dropped=list(page.dropped),
         )
         response._specification = criteria.specification
@@ -511,14 +522,14 @@ class ResponseRecord(DataTransferObject):
     """What a read of one record returns beside it.
 
     class ResponseAccount(ResponseRecord):
-        account: Account            →   .account .entity_meta_data .dropped
+        account: Account            →   .account .model_version .dropped
 
     The record carries the subclass's own name for the same reason a page's records do. On the
     wire it is cut by the specification exactly as a record of a page is.
     """
 
-    entity_meta_data: Meta | None = None
-    """What may be asked about the model, unless the criteria said `meta=false`."""
+    model_version: str = ""
+    """The version of the model of the record, as a page answers it."""
 
     dropped: list[Dropped] = []
     """What the specification named and the model could not answer."""
@@ -562,11 +573,7 @@ class ResponseRecord(DataTransferObject):
         with writing_out():
             written = {
                 field: _record(getattr(self, field), self._specification, self._meta, mode),
-                "entity_meta_data": (
-                    self.entity_meta_data.model_dump(mode=mode)
-                    if self.entity_meta_data
-                    else None
-                ),
+                "model_version": self.model_version,
                 "dropped": [one.model_dump(mode=mode) for one in self.dropped],
             }
         for name in type(self).model_fields:
@@ -598,19 +605,16 @@ class ResponseRecord(DataTransferObject):
 
     @classmethod
     def of(cls, record: Any, page: EntityCollection, criteria: Criteria) -> Any:
-        """One record as the answer that goes out, with the definition of the page it was
-        read in.
+        """One record as the answer that goes out, cut as the page it was read in, with the
+        version of its model.
 
             in      Account(1105, 'Caja'), the page it came in, the criteria it answered
-            out     ResponseAccount(account=Account(1105, 'Caja'), entity_meta_data=Meta(...))
+            out     ResponseAccount(account=Account(1105, 'Caja'), model_version='3f9c…')
         """
+        field = cls.record_field()
         response = cls(
-            **{cls.record_field(): record},
-            entity_meta_data=(
-                page.meta.only(criteria.specification)
-                if criteria.meta and page.meta is not None
-                else None
-            ),
+            **{field: record},
+            model_version=_version_of(cls.model_fields[field].annotation),
             dropped=list(page.dropped),
         )
         response._specification = criteria.specification
@@ -622,7 +626,7 @@ class ResponseRecords(DataTransferObject):
     """What a read of several records by their identities returns: a list, not a page.
 
     class ResponseAccounts(ResponseRecords):
-        accounts: list[Account]     →   .accounts .missing .entity_meta_data .dropped
+        accounts: list[Account]     →   .accounts .missing .model_version .dropped
 
     The records come in the order the identities were asked, each one cut by the specification
     as a record of a page is. An identity with no record is listed in `missing`, not raised:
@@ -632,8 +636,8 @@ class ResponseRecords(DataTransferObject):
     missing: list[str] = []
     """The identities asked that have no record."""
 
-    entity_meta_data: Meta | None = None
-    """What may be asked about the model, unless the criteria said `meta=false`."""
+    model_version: str = ""
+    """The version of the model of the records, as a page answers it."""
 
     dropped: list[Dropped] = []
     """What the specification named and the model could not answer."""
@@ -668,11 +672,7 @@ class ResponseRecords(DataTransferObject):
                     for one in getattr(self, field)
                 ],
                 "missing": list(self.missing),
-                "entity_meta_data": (
-                    self.entity_meta_data.model_dump(mode=mode)
-                    if self.entity_meta_data
-                    else None
-                ),
+                "model_version": self.model_version,
                 "dropped": [one.model_dump(mode=mode) for one in self.dropped],
             }
         return written
@@ -708,18 +708,15 @@ class ResponseRecords(DataTransferObject):
             ResponseAccounts.of(["b", "gone", "a"], <page holding a and b>, criteria, "id")
                 ->  ResponseAccounts(accounts=[b, a], missing=["gone"])
 
-        Context: the identity is compared as text; the definition travels — cut by the
-        specification — only when the criteria asked for it, with what the page dropped.
+        Context: the identity is compared as text; the version of the model travels with what
+        the page dropped.
         """
         found = {str(getattr(one, identity)): one for one in page.items}
+        field = cls.records_field()
         response = cls(
-            **{cls.records_field(): [found[one] for one in ids if one in found]},
+            **{field: [found[one] for one in ids if one in found]},
             missing=[one for one in ids if one not in found],
-            entity_meta_data=(
-                page.meta.only(criteria.specification)
-                if criteria.meta and page.meta is not None
-                else None
-            ),
+            model_version=_version_of(cls.model_fields[field].annotation),
             dropped=list(page.dropped),
         )
         response._specification = criteria.specification

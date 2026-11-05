@@ -157,7 +157,7 @@ def test_a_translated_column_round_trips_and_is_searched_in_every_language(invoi
     found = invoices.search(
         Invoice,
         Criteria(
-            where=Condition(field="title", operator=Operator.LIKE, value="año"),
+            selection=Condition(field="title", operator=Operator.LIKE, value="año"),
             pagination=Pagination(limit=10),
         ),
     )

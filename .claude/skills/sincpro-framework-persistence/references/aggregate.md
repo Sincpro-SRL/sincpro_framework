@@ -116,6 +116,13 @@ validate_fn, name)` factory makes a validated primitive instead (`Email("ana@acm
 non-`None` value it returns **replaces** the input, so a predicate such as `lambda v: "@" in v`
 would silently turn the text into `'True'`.
 
+What a value holds that a client should check too goes in `holds=`, written as Python over the
+value and read once into the language: `Discount = ValueObject(Decimal, name="Discount",
+holds=lambda v: 0 <= v <= 30)`. It is checked after `validate_fn` (which may normalise), refused
+naming the rule as written, and published — `minimum`/`maximum`/`enum` in the JSON Schema where a
+keyword says the same, the whole expression under `x-sincpro.holds`, and `FieldMeta.holds` on every
+field typed with it. A rule no expression can say (a check digit) stays in `validate_fn`.
+
 ## Extending an aggregate
 
 A subclass stores inherited fields in the parent's table and its own in its table, which references

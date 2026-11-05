@@ -24,9 +24,13 @@ from sincpro_framework.ddd import (
     Entity,
     EntityEdits,
     EntityReads,
+    Money,
+    MultiCurrency,
+    Presentation,
     PreviewEntity,
     ResponseEdit,
     ResponsePreviewEntity,
+    Widget,
     check,
     compute,
 )
@@ -415,3 +419,68 @@ def test_a_draft_is_warned_and_saved_and_its_save_is_refused_until_the_rule_hold
         )
     assert saved is not None and saved.sale.delivery == date(2026, 11, 30)
     assert repository.get(Sale, "S-1") is not None
+
+
+# ---------------------------------------------------------------------------------------------
+# what a client is told, derived
+# ---------------------------------------------------------------------------------------------
+
+
+def test_a_warning_of_a_check_names_its_rule_and_says_it_blocks_the_save():
+    sale = Sale(state=SaleState.CONFIRMED)
+
+    with read_only() as warnings:
+        recompute(sale, ["state"])
+
+    assert [(one.rule, one.blocks_save) for one in warnings] == [
+        ("Sale.delivery_when_confirmed", True)
+    ]
+
+
+def test_a_refusal_names_the_rule_of_each_field_error():
+    with pytest.raises(ddd_exceptions.ChecksFailed) as refused:
+        MemoryRepository().save(Sale(state=SaleState.CONFIRMED))
+
+    assert [one.rule for one in problem_of(refused.value).errors] == [
+        "Sale.delivery_when_confirmed"
+    ]
+
+
+def test_the_description_says_what_each_change_reaches():
+    fields = MemoryRepository().definition(Sale).fields
+
+    assert fields["customer"].affects == ["payment_term"]
+    assert fields["lines"].affects == ["total"]
+    assert fields["state"].judged_by == ["delivery_when_confirmed"]
+    assert fields["total"].affects == [] and fields["total"].judged_by == []
+
+
+FRAMEWORK = {"id", "created_at", "updated_at", "version"}
+
+
+def test_each_field_has_a_widget_from_its_type_and_presentation_overrides_it():
+    @dataclass
+    class Note(Entity):
+        title: str = ""
+        body: str = ""
+        state: SaleState = SaleState.DRAFT
+        amount: Decimal = Decimal("0")
+        due: date | None = None
+        price: Money | None = None
+        prices: MultiCurrency | None = None
+
+        presentation = Presentation["Note"](
+            widgets=lambda n: {n.body: Widget.TEXTAREA, n.title: "headline"}
+        )
+
+    fields = MemoryRepository().definition(Note).fields
+
+    assert {name: fields[name].widget for name in fields if name not in FRAMEWORK} == {
+        "title": "headline",
+        "body": "textarea",
+        "state": "select",
+        "amount": "decimal",
+        "due": "date",
+        "price": "money",
+        "prices": "money",
+    }

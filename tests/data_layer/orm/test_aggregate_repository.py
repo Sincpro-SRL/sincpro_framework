@@ -31,7 +31,7 @@ from .ledger_models import Account, Owner, account_table, bank, declare
 
 class Accounts(DatabaseAggregateRepository[Account]):
     def of(self, owner: Owner) -> EntityCollection[Account]:
-        return self.search(Criteria(where=Condition(field="owner_id", value=owner.id)))
+        return self.search(Criteria(selection=Condition(field="owner_id", value=owner.id)))
 
     def overdrawn_risk(self, below: int) -> EntityCollection[Account]:
         asked = Criteria()
@@ -160,7 +160,7 @@ def test_a_narrowed_view_keeps_its_named_questions_behind_the_scope(ledger, ana)
         [Account(owner_id=ana.id, balance=1), Account(owner_id=other.id, balance=2)]
     )
 
-    anas = accounts.narrowed(Criteria(where=Condition(field="owner_id", value=ana.id)))
+    anas = accounts.narrowed(Criteria(selection=Condition(field="owner_id", value=ana.id)))
     assert isinstance(anas, Accounts)
     assert anas.of(other).ids == []
     assert anas.count().value == 1
@@ -179,7 +179,7 @@ def test_analysis_and_bulk_writes_take_the_aggregate_from_the_view(ledger, ana):
     assert accounts.group_by(["owner_id"])[0]["count"] == 2
     assert (
         accounts.update_all(
-            Criteria(where=Condition(field="owner_id", value=ana.id)), {"balance": 5}
+            Criteria(selection=Condition(field="owner_id", value=ana.id)), {"balance": 5}
         )
         == 2
     )

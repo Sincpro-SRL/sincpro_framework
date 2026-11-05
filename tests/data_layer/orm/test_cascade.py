@@ -195,8 +195,10 @@ def test_a_cut_reading_inside_a_unit_of_work_is_read_whole_before_an_assignment(
     stored_workspace(repository, "api", "web")
     only_api = Criteria.model_validate(
         {
-            "where": {"field": "code", "value": "sp-1"},
-            "specification": {"repositories": {"where": {"field": "name", "value": "api"}}},
+            "selection": {"field": "code", "value": "sp-1"},
+            "specification": {
+                "repositories": {"selection": {"field": "name", "value": "api"}}
+            },
         }
     )
 
@@ -292,7 +294,7 @@ def test_an_assignment_is_carried_out_once(repository):
 def test_a_cut_reading_assigned_over_saves_and_removes_nothing(repository, warnings):
     stored_workspace(repository, "api", "web", "cli")
     page = Criteria.model_validate(
-        {"specification": {"repositories": {"where": {"field": "name", "value": "api"}}}}
+        {"specification": {"repositories": {"selection": {"field": "name", "value": "api"}}}}
     )
     workspace = repository.first(Workspace, page)
 
@@ -314,7 +316,7 @@ def test_an_archived_child_is_not_an_orphan(repository):
         unit.save(held)
 
     archived = Criteria.model_validate(
-        {"where": {"field": "archived_at", "operator": "is null", "value": False}}
+        {"selection": {"field": "archived_at", "operator": "is null", "value": False}}
     )
     assert [doc.title for doc in repository.fetch_all(Doc, archived).items] == ["old"]
 

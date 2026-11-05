@@ -82,12 +82,12 @@ def test_only_the_pages_not_held_reach_the_database(database: Database):
 def test_a_repository_of_another_tenant_never_answers_from_what_was_held(database: Database):
     acme = Repository(database).narrowed(
         Criteria.model_validate(
-            {"where": {"field": "tenant", "operator": "=", "value": "acme"}}
+            {"selection": {"field": "tenant", "operator": "=", "value": "acme"}}
         )
     )
     globex = Repository(database).narrowed(
         Criteria.model_validate(
-            {"where": {"field": "tenant", "operator": "=", "value": "globex"}}
+            {"selection": {"field": "tenant", "operator": "=", "value": "globex"}}
         )
     )
     cache = QueryCache()

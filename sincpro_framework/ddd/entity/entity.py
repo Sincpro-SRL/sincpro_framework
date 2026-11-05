@@ -271,7 +271,7 @@ class Entity:
     def DEFAULT_LITERAL_SEARCH(cls) -> Criteria | None:
         """How a text a person typed finds records: a template whose `where` holds `TEXT`.
 
-            return Criteria(where=Any([
+            return Criteria(selection=Any([
                 Condition(field="code", operator=Operator.STARTS_WITH, value=TEXT),
                 Condition(field="name", operator=Operator.LIKE, value=TEXT),
             ]))
@@ -284,7 +284,9 @@ class Entity:
         annotation = annotations_of(cls).get(display)
         if annotation is None or logical_type(annotation) not in TEXT_TYPES:
             return None
-        return Criteria(where=Condition(field=display, operator=Operator.LIKE, value=TEXT))
+        return Criteria(
+            selection=Condition(field=display, operator=Operator.LIKE, value=TEXT)
+        )
 
     @property
     def is_new(self) -> bool:

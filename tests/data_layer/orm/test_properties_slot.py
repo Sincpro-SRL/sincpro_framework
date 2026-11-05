@@ -81,7 +81,7 @@ def test_a_key_of_the_slot_is_a_field_of_the_entity(engine_url):
 def test_a_key_of_the_slot_is_filtered_like_a_column(engine_url):
     Invoice, store = world(engine_url)
 
-    found = store.search(Invoice, Criteria(where=Condition(field="zone", value="Z1")))
+    found = store.search(Invoice, Criteria(selection=Condition(field="zone", value="Z1")))
 
     assert sorted(one.number for one in found) == ["F-1", "F-3"]
 
@@ -132,5 +132,5 @@ def test_a_module_maps_a_key_of_the_slot_of_an_entity_it_does_not_own(engine_url
         connection.execute(
             update(table).where(table.c.id == record.id).values(properties={"zone": "Z1"})
         )
-    found = store.search(Invoice, Criteria(where=Condition(field="zone", value="Z1")))
+    found = store.search(Invoice, Criteria(selection=Condition(field="zone", value="Z1")))
     assert [one.number for one in found] == ["F-1"]

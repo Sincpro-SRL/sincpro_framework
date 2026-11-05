@@ -19,7 +19,7 @@ from collections import Counter
 from typing import Any
 
 from sincpro_framework.ddd.criteria import Criteria, Grouping, GroupingLevel, Pagination
-from sincpro_framework.ddd.entity.computed import computed_fields_of
+from sincpro_framework.ddd.metamodel import model_of
 
 EVERY_RECORD = 100_000
 
@@ -40,7 +40,7 @@ class ComputedFieldsContract:
         name — the only ones with two answers to compare."""
         return {
             name: computation
-            for name, computation in computed_fields_of(self.entity).items()
+            for name, computation in model_of(self.entity).computed.items()
             if computation.sql is not None and computation.python is not None
         }
 

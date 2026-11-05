@@ -48,7 +48,7 @@ NAMED_LABS = Condition(field="name", operator=Operator.LIKE, value="labs%")
 
 def test_a_condition_is_field_operator_and_value():
     """The one form. No `{"row_count__gt": 1000}` and no `["row_count", ">", 1000]`."""
-    asked = Criteria(where=OVER_A_THOUSAND)
+    asked = Criteria(selection=OVER_A_THOUSAND)
 
     assert asked.expression == OVER_A_THOUSAND
 
@@ -64,12 +64,12 @@ def test_the_operator_is_written_as_the_definition_publishes_it():
 
 def test_a_group_is_an_object_with_all_any_or_negate():
     conjunction = Criteria.model_validate(
-        {"where": {"all": [OVER_A_THOUSAND, NAMED_LABS]}}
+        {"selection": {"all": [OVER_A_THOUSAND, NAMED_LABS]}}
     ).expression
     disjunction = Criteria.model_validate(
-        {"where": {"any": [OVER_A_THOUSAND, NAMED_LABS]}}
+        {"selection": {"any": [OVER_A_THOUSAND, NAMED_LABS]}}
     ).expression
-    negation = Criteria.model_validate({"where": {"negate": OVER_A_THOUSAND}}).expression
+    negation = Criteria.model_validate({"selection": {"negate": OVER_A_THOUSAND}}).expression
 
     assert conjunction == All(all=[OVER_A_THOUSAND, NAMED_LABS])
     assert disjunction == Any(any=[OVER_A_THOUSAND, NAMED_LABS])
@@ -82,7 +82,7 @@ def test_groups_nest_without_limit():
     showed all of them."""
     tree = Criteria.model_validate(
         {
-            "where": {
+            "selection": {
                 "all": [
                     OVER_A_THOUSAND,
                     {"any": [NAMED_LABS, {"negate": OVER_A_THOUSAND}]},
@@ -98,14 +98,16 @@ def test_groups_nest_without_limit():
 
 def test_a_filter_that_is_neither_form_is_refused():
     """An API that accepts anything and guesses is one that fails in silence."""
-    with pytest.raises(exceptions.InvalidCriteria, match="'all', 'any' or 'negate'"):
-        Criteria.model_validate({"where": {"row_count__gt": 1000}})
+    with pytest.raises(
+        exceptions.InvalidCriteria, match="'all', 'any', 'negate' or 'through'"
+    ):
+        Criteria.model_validate({"selection": {"row_count__gt": 1000}})
 
 
 def test_the_filter_travels_in_a_url_as_its_own_json():
     """Not another form: the same one inside a parameter."""
     from_url = Criteria.model_validate(
-        {"where": '{"field": "row_count", "operator": ">", "value": 1000}'}
+        {"selection": '{"field": "row_count", "operator": ">", "value": 1000}'}
     )
 
     assert from_url.expression == OVER_A_THOUSAND
@@ -113,7 +115,7 @@ def test_the_filter_travels_in_a_url_as_its_own_json():
 
 def test_unreadable_json_is_refused_naming_the_problem():
     with pytest.raises(exceptions.InvalidCriteria, match="does not read as JSON"):
-        Criteria.model_validate({"where": "this is not json"})
+        Criteria.model_validate({"selection": "this is not json"})
 
 
 # ── the page ───────────────────────────────────────────────────────────────────
@@ -141,7 +143,7 @@ def test_the_page_has_a_default_and_no_ceiling():
 def test_resuming_a_reading_keeps_everything_but_where_it_starts():
     """`model_copy(update={"cursor": …})` does nothing — `cursor` is a read-through property —
     and a loop that paged that way never ended."""
-    asked = Criteria(where=OVER_A_THOUSAND, pagination=Pagination(limit=2))
+    asked = Criteria(selection=OVER_A_THOUSAND, pagination=Pagination(limit=2))
 
     resumed = asked.resuming_from("eyJ")
 
@@ -188,7 +190,7 @@ def test_a_misspelt_level_or_fold_is_refused():
 
 
 def test_filters_accumulate_with_and():
-    merged = Criteria(where=OVER_A_THOUSAND).merged_with(Criteria(where=NAMED_LABS))
+    merged = Criteria(selection=OVER_A_THOUSAND).merged_with(Criteria(selection=NAMED_LABS))
 
     assert merged.expression == All(all=[OVER_A_THOUSAND, NAMED_LABS])
 
@@ -216,16 +218,6 @@ def test_the_cursor_never_survives_a_merge_that_did_not_bring_it():
     assert holding.merged_with(Criteria()).cursor is None
 
 
-def test_turning_the_definition_off_survives_a_merge():
-    """With the definition travelling by default, the opposite rule made `meta=False`
-    impossible to say."""
-    quiet = Criteria(meta=False)
-
-    assert quiet.merged_with(Criteria()).meta is False
-    assert Criteria().merged_with(quiet).meta is False
-    assert Criteria().merged_with(Criteria()).meta is True
-
-
 # ── reading the tree ───────────────────────────────────────────────────────────
 
 
@@ -238,7 +230,7 @@ def test_every_leaf_is_reachable_whatever_the_shape():
 def test_a_criteria_survives_its_own_json():
     """That is how one travels to a queue, to another service or in the body of a POST."""
     asked = Criteria(
-        where=All(all=[OVER_A_THOUSAND, NAMED_LABS]),
+        selection=All(all=[OVER_A_THOUSAND, NAMED_LABS]),
         order=(Sort(field="registered_at", descending=True),),
         pagination=Pagination(limit=80, strategy=Cursor(token="eyJ")),
         grouping=Grouping(group_by=(GroupingLevel(field="produced_by"),)),
@@ -258,7 +250,7 @@ def test_a_condition_built_from_python_takes_dates_and_decimals():
     assert with_date.value == moment
     assert isinstance(with_amount.value, Decimal)
     assert with_text.value == "2026-03-14"
-    assert Criteria(where=with_date).model_dump(mode="json")["where"]["value"] == (
+    assert Criteria(selection=with_date).model_dump(mode="json")["selection"]["value"] == (
         "2026-03-14T15:09:26"
     )
     assert Condition(field="n", value=5).value == 5
@@ -274,7 +266,7 @@ def test_the_filter_nodes_are_written_in_code_by_the_names_json_uses():
         written
         == Criteria.model_validate(
             {
-                "where": {
+                "selection": {
                     "all": [
                         {"any": [OVER_A_THOUSAND, NAMED_LABS]},
                         {"negate": OVER_A_THOUSAND},

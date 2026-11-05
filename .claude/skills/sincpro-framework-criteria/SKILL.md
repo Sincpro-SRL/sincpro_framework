@@ -29,7 +29,7 @@ This skill stands alone. The framework repo goes deeper in `docs/persistence/cri
 
 | Term | What it is | Kind | Import |
 |---|---|---|---|
-| `Criteria` | `where`, `order`, `pagination`, `specification`, `grouping`, `count`, `meta` | DTO | `from sincpro_framework.ddd import Criteria` |
+| `Criteria` | `selection`, `order`, `pagination`, `specification`, `grouping`, `count` | DTO | `from sincpro_framework.ddd import Criteria` |
 | `Condition` | One question: `field`, `operator` (default `=`), `value` | DTO | `from sincpro_framework.ddd import Condition` |
 | `All` / `Any` / `Not` | Combine conditions; JSON keys `all`, `any`, `negate` | DTO | `from sincpro_framework.ddd import All, Any, Not` |
 | `Operator` | `=` `!=` `in` `not in` `like` `starts with` `>` `>=` `<` `<=` `is null` `contains` `not contains` `between` — `%` and `_` are text, never wildcards | enum | `from sincpro_framework.ddd import Operator` |
@@ -42,19 +42,20 @@ This skill stands alone. The framework repo goes deeper in `docs/persistence/cri
 | `EntityCollection[T]` | What `search` answers: `items`, `count`, `cursor`, `dropped`, `meta` | dataclass (frozen) | `from sincpro_framework.ddd import EntityCollection` |
 | `Count` / `Dropped` | `value` + `exact` / `field` + `reason` (`unknown_field`, `unsupported_operator`, `bad_value`, `not_expandable`) | DTO | `from sincpro_framework.ddd import Count, Dropped` |
 | `Meta` | What the model publishes: fields, types, operators, sortable, relations, labels | DTO | `from sincpro_framework.ddd import Meta` |
-| `Query` / `ResponsePaginatedQuery` | Command base carrying `criteria` / answer base with `cursor`, `count`, `entity_meta_data`, `dropped` + exactly one records field | DTO | `from sincpro_framework.ddd import Query, ResponsePaginatedQuery` |
+| `Query` / `ResponsePaginatedQuery` | Command base carrying `criteria` / answer base with `cursor`, `count`, `model_version`, `dropped` + exactly one records field | DTO | `from sincpro_framework.ddd import Query, ResponsePaginatedQuery` |
 | `Bucket` / `Pivot` | A group with its count, measures and the `criteria` that opens it / a cross table with margins | DTO | `from sincpro_framework.ddd import Bucket, Pivot` |
 | `Evaluation` | `Evaluation.matches(record, where)` / `Evaluation.holds(where, read, resolution)`: a filter evaluated in memory, the same semantics as the SQL translator (`holds` reads a value lazily, so `all`/`any` still stop early) | facade | `from sincpro_framework.ddd.criteria import Evaluation` |
 | `Today` / `Now` / `FromContext` / `Period` / `Param` / `FromField` | A condition's value that is read when the filter runs, not when it was written: `Condition(field="due", operator=Operator.LT, value=Today())`, `Today().before(days=30)`, `FromContext(key="user_id")`, `Period(name=Periods.THIS_MONTH)` or a window `Period(unit=Grain.DAY, last=30)` (with `between`), `FromField(name="credit_limit")` for a column against a column. On the wire `{"$": "today", "plus": {"days": -30}, "start_of": "month"}`. The server reads them (UTC; the context's `timezone` and `week_starts_on` decide the calendar); `context` is the server's own context, never the client's | node | `from sincpro_framework.ddd import Today, Now, FromContext, FromField, Period, Periods, Grain` |
 | `GroupingLevel(part=…)` / `GroupingLevel(fill=True)` / `Part` | Group a date by a NUMBER it holds (`Part.MONTH` is every March, whatever the year; `DAY_OF_WEEK` 1 = Monday) instead of a grain (a range of time); `fill` lists the groups with no rows (enum choices, booleans, part numbers, a date grain the filter bounds) with count 0. A part's group has no filter that opens it: `Bucket.openable` is False. Folds also take `median`, `bool_and`, `bool_or`; `Meta.fields[x].groupable` / `.aggregates` say what a field takes | node | `from sincpro_framework.ddd.criteria import GroupingLevel, Part, Grouping, Measure` |
 | `Resolution` | `Resolution.resolve(where, ResolutionContext(now=…))` reads a filter's dynamic values into literals; `Resolution.has_dynamic_values(where)` says whether it has any | facade | `from sincpro_framework.ddd.criteria import Resolution, ResolutionContext` |
 | `Node` | What every filter node is (`Condition`, `All`, `Any`, `Not`): `Node.combined(a, b)` ANDs filters flat (a `None` is no filter), `Node.read(json)` builds the tree, `where.conditions()` lists the leaves, `where.canonical()` is its one form for a key, `where.mapped(leaf)` rebuilds it leaf by leaf, `where.with_text(text)` fills a `TEXT` template | base class | `from sincpro_framework.ddd.criteria import Node` |
-| `DEFAULT_READING` / `DEFAULT_ORDER` / `DEFAULT_LITERAL_SEARCH` | What an entity answers once, as criteria: what a record brings (`Specification`), the list order (`Sort`s), the template a typed text fills (`Criteria` whose `where` holds `TEXT`) — with `DEFAULT_GET_ID` and `DEFAULT_DISPLAY`. `@classmethod`s on `Entity`; a caller's criteria wins for each part it names (`Criteria.replaced_by`) | `@classmethod` | `Entity`; `TEXT` from `sincpro_framework.ddd` |
-| `Presentation` | Form hints only, whose conditions are criteria expressions (`When(Condition.on(i.state, …), i.field)`) | class attribute | `from sincpro_framework.ddd import Presentation` |
+| `DEFAULT_READING` / `DEFAULT_ORDER` / `DEFAULT_LITERAL_SEARCH` | What an entity answers once, as criteria: what a record brings (`Specification`), the list order (`Sort`s), the template a typed text fills (`Criteria` whose `selection` holds `TEXT`) — with `DEFAULT_GET_ID` and `DEFAULT_DISPLAY`. `@classmethod`s on `Entity`; a caller's criteria wins for each part it names (`Criteria.replaced_by`) | `@classmethod` | `Entity`; `TEXT` from `sincpro_framework.ddd` |
+| `expression_of(Entity, lambda e: …)` | A predicate written as Python over the entity, read once into an expression (`and`/`or`/`not`, comparisons, `in`, `is None`, `any(… for l in e.lines)` → `through`) — typed by the entity, never run per record | function | `sincpro_framework.ddd.criteria` |
+| `Presentation` | Form hints only, whose conditions are criteria expressions (`When(i.state != …, …)` written as Python, or `When(Condition.on(i.state, …), i.field)`) | class attribute | `from sincpro_framework.ddd import Presentation` |
 | `matching` / `detail_of` | `DEFAULT_LITERAL_SEARCH` filled with a literal / `DEFAULT_READING` as the criteria for `get(id, detail=...)` | function | `from sincpro_framework.ddd import matching, detail_of` |
 | `InvalidCriteria` | A question that cannot be answered (unorderable field, bad grouping, unknown measure) | exception | `from sincpro_framework.ddd import exceptions` → `exceptions.InvalidCriteria` |
 
-Look-alikes: `Criteria.order` orders rows, `Grouping.order` orders groups. `where` filters rows,
+Look-alikes: `Criteria.order` orders rows, `Grouping.order` orders groups. `selection` filters rows,
 `where_measures` filters groups. A **measure** is a sum/count/avg; an **aggregate** is the DDD root.
 `specification` says what comes back; `narrowed()` (on the repository) says what may be seen.
 
@@ -92,7 +93,7 @@ client JSON {"criteria": {...}} → CommandListInvoices(criteria=Criteria)
       +1 capped count           free when the first page came back short
       +1 per named relation     for the whole page, never per row
     return ResponseListInvoices.of(page, dto.criteria)
-  → wire: records cut by the specification, cursor, count, dropped, entity_meta_data
+  → wire: records cut by the specification, cursor, count, dropped, model_version
 ```
 
 ## Mistakes an agent makes
@@ -116,7 +117,7 @@ Silent ones first — the runtime gives no error for these.
 - **`repository.stream(...)` yields pages (`EntityCollection`), not records.** Iterate
   `for page in …: for record in page: …`.
 - **A hand-built response loses the contract.** Returning `items=list(page.items)` drops the
-  cursor, count, `dropped`, `entity_meta_data` and the specification mask on the wire. Use
+  cursor, count, `dropped`, `model_version` and the specification mask on the wire. Use
   `ResponsePaginatedQuery.of(page, criteria)`.
 - **`specification: {}` is not `None`.** `None` brings every scalar and no relation; `{}` brings
   the identity and, when the entity names one, its display field.
@@ -141,7 +142,7 @@ Silent ones first — the runtime gives no error for these.
 from sincpro_framework.ddd import Criteria
 
 big_ones = Criteria.model_validate({
-    "where": {"field": "total", "operator": ">=", "value": 75},
+    "selection": {"field": "total", "operator": ">=", "value": 75},
     "order": [{"field": "total", "descending": True}],
     "pagination": {"limit": 20},
     "specification": {"number": {}, "total": {}, "customer": {"specification": {"name": {}}}},
@@ -184,7 +185,7 @@ class ListInvoices(Feature):
   order with `id` last, or the cursor buys nothing.
 - **A count is capped by default** (10 000, `count.exact is False` past it) and free when the
   first page came back short. `count: "exact"` pays the full price; `"none"` skips it.
-- **`dropped` applies to `where` and `specification`, never a 400.** `order`, `grouping` and
+- **`dropped` applies to `selection` and `specification`, never a 400.** `order`, `grouping` and
   measures that cannot be answered raise `InvalidCriteria` instead.
 - **A specification is a mask** and can only take away, at any depth — safe as a permission.
 - **`Meta` is reflexive** (`meta: true` by default): the answer says what to ask next, so a client

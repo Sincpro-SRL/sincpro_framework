@@ -18,7 +18,7 @@ from typing import Any
 from sincpro_framework.ddd import exceptions
 from sincpro_framework.ddd.criteria import CountMode, Criteria
 from sincpro_framework.ddd.entity.entity_collection import identity_name
-from sincpro_framework.ddd.entity.entity_meta import checks_of
+from sincpro_framework.ddd.metamodel import model_of
 from sincpro_framework.ddd.reads.reads import with_computed_relations
 from sincpro_framework.sincpro_abstractions import DataTransferObject
 
@@ -52,7 +52,7 @@ def violations_of(
     Final: the violations, in the order the records were read.
     """
     name = getattr(check, "__name__", "")
-    declared = next((one for one in checks_of(entity) if one.method == name), None)
+    declared = next((one for one in model_of(entity).checks if one.method == name), None)
     if declared is None:
         raise exceptions.ProgrammingError(
             f"{entity.__name__} has no @check {name or check!r}: violations_of takes one of its "

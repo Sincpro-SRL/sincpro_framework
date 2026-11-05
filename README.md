@@ -1175,7 +1175,7 @@ repository = Repository(database)                     # add_dependency("reposito
 repository.save([Product(name="Coffee", price=30), Product(name="Tea", price=20)])
 
 page = repository.search(Products, Criteria.model_validate({
-    "where": {"field": "price", "operator": ">", "value": 25},
+    "selection": {"field": "price", "operator": ">", "value": 25},
     "order": [{"field": "price", "descending": True}],
     "pagination": {"limit": 10},
 }))

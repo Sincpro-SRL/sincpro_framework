@@ -13,7 +13,7 @@ ROW = {"state": "posted", "total": 12_000, "tags": ["vip"], "partner": None}
 
 
 def _where(raw: dict) -> Criteria:
-    return Criteria.model_validate({"where": raw})
+    return Criteria.model_validate({"selection": raw})
 
 
 def test_a_condition_reads_its_field_through_the_reader():

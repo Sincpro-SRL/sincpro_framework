@@ -30,7 +30,7 @@ from .models import ROW_COUNT, Note, Notes, Thing, Things
 
 
 def titled(store, title: str) -> Notes:
-    return store.search(Notes, Criteria(where=Condition(field="title", value=title)))
+    return store.search(Notes, Criteria(selection=Condition(field="title", value=title)))
 
 
 def test_the_session_exists_only_inside_a_unit_of_work(store):

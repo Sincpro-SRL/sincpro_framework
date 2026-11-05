@@ -41,6 +41,7 @@ from sincpro_framework.data_layer.orm.sqlalchemy.services.sql_translator import 
 )
 from sincpro_framework.ddd.entity import Entity, extensions, relations
 from sincpro_framework.ddd.events import DomainEvent
+from sincpro_framework.ddd.metamodel import forget_models
 
 
 def map_aggregates(
@@ -185,7 +186,8 @@ def map_aggregates(
     for entity, per_field in (overlay or {}).items():
         for field, changes in per_field.items():
             extensions.overlay(entity, field, dict(changes))
-    ModelIntrospection.describe.cache_clear()  # what an entity is told about has changed with what extends it
+    forget_models()  # what an entity declares has changed with what extends it
+    ModelIntrospection.describe.cache_clear()
     for entity, names in (uses or {}).items():
         extension_mapping.refuse_a_field_the_core_lacks(entity, names)
     for entity, wanted in (requires or {}).items():
@@ -196,6 +198,11 @@ def map_aggregates(
     # and one mapped now is a relation on both, and both are seen on the second call.
     for mapper in mapper_registry.mappers:
         install(mapper.class_, inferred_foreign_keys(mapper_registry, mapper.class_))
+    # Compiled and described now, at boot: a declaration that cannot be read — a misspelled
+    # field in a computation, a check over a field that is not there — fails here, naming the
+    # class; and the metamodel learns what this store knows of each, which is what is published.
+    for entity in tables:
+        ModelIntrospection.describe(entity)
 
 
 def map_events(mapper_registry: registry, base: type[DomainEvent], table: Table) -> None:

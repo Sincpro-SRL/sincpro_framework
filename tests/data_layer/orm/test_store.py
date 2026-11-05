@@ -154,7 +154,7 @@ def test_an_unknown_filter_is_dropped_reported_and_does_not_narrow(store):
     page = store.search(
         Things,
         Criteria(
-            where=Condition(field="legacy", value="1"),
+            selection=Condition(field="legacy", value="1"),
             pagination=Pagination(limit=ROW_COUNT + 10),
         ),
     )
@@ -167,7 +167,7 @@ def test_contains_finds_a_member_of_a_list_column(store):
     page = store.search(
         Things,
         Criteria(
-            where=Condition(field="tags", operator=Operator.CONTAINS, value="even"),
+            selection=Condition(field="tags", operator=Operator.CONTAINS, value="even"),
             pagination=Pagination(limit=ROW_COUNT + 10),
         ),
     )
@@ -179,7 +179,7 @@ def test_like_is_case_insensitive_containment(store):
     page = store.search(
         Things,
         Criteria(
-            where=Condition(field="name", operator=Operator.LIKE, value="THING 1"),
+            selection=Condition(field="name", operator=Operator.LIKE, value="THING 1"),
             pagination=Pagination(limit=ROW_COUNT + 10),
         ),
     )

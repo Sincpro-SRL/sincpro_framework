@@ -295,7 +295,7 @@ def test_the_labels_a_ticket_references_carry_no_form_state_of_their_own(store, 
 
     answer = saved(bus, values={"subject": "x", "labels": [labels["urgent"].id]})
 
-    assert answer.states["labels"].items == []
+    assert answer.states["labels"].items == {}
 
 
 def test_a_label_never_stored_is_refused_before_any_pair_is_written(store, labels):

@@ -136,7 +136,7 @@ def test_the_core_is_filtered_by_a_field_of_an_extension(engine_url):
     world = World(engine_url).fill()
 
     found = world.store.search(
-        world.Move, Criteria(where=Condition(field="route", value="R7"))
+        world.Move, Criteria(selection=Condition(field="route", value="R7"))
     )
 
     assert sorted(one.number for one in found) == ["F-B", "F-C"] and not found.dropped
@@ -163,7 +163,7 @@ def test_the_core_is_filtered_ordered_and_grouped_with_a_field_of_an_extension_i
     ordered = world.store.search(
         world.Move,
         Criteria(
-            where=Condition(field="route", value="R7"),
+            selection=Condition(field="route", value="R7"),
             order=(Sort(field="total", descending=True),),
         ),
     )
@@ -203,7 +203,9 @@ def written(world: World, record_id: str, specification: Specification | None = 
     criteria = Criteria(specification=specification)
     page = world.store.search(
         world.Move,
-        Criteria(where=Condition(field="id", value=record_id), specification=specification),
+        Criteria(
+            selection=Condition(field="id", value=record_id), specification=specification
+        ),
     )
     return responses.many.of(page, criteria).model_dump(mode="json")["moves"][0]
 

@@ -413,7 +413,7 @@ class Writing(RepositoryState, Extends):
         """Sets these values on every row the filter matches, in one statement; the number of
         rows is the answer.
 
-            repository.update_all(Session, Criteria(where=expired), {"state": "closed"})
+            repository.update_all(Session, Criteria(selection=expired), {"state": "closed"})
 
         **Past the aggregate, on purpose.** No hook runs, no cascade, no change tracking, no
         version check — what Django's `update()` and Rails' `update_all` skip too. For a write
@@ -468,7 +468,7 @@ class Writing(RepositoryState, Extends):
         """Deletes every row the filter matches, in one statement; the number of rows is the
         answer.
 
-            repository.remove_all(Session, Criteria(where=expired))
+            repository.remove_all(Session, Criteria(selection=expired))
 
         No hook, no cascade — the children a root owns are not taken with it, and a foreign key
         that still points at a row refuses the delete as a `ConstraintViolation`. For rows with

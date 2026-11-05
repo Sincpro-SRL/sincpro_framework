@@ -25,12 +25,12 @@ def test_a_key_an_ordering_does_not_have_is_refused():
 
 def test_a_key_a_condition_does_not_have_is_refused():
     with pytest.raises(exceptions.InvalidCriteria, match="op"):
-        Criteria.model_validate({"where": {"field": "total", "op": ">", "value": 1}})
+        Criteria.model_validate({"selection": {"field": "total", "op": ">", "value": 1}})
 
 
 def test_a_group_that_mixes_all_and_any_is_refused_not_half_read():
     with pytest.raises(exceptions.InvalidCriteria, match="all"):
-        Criteria.model_validate({"where": {"any": [], "all": []}})
+        Criteria.model_validate({"selection": {"any": [], "all": []}})
 
 
 def test_a_tolerant_reading_leaves_out_what_it_does_not_know_at_every_depth():
@@ -39,7 +39,7 @@ def test_a_tolerant_reading_leaves_out_what_it_does_not_know_at_every_depth():
             "limit": 10,
             "pagination": {"limit": 20, "size": 5},
             "order": [{"field": "total", "direction": "desc"}],
-            "where": {
+            "selection": {
                 "all": [{"field": "total", "operator": ">", "value": 1, "op": "?"}],
                 "x": 1,
             },
@@ -55,7 +55,7 @@ def test_a_tolerant_reading_leaves_out_what_it_does_not_know_at_every_depth():
 def test_what_the_language_has_reads_as_it_always_did():
     criteria = Criteria.model_validate(
         {
-            "where": {"field": "total", "operator": ">", "value": 1},
+            "selection": {"field": "total", "operator": ">", "value": 1},
             "order": [{"field": "total", "descending": True}],
             "pagination": {"limit": 10},
             "specification": {"lines": {"pagination": {"limit": 5}}},

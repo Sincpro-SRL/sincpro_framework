@@ -32,7 +32,7 @@ from .population import Census
 POSTED = Condition(field="entry_state", value="posted")
 
 FOUR_LEVELS = Criteria(
-    where=POSTED,
+    selection=POSTED,
     grouping=Grouping(
         group_by=(
             GroupingLevel(field="journal_id"),
@@ -69,13 +69,14 @@ def month_of(database: Database, column):
 
 def test_double_entry_holds_over_the_whole_ledger(ledger: Repository, census: Census):
     measures = ledger.measures(
-        Line, Criteria(where=POSTED), debit=("sum", "debit"), credit=("sum", "credit")
+        Line, Criteria(selection=POSTED), debit=("sum", "debit"), credit=("sum", "credit")
     )
 
     assert measures["debit"] == measures["credit"]
     assert measures["debit"] > 0
     assert (
-        ledger.count(Line, Criteria(where=POSTED, count=CountMode.EXACT)).value < census.lines
+        ledger.count(Line, Criteria(selection=POSTED, count=CountMode.EXACT)).value
+        < census.lines
     )
 
 
@@ -86,7 +87,7 @@ def test_every_account_balance_is_the_sum_of_its_posted_lines(
         measures = ledger.measures(
             Line,
             Criteria(
-                where=All(all=[Condition(field="account_id", value=account.id), POSTED])
+                selection=All(all=[Condition(field="account_id", value=account.id), POSTED])
             ),
             debit=("sum", "debit"),
             credit=("sum", "credit"),
@@ -144,11 +145,11 @@ def test_a_bucket_opens_to_exactly_the_rows_it_counted(ledger: Repository):
 
 
 def test_the_flat_group_by_agrees_with_the_first_level(ledger: Repository):
-    flat = ledger.group_by(Line, ["journal_id"], Criteria(where=POSTED))
+    flat = ledger.group_by(Line, ["journal_id"], Criteria(selection=POSTED))
     first_level = ledger.group_by_levels(
         Line,
         Criteria(
-            where=POSTED, grouping=Grouping(group_by=(GroupingLevel(field="journal_id"),))
+            selection=POSTED, grouping=Grouping(group_by=(GroupingLevel(field="journal_id"),))
         ),
     )
 
@@ -161,7 +162,7 @@ def test_a_null_partner_is_a_bucket_of_its_own_that_opens(ledger: Repository):
     by_partner = ledger.group_by_levels(
         Line,
         Criteria(
-            where=POSTED, grouping=Grouping(group_by=(GroupingLevel(field="partner_id"),))
+            selection=POSTED, grouping=Grouping(group_by=(GroupingLevel(field="partner_id"),))
         ),
     )
     without = next(bucket for bucket in by_partner if bucket.value is None)
@@ -191,7 +192,7 @@ def test_two_levels_with_a_page_of_eighty_ids_per_group_match_a_hand_written_win
     """Journal → account, the eighty most recent lines of every account as ids: what a screen
     that lists groups and lets the user open one needs, in three statements."""
     asked = Criteria(
-        where=POSTED,
+        selection=POSTED,
         order=Sort.parse("-posted_at"),
         pagination=Pagination(limit=80),
         grouping=Grouping(
@@ -244,7 +245,7 @@ def test_a_pivot_of_journals_by_month_matches_a_hand_written_group_by(
             Line,
             rows=["journal_id"],
             columns=[GroupingLevel(field="posted_at", grain=Grain.MONTH)],
-            criteria=Criteria(where=POSTED),
+            criteria=Criteria(selection=POSTED),
             debit=("sum", "debit"),
         )
 
@@ -273,7 +274,7 @@ def test_a_pivot_of_journals_by_month_matches_a_hand_written_group_by(
 def test_the_heaviest_accounts_come_first_and_only_the_top_ones(ledger: Repository):
     """What a dashboard asks: the five accounts that moved the most, and nothing else."""
     top = Criteria(
-        where=POSTED,
+        selection=POSTED,
         grouping=Grouping(
             group_by=(GroupingLevel(field="account_id"),),
             measures={"debit": Measure(function=MeasureFunction.SUM, field="debit")},
@@ -292,7 +293,7 @@ def test_the_heaviest_accounts_come_first_and_only_the_top_ones(ledger: Reposito
     every = ledger.group_by_levels(
         Line,
         Criteria(
-            where=POSTED,
+            selection=POSTED,
             grouping=Grouping(
                 group_by=(GroupingLevel(field="account_id"),),
                 measures={"debit": Measure(function=MeasureFunction.SUM, field="debit")},
@@ -308,18 +309,18 @@ def test_a_repository_narrowed_to_one_journal_never_sees_another(
 ):
     sales, purchases = masters["journals"][0], masters["journals"][1]
     only_sales = ledger.narrowed(
-        Criteria(where=Condition(field="journal_id", value=sales.id))
+        Criteria(selection=Condition(field="journal_id", value=sales.id))
     )
 
     assert (
         only_sales.count(Lines).value
         == ledger.count(
-            Lines, Criteria(where=Condition(field="journal_id", value=sales.id))
+            Lines, Criteria(selection=Condition(field="journal_id", value=sales.id))
         ).value
     )
     assert only_sales.count(Lines).value < ledger.count(Lines).value
     assert only_sales.distinct(Lines, "journal_id") == [sales.id]
     theirs = ledger.first(
-        Lines, Criteria(where=Condition(field="journal_id", value=purchases.id))
+        Lines, Criteria(selection=Condition(field="journal_id", value=purchases.id))
     )
     assert theirs is not None and only_sales.get(Line, theirs.id) is None

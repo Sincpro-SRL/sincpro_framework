@@ -8,9 +8,9 @@ broken rule does: while a form is edited it warns, when the record is saved it r
 
 | Kind of rule | Example | Where it goes | When it runs |
 |---|---|---|---|
-| One value | a positive amount, a valid tax id | a `ValueObject` or the field's type | when the value is built |
+| One value | a positive amount, a valid tax id | a `ValueObject` — `holds=lambda v: v > 0` publishes it for a client too — or the field's type | when the value is built |
 | The aggregate's own fields | a confirmed order has a delivery date; a product appears once | **`@check`** on the entity | every save; while a form is edited, as a warning |
-| Something outside the record | the customer has credit; the repositories it names exist | a hook (`before_save`), which has the bus | every save |
+| Something outside the record | the customer has credit; the repositories it names exist | a hook (`before_save`), with its dependencies, the context and the bus — [Checks and hooks](#checks-and-hooks) | every save |
 | An action | confirm, share, change tenant | a Command and the entity's method | that action only |
 | A value computed from others | a line's amount, the total | **`@compute`** | every save; while a form is edited, what the change reaches |
 | A value proposed from others | the payment term of the customer picked | **`@compute(editable=True)`** | only while a form is edited, when the change reaches it |
@@ -102,6 +102,13 @@ are refused there, naming the method. A method can be on any dataclass — a lin
 - **`@compute(…, editable=True)`** — a proposal, not a rule. It runs only when a change reaches
   what it depends on, and never when a save computes the record whole, so the value the user
   typed over it is the one stored. `Meta` publishes the field editable; a computed one, read-only.
+- **A computation simple enough runs in the browser too.** When the method's body is one
+  `return` of `+`, `-`, `*` over the record's own fields and literal numbers, or a `sum(… for one
+  in self.lines)` of such, the metamodel writes it down as a formula and the contract publishes
+  it (`x-sincpro.computes`): a client computes the field as the server does — exactly, decimal
+  places included (`valueOf` in `@sincpro/criteria`) — and asks the server only for what it cannot
+  compute. Anything else — a division, a condition, a read of another service — has no formula,
+  and the server computes it in a preview, as before.
 - **`@check(watches)`** — the method raises `InvalidValue` when the rule is broken. With no
   path, the failure points at the first field it watches: list first the field the user fixes.
   With a path of its own it points anywhere inside the aggregate — a line's cell included.
@@ -124,6 +131,8 @@ except exceptions.ChecksFailed as refused:
         ("delivery",),
         ("lines", 1, "product"),
     ]
+else:
+    raise AssertionError("the save let the broken sale through")
 ```
 
 A save computes every computation that is not editable — the lines first — then runs every
@@ -161,9 +170,10 @@ fields the form says changed. Only what that change reaches runs:
 - a check that watches a field the change reached, which warns the form (`FormWarning`) and
   refuses nothing: a draft may be incomplete.
 
-A form names a line's cell by its position in the list it sent: `lines.1.qty` runs the second
+A form names a line's cell by the line's identity — `lines.0192….qty` —, or by its position in
+the list it sent when the line is a plain value with none, as here: `lines.1.qty` runs the second
 line's checks of `qty` and its editable computations of `qty`; `lines.1` runs every check of
-that line; `lines` runs every check of every line. Nothing named — a form that just opened —
+that line; `lines` runs every check of every line; a path that names no line is refused. Nothing named — a form that just opened —
 computes every computation that is not editable and warns of nothing.
 
 Outside `read_only()`, `recompute` runs no check: the save checks them all.
@@ -188,7 +198,8 @@ picking a product proposes its price. The save keeps what was typed.
 ## Lines and other aggregates
 
 A record the aggregate owns — a line — declares its own checks and computations; each runs on
-every line, its warnings and failures pointing at it (`("lines", 2, "price")`). A rule across
+every line, its warnings and failures pointing at it — by its identity when it is an entity
+(`("lines", "0192…", "price")`), by its position when it is a plain value. A rule across
 lines belongs to the aggregate, which sees them all (`each_product_once`). Another aggregate it
 only points at — the tags of a many-to-many, a customer — is computed if it computes, but its
 checks are its own save's: a stored tag that breaks a rule written after it never refuses the
@@ -199,9 +210,73 @@ cut by a specification, assigned blind — is not judged: a rule over lines nobo
 nothing to judge. Lines held in part may break it unseen, so that skip is logged with the way
 out (read them whole). A relation never read cannot have changed, so that one is silent.
 
-A rule that reads another aggregate or anything outside the record — the customer's credit,
-repositories stored elsewhere, a call to another service — is not a check: it is a hook, which
-has the bus and runs inside the transaction of the save. See [Hooks](hooks.md).
+## Checks and hooks
+
+A check is the domain's: a method of the entity over the fields it holds, with nothing injected,
+so it runs anywhere the record is — a save, a draft, a preview, a test with no bus. A hook is
+the application's: a class around the aggregate's writes and reads with everything a Feature of
+its bus has.
+
+```python
+from sincpro_framework import UseFramework
+from sincpro_framework.context import ContextKey
+from sincpro_framework.ddd.repositories import Hook, Hooks
+
+sales = UseFramework("sales", log_after_execution=False)
+
+
+class CreditBook:
+    def allows(self, customer: str, amount: Decimal) -> bool:
+        return customer != "walk-in" or amount <= Decimal("500")
+
+
+sales_hooks = Hooks(None)
+
+
+@sales_hooks.on(Sale)
+class CreditLimit(Hook):
+    def before_save(self, sale: Sale) -> None:
+        if not self.credit.allows(sale.customer, sale.total):  # a dependency of the bus
+            raise exceptions.InvalidValue(
+                f"{sale.customer} has no credit for {sale.total} "
+                f"(asked by {self.context.get(ContextKey.USER_ID)})",
+                ("customer",),
+            )
+
+
+sales.add_dependency("credit", CreditBook())
+guarded = MemoryRepository(hooks=sales_hooks.inject(sales))
+
+with sales.context({ContextKey.USER_ID: "ana"}):
+    guarded.save(Sale(customer="walk-in", lines=[SaleLine("desk", 2, Decimal("100"))]))
+    try:
+        guarded.save(Sale(customer="walk-in", lines=[SaleLine("desk", 9, Decimal("100"))]))
+    except exceptions.InvalidValue as refused:
+        assert "no credit for 900" in str(refused) and "ana" in str(refused)
+    else:
+        raise AssertionError("the hook let the sale through")
+```
+
+| | `@check` | Hook |
+|---|---|---|
+| Layer | domain: the entity's own method | application: a class registered on the bounded context's `Hooks` |
+| Reads | the fields of the aggregate and the lines it writes | anything — another aggregate, another context, the caller |
+| Has | the record | `self.<dependency>`, `self.context` (the user, the tenant, the language), `self.bus` to run a Query or a Command |
+| Runs | before a save; while a form is edited, as a warning | at its moments: `before_save`, `after_save`, `before_create`/`update`, `before_remove`, `before_archive`, `after_read`, `after_search`… |
+| In a draft or a preview | warns | does not run: nothing is written there |
+| Order and control | declaration order | `after=`, `before=`, `sequence=`, gates (`AccessControl`), `replaces=` |
+| Refusal | `ChecksFailed`, every failure at once | whatever it raises, the first one |
+| `SKIP_CHECKS` | skipped | runs — a hook reads the key from `self.context`, or a gate does, to skip as well |
+
+A save runs the computations, then the checks, then the `before_save` hooks — so a hook is handed
+an aggregate that already holds its own rules and judges only what lies outside it — and inside
+the save's transaction, so a hook that refuses rolls everything back. A hook never writes back
+through the repository that fired it (it would fire itself forever); it runs a Command through
+`self.bus`, or writes through another repository. Everything about hooks: [Hooks](hooks.md).
+
+Which one, in one question: **can the rule be judged with the record alone?** Then it is a check,
+and the form sees it while it is typed. Does it need a dependency, the caller or another
+aggregate? Then it is a hook, and it answers on save.
 
 ## A subclass, a module that extends
 
@@ -223,11 +298,6 @@ computations the same way — see [Extending an entity](extensions.md).
 ## An import skips the rules, out loud
 
 ```python
-from sincpro_framework import UseFramework
-from sincpro_framework.context import ContextKey
-
-sales = UseFramework("sales", log_after_execution=False)
-
 with sales.context({ContextKey.SKIP_CHECKS: "legacy import 2026-11", ContextKey.USER_ID: "ana"}):
     repository.save(Sale(state=SaleState.CONFIRMED, lines=[SaleLine("desk", 2, Decimal("10"))]))
 ```
