@@ -230,8 +230,8 @@ files = [
 
 [package.dependencies]
 cffi = [
-    {version = ">=2.0.0b1", markers = "python_version >= \"3.14\""},
     {version = ">=1.0.1", markers = "python_version < \"3.14\""},
+    {version = ">=2.0.0b1", markers = "python_version >= \"3.14\""},
 ]
 
 [[package]]
@@ -423,33 +423,12 @@ dev = ["backports.zoneinfo ; python_version < \"3.9\"", "freezegun (>=1.0,<2.0)"
 
 [[package]]
 name = "beartype"
-version = "0.22.9"
-description = "Unbearably fast near-real-time pure-Python runtime-static type-checker."
-optional = true
-python-versions = ">=3.10"
-groups = ["main"]
-markers = "extra == \"mcp\" and python_version <= \"3.14\""
-files = [
-    {file = "beartype-0.22.9-py3-none-any.whl", hash = "sha256:d16c9bbc61ea14637596c5f6fbff2ee99cbe3573e46a716401734ef50c3060c2"},
-    {file = "beartype-0.22.9.tar.gz", hash = "sha256:8f82b54aa723a2848a56008d18875f91c1db02c32ef6a62319a002e3e25a975f"},
-]
-
-[package.extras]
-dev = ["autoapi (>=0.9.0)", "celery", "click", "coverage (>=5.5)", "docutils (>=0.22.0)", "equinox ; sys_platform == \"linux\" and python_version < \"3.15.0\"", "fastmcp ; python_version < \"3.14.0\"", "jax[cpu] ; sys_platform == \"linux\" and python_version < \"3.15.0\"", "jaxtyping ; sys_platform == \"linux\"", "langchain ; python_version < \"3.14.0\" and sys_platform != \"darwin\" and platform_python_implementation != \"PyPy\"", "mypy (>=0.800) ; platform_python_implementation != \"PyPy\"", "nuitka (>=1.2.6) ; sys_platform == \"linux\" and python_version < \"3.14.0\"", "numba ; python_version < \"3.14.0\"", "numpy ; python_version < \"3.15.0\" and sys_platform != \"darwin\" and platform_python_implementation != \"PyPy\"", "pandera (>=0.26.0) ; python_version < \"3.14.0\"", "poetry", "polars ; python_version < \"3.14.0\"", "pydata-sphinx-theme (<=0.7.2)", "pygments", "pyinstaller", "pyright (>=1.1.370)", "pytest (>=6.2.0)", "redis", "rich-click", "setuptools", "sphinx", "sphinx (>=4.2.0,<6.0.0)", "sphinxext-opengraph (>=0.7.5)", "sqlalchemy", "torch ; sys_platform == \"linux\" and python_version < \"3.14.0\"", "tox (>=3.20.1)", "typer", "typing-extensions (>=3.10.0.0)", "xarray ; python_version < \"3.15.0\""]
-doc-ghp = ["mkdocs-material[imaging] (>=9.6.0)", "mkdocstrings-python (>=1.16.0)", "mkdocstrings-python-xref (>=1.16.0)"]
-doc-rtd = ["autoapi (>=0.9.0)", "pydata-sphinx-theme (<=0.7.2)", "setuptools", "sphinx (>=4.2.0,<6.0.0)", "sphinxext-opengraph (>=0.7.5)"]
-test = ["celery", "click", "coverage (>=5.5)", "docutils (>=0.22.0)", "equinox ; sys_platform == \"linux\" and python_version < \"3.15.0\"", "fastmcp ; python_version < \"3.14.0\"", "jax[cpu] ; sys_platform == \"linux\" and python_version < \"3.15.0\"", "jaxtyping ; sys_platform == \"linux\"", "langchain ; python_version < \"3.14.0\" and sys_platform != \"darwin\" and platform_python_implementation != \"PyPy\"", "mypy (>=0.800) ; platform_python_implementation != \"PyPy\"", "nuitka (>=1.2.6) ; sys_platform == \"linux\" and python_version < \"3.14.0\"", "numba ; python_version < \"3.14.0\"", "numpy ; python_version < \"3.15.0\" and sys_platform != \"darwin\" and platform_python_implementation != \"PyPy\"", "pandera (>=0.26.0) ; python_version < \"3.14.0\"", "poetry", "polars ; python_version < \"3.14.0\"", "pygments", "pyinstaller", "pyright (>=1.1.370)", "pytest (>=6.2.0)", "redis", "rich-click", "sphinx", "sqlalchemy", "torch ; sys_platform == \"linux\" and python_version < \"3.14.0\"", "tox (>=3.20.1)", "typer", "typing-extensions (>=3.10.0.0)", "xarray ; python_version < \"3.15.0\""]
-test-tox = ["celery", "click", "docutils (>=0.22.0)", "equinox ; sys_platform == \"linux\" and python_version < \"3.15.0\"", "fastmcp ; python_version < \"3.14.0\"", "jax[cpu] ; sys_platform == \"linux\" and python_version < \"3.15.0\"", "jaxtyping ; sys_platform == \"linux\"", "langchain ; python_version < \"3.14.0\" and sys_platform != \"darwin\" and platform_python_implementation != \"PyPy\"", "mypy (>=0.800) ; platform_python_implementation != \"PyPy\"", "nuitka (>=1.2.6) ; sys_platform == \"linux\" and python_version < \"3.14.0\"", "numba ; python_version < \"3.14.0\"", "numpy ; python_version < \"3.15.0\" and sys_platform != \"darwin\" and platform_python_implementation != \"PyPy\"", "pandera (>=0.26.0) ; python_version < \"3.14.0\"", "poetry", "polars ; python_version < \"3.14.0\"", "pygments", "pyinstaller", "pyright (>=1.1.370)", "pytest (>=6.2.0)", "redis", "rich-click", "sphinx", "sqlalchemy", "torch ; sys_platform == \"linux\" and python_version < \"3.14.0\"", "typer", "typing-extensions (>=3.10.0.0)", "xarray ; python_version < \"3.15.0\""]
-test-tox-coverage = ["coverage (>=5.5)"]
-
-[[package]]
-name = "beartype"
 version = "0.23.1"
 description = "Unbearably fast near-real-time pure-Python runtime-static type-checker."
 optional = true
 python-versions = ">=3.10"
 groups = ["main"]
-markers = "python_version >= \"3.15\" and extra == \"mcp\""
+markers = "extra == \"mcp\""
 files = [
     {file = "beartype-0.23.1-py3-none-any.whl", hash = "sha256:4461b4dc57e3fdd6c8a8464b22cf118002eea107c33e9fef651c69068ab3cce3"},
     {file = "beartype-0.23.1.tar.gz", hash = "sha256:8b805f246b32931c74f2b321ea0939fe5bb2ff43c12a3eff19cc4c854b832e1d"},
@@ -3143,8 +3122,8 @@ files = [
 
 [package.dependencies]
 anyio = [
-    {version = ">=4.10", markers = "python_version >= \"3.14\""},
     {version = ">=4.9", markers = "python_version < \"3.14\""},
+    {version = ">=4.10", markers = "python_version >= \"3.14\""},
 ]
 httpx2 = ">=2.10.0"
 jsonschema = ">=4.20.0"
@@ -3156,8 +3135,8 @@ python-multipart = ">=0.0.9"
 pywin32 = {version = ">=311", markers = "sys_platform == \"win32\""}
 sse-starlette = ">=3.0.0"
 starlette = [
-    {version = ">=0.48.0", markers = "python_version >= \"3.14\""},
     {version = ">=0.27", markers = "python_version < \"3.14\""},
+    {version = ">=0.48.0", markers = "python_version >= \"3.14\""},
 ]
 typing-extensions = ">=4.13.0"
 typing-inspection = ">=0.4.1"
@@ -3506,8 +3485,8 @@ librt = {version = ">=0.13.0", markers = "platform_python_implementation != \"Py
 mypy_extensions = ">=1.0.0"
 pathspec = ">=1.0.0"
 typing_extensions = [
-    {version = ">=4.14.0", markers = "python_version >= \"3.15\""},
     {version = ">=4.6.0", markers = "python_version < \"3.15\""},
+    {version = ">=4.14.0", markers = "python_version >= \"3.15\""},
 ]
 
 [package.extras]
@@ -3828,9 +3807,9 @@ files = [
 [package.dependencies]
 googleapis-common-protos = ">=1.57,<2.0"
 grpcio = [
-    {version = ">=1.75.1,<2.0.0", markers = "python_version >= \"3.14\""},
     {version = ">=1.63.2,<2.0.0", markers = "python_version < \"3.13\""},
     {version = ">=1.66.2,<2.0.0", markers = "python_version == \"3.13\""},
+    {version = ">=1.75.1,<2.0.0", markers = "python_version >= \"3.14\""},
 ]
 opentelemetry-api = ">=1.15,<2.0"
 opentelemetry-exporter-otlp-common = "0.66b1"
@@ -4018,8 +3997,8 @@ files = [
 
 [package.dependencies]
 numpy = [
-    {version = ">=2.3.3", markers = "python_version >= \"3.14\""},
     {version = ">=1.26.0", markers = "python_version < \"3.14\""},
+    {version = ">=2.3.3", markers = "python_version >= \"3.14\""},
 ]
 python-dateutil = ">=2.8.2"
 tzdata = {version = "*", markers = "sys_platform == \"win32\" or sys_platform == \"emscripten\""}
@@ -4950,14 +4929,14 @@ files = [
 
 [[package]]
 name = "pyright"
-version = "1.1.413"
+version = "1.1.414"
 description = "Command line wrapper for pyright"
 optional = false
 python-versions = ">=3.7"
 groups = ["dev"]
 files = [
-    {file = "pyright-1.1.413-py3-none-any.whl", hash = "sha256:1d74426e431b49f803735632910cc3db7611f904693b7775224ae752f389cf4f"},
-    {file = "pyright-1.1.413.tar.gz", hash = "sha256:40357dc6bd967e87a62877574ae79195d44e00d02917c8230e1d4b94ea88fccb"},
+    {file = "pyright-1.1.414-py3-none-any.whl", hash = "sha256:2a6b4b3298c9eec174c5ed83bd338de6eee82df2992f3e1930e6199d381be36f"},
+    {file = "pyright-1.1.414.tar.gz", hash = "sha256:523c0a97c60da6333234955c277730c9cf4f5bd6d5399e7b7d2b0fc5d3599524"},
 ]
 
 [package.dependencies]
@@ -6713,4 +6692,4 @@ sqlalchemy = ["sqlalchemy"]
 [metadata]
 lock-version = "2.1"
 python-versions = "^3.12"
-content-hash = "8b835fdee71efe2df3c2e926f12d637cc2d50df333d222b6cdcf5dfb3dfcd7c5"
+content-hash = "75cb45047fdb67e19e356bfb0ae5d8eea952b6a92fd209da3444e0f7fa54ec9f"
