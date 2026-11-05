@@ -251,6 +251,35 @@ def owned_by(model: type) -> list[Owned]:
     return owned
 
 
+def owners_of(model: type) -> list[tuple[type, str]]:
+    """The aggregates whose save writes the rows of `model` as their own, each with the relation
+    that holds them — what a write to those rows by another door goes around.
+
+        owners_of(SaleLine)   ->  [(Sale, "lines")]
+        owners_of(Sale)       ->  []
+
+    Context: `update_all(SaleLine, …)` changes lines without their sale, so a total that sums
+    them, or a check over them, never runs; the write asks this to name those rules. Only an
+    aggregate with a foreign key relation to `model` is described: the registry holds every
+    aggregate the process ever mapped, and describing them all on every write cost a reading of
+    each — and failed on a class whose module was gone.
+    """
+    found: list[tuple[type, str]] = []
+    for owner in mapping_registry.with_relations():
+        candidate = any(
+            relation.kind is RelationKind.FOREIGN_KEY
+            and getattr(relation, "owned", True) is not False
+            and isinstance(relation.related, type)
+            and issubclass(model, relation.related)
+            for relation in mapping_registry.relations_of(owner).values()
+        )
+        if candidate:
+            found.extend(
+                (owner, one.name) for one in owned_by(owner) if issubclass(model, one.related)
+            )
+    return found
+
+
 def linked_by(model: type) -> list[Linked]:
     """The many-to-manys this aggregate writes the pairs of. Context: read on every write, as
     `owned_by` is.

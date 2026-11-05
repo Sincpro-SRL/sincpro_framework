@@ -382,6 +382,24 @@ def _held_in_part(record: Any, name: str) -> str:
     return attribute.held_in_part(record) if attribute is not None else ""
 
 
+def held_records(record: Any, name: str) -> int:
+    """How many records `record` holds in the field `name`, answered without reading anything:
+    a relation nobody read holds none.
+
+        held_records(Sale(lines=[desk, chair]), "lines")    ->  2
+        held_records(a sale read without its lines, "lines") ->  0
+        held_records(Sale(customer=acme), "customer")       ->  1
+    """
+    if not (_holds_whole(record, name) or _held_in_part(record, name)):
+        return 0
+    value = _current(record, name)
+    if value is UNREAD or value is None:
+        return 0
+    if isinstance(value, (list, tuple, EntityCollection)):
+        return len(value)
+    return 1
+
+
 def _warn_stale_computation(record: Any, computation: Computation) -> None:
     """A computation a save skipped over a relation held in part retains its stored value,
     which may no longer agree with the records it sums: said once, with the way out."""
@@ -406,12 +424,24 @@ class _Pass:
     editable computation runs, and a failed check is collected in `failures` to refuse.
     Otherwise a failed check is warned to the form — and checks run at all only when `checking`:
     inside `read_only()`, where a warning has somewhere to go.
+
+    `decided` is what a write of one row decides of the record at `root` (an upsert): a rule
+    that reads, or a computation that writes, any other field of it is left out, silently —
+    the write refused it already, or the call skips the rules and said so.
     """
 
     saving: bool
     checking: bool
     failures: list[exceptions.InvalidValue] = dataclasses.field(default_factory=list)
     seen: set[int] = dataclasses.field(default_factory=set)
+    decided: frozenset[str] | None = None
+    root: int | None = None
+
+    def left_out(self, record: Any, names: Iterable[str]) -> bool:
+        """Whether any of `names` of `record` is outside what this write decides."""
+        if self.decided is None or id(record) != self.root:
+            return False
+        return any(name not in self.decided for name in names)
 
 
 def _split(owner: type, changed: Sequence[str]) -> tuple[set[str], dict[str, list[str]]]:
@@ -482,6 +512,8 @@ def _ran(
                 continue
         elif not (every or reaches):
             continue
+        if run.left_out(record, (*computation.depends, computation.field)):
+            continue
         if run.saving and not all(_holds_whole(record, one) for one in computation.depends):
             _warn_stale_computation(record, computation)
             continue
@@ -518,6 +550,8 @@ def _checked(
     owner = type(record).__name__
     for one in checks:
         if not (whole or not reached.isdisjoint(one.watches)):
+            continue
+        if run.left_out(record, one.watches):
             continue
         if run.saving:
             partial = [name for name in one.watches if not _holds_whole(record, name)]
@@ -585,6 +619,8 @@ def _tree(
     for name in model_of(owner).owned:
         # The records held are computed, whether the relation is held whole or in part: each
         # line's own amount reads only the line. What reads the relation is decided in `_ran`.
+        if run.left_out(record, (name,)):
+            continue
         if not (_holds_whole(record, name) or _held_in_part(record, name)):
             continue
         value = getattr(record, name)
@@ -665,24 +701,29 @@ def recompute(record: Any, changed: Iterable[str] = ()) -> tuple[str, ...]:
     )
 
 
-def _skipping_checks(record: Any) -> bool:
-    """Whether this call's saves skip the checks (`ContextKey.SKIP_CHECKS`): said once per
-    execution and entity with the reason and who asked, so a skipped rule is never silent —
-    outside an execution, once per thread for the same reason.
+def skipping_checks(entity: type, doing: str = "saved without its checks") -> bool:
+    """Whether this call writes past the rules of `entity` (`ContextKey.SKIP_CHECKS`): said once
+    per execution, entity and what was done, with the reason and who asked, so a skipped rule is
+    never silent — outside an execution, once per thread for the same reason.
 
         # bus.context(skip_checks="legacy import 2026-11"), user ana, 10 000 saves
         ->  True for each; one warning: "Sale saved without its checks: legacy import
             2026-11 (asked by ana)"
+        # the same call, then update_all over Sale
+        ->  True; one more warning: "Sale written by update_all past its rules — …: legacy
+            import 2026-11 (asked by ana)"
+
+    It is the one switch every write reads — `save`, `upsert`, `update_all`, `remove_all`.
     """
     context = use_context()
     reason = context.get(ContextKey.SKIP_CHECKS)
     if not reason:
         return False
-    said = (context.get(ContextKey.EXECUTION_ID), type(record).__name__, reason)
+    said = (context.get(ContextKey.EXECUTION_ID), entity.__name__, doing, reason)
     if _SKIPPED.get() != said:
         _SKIPPED.set(said)
         logger.warning(
-            f"{type(record).__name__} saved without its checks: {reason} "
+            f"{entity.__name__} {doing}: {reason} "
             f"(asked by {context.get(ContextKey.USER_ID) or 'nobody named'})"
         )
     return True
@@ -707,7 +748,37 @@ def recompute_whole(record: Any) -> tuple[str, ...]:
     Raises `ChecksFailed` with every failure — the lines' first — when any check failed, unless
     the call skips the checks (`ContextKey.SKIP_CHECKS`, logged).
     """
-    run = _Pass(saving=True, checking=not _skipping_checks(record))
+    run = _Pass(saving=True, checking=not skipping_checks(type(record)))
+    moved = _tree(record, (), True, True, True, run)
+    if run.failures:
+        raise exceptions.ChecksFailed(tuple(run.failures))
+    return moved
+
+
+def recompute_row(
+    record: Any, decided: Iterable[str], verb: str = "upsert"
+) -> tuple[str, ...]:
+    """What a save runs, over the one row a write decides of `record` — an upsert's: every
+    computation and every check that reads only fields in `decided`, the records held in a
+    decided field first.
+
+        in      Rate(currency="USD", per_usd=7), decided: the columns of rate
+        out     ("cents",) — Rate.cents_of computed; Rate.positive_rate judged
+        in      Rate(currency="USD", per_usd=0)
+        out     ChecksFailed(("per_usd",) "A rate is at least one")
+
+    A rule that reads a field outside `decided` — a relation, whose records live in other rows —
+    is left out here: the write refuses it before calling this (`bulk_rules.keep_or_skip`),
+    unless the call skips the rules, which it then said. Raises `ChecksFailed` like
+    `recompute_whole`, and skips the checks the same way (`ContextKey.SKIP_CHECKS`, logged as
+    written by `verb`).
+    """
+    run = _Pass(
+        saving=True,
+        checking=not skipping_checks(type(record), f"written by {verb} without its checks"),
+        decided=frozenset(decided),
+        root=id(record),
+    )
     moved = _tree(record, (), True, True, True, run)
     if run.failures:
         raise exceptions.ChecksFailed(tuple(run.failures))

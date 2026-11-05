@@ -252,6 +252,50 @@ def test_a_computed_field_is_never_written():
     assert "balance" not in set(columns)
 
 
+def caro(store: Any) -> Bill:
+    return store.search(
+        Bill, Criteria(selection=Condition(field="owner", value="caro"))
+    ).items[0]
+
+
+def test_an_upsert_writes_the_columns_of_an_aggregate_with_a_computed_field(bills: Any):
+    dora = bill(("dora", State.OPEN, 30, 5, datetime(2026, 2, 1, 9), False))
+
+    done = bills.upsert(dora, on=("id",))
+
+    assert done.written == 1
+    assert bills.get(Bill, dora.id).balance == Decimal("25")
+
+
+def test_an_upsert_overwrites_the_columns_it_names_and_the_store_computes_the_rest(
+    bills: Any,
+):
+    held = caro(bills)
+
+    bills.upsert(Bill(id=held.id, paid=Decimal("65")), on=("id",), update=("paid",))
+
+    assert bills.get(Bill, held.id).balance == Decimal("5")
+
+
+def test_an_upsert_cannot_name_a_computed_field_to_overwrite(bills: Any):
+    with pytest.raises(exceptions.ProgrammingError, match="balance"):
+        bills.upsert(caro(bills), on=("id",), update=("balance",))
+
+
+def test_update_all_sets_a_column_a_computed_field_reads(bills: Any):
+    owned = Criteria(selection=Condition(field="owner", value="caro"))
+
+    assert bills.update_all(Bill, owned, {"paid": Decimal("70")}) == 1
+    assert caro(bills).balance == Decimal("0")
+
+
+def test_update_all_refuses_a_computed_field_it_has_no_column_for(bills: Any):
+    owned = Criteria(selection=Condition(field="owner", value="caro"))
+
+    with pytest.raises(exceptions.ProgrammingError, match="balance"):
+        bills.update_all(Bill, owned, {"balance": Decimal("1")})
+
+
 def test_a_computed_field_over_a_column_the_table_lacks_is_refused_when_mapped():
     with pytest.raises(exceptions.ProgrammingError, match="Broken.nonsense.*does not have"):
         map_aggregates(registry(metadata=MetaData()), {Broken: broken_table})

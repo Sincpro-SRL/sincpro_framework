@@ -6,9 +6,11 @@ form are collected (`preview`).
     recompute(invoice, ["discount"])                                    what depends on them, again
     with read_only() as warnings: ...                                   writes refused, warnings held
 
-What the framework runs by itself — every computation on save (`editing.recompute_whole`), the
-check before a draft is activated (`drafts.refuse_stale`), whether a write is inside the block
-(`preview.is_read_only`) — is imported from its own file.
+What the framework runs by itself — every computation and check on save
+(`editing.recompute_whole`), the same over the row an upsert writes (`editing.recompute_row`), the
+rules a write past the aggregate cannot judge (`bulk_rules`), the check before a draft is activated
+(`drafts.refuse_stale`), whether a write is inside the block (`preview.is_read_only`) — is imported
+from its own file.
 """
 
 from sincpro_framework.ddd.editing.editing import apply_values, recompute

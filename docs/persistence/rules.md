@@ -9,10 +9,10 @@ broken rule does: while a form is edited it warns, when the record is saved it r
 | Kind of rule | Example | Where it goes | When it runs |
 |---|---|---|---|
 | One value | a positive amount, a valid tax id | a `ValueObject` — `holds=lambda v: v > 0` publishes it for a client too — or the field's type | when the value is built |
-| The aggregate's own fields | a confirmed order has a delivery date; a product appears once | **`@check`** on the entity | every save; while a form is edited, as a warning |
+| The aggregate's own fields | a confirmed order has a delivery date; a product appears once | **`@check`** on the entity | every write — a save, an upsert; a write by criteria that reaches it is refused — and while a form is edited, as a warning ([Every write](#every-write-keeps-the-rules-or-says-it-skips-them)) |
 | Something outside the record | the customer has credit; the repositories it names exist | a hook (`before_save`), with its dependencies, the context and the bus — [Checks and hooks](#checks-and-hooks) | every save |
 | An action | confirm, share, change tenant | a Command and the entity's method | that action only |
-| A value computed from others | a line's amount, the total | **`@compute`** | every save; while a form is edited, what the change reaches |
+| A value computed from others | a line's amount, the total | **`@compute`** | every save and upsert; while a form is edited, what the change reaches |
 | A value proposed from others | the payment term of the customer picked | **`@compute(editable=True)`** | only while a form is edited, when the change reaches it |
 | A value the database computes | a balance, total − paid | `computed(sql=…, python=…)` | when the row is read |
 
@@ -140,16 +140,91 @@ check, then the `before_save` hooks. Nothing is written when a check fails: `Che
 carries each failure, and every wire answers one field error per failure, each with its pointer
 (`#/values/lines/1/qty`). It is an `InvalidValue`, so whoever handles one handles it.
 
-| Write | Computations | Checks | Hooks |
-|---|---|---|---|
-| `save`, `Edit` with `SAVE`, any Command that saves | every one, not the editable | every one | `before_save` after them |
-| `upsert` | none | none | `before_save` / `after_save` |
-| `update_all`, `remove_all` | none | none | none |
-| reads: `get`, `search`, a `DataFrame` | none — the stored value is read | none | `after_read` |
+A save is one of the writes. What every one of them does with the rules is the next section.
 
-`upsert`, `update_all` and `remove_all` are the writes that skip the aggregate on purpose — an
-idempotent import, a sync with another system, closing expired sessions. A value they change
-leaves its computed fields as they were until the next `save`.
+## Every write keeps the rules, or says it skips them
+
+A rule is judged at one of three levels, and nowhere else:
+
+| Level | Where | What runs | A broken rule |
+|---|---|---|---|
+| **The value** | building a `ValueObject` (`validate_fn`, `holds=`) | that value's own rule | `ValueError`, there and then |
+| **The form** | `PreviewEntity`, `Edit` with `SAVE_DRAFT` — `recompute` inside `read_only()` | the computations and checks the change reaches | a `FormWarning` with `blocks_save`; nothing is refused, a draft may be incomplete |
+| **The write** | every write of the repository, below | computations, then checks, then the `before_save` hooks | refused before anything is written |
+
+Building an entity, or assigning one of its fields, judges nothing ([why](#why-not-on-every-assignment)).
+Every write of the repository judges what it writes:
+
+| Write | Computations | Checks | Hooks | A rule it cannot judge |
+|---|---|---|---|---|
+| `save` — and `Edit` with `SAVE`, any Command that saves | every one, the lines first, not the editable | every one | `before_save` after them | over a relation the record does not hold whole: not judged, logged when held in part |
+| `upsert` | every one, over the row it writes | every one, over that row | `before_save` / `after_save` | **refused**: a rule over a field a conflict keeps as stored, or over records a row never carries |
+| `update_all` | none — one statement holds no record | none | none | **refused**: a value a check watches, a computation reads, or a computed field set by hand |
+| `remove_all` of an aggregate's rows | — | — | none | nothing to judge: no row is left to break its own rules |
+| `upsert` / `update_all` / `remove_all` of the rows **another aggregate owns** (its lines) | as above | as above | as above | **refused**: a rule of the owner over that relation — a total of the lines, a check over them |
+| reads: `get`, `search`, a `DataFrame` | none — the stored value is read | none | `after_read` | — |
+
+**An upsert judges the record as it is handed**, which is the row it leaves either way: an insert
+writes all of it, and a conflict overwrites what `update=` names — every field but the key and the
+framework's own when it names nothing. A rule that reads fields of both kinds — some overwritten,
+some a conflict keeps as stored — would be judged on values the row will not hold, so the call is
+refused. So is a rule over records a row never carries — the lines of a one2many, the pairs of a
+many2many —, and a record that holds such records: the upsert would drop them without a word.
+
+**A write by criteria holds no record**, so any rule its values reach is refused rather than
+skipped: a check that watches a field it sets, a computation that reads one — the computed field
+would keep a value that no longer matches —, a computed field set by hand. A value no rule reads
+is written as before: a note, a stamp, a closed session.
+
+**Each refusal is a `ProgrammingError`**, never a refusal of the values: it depends on the call and
+the entity, never on the rows, so the first test that makes the call sees it. It names every rule
+and the three ways out:
+
+1. write every field the rule reads — `update=` naming them, in an upsert;
+2. save the records instead — read them, change them, save them, a page per flush — so each one
+   is computed and judged;
+3. skip the checks for that call, with a reason ([below](#an-import-skips-the-rules-out-loud)).
+
+```python
+from datetime import date
+
+from sincpro_framework.ddd import Condition, Criteria
+from sincpro_framework.exceptions import ProgrammingError
+
+counter = Sale(customer="walk-in", lines=[SaleLine("chair", 2, Decimal("40"))])
+repository.upsert(counter, on=("id",))  # computed and judged, as a save
+assert repository.get(Sale, counter.id).total == Decimal("80")
+
+try:
+    repository.upsert(Sale(customer="walk-in", state=SaleState.CONFIRMED), on=("id",))
+except exceptions.ChecksFailed as refused:
+    assert [one.path for one in refused.failures] == [("delivery",)]
+else:
+    raise AssertionError("the upsert let the broken sale through")
+
+try:
+    repository.upsert(
+        Sale(id=counter.id, state=SaleState.CONFIRMED, delivery=date(2026, 12, 1)),
+        on=("id",),
+        update=("state",),  # a conflict would keep the stored delivery
+    )
+except ProgrammingError as refused:
+    assert "Sale.delivery_when_confirmed watches delivery" in str(refused)
+else:
+    raise AssertionError("the upsert judged a row it does not decide")
+
+walk_in = Criteria(selection=Condition(field="customer", value="walk-in"))
+try:
+    repository.update_all(Sale, walk_in, {"state": SaleState.CONFIRMED})
+except ProgrammingError as refused:
+    assert "update_all of Sale cannot judge its rules" in str(refused)
+else:
+    raise AssertionError("update_all wrote past a check")
+assert repository.update_all(Sale, walk_in, {"payment_term": "cash"}) == 1  # no rule reads it
+```
+
+The last write sets a field only an editable computation proposes: a value typed over a proposal
+is what a save stores too, so nothing is reached.
 
 ## A form is warned of what its change reaches
 
@@ -262,7 +337,7 @@ with sales.context({ContextKey.USER_ID: "ana"}):
 | Layer | domain: the entity's own method | application: a class registered on the bounded context's `Hooks` |
 | Reads | the fields of the aggregate and the lines it writes | anything — another aggregate, another context, the caller |
 | Has | the record | `self.<dependency>`, `self.context` (the user, the tenant, the language), `self.bus` to run a Query or a Command |
-| Runs | before a save; while a form is edited, as a warning | at its moments: `before_save`, `after_save`, `before_create`/`update`, `before_remove`, `before_archive`, `after_read`, `after_search`… |
+| Runs | before a save or an upsert; while a form is edited, as a warning | at its moments: `before_save`, `after_save`, `before_create`/`update`, `before_remove`, `before_archive`, `after_read`, `after_search`… |
 | In a draft or a preview | warns | does not run: nothing is written there |
 | Order and control | declaration order | `after=`, `before=`, `sequence=`, gates (`AccessControl`), `replaces=` |
 | Refusal | `ChecksFailed`, every failure at once | whatever it raises, the first one |
@@ -308,6 +383,28 @@ call compute as always and skip the checks, and a warning says so once per execu
 entity, with the reason and the user — outside a bus execution, once per thread for the same
 reason, so an import runs as a use case. A rule that depends on state is written in the check
 itself (`delivery_when_confirmed`), never as a skip.
+
+The same key lets every write through — it is the one switch, and there is no other:
+
+```python
+with sales.context(
+    {ContextKey.SKIP_CHECKS: "delivery dates of the old system", ContextKey.USER_ID: "ana"}
+):
+    assert repository.update_all(Sale, walk_in, {"delivery": date(2026, 12, 1)}) == 1
+```
+
+| Write | With `SKIP_CHECKS` |
+|---|---|
+| `save` | computes as always, judges no check |
+| `upsert` | computes what its row decides, judges no check; a rule it cannot judge is let through |
+| `update_all`, `remove_all` | a rule they reach is let through; a computed field they make stale keeps its stored value |
+
+Each is said once per execution and entity, naming the reason and who asked; a write past rules
+it could not judge names them too — `Sale written by update_all past its rules — Sale.delivery_
+when_confirmed watches delivery: delivery dates of the old system (asked by ana)`. What the switch
+never lets through is what is not a rule: an upsert of a record that holds lines is still refused,
+because it would drop them, and the write's own refusals — a page, a column the framework sets —
+stand.
 
 ## The rows stored before a rule existed
 
@@ -392,6 +489,9 @@ A change in a form runs only what it reaches.
 - **Enforcing the form hints.** `readonly`, `required` and the `*_when` of `presentation` are
   what a screen shows; a rule the server holds is a check.
 - **A switch per rule.** Skipping is per call, with a reason, for imports and migrations only.
+- **Judging a write by criteria row by row.** It would read every row it writes, which is what a
+  save already does, a page per flush; `update_all` is for the values no rule reads, and refuses
+  the rest.
 - **A check as a filter.** A filter names fields; a rule the database answers is a `computed`
   field the check reads, as above.
 - **Validation on assignment.** See above.

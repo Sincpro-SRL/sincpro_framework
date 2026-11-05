@@ -166,8 +166,8 @@ with self.repository.context() as repository:                         # several 
 | `statement` / `run` | read | The escape hatch: a real `Select` out, the usual envelope back in |
 | `fetch_all` | read | Every page, as one complete collection — hands a bounded set to the in-memory algebra |
 | `save`, `remove` | write | Take the aggregate, whole: the children it owns are written and removed with it ([relations §8](relations.md#8-an-aggregate-is-saved-whole)) |
-| `upsert(records, on=, update=)` | write | Insert or overwrite by a key the table holds unique; no version check, `before_save`/`after_save` only |
-| `update_all`, `remove_all` | write | Every row a filter matches, one statement, the count back; no hooks or cascade, version raised; a page or an unanswerable condition is refused |
+| `upsert(records, on=, update=)` | write | Insert or overwrite by a key the table holds unique; computes and judges the row it writes, refuses a rule it cannot judge; no version check, `before_save`/`after_save` only |
+| `update_all`, `remove_all` | write | Every row a filter matches, one statement, the count back; no hooks or cascade, version raised; a page, an unanswerable condition, or a value a rule reads is refused |
 | `archive` | write | Stamps `archived_at` and leaves the row in place, for an `ArchivableMixin` aggregate; refused for anything else |
 | `retrying(work)` | write | Runs a unit of work again on `StaleAggregate` or `TransactionConflict`, and raises the last failure as it was |
 | `narrowed(criteria)` | both | The same database seen through a filter nothing can widen: a tenant, a branch, a permission |

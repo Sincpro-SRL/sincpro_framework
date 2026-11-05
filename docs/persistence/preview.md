@@ -71,9 +71,10 @@ specification, or assigned with no whole reading behind it (blind) — may have,
 the stored value **and logs a warning** naming the computed field, the relation and the way out:
 read it whole, inside `context()` or with a specification that does not filter or page it. Not
 a refusal: the record is written, and the developer is told the total may not match its lines.
-`upsert` and `update_all`
-compute nothing — they are the writes that skip the aggregate's rules — so a value they change
-leaves its computed fields as they were until the next `save`.
+An `upsert` computes the row it writes as a save does; `update_all` computes nothing, so it
+refuses a value a computation reads — the computed field would keep a value that no longer
+matches — unless the call skips the checks, which then says which field it left as stored
+([Every write keeps the rules](rules.md#every-write-keeps-the-rules-or-says-it-skips-them)).
 
 A computed `Decimal` is not rounded to the scale of the column that stores it: the preview can
 answer `18.995` where a `Numeric(12, 2)` stores `19.00`. A computation that must match the stored
