@@ -177,7 +177,7 @@ class FastApiGateway(Gateway):
     ) -> "FastAPI":
         """Every context's router in one FastAPI app, its problem handlers installed, the
         liveness check, the readiness check of `readiness`, each context's client contract at
-        `{contract_path}/{context}.json`, and — when the process's metrics are scraped
+        `{contract_path}/{alias}.json`, and — when the process's metrics are scraped
         (`PrometheusRecorder`) — the scrape at `metrics_path` (`wire.fastapi_app`).
         `fastapi_kwargs` go to `FastAPI(...)`.
 

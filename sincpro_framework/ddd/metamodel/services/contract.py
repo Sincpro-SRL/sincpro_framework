@@ -72,17 +72,26 @@ SAID = (
 """What a property's `x-sincpro` may say, in this order; what says nothing is left out."""
 
 
-def _held(field: FieldMeta) -> dict[str, Any]:
+def _held(field: FieldMeta, shapes: dict[str, Any]) -> dict[str, Any]:
     """What the field holds, as JSON Schema: its primitive, its choices, the keywords of what its
-    value object holds, a shape inside the record, or the schema of the entity a relational
-    field points at — empty when its value is not described. A key (`EntityID[Project]`) holds
-    its primitive: whose it is travels under `x-sincpro.relation`.
+    value object holds, a pointer to the shape it holds inside the record, or to the schema of
+    the entity a relational field points at — empty when its value is not described. A key
+    (`EntityID[Project]`) holds its primitive: whose it is travels under `x-sincpro.relation`.
+
+    A shape inside the record is written once, under its class's name, in `shapes` — what the
+    contract publishes under `$defs`, so a generated type is named `ProjectSnapshot` and two
+    fields holding it share it. A name `shapes` already holds with another shape — another class
+    of the same name, or an entity's — leaves this one written in place: no pointer ever reaches
+    a shape not its own.
 
     An exact number travels as a text (`"12.50"`), so no numeric keyword is written on it — a
     validator would skip `minimum` on a string, silently; what it holds travels whole under
     `x-sincpro.holds`, the one check that reads it."""
     if field.type is FieldType.EMBEDDED and field.definition is not None:
-        shape = rendered(field.definition)
+        name = field.definition.aggregate
+        shape = rendered(field.definition, "", shapes)
+        if shapes.setdefault(name, shape) == shape:
+            shape = {"$ref": f"#/$defs/{name}"}
         return {"type": "array", "items": shape} if field.many else shape
     if field.type.is_relational and field.relation is not None:
         pointed = {"$ref": f"#/$defs/{field.relation}"}
@@ -110,9 +119,10 @@ def _said(field: FieldMeta) -> dict[str, Any]:
     return said
 
 
-def _property(field: FieldMeta) -> dict[str, Any]:
-    """One property: what it holds, possibly empty when nullable, its title, and `x-sincpro`."""
-    held: dict[str, Any] = _held(field)
+def _property(field: FieldMeta, shapes: dict[str, Any]) -> dict[str, Any]:
+    """One property: what it holds (`_held`), possibly empty when nullable, its title, and
+    `x-sincpro` — beside a pointer, so the shape it points at keeps its own."""
+    held: dict[str, Any] = _held(field, shapes)
     if field.nullable and held:
         held = {"anyOf": [held, {"type": "null"}]}
     title = field.label.in_() if field.label else ""
@@ -151,14 +161,18 @@ def rendered_criteria(criteria: Criteria) -> dict[str, Any]:
     return written
 
 
-def rendered(meta: Meta, version: str = "") -> dict[str, Any]:
+def rendered(
+    meta: Meta, version: str = "", shapes: dict[str, Any] | None = None
+) -> dict[str, Any]:
     """The JSON Schema of a record the description `meta` describes, with its `x-sincpro`.
 
         rendered(description_of(Size))
             ->  {"type": "object", "title": "Size", "properties": {"width": …}, "required": […],
                  "x-sincpro": {"entity": "Size"}}
 
-    1. Each field as a property (`_property`): what it holds, its title, what the framework says.
+    1. Each field as a property (`_property`): what it holds, its title, what the framework says;
+       a shape inside the record a pointer to its definition, held in `shapes` — the contract's
+       when given, else the `$defs` of this schema.
     2. Required: the fields a form must fill — the hint `required`.
     3. The schema's own `x-sincpro`: the entity, how it is read — its identity, its key, its
        display, its order, and its search and its detail, each criteria with only what it says
@@ -177,13 +191,17 @@ def rendered(meta: Meta, version: str = "") -> dict[str, Any]:
     entity["title"] = dumped["name"]
     if version:
         entity["version"] = version
-    return {
+    held: dict[str, Any] = {} if shapes is None else shapes
+    schema: dict[str, Any] = {
         "type": "object",
         "title": meta.name.in_() or meta.aggregate,
-        "properties": {name: _property(field) for name, field in meta.fields.items()},
+        "properties": {name: _property(field, held) for name, field in meta.fields.items()},
         "required": [name for name, field in meta.fields.items() if field.required],
         "x-sincpro": entity,
     }
+    if shapes is None and held:
+        schema["$defs"] = held
+    return schema
 
 
 def entities_in(annotation: Any, seen: set[Any]) -> list[type]:

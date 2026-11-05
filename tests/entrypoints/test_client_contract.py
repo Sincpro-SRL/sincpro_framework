@@ -13,7 +13,7 @@ from typing import Any
 
 import pytest
 
-from sincpro_framework import DataTransferObject, Feature, UseFramework
+from sincpro_framework import DataTransferObject, Feature, UseFramework, exceptions
 from sincpro_framework.data_layer.repositories import MemoryRepository
 from sincpro_framework.ddd import Entity, EntityID, EntityReads, Get, ResponseRecord
 from sincpro_framework.entrypoints import (
@@ -129,7 +129,7 @@ def test_a_contract_is_the_metamodel_beside_each_wires_bindings_by_one_identity(
     contract = client_contracts(wires(tracker()))["tracker"]
 
     assert contract["format"] == "sincpro.client-contract/1"
-    assert contract["context"] == "tracker"
+    assert contract["bounded_context"] == "tracker"
     assert sorted(contract["operations"]) == [
         "tracker.CommandMoveIssue",
         "tracker.QueryGetIssue",
@@ -314,3 +314,32 @@ def test_the_command_line_writes_what_the_function_does(tmp_path, capsys):
         f"stock: {tmp_path / 'stock.contract.json'}",
         f"tracker: {tmp_path / 'tracker.contract.json'}",
     ]
+
+
+# ---------------------------------------------------------------------------------------------
+# The context's own name, and the alias a client names it by
+# ---------------------------------------------------------------------------------------------
+
+
+def test_a_contract_says_the_contexts_own_name_and_the_alias_it_is_published_under(tmp_path):
+    bus = tracker()  # named "tracker"; published as "issues", as forge publishes "project"
+    gateways = [RpcGateway({"issues": bus}, unguarded=True)]
+
+    [contract] = client_contracts(gateways).values()
+    written = export_client_contract(gateways, tmp_path)
+
+    assert (contract["bounded_context"], contract["alias"]) == ("tracker", "issues")
+    assert list(contract["operations"])[0].startswith("tracker.")  # identities keep the name
+    assert written == {"issues": tmp_path / "issues.contract.json"}
+
+
+def test_an_alias_that_names_two_bounded_contexts_is_refused():
+    gateways = [
+        RpcGateway({"desk": tracker()}, unguarded=True),
+        RpcGateway({"desk": stock()}, unguarded=True),
+    ]
+
+    with pytest.raises(
+        exceptions.ProgrammingError, match="an alias names one bounded context"
+    ):
+        client_contracts(gateways)

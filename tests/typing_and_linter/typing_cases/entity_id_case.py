@@ -21,7 +21,7 @@ class Device(Entity):
     serial: str = ""
 
 
-class Tenant(Reference, context="auth"):
+class Tenant(Reference, bounded_context="auth"):
     """auth's tenant, named in `shared/`."""
 
 

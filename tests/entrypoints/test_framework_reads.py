@@ -10,7 +10,7 @@ from datetime import timedelta
 
 import pytest
 
-from sincpro_framework import UseFramework
+from sincpro_framework import UseFramework, exceptions
 from sincpro_framework.data_layer.caching import Idempotency
 from sincpro_framework.data_layer.repositories import MemoryRepository
 from sincpro_framework.data_layer.store import InMemoryKeyValue
@@ -58,7 +58,6 @@ def tracker() -> tuple[UseFramework, Issue]:
     bus.add_dependency("repository", repository)
     stored = Issue(title="Printer jammed")
     repository.save(stored)
-    once = Idempotency(InMemoryKeyValue()).once(expires_after=timedelta(minutes=5))
 
     @bus.feature(QueryGetIssue)
     @rest.get("/issues/{id}")
@@ -70,9 +69,8 @@ def tracker() -> tuple[UseFramework, Issue]:
     @bus.feature(QueryPreviewIssue)
     @rest.post("/issues/preview")
     @mcp()
-    @once
     class IssuePreview(EntityReads[Issue]):
-        """Runs once per request — what would ask a write for an `Idempotency-Key`."""
+        pass
 
     @bus.feature(QueryReadIssue)
     @rest()
@@ -170,3 +168,19 @@ def test_json_rpc_publishes_a_get_as_idempotent():
 
     assert resolved.operation.reads and not resolved.operation.is_query  # no `Query`, a read
     assert method_object("tracker.get_issue", resolved, {})["x-idempotent"] is True
+
+
+def test_running_a_read_once_is_refused_like_on_a_query():
+    """A read changes nothing — a `Get` is no `Query`, and still nothing is run once."""
+    bus = UseFramework("tracker-once", log_after_execution=False)
+    bus.add_dependency("repository", MemoryRepository())
+    once = Idempotency(InMemoryKeyValue()).once(expires_after=timedelta(minutes=5))
+
+    @bus.feature(QueryGetIssue)
+    @rpc()
+    @once
+    class IssueReads(EntityReads[Issue]):
+        pass
+
+    with pytest.raises(exceptions.ProgrammingError, match="@idempotency.once on a read"):
+        RpcGateway([bus], unguarded=True).manifest()

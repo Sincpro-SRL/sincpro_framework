@@ -248,15 +248,12 @@ def _binding_problems(
 
 
 def _stage_problems(command: type, handler: type) -> list[str]:
-    """The combinations of stages PRD_14 §10 refuses. A caching stage on a non-Query joins
-    here once it exists — today it does not."""
-    if (
-        Idempotency.declared_by(handler)
-        and isinstance(command, type)
-        and issubclass(command, Query)
-    ):
+    """The combinations of stages PRD_14 §10 refuses: `@idempotency.once` on a read — a
+    `Query`, or a framework read (`only_reads`) — runs nothing twice, since a read changes
+    nothing. A caching stage on a write joins here once it exists — today it does not."""
+    if Idempotency.declared_by(handler) and only_reads(command):
         return [
-            f"{command.__name__}: @idempotency.once on a Query — a read changes nothing, there "
+            f"{command.__name__}: @idempotency.once on a read — a read changes nothing, there "
             "is nothing to run once"
         ]
     return []

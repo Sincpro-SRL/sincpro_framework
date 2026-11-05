@@ -116,7 +116,9 @@ def test_the_formula_answers_what_the_method_answers():
 
 
 def test_a_client_is_published_the_formula_of_each_field_it_can_compute():
-    line = contract_of(Sale)["properties"]["lines"]["items"]["properties"]
+    contract = contract_of(Sale)
+    pointed = contract["properties"]["lines"]["items"]["$ref"]  # the line, named once
+    line = contract["$defs"][pointed.rsplit("/", 1)[-1]]["properties"]
 
     assert line["amount"]["x-sincpro"]["computes"]["op"] == "*"
     assert "computes" not in line["listed"]["x-sincpro"]

@@ -128,3 +128,13 @@ def test_the_fastapi_gateway_serves_it_too_out_of_its_openapi_document(tmp_path)
     assert not any(
         "client-contract" in path for path in client.get("/openapi.json").json()["paths"]
     )
+
+
+def test_the_live_contract_is_named_by_the_alias_the_gateway_publishes():
+    client = TestClient(RpcGateway({"issues": tracker()}, unguarded=True).app())
+
+    served = client.get("/client-contract/issues.json")
+
+    assert served.status_code == 200
+    assert (served.json()["alias"], served.json()["bounded_context"]) == ("issues", "tracker")
+    assert client.get("/client-contract/tracker.json").status_code == 404

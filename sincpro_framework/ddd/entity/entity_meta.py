@@ -464,11 +464,14 @@ def logical_type(annotation: Any) -> FieldType:
     4. An enum: as the primitive it is — a `StrEnum` text, an `IntEnum` integer — and
        `UNKNOWN` when it is neither.
     5. A value object: as the primitive it subclasses (`Email` is text).
-    6. A key (`EntityID[Project]`, `EntityKey[Partner, int]`): as what it holds, whoever's it is.
+    6. A key (`EntityID[Project]`, `EntityKey[Partner, int]`): as what it holds, whoever's it is;
+       a list of text keys (`list[EntityID[MoveLine]]`) as `TEXT_LIST`.
     Final: the primitive's type by `LOGICAL_TYPES` — `UNKNOWN` for any other class.
     """
     base = without_optional(annotation)
     key = key_of(base)
+    if key is not None and key.many:
+        return FieldType.TEXT_LIST if key.held is str else FieldType.UNKNOWN
     if key is not None:
         return LOGICAL_TYPES[key.held]
     if get_origin(base) is list:

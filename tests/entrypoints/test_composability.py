@@ -62,7 +62,7 @@ def test_routes_returns_starlette_route_objects_not_an_app():
     assert {route.path for route in routes} == {
         "/rpc",
         "/openrpc.json",
-        "/client-contract/{context}.json",
+        "/client-contract/{alias}.json",
         "/healthz",
         "/readyz",
     }
@@ -89,7 +89,7 @@ def test_routes_paths_are_configurable_for_mounting_under_a_prefix():
     assert {route.path for route in routes} == {
         "/payments/rpc",
         "/payments/openrpc.json",
-        "/payments/client-contract/{context}.json",
+        "/payments/client-contract/{alias}.json",
         "/payments/healthz",
         "/payments/readyz",
     }

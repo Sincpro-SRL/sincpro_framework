@@ -89,26 +89,42 @@ def test_the_document_grows_by_a_route_not_by_a_copy_of_criteria():
     )  # each route its parameters and responses — never criteria again
 
 
-def _with_a_line(bus: UseFramework, field: str, kind: type, path: str) -> None:
-    """A read whose filter is a `Line` of its own shape — two classes of one name."""
-    line = type("Line", (DataTransferObject,), {"__annotations__": {field: kind}})
-    command = type(
-        f"QueryBy{field.title()}",
-        (Query,),
-        {"__annotations__": {"line": line}, "__module__": f"lines_{field}"},
-    )
+def _by_quantity(bus: UseFramework) -> None:
+    """A read whose filter is a `Line` of quantities."""
 
-    @bus.feature(command)
-    @rest.get(path)
-    class ByLine(Feature):
-        def execute(self, dto: Any) -> None:
+    class Line(DataTransferObject):
+        quantity: int
+
+    class QueryByQuantity(Query):
+        line: Line
+
+    @bus.feature(QueryByQuantity)
+    @rest.get("/by-quantity")
+    class ByQuantity(Feature):
+        def execute(self, dto: QueryByQuantity) -> None:
+            return None
+
+
+def _by_price(bus: UseFramework) -> None:
+    """A read whose filter is another class named `Line`, of prices."""
+
+    class Line(DataTransferObject):
+        price: float
+
+    class QueryByPrice(Query):
+        line: Line
+
+    @bus.feature(QueryByPrice)
+    @rest.get("/by-price")
+    class ByPrice(Feature):
+        def execute(self, dto: QueryByPrice) -> None:
             return None
 
 
 def test_two_classes_of_one_name_never_point_at_each_others_shape():
     bus = UseFramework("lines", log_after_execution=False)
-    _with_a_line(bus, "quantity", int, "/by-quantity")
-    _with_a_line(bus, "price", float, "/by-price")
+    _by_quantity(bus)
+    _by_price(bus)
 
     document = _document(bus)
     shapes = {}

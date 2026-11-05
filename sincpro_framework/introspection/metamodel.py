@@ -3,7 +3,7 @@ the operations a client calls on each, under one version — what a build writes
 client that works offline, generates its types and its client from, or ships as fixtures.
 
     metamodel_of(billing)
-        ->  {"context": "billing",
+        ->  {"bounded_context": "billing",
              "version": "9b1c…",
              "models": {"Invoice": {"type": "object", "x-sincpro": {…}, …}, "Partner": {…}},
              "operations": {
@@ -172,22 +172,27 @@ def _shapes(
 
 
 def _targets(operation: OperationDescription) -> dict[str, str]:
-    """Which field of the operation's Command names the record of each entity it belongs to —
-    what a client fills with the record's key to run it on that record.
+    """Which field of the operation's Command names the record — or the records — of each entity
+    it belongs to: what a client fills with the keys of what it runs the operation on.
 
         _targets(<CommandVoidInvoice(invoice_id), (Invoice,)>)     ->  {"Invoice": "invoice_id"}
         _targets(<QueryGetInvoice(id, criteria), (Invoice,)>)      ->  {"Invoice": "id"}
+        _targets(<QueryGetManyInvoices(ids), (Invoice,)>)          ->  {"Invoice": "ids"}
         _targets(<CommandOpenIssue(project_id), (Issue, Project)>) ->  {"Project": "project_id"}
         _targets(<CommandMoveIssue(issue: EntityID[Issue], destination: EntityID[Project])>)
             ->  {"Issue": "issue", "Project": "destination"}
+        _targets(<CommandReconcile(lines: list[EntityID[MoveLine]], payment_ids: list[str]),
+                  (MoveLine, Payment)>)
+            ->  {"MoveLine": "lines", "Payment": "payment_ids"}    # one use case, N entities
         _targets(<CommandTransfer(source, target: EntityID[Account])>)  ->  {}   # which one?
         _targets(<QueryListInvoices(criteria), (Invoice,)>)        ->  {}
 
     Per entity, the first rule that names a field; a rule that finds two names none, and
-    nothing is guessed:
-    1. A field typed as its key (`EntityID[Invoice]`).
-    2. Its own key's name, `<entity>_id` (`invoice_id`), unless typed as another's key.
-    3. When the operation belongs to that one entity only: its one bare `EntityID`, else `id`.
+    nothing is guessed. A key may be a list — the records a reconciliation matches —; its
+    schema says so.
+    1. A field typed as its key (`EntityID[Invoice]`, `list[EntityID[Invoice]]`).
+    2. Its own key's name, `<entity>_id` or `<entity>_ids`, unless typed as another's key.
+    3. When the operation belongs to that one entity only: its one bare key, else `id` or `ids`.
     Final: the entities named so; one with no such field is no record the operation runs on —
     one it creates, a page of it, the context's own.
     """
@@ -197,21 +202,23 @@ def _targets(operation: OperationDescription) -> dict[str, str]:
         for name, field in fields.items()
         if (key := key_of(field.annotation)) is not None
     }
+    untyped = [name for name in fields if name not in keys or keys[name].entity is None]
     bare = [name for name, key in keys.items() if key.entity is None]
     targets: dict[str, str] = {}
     for entity in operation.entities:
         typed = [name for name, key in keys.items() if key.entity is entity]
-        own = f"{snake(entity.__name__)}_id"
+        stem = snake(entity.__name__)
+        own = [one for one in (f"{stem}_id", f"{stem}_ids") if one in untyped]
         if typed:
             named = typed
-        elif own in fields and (own not in keys or keys[own].entity is None):
-            named = [own]
+        elif own:
+            named = own
         elif len(operation.entities) > 1:
             named = []
         elif bare:
             named = bare
         else:
-            named = ["id"] if "id" in fields and "id" not in keys else []
+            named = [one for one in ("id", "ids") if one in fields and one not in keys]
         if len(named) == 1:
             targets[entity.__name__] = named[0]
     return targets
@@ -264,6 +271,30 @@ def _operation(
     }
 
 
+def _modelled(contract: dict[str, Any], name: str, models: dict[str, Any]) -> None:
+    """`contract` held in `models` under `name`, what it holds beside it (`$defs` — the entities
+    its relations point at, the shapes its records hold inside) held there too, once each.
+
+        _modelled(contract_of(Sale), "Sale", models)
+            ->  models["Sale"], models["Customer"], models["SaleLine"]
+        # another contract already holds a `SaleLine` of another shape:
+            ->  models["SaleLine.Sale"], `Sale` pointing at it
+
+    Context: one name may be two classes across contracts — a shape a record holds is named by
+    its class alone —; the second is held qualified by the entity it came with, its pointers
+    moved with it, so no model points at a shape not its own.
+    """
+    beside = contract.pop("$defs", {})
+    renamed = {
+        one: one if models.get(one, schema) == schema else f"{one}.{name}"
+        for one, schema in beside.items()
+    }
+    pointers = {one: f"{DEFINITIONS}{new}" for one, new in renamed.items() if new != one}
+    for one, schema in beside.items():
+        models.setdefault(renamed[one], _pointed(schema, pointers))
+    models[name] = _pointed(contract, pointers)
+
+
 def metamodel_of(
     bus: UseFramework, operations: Collection[str] | None = None
 ) -> dict[str, Any]:
@@ -280,11 +311,12 @@ def metamodel_of(
     2. The entities each one belongs to (`entity_tags`, the entity a framework DTO names), and
        every entity its Command and its answer reach — the answer `execute` declares, else the
        one its DTO names (`answer`) —, each as its contract (`contract_of`), the entities its
-       relations point at beside it, by name, once each.
+       relations point at and the shapes its records hold beside it, by name, once each
+       (`_modelled`); every pointer between models pointed at `models`.
     3. What every operation takes and answers, in one pass (`_shapes`).
     4. Each operation as a client reads it (`_operation`).
-    Final: the context, the models, the operations and the shared definitions, with the
-    fingerprint of all of them as the version.
+    Final: the bounded context's name, the models, the operations and the shared definitions,
+    with the fingerprint of all of them as the version.
     """
     chosen = {
         registered_name(operation.input, bus.name): operation
@@ -304,12 +336,12 @@ def metamodel_of(
             *entities_in(operation.answer, seen),
         ]
         for entity in reaches[identity]:
-            if entity.__name__ in models:
-                continue
-            contract = contract_of(entity)
-            for related, schema in contract.pop("$defs", {}).items():
-                models.setdefault(related, schema)
-            models[entity.__name__] = contract
+            if entity.__name__ not in models:
+                _modelled(contract_of(entity), entity.__name__, models)
+    models = {
+        name: _pointed(model, {one: f"{MODELS}{one}" for one in models})
+        for name, model in models.items()
+    }
     shapes, definitions = _shapes(
         {
             (identity, side): annotation
@@ -319,7 +351,7 @@ def metamodel_of(
         list(dict.fromkeys(entity for reached in reaches.values() for entity in reached)),
     )
     content = {
-        "context": bus.name,
+        "bounded_context": bus.name,
         "models": models,
         "operations": {
             identity: _operation(

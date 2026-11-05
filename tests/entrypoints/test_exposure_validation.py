@@ -244,7 +244,7 @@ def test_a_queue_binding_that_contradicts_the_message_kind_is_refused():
 # --- stages (§10) ---------------------------------------------------------------------------
 
 
-def test_idempotency_once_on_a_query_is_refused():
+def test_idempotency_once_on_a_read_is_refused():
     idempotency = Idempotency(InMemoryKeyValue())
     once = idempotency.once(expires_after=timedelta(minutes=5))
     on_query = _bus(
@@ -254,7 +254,7 @@ def test_idempotency_once_on_a_query_is_refused():
     )
     on_command = _bus(lambda cls: once(rest.post("/invoices")(cls)))
 
-    assert "@idempotency.once on a Query" in _refused(RestSurface([on_query], unguarded=True))
+    assert "@idempotency.once on a read" in _refused(RestSurface([on_query], unguarded=True))
     assert RestSurface([on_command], unguarded=True).verify() == []
     assert RestSurface([on_command], unguarded=True).surface()[0].operation.idempotent
 
