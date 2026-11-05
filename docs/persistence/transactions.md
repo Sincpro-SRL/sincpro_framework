@@ -233,7 +233,10 @@ writes through a new unit of work: this one has ended.
 
 ## 6. Writes past the aggregate
 
-Two verbs skip the aggregate's machinery on purpose and say so in their name.
+Two verbs skip part of the aggregate's machinery on purpose and say so in their name. Neither
+skips its rules without saying so: an upsert computes and judges the row it writes, and a rule it
+cannot judge — or one a write by criteria reaches — refuses the call before anything is written,
+unless the call skips the checks with a reason ([Every write keeps the rules](rules.md#every-write-keeps-the-rules-or-says-it-skips-them)).
 
 **`upsert`** inserts, or overwrites the stored record holding the same key — the import that must
 be idempotent, the sync that mirrors another system. No version check: it overwrites by
@@ -285,7 +288,9 @@ assert repository.remove_all(Movement, small) == 1
 ```
 
 No hook, no cascade, no change tracking — what Django's `update()` and Rails' `update_all` skip
-too. What they still do is what makes them safe: `version` is raised so a stale copy is still
+too —, and no rule: a value a check watches or a computation reads is refused, as is a write to
+the rows another aggregate owns when it has a rule over them. What they still do is what makes
+them safe: `version` is raised so a stale copy is still
 refused later, `updated_at` is stamped, the scope a repository was narrowed to and the archived
 rows apply as in a read. **They never run wider than they were asked**: a page cannot bound a
 write and is refused, and so is a condition the aggregate cannot answer — in a read it would be

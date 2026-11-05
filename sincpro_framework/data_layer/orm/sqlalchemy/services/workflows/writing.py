@@ -1,5 +1,7 @@
 """Every write the repository makes: the aggregate whole through `save`, `remove` and `archive`,
-and the doors named for what they skip — `upsert`, `update_all`, `remove_all`."""
+and the doors named for what they skip — `upsert`, `update_all`, `remove_all` — which keep the
+aggregate's rules where they can and refuse where they cannot (`ddd/editing/bulk_rules.py`).
+"""
 
 from collections.abc import Mapping, Sequence
 from typing import Any, cast
@@ -26,6 +28,7 @@ from sincpro_framework.data_layer.orm.sqlalchemy.services import (
 )
 from sincpro_framework.data_layer.orm.sqlalchemy.services.cascade import (
     Plan,
+    owners_of,
     planned_removal,
     planned_save,
 )
@@ -45,6 +48,8 @@ from sincpro_framework.data_layer.orm.sqlalchemy.services.workflows.repository_s
 from sincpro_framework.ddd.criteria import (
     Criteria,
 )
+from sincpro_framework.ddd.editing import bulk_rules
+from sincpro_framework.ddd.editing.editing import recompute_row
 from sincpro_framework.ddd.entity import EventSourcedMixin, utc_now
 from sincpro_framework.ddd.entity.entity_collection import (
     model_and_collection,
@@ -68,6 +73,24 @@ def _named(records: list[Any]) -> str:
     if len(kinds) == 1:
         return kinds[0] if len(records) == 1 else f"one of {len(records)} {kinds[0]}"
     return f"one of {len(records)} records ({', '.join(kinds)})"
+
+
+def _stored_columns(model: type) -> dict[str, str]:
+    """The attributes of `model` that a row stores, each with its column's name — what a
+    statement written by hand may set.
+
+        _stored_columns(Bill)   ->  {"id": "id", "total": "total", "paid": "paid", …}
+
+    Context: a `computed(sql=…)` field is mapped as an expression over the table
+    (`column_property`), so it is a column attribute too, with no column behind it: an upsert
+    that took it wrote `INSERT … (balance)` and SQLAlchemy refused an anonymous name. The ORM's
+    own flush never writes it; neither may a statement of ours.
+    """
+    return {
+        prop.key: prop.columns[0].name
+        for prop in sqlalchemy.inspect(model).column_attrs
+        if prop.key not in HIDDEN and isinstance(prop.columns[0], sqlalchemy.Column)
+    }
 
 
 def _by_dependency(records: list[Any]) -> list[list[Any]]:
@@ -415,19 +438,26 @@ class Writing(RepositoryState, Extends):
 
             repository.update_all(Session, Criteria(selection=expired), {"state": "closed"})
 
-        **Past the aggregate, on purpose.** No hook runs, no cascade, no change tracking, no
-        version check — what Django's `update()` and Rails' `update_all` skip too. For a write
-        with no rule to enforce: closing expired sessions, re-stamping a column after a
-        migration. What it still does is what a stale copy needs to be refused later: `version` is raised and
-        `updated_at` stamped. The scope it was narrowed to and the archived apply as in a read;
-        a page, or a condition the aggregate cannot answer, is refused.
+        **Past the aggregate, on purpose — never past its rules.** No hook runs, no cascade, no
+        change tracking, no version check — what Django's `update()` and Rails' `update_all`
+        skip too. For the values no rule reads: closing expired sessions, re-stamping a column
+        after a migration. One statement holds no record, so a value a check watches, a
+        computation reads, or a computed field set by hand is refused, and so is a write to the
+        rows another aggregate owns when it has a rule over them — unless the call skips the
+        checks (`ContextKey.SKIP_CHECKS`, logged). What it still does is what a stale copy needs
+        to be refused later: `version` is raised and `updated_at` stamped. The scope it was
+        narrowed to and the archived apply as in a read; a page, or a condition the aggregate
+        cannot answer, is refused.
 
         1. Refused in a preview, inside another write's hook, and in a read-only unit.
         2. The WHERE: the filter, the scope, the archived left out — refused for a page or a
            condition that cannot be answered.
-        3. Refused when a value names something that is not a column, or one the framework
-           sets — the identity, `created_at`, `version`, `updated_at`.
-        4. The values, with `version` raised by one and `updated_at` stamped now when the
+        3. Refused when a value names something that is not a column — a `computed(sql=…)`
+           field included —, or one the framework sets — the identity, `created_at`,
+           `version`, `updated_at`.
+        4. Refused when a value reaches a rule of the entity, or of the aggregate that owns its
+           rows (`bulk_rules`), unless the call skips the checks.
+        5. The values, with `version` raised by one and `updated_at` stamped now when the
            table has them.
         Final: one `UPDATE` in the call's session, and the number of rows it changed.
         """
@@ -436,11 +466,7 @@ class Writing(RepositoryState, Extends):
         self._refuse_read_only()
         model, _ = model_and_collection(target)
         clause = self._bulk_where(model, criteria, "update_all")
-        columns = {
-            prop.key
-            for prop in sqlalchemy.inspect(model).column_attrs
-            if prop.key not in HIDDEN
-        }
+        columns = set(_stored_columns(model))
         fixed = {
             ModelIntrospection.describe(model).identity,
             "created_at",
@@ -453,6 +479,15 @@ class Writing(RepositoryState, Extends):
                 f"update_all cannot set {', '.join(wrong)} on {model.__name__}: not a column, "
                 "or one the framework sets"
             )
+        bulk_rules.keep_or_skip(
+            model,
+            "update_all",
+            (
+                *bulk_rules.unjudged_by_values(model, values),
+                *bulk_rules.unjudged_through(owners_of(model)),
+            ),
+            bulk_rules.UPDATE_REMEDY,
+        )
         changes: dict[str, Any] = dict(values)
         if "version" in columns:
             changes["version"] = cast(Any, model).version + 1
@@ -472,14 +507,23 @@ class Writing(RepositoryState, Extends):
 
         No hook, no cascade — the children a root owns are not taken with it, and a foreign key
         that still points at a row refuses the delete as a `ConstraintViolation`. For rows with
-        nothing hanging from them: expired sessions, a staging table. The scope and the
-        archived apply as in a read; a page, or a condition that cannot be answered, is refused.
+        nothing hanging from them: expired sessions, a staging table. A row removed leaves no
+        record to break its own rules; the rows another aggregate owns are refused when it has
+        a rule over them — a total of its lines — unless the call skips the checks. The scope
+        and the archived apply as in a read; a page, or a condition that cannot be answered, is
+        refused.
         """
         refuse_writing_in_preview("remove_all")
         self._refuse_reentrant_write()
         self._refuse_read_only()
         model, _ = model_and_collection(target)
         clause = self._bulk_where(model, criteria, "remove_all")
+        bulk_rules.keep_or_skip(
+            model,
+            "remove_all",
+            bulk_rules.unjudged_through(owners_of(model)),
+            bulk_rules.REMOVE_REMEDY,
+        )
         statement = delete(model)
         if clause is not None:
             statement = statement.where(clause)
@@ -502,40 +546,56 @@ class Writing(RepositoryState, Extends):
         scope, one record per key, the hooks around it, and what came back counted.
 
         1. What cannot be upserted is refused before anything runs (`services/upsert.py`).
-        2. The batch is reduced to one record per key, the last one — Postgres refuses a
+        2. The rules the row cannot judge — of the aggregate, and of the ones that own its rows —
+           refused before anything runs, unless the call skips them (`bulk_rules`).
+        3. The batch is reduced to one record per key, the last one — Postgres refuses a
            statement that touches a row twice, and SQLite would hide it.
-        3. A narrowed repository bounds the conflict by its scope and never overwrites the
+        4. A record holding records a row never carries — lines, the pairs of a many2many — is
+           refused: the upsert would drop them without a word.
+        5. Each record's computations and checks over its row, as a save runs them
+           (`recompute_row`), then the `before_save` hooks.
+        6. A narrowed repository bounds the conflict by its scope and never overwrites the
            scope's own fields.
-        4. Final: the rows written back are the written; the rest of the batch was skipped.
+        Final: the rows written back are the written; the rest of the batch was skipped.
         """
         mapper = sqlalchemy.inspect(model)
         table = cast(Table, mapper.local_table)
         dialect = self._dialect()
-        names = {
-            prop.key: prop.columns[0].name
-            for prop in mapper.column_attrs
-            if prop.key not in HIDDEN
-        }
-        identity = ModelIntrospection.describe(model).identity
+        names = _stored_columns(model)
+        meta = ModelIntrospection.describe(model)
+        identity = meta.identity
         fixed = {identity, "created_at", "version", "updated_at"}
         upsert.refuse(
             model, table, mapper.inherits is not None, dialect, names, on, overwrite, fixed
         )
+        scope = self._scope.expression if self._scope is not None else None
+        scope_fields = (
+            {one.field for one in scope.conditions()} if scope is not None else set()
+        )
+        columns = upsert.overwritten(names, on, overwrite, fixed, scope_fields)
+        overwritten = {name for name, column in names.items() if column in columns}
+        bulk_rules.keep_or_skip(
+            model,
+            "upsert",
+            (
+                *bulk_rules.unjudged_by_row(model, names, {*overwritten, *on}),
+                *bulk_rules.unjudged_through(owners_of(model)),
+            ),
+            bulk_rules.UPSERT_REMEDY,
+        )
         for one in records:
             self._refuse_outside(one)
         latest = upsert.one_per_key(records, on)
+        apart = bulk_rules.kept_apart(meta)
+        for one in latest:
+            bulk_rules.refuse_held_apart(one, apart, "upsert")
+            recompute_row(one, names)
         for one in latest:
             self._fire("before_save", one)
-        scope = self._scope.expression if self._scope is not None else None
         bound = (
-            sql_translator.where_clause(
-                model, ModelIntrospection.describe(model).accept(scope)[0]
-            )
+            sql_translator.where_clause(model, meta.accept(scope)[0])
             if scope is not None
             else None
-        )
-        scope_fields = (
-            {one.field for one in scope.conditions()} if scope is not None else set()
         )
         now = utc_now()
         statement = upsert.statement(
@@ -543,7 +603,7 @@ class Writing(RepositoryState, Extends):
             table,
             upsert.rows(latest, names, now),
             {names[name] for name in on},
-            upsert.overwritten(names, on, overwrite, fixed, scope_fields),
+            columns,
             now,
             bound,
             names[identity],
@@ -569,6 +629,12 @@ class Writing(RepositoryState, Extends):
         and the framework's own when omitted, none with `update=()`. A record is skipped when
         its conflict has nothing to overwrite, or when the stored row lies outside the scope
         this repository was narrowed to — which it never overwrites.
+
+        **The rules of the row are kept.** Each record is computed and judged as a save would,
+        over the row it writes (`recompute_row`); a rule the row cannot judge — over a field a
+        conflict keeps as stored, or over records a row never carries — refuses the call before
+        anything runs, unless the call skips the checks (`ContextKey.SKIP_CHECKS`, logged). A
+        record holding lines is refused: the upsert would drop them.
 
         `before_save` and `after_save` run; `before_create`/`before_update` do not, because
         which one happened only the database knows. No cascade and no change tracking.

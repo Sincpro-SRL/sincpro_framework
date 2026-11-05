@@ -23,6 +23,10 @@ class MappingRegistry:
         """What was declared for this aggregate, by relation name; empty when nothing was."""
         return self._relations.get(aggregate, {})
 
+    def with_relations(self) -> tuple[type, ...]:
+        """Every aggregate a relation was declared or inferred for, in the order first met."""
+        return tuple(self._relations)
+
     def add_relation(self, aggregate: type, name: str, relation: relations.Relation) -> bool:
         """Registers `relation` under `name` unless one is registered there already: the first
         declaration wins.

@@ -498,9 +498,9 @@ What the commit writes is §25.
 **Decision.** `upsert(records, on=, update=)` — answering `Upserted(written, skipped)` through
 `RETURNING`, on Postgres and SQLite — and `update_all(target, criteria, values)` /
 `remove_all(target, criteria)`, on the port and on both stores. They skip hooks (except
-`before_save`/`after_save` on an upsert), the cascade and change tracking, and say so first. They
-preserve what later writes depend on: `version` is raised and `updated_at` stamped, the scope and the
-archived apply as in a read.
+`before_save`/`after_save` on an upsert), the cascade and change tracking, and say so first —
+never the aggregate's rules, which §22b keeps. They preserve what later writes depend on: `version`
+is raised and `updated_at` stamped, the scope and the archived apply as in a read.
 
 **Why.** The cases they serve have no aggregate rule to skip — an idempotent import, closing
 expired sessions, re-stamping a column — and without a door they dropped to `unit.session`,
@@ -511,6 +511,45 @@ Postgres refuses a statement that touches a row twice and SQLite hides it. MySQL
 any unique key rather than the one named, cannot leave a conflicting row as it is, and its
 affected-rows count says neither what was inserted nor what was updated — Rails and Django expose
 neither a portable conflict target nor portable counts for the same reason.
+
+## 22b. Every write keeps the rules, or says out loud that it skips them
+
+**Decision.** The rules an entity declares — `@check`, and every `@compute` that is not editable —
+are kept by every write of the repository, each as far as it can see:
+
+- `save` holds the aggregate whole: it computes and judges all of it (`recompute_whole`).
+- `upsert` holds each record but decides only part of its row: it computes and judges the rules
+  that read only what it decides (`recompute_row`), and refuses, before anything runs, a rule
+  that reads both a field it overwrites and one a conflict keeps as stored, or one over records a
+  row never carries. A record holding such records — lines, the pairs of a many2many — is refused
+  too: they would be dropped.
+- `update_all` holds no record: a value a check watches, a computation reads, or a computed field
+  set by hand refuses the call; a value no rule reads is written as before.
+- A write by criteria or an upsert of the rows another aggregate owns (`owners_of`: its lines)
+  refuses when the owner has a rule over that relation.
+- `ContextKey.SKIP_CHECKS`, with a reason, is the one switch: every refusal above becomes a
+  warning naming the rules left out and who asked, once per execution and entity; what can still
+  be computed is.
+
+The classification lives in `ddd/editing/bulk_rules.py`, with no database in it; each store says
+what its write decides (the columns of the row, what a conflict overwrites, who owns the rows) and
+asks it. The refusals are `ProgrammingError`: they depend on the call and the entity, never on the
+rows, so the first test that makes the call sees them.
+
+**Why.** A rule that holds only on some doors does not hold: §22 said the doors served writes
+with "no rule to skip", and nothing checked that. An upsert of a confirmed sale without a
+delivery date was stored; an `update_all` confirmed sales in bulk past the same rule; a total
+stayed as stored while `update_all` changed the lines it sums. Every one of those was silent.
+Refusing is what a write by criteria can do without reading — judging row by row is what `save`
+already does, a page per flush. Refusing at the call, before any row is read, keeps it free:
+a write whose values no rule reads costs exactly what it cost.
+
+**Rejected.** Judging `update_all` by reading the rows it matched after the statement, inside the
+transaction (`violations_of` over its filter): correct, but it turns one statement into a read of
+every row it wrote, with no way to see the cost from the call. A second switch for computations
+(`SKIP_COMPUTATIONS`): one reason, one switch, one log line is what a reader can follow — a skip
+computes what it can and says what it left as stored. Leaving the doors as they were and
+documenting the gap: that is what §22 did.
 
 ## 23. What waits for the commit waits for this one
 

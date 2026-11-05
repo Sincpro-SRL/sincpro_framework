@@ -70,6 +70,8 @@ from sincpro_framework.ddd.criteria import (
     Sort,
     Through,
 )
+from sincpro_framework.ddd.editing import bulk_rules
+from sincpro_framework.ddd.editing.editing import recompute_row
 from sincpro_framework.ddd.entity import ArchivableMixin, Entity, extensions, utc_now
 from sincpro_framework.ddd.entity.entity_collection import (
     Count,
@@ -1529,7 +1531,7 @@ class MemoryRepository(
 
     def update_all(self, target: type, criteria: Criteria, values: Mapping[str, Any]) -> int:
         """The engine's `update_all`, over the records held: values set, version raised,
-        `updated_at` stamped, no hook.
+        `updated_at` stamped, no hook — and a value a rule reaches refused, as the engine.
 
             expired = Criteria(selection={"field": "state", "operator": "=", "value": "expired"})
             repository.update_all(Session, expired, {"state": "closed"})   ->  3
@@ -1537,8 +1539,11 @@ class MemoryRepository(
                 ->  ProgrammingError("update_all cannot set version on Session: …")
 
         1. Refused in a preview and inside another write's hook.
-        2. Refused when a value names something that is not a field, a relation, or one the
-           framework sets — the identity, `created_at`, `version`, `updated_at`.
+        2. Refused when a value names something that is not a field, a relation, a field
+           computed when the row is read, or one the framework sets — the identity,
+           `created_at`, `version`, `updated_at`.
+        2.1 Refused when a value reaches a rule of the entity (`bulk_rules`), unless the call
+            skips the checks.
         3. The records the filter reaches — refused for a page, or a condition the aggregate
            cannot answer.
         4. Each one marked touched, its values set, and an entity's version raised and
@@ -1555,6 +1560,7 @@ class MemoryRepository(
             for name in values
             if name not in meta.fields
             or name in fixed
+            or name in model_of(model).computed
             or meta.fields[name].type.is_relational
         )
         if wrong:
@@ -1562,6 +1568,12 @@ class MemoryRepository(
                 f"update_all cannot set {', '.join(wrong)} on {model.__name__}: not a field, "
                 "or one the framework sets"
             )
+        bulk_rules.keep_or_skip(
+            model,
+            "update_all",
+            bulk_rules.unjudged_by_values(model, values),
+            bulk_rules.UPDATE_REMEDY,
+        )
         rows = self._matched_for_writing(model, criteria, "update_all")
         now = utc_now()
         for one in rows:
@@ -1589,6 +1601,45 @@ class MemoryRepository(
             self._forget(one)
         return len(rows)
 
+    def _upsert_row(
+        self, model: type, on: Sequence[str], update: Sequence[str] | None
+    ) -> set[str]:
+        """The fields a row of `model` carries, as the engine's columns — every field but the
+        ones computed when the row is read and the relations whose records live in other rows —
+        once `on` and `update` are known to name fields of that row, and the rules the row
+        cannot judge are refused unless the call skips them (`bulk_rules`)."""
+        meta = self.definition(model)
+        named = [*on, *(update or ())]
+        unknown = [name for name in named if name not in meta.fields]
+        if unknown:
+            raise exceptions.ProgrammingError(
+                f"{model.__name__} has no field {', '.join(unknown)}"
+            )
+        computed = [name for name in named if name in model_of(model).computed]
+        if computed:
+            raise exceptions.ProgrammingError(
+                f"{model.__name__} has no column {', '.join(computed)}: it is computed when "
+                "the row is read"
+            )
+        apart = bulk_rules.kept_apart(meta)
+        elsewhere = [name for name in named if name in apart]
+        if elsewhere:
+            raise exceptions.ProgrammingError(
+                f"{model.__name__} has no column {', '.join(elsewhere)}: its records live in "
+                "rows of their own"
+            )
+        row = set(meta.fields) - set(model_of(model).computed) - apart
+        fixed = {meta.identity, "created_at", "version", "updated_at", *on}
+        fixed |= {"archived_at", "created_by"}
+        overwritten = set(update) if update is not None else row - fixed
+        bulk_rules.keep_or_skip(
+            model,
+            "upsert",
+            bulk_rules.unjudged_by_row(model, row, {*overwritten, *on}),
+            bulk_rules.UPSERT_REMEDY,
+        )
+        return row
+
     def upsert(
         self, record: Any, on: Sequence[str], update: Sequence[str] | None = None
     ) -> Upserted:
@@ -1607,15 +1658,21 @@ class MemoryRepository(
         1. Refused in a preview, inside another write's hook, and when `update` names a field
            the framework sets.
         2. One record per key, the last one — a key with a `None` in it is its own.
-        3. `before_save` for each of those records.
-        4. Per record:
-           4.1 refused when `on` or `update` names a field its class does not have;
-           4.2 the held record with the same key values — none when the key has a `None`;
-           4.3 none held but its identity taken by another key: `DuplicateAggregate`;
-           4.4 none held: a copy stored, at version 1 when it had none — written;
-           4.5 held: the fields to overwrite — the ones named, or every one but the key, the
-               framework's own, `archived_at` and `created_by` — set on it, its version raised
-               and `updated_at` stamped; written, unless there is nothing to overwrite.
+        3. Per class in the batch: refused when `on` or `update` names a field it does not
+           have, or one computed when the row is read; and the rules its row cannot judge
+           refused, unless the call skips them (`bulk_rules`) — as the engine, before anything
+           runs.
+        4. Per record: refused when it holds records a row never carries; then its computations
+           and checks over its row, as a save runs them (`recompute_row`).
+        5. `before_save` for each of those records.
+        6. Per record:
+           6.1 the held record with the same key values — none when the key has a `None`;
+           6.2 none held but its identity taken by another key: `DuplicateAggregate`;
+           6.3 none held: a copy stored, at version 1 when it had none — written;
+           6.4 held: the fields to overwrite — the ones named, or every field of the row but
+               the key, the framework's own, `archived_at` and `created_by` — set on it, its
+               version raised and `updated_at` stamped; written, unless there is nothing to
+               overwrite.
         Final: `after_save` for each, and how many were written and skipped.
         """
         refuse_writing_in_preview("upsert")
@@ -1633,17 +1690,20 @@ class MemoryRepository(
             values = tuple(getattr(one, name) for name in on)
             # A key with a NULL in it never conflicts, as in the database.
             latest[(type(one), *values) if None not in values else ("unkeyed", id(one))] = one
+        rows: dict[type, set[str]] = {}
+        for model in dict.fromkeys(type(one) for one in latest.values()):
+            rows[model] = self._upsert_row(model, on, update)
+        for one in latest.values():
+            bulk_rules.refuse_held_apart(
+                one, bulk_rules.kept_apart(self.definition(type(one))), "upsert"
+            )
+            recompute_row(one, rows[type(one)])
         for one in latest.values():
             self._fire("before_save", one)
         written = 0
         for one in latest.values():
             model = type(one)
             meta = self.definition(model)
-            unknown = [name for name in [*on, *(update or ())] if name not in meta.fields]
-            if unknown:
-                raise exceptions.ProgrammingError(
-                    f"{model.__name__} has no field {', '.join(unknown)}"
-                )
             keyed = None not in tuple(getattr(one, name) for name in on)
             held = next(
                 (
@@ -1674,7 +1734,7 @@ class MemoryRepository(
             overwritten = (
                 list(update)
                 if update is not None
-                else [n for n in meta.fields if n not in fixed]
+                else [n for n in rows[model] if n not in fixed]
             )
             if not overwritten:
                 continue
