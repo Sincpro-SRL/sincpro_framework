@@ -20,7 +20,7 @@ Updated in place with every change ([how a specification is kept](README.md)). W
 | R6 | A filter crosses a relation (`Through`): some related record holds | ✅ | `tests/data_layer/orm/test_through.py` (memory and SQL) |
 | R7 | A rule over one value is portable: the browser validates it offline with a standard evaluator | ✅ published as JSON Schema keywords and as `x-sincpro.holds`; the client checks it with `matches` | `tests/ddd/test_value_object_holds.py`, `@sincpro/criteria` `tests/contract.test.ts` |
 | R8 | A rule across fields that a client must evaluate is an expression of the language; a rule only the server can judge is an `@check` | 🟡 `@check` and the `*_when` hints exist | `tests/ddd/entity/test_checks.py` |
-| R9 | The model is published as one contract — JSON Schema with the framework's vocabulary — in the discovery document every wire already publishes — OpenAPI, OpenRPC, MCP — with a parity suite between Python and TypeScript | 🟡 published in OpenAPI (REST and FastAPI wires) and OpenRPC, readable by any JSON Schema validator, `contract-parity.json` holding the TypeScript reader to it; MCP does not publish it yet — its tools answer an untyped object and no resource carries the models | `tests/ddd/metamodel/test_contract.py`, `@sincpro/criteria` `tests/contract.test.ts` |
+| R9 | The model is published as one contract — JSON Schema with the framework's vocabulary — in the discovery document every wire already publishes — OpenAPI, OpenRPC, MCP — with a parity suite between Python and TypeScript | ✅ published in OpenAPI (REST and FastAPI wires), OpenRPC and MCP (`metamodel://<context>`), readable by any JSON Schema validator, `contract-parity.json` holding the TypeScript reader to it | `tests/ddd/metamodel/test_contract.py`, `@sincpro/criteria` `tests/contract.test.ts` |
 | R10 | Everything a client can derive from the model is published derived, never declared twice: operators, widget, what a change affects, whether a warning blocks a save, which operations and actions belong to an entity | 🟡 all of it but what #230 asks that nothing declares yet: when an action applies, a reference to another context, a semantic format ([§5](#what-230-asks-that-nothing-declares-yet)) | `tests/ddd/metamodel/test_contract.py`, `tests/ddd/entity/test_checks.py` |
 | R11 | A record with an identity is addressed by it everywhere — paths of errors and warnings, `changed`, per-line states; a position only for a value with none | ✅ | `tests/ddd/editing/test_preview.py::test_a_line_with_an_identity_is_named_by_it_everywhere`, `tests/data_layer/orm/test_checks_sql.py`, `test_preview_sql.py::test_a_line_the_form_created_is_saved_under_the_identity_the_form_minted` |
 | R12 | Expressions are compiled once per shape and evaluated by the compiled program; the core stays on the standard library, a faster evaluator is an optional extra | ✅ the memory evaluator; a SQL statement is compiled by SQLAlchemy | `tests/ddd/criteria/test_programs.py` |
@@ -198,7 +198,8 @@ How it is written (`contract_of(Sale)`, `sincpro_framework/ddd/metamodel/service
 - **Where it travels**: every response schema the catalog builds describes each entity it
   reaches by its contract — OpenAPI's components (REST and FastAPI wires) and OpenRPC's —; an
   operation says the entities it belongs to (`x-sincpro-entities`) and whether its Command may be
-  run dry (`x-sincpro-dry-run`). MCP does not carry it yet: its tools answer an untyped object.
+  run dry (`x-sincpro-dry-run`). MCP publishes the resource `metamodel://<context>` —
+  `metamodel_of` of what its tools expose —, read before an agent writes a criteria or a command.
 
 ### What #230 asks that nothing declares yet
 

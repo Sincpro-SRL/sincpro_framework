@@ -3,6 +3,7 @@ says beyond it under one `x-sincpro` per schema and per property — every item 
 entity already declares, and readable by any JSON Schema validator.
 """
 
+import asyncio
 import importlib
 import json
 from dataclasses import dataclass, field
@@ -12,7 +13,9 @@ from enum import StrEnum
 from pathlib import Path
 from typing import Any
 
+import fastmcp
 import pytest
+from mcp.types import TextResourceContents
 
 from sincpro_framework import Feature, UseFramework
 from sincpro_framework.ddd import (
@@ -31,8 +34,8 @@ from sincpro_framework.ddd.metamodel import StoreFacts, contract_of, description
 from sincpro_framework.ddd.metamodel.services.contract import SAID
 from sincpro_framework.ddd.metamodel.services.description import held_relations
 from sincpro_framework.ddd.query import Query, ResponsePaginatedQuery
-from sincpro_framework.entrypoints import FastApiGateway, RestGateway
-from sincpro_framework.entrypoints.entrypoint.decorators import rest
+from sincpro_framework.entrypoints import FastApiGateway, McpGateway, RestGateway
+from sincpro_framework.entrypoints.entrypoint.decorators import mcp, rest
 from sincpro_framework.entrypoints.infrastructure.json_schema import json_schema_for
 from sincpro_framework.introspection import entity_tags
 
@@ -402,3 +405,33 @@ if __name__ == "__main__":
         json.dumps(published.contract_parity(), indent=2, ensure_ascii=False) + "\n"
     )
     print(f"wrote {published.CONTRACT_PARITY}")
+
+
+def test_an_agent_reads_the_models_of_what_the_mcp_wire_exposes():
+    class QueryMcpOrders(Query):
+        pass
+
+    shop = UseFramework("shop-mcp", log_after_execution=False)
+
+    @shop.feature(QueryMcpOrders)
+    @entity_tags(Order)
+    @mcp()
+    class ListMcpOrders(Feature):
+        def execute(self, dto: QueryMcpOrders) -> ResponseOrders:
+            return ResponseOrders(orders=[])
+
+    server = McpGateway([shop], unguarded=True).server()
+
+    async def read() -> tuple[list[str], Any]:
+        async with fastmcp.Client(server) as client:
+            listed = [str(one.uri) for one in await client.list_resources()]
+            contents = await client.read_resource(listed[0])
+            [written] = contents
+            assert isinstance(written, TextResourceContents)
+            return listed, json.loads(written.text)
+
+    listed, metamodel = asyncio.run(read())
+
+    assert listed == ["metamodel://shop-mcp"]
+    assert metamodel["models"]["Order"]["x-sincpro"]["version"] == model_of(Order).fingerprint
+    assert metamodel["operations"]["QueryMcpOrders"]["entities"] == ["Order"]

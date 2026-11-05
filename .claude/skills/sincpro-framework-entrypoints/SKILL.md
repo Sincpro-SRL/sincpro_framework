@@ -116,7 +116,7 @@ from sincpro_framework.entrypoints import FastApiGateway
 api = FastApiGateway({"billing": billing}, title="Billing API", unguarded=True)
 api.group(billing, version="v1")         # /v1/billing/invoices
 api.readiness.add("valkey", valkey.ping)  # readiness: a binary, a key, a store — bounded in time
-app = api.app()                          # routes, OpenAPI, RFC 9457 problems, /healthz, /readyz
+app = api.app()                          # routes, OpenAPI (each entity's contract, ETag), RFC 9457 problems, /healthz, /readyz
 ```
 
 `uvicorn my_service.entrypoints.http.app:app`. `unguarded=True` is only for a bus with no
@@ -139,6 +139,11 @@ app = api.app()                          # routes, OpenAPI, RFC 9457 problems, /
 - **`group(bus, prefix="")` to drop the alias, without knowing it.** `prefix=None` (the default)
   gives `/{alias}`, `prefix=""` gives no segment, and `version` comes before both:
   `/{version}{prefix}{path}`.
+- **Sending the model with every answer, or writing a schema for the client by hand.** The
+  discovery document already carries each exposed entity's contract (JSON Schema with
+  `x-sincpro`; MCP: the resource `metamodel://<context>`), and a read answers only
+  `model_version`. A client reads the document once (`metaFromContract` in `@sincpro/criteria`,
+  `restTransport` in the web framework) — docs/ddd/metamodel.md.
 - **Creating the gateway before `auth.on(bus)` / interceptors.** The gateway reads the bus's
   access when it is built, and a wiring error of what comes later waits for the next execution.
 - **Turning off `health_path` / `metrics_path` and rewriting `/health` or a readiness route.**

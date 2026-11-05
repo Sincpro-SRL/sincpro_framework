@@ -17,6 +17,11 @@ publish that catalog over a transport without the domain learning about the tran
 | [MCP, a real use case](mcp-use-case.md) | The pattern evaluated against the SIAT SOAP SDK Sincpro ships |
 | [Queue](queue.md) | `QueueGateway`: Commands and events consumed from a broker |
 
+Every discovery document — OpenAPI, OpenRPC, MCP's `metamodel://<context>` resource — carries
+the contract of each entity an exposed operation reads or answers (JSON Schema with `x-sincpro`),
+tagged by its content (`ETag`, `304`); a read answers only the version of its model
+(`model_version`). How it is published and consumed: [ddd/metamodel.md](../ddd/metamodel.md).
+
 They are extras: `[fastapi]`, `[rest]`, `[rpc]`, `[grpc]`, `[mcp]` and `[faststream]`. A service that only runs a bus installs none of them.
 
 A program that stays up and runs loops lives here too, but it is not a wire:

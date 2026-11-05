@@ -18,6 +18,7 @@ builds, agree without sharing anything.
 
 import hashlib
 import json
+from collections.abc import Collection
 from pathlib import Path
 from typing import Any
 
@@ -28,11 +29,18 @@ from sincpro_framework.sincpro_abstractions import DryRunnable
 from sincpro_framework.use_bus import UseFramework
 
 
-def metamodel_of(bus: UseFramework) -> dict[str, Any]:
-    """Every model `bus` reaches, its operations, and the version of the whole.
+def metamodel_of(
+    bus: UseFramework, operations: Collection[str] | None = None
+) -> dict[str, Any]:
+    """Every model `bus` reaches, its operations, and the version of the whole — of the
+    `operations` named, when a wire publishes only what it exposes.
 
-    1. Each operation of the bus (`operations_of`): the entities it belongs to (`entity_tags`, the
-       entity a framework DTO names), and every entity its Command and its answer reach.
+        metamodel_of(billing)                                  the whole bounded context
+        metamodel_of(billing, {"QueryGetInvoice"})             what that one operation reaches
+
+    1. Each operation of the bus (`operations_of`) — of those named, when named —: the entities
+       it belongs to (`entity_tags`, the entity a framework DTO names), and every entity its
+       Command and its answer reach.
     2. Each entity reached, as its contract (`contract_of`); the entities its relations point at
        beside it, by name, once each.
     3. Each operation as the entities it belongs to, the ones it reaches, whether its Command may
@@ -40,8 +48,10 @@ def metamodel_of(bus: UseFramework) -> dict[str, Any]:
     Final: the models and the operations, with the fingerprint of both as the version.
     """
     models: dict[str, Any] = {}
-    operations: dict[str, Any] = {}
+    described: dict[str, Any] = {}
     for name, operation in operations_of(bus).items():
+        if operations is not None and name not in operations:
+            continue
         seen: set[Any] = set()
         reached = [
             *operation.entities,
@@ -55,13 +65,13 @@ def metamodel_of(bus: UseFramework) -> dict[str, Any]:
             for related, schema in contract.pop("$defs", {}).items():
                 models.setdefault(related, schema)
             models[entity.__name__] = contract
-        operations[name] = {
+        described[name] = {
             "entities": [one.__name__ for one in operation.entities],
             "reaches": sorted({one.__name__ for one in reached}),
             "dry_run": issubclass(operation.input, DryRunnable),
             "description": operation.description,
         }
-    content = {"models": models, "operations": operations}
+    content = {"models": models, "operations": described}
     written = json.dumps(content, sort_keys=True, separators=(",", ":"), default=str)
     return {"version": hashlib.sha256(written.encode()).hexdigest(), **content}
 
