@@ -20,7 +20,7 @@ from pydantic_core import to_jsonable_python
 from sincpro_framework.auth import Credentials, security
 from sincpro_framework.context import EntrypointKind
 from sincpro_framework.entrypoints.domain.layers import TRACE_KEYS, RunFn, Scalar
-from sincpro_framework.entrypoints.infrastructure import json_schema
+from sincpro_framework.introspection.schemas import adapter
 from sincpro_framework.sincpro_logger import logger
 from sincpro_framework.use_bus import UseFramework
 
@@ -99,7 +99,7 @@ class ScalarExecution:
         validate = (
             dto_type.model_validate
             if isinstance(dto_type, type) and issubclass(dto_type, BaseModel)
-            else json_schema.adapter(dto_type).validate_python
+            else adapter(dto_type).validate_python
         )
 
         def run(payload: Scalar) -> Scalar:

@@ -1,13 +1,18 @@
 # PRD_33: The client contract — each operation says what it is, exported raw with every wire's bindings
 
-- **Status**: phase 1 (§1, §2, §4) built on `feat/client-contract-roles`, 2026-11-05, not
-  committed: `role_of` beside `entities_of`; in `metamodel_of` the `context`, operations keyed by
-  identity, `role` / `query` / `targets` / `input` / `output`, an edit's `values` as its model,
-  the shared `$defs` named by their class, subscribers of domain events left out, a model's
-  `search` and `detail` with only what they say, keys typed `EntityID` / `StrictEntityID` /
-  `Reference` published as `relation`; `x-sincpro-role` on OpenAPI (FastAPI and
-  Starlette) and OpenRPC, `role` in gRPC's `Describe`, MCP's `metamodel://` by being
-  `metamodel_of`. Phases 2 and 3 not built.
+- **Status**:
+  - **Phase 1** (§1, §2, §4) — merged in #242: in `metamodel_of` the `context`, operations keyed
+    by identity, `role` / `query` / `targets` / `input` / `output`, an edit's `values` as its
+    model, the shared `$defs` named by their class, subscribers of domain events left out, a
+    model's `search` and `detail` with only what they say; `x-sincpro-role` on OpenAPI and
+    OpenRPC, `role` in gRPC's `Describe`, MCP's `metamodel://` by being `metamodel_of`.
+  - **Phase 2** (§3, §4) — built on `feat/client-contract-export`, 2026-11-05, not committed:
+    `EntityID` always a UUID v7 and `EntityKey` a context's own key (D8); `export_client_contract`
+    and `python -m sincpro_framework.entrypoints export-client-contract`, one file per context
+    with every wire's bindings; the framework's reads served as reads (D7); FastAPI's document
+    referenced and tagged.
+  - **Phase 3** (§3) — built on the same branch: `GET /client-contract/<context>.json` on the
+    FastAPI and JSON-RPC gateways, its `version` the `ETag`.
 - **Found by**: forge's console on `@sincpro/web-framework`. Every route and every Command is
   declared by hand (`web/src/domains/project/adapters/forge_project.tsx`), every wire type is
   written by hand (225 lines in `web/src/domains/*/domain/*.ts`), and they drift: `revokeShare`
@@ -108,18 +113,19 @@ stable in 1.30) and one OpenAPI v3 document per group-version, content-addressed
   model (`{"$ref": "#/models/<Entity>"}`).
 - A model's `search` and `detail` (`x-sincpro`) **MUST** be written with only what each criteria
   says: what a blank criteria says left out at every depth, an expression whole.
-- A key **MUST** say whose it is by its type — `EntityID[Issue]`, `EntityID[Partner, int]`,
-  `EntityID[Device, UUID]`, `StrictEntityID[Issue]` —, published as what it holds with
-  `x-sincpro.relation`, in an
+- A key **MUST** say whose it is by its type — `EntityID[Issue]` (the framework's id, always a
+  UUID v7), `EntityKey[User]`, `EntityKey[Partner, int]`, `EntityKey[Device, UUID]` (a
+  context's own key) —, published as what it holds with `x-sincpro.relation`, in an
   operation's input and on a model's field (`contract_of`): the entity's name for one of this
   context, `<context>.<Entity>` for another's, named once in `shared/` (`class
   Tenant(Reference, context="auth")`). `relation` is the meta's word for the aggregate on the
   other side; the field's `type` says it holds a key, not the record, and no filter crosses it.
-  Each is read and written by pydantic's own rule for what it holds: an `EntityID` takes what
-  its plain type takes (a text key, a `uuid.UUID` as its 32 hex); `EntityID[E, UUID]` is
-  pydantic's `UUID` — any spelling in, the standard's 36 out, `format: uuid`; a
-  `StrictEntityID` is pydantic's `UUID7`, held and sent as the framework's 32 hex and published
-  `^[0-9a-f]{12}7[0-9a-f]{3}[89ab][0-9a-f]{15}$` — never `format: uuid`, which asks for dashes.
+  Each is read and written by pydantic's own rule for what it holds: an `EntityID` is
+  pydantic's `UUID7`, held and sent as the framework's 32 hex and published
+  `^[0-9a-f]{12}7[0-9a-f]{3}[89ab][0-9a-f]{15}$` — never `format: uuid`, which asks for dashes;
+  an `EntityKey` takes what its plain type takes (a text, a `uuid.UUID` as its 32 hex; an
+  `int`); `EntityKey[E, UUID]` is pydantic's `UUID` — any spelling in, the standard's 36 out,
+  `format: uuid`. Both count for `targets` and for the entities an operation concerns.
   A contract with no key typed so **MUST NOT** change.
 - `dry_run` and `description` stay as they are. `deprecated`, `sunset` and `replacement` come
   from the exposure (`ManifestEntry`) and **MUST** be carried, so a generated method can say
@@ -127,66 +133,80 @@ stable in 1.30) and one OpenAPI v3 document per group-version, content-addressed
 
 ### 3. The raw export
 
-`export_client_contract(gateway, path)` (the name is an open question) writes one JSON file:
+`export_client_contract(gateways, out_dir)` — one gateway per wire, or a single one — writes one
+file per bounded context, `<out_dir>/<context>.contract.json`; `client_contracts(gateways)`
+answers the same documents as data:
 
 ```json
 {
   "format": "sincpro.client-contract/1",
-  "version": "<sha256 of everything below>",
-  "contexts": {
-    "project": {
-      "models": { "Project": { "…": "contract_of(Project)" } },
-      "operations": {
-        "project.CommandSetProjectTenant": {
-          "role": "command",
-          "entities": ["Project"],
-          "input": { "$ref": "#/contexts/project/models/…" },
-          "output": { "…": "…" },
-          "dry_run": false,
-          "description": "Set the project's home tenant; empty leaves it with none.",
-          "deprecated": null
-        }
-      },
-      "bindings": {
-        "rest": {
-          "project.CommandSetProjectTenant": {
-            "method": "PUT",
-            "path": "/projects/{id}/tenant",
-            "path_fields": ["id"]
-          }
-        },
-        "jsonrpc": { "project.CommandSetProjectTenant": { "method": "…" } },
-        "grpc": { "project.CommandSetProjectTenant": { "method": "/…" } },
-        "mcp": { "project.CommandSetProjectTenant": { "tool": "…" } }
-      }
+  "context": "tracker",
+  "version": "<sha256 of everything else in the file>",
+  "models": { "Issue": { "…": "contract_of(Issue)" } },
+  "operations": {
+    "tracker.CommandMoveIssue": {
+      "role": "command", "query": false, "entities": ["Issue"],
+      "targets": { "Issue": "issue_id" }, "input": { "…": "…" }, "output": { "…": "…" },
+      "dry_run": false, "description": "…",
+      "deprecated": true, "sunset": "2027-01-01", "replacement": "tracker.QueryGetIssue"
     }
   },
-  "$defs": { "Criteria": { "…": "…" } }
+  "$defs": { "Criteria": { "…": "…" } },
+  "bindings": {
+    "rest": { "tracker.CommandMoveIssue": {
+      "method": "PUT", "path": "/v2/tracker/issues/{issue_id}/move", "path_fields": ["issue_id"],
+      "deprecated": true, "sunset": "2027-01-01", "replacement": "tracker.QueryGetIssue" } },
+    "rpc":  { "tracker.CommandMoveIssue": { "method": "tracker.move_issue" } },
+    "grpc": { "tracker.CommandMoveIssue": { "method": "/tracker.v1.TrackerService/MoveIssue" } },
+    "mcp":  { "tracker.CommandMoveIssue": { "tool": "move_issue" } }
+  }
 }
 ```
 
-- Operations **MUST** be keyed by the Command's identity (`registered_name`,
-  `billing.CommandIssueInvoice`): the same key in every wire's bindings.
-- The export **MUST** be deterministic, like `export_metamodel`: keys sorted, indented, a final
-  newline. The same code writes the same bytes, and a diff shows only what changed.
-- It **MUST** hold only what the gateway exposes. An `@internal` operation is not in it.
-- A REST path's `{name}` is a field of the DTO (the wire's rule today); `path_fields` lists them,
-  so a client fills them from the body.
-- A command line **SHOULD** write it without serving anything (for a build or a CI step), e.g.
-  `python -m sincpro_framework.introspection export-client-contract app.http:gateway out.json`.
-  Each project wraps it in a `make contract` target.
-- A running service **SHOULD** serve the same document (`GET <base>/client-contract.json`) with
-  its `version` as the `ETag` (#200), so a client compares its snapshot with the live one. It
-  **MAY** split it per context, content-addressed, as Kubernetes does.
+- `models`, `operations` and `$defs` **MUST** be what `metamodel_of` answers for what the
+  gateways expose; operations and bindings **MUST** be keyed by the Command's identity
+  (`registered_name`), the key `gateway.manifest()` lists every binding by.
+- Each wire's bindings **MUST** say how a client reaches the operation over it — what the wire
+  itself says (`Wire.reached_by`): REST the verb, the **full** path (the group's version and
+  prefix included) and `path_fields`, the Command's fields its `{name}`s take; JSON-RPC and gRPC
+  the `method`; MCP the `tool`. A wire of a project's own answers its `name`. Wires are named as
+  the framework names them (`rest`, `rpc`, `grpc`, `mcp`, `queue`).
+- Each operation **MUST** carry `deprecated`, `sunset` and `replacement`: deprecated when every
+  wire publishing it deprecates it alike; a binding deprecated on its wire alone says so itself.
+- It **MUST** hold only what the gateways expose: an `@internal` operation is in no contract, and
+  a wire that does not publish an operation has no binding for it.
+- The bytes **MUST** be deterministic: keys sorted, indented, a final newline; `version` is the
+  fingerprint of the whole file. Each model keeps its own version (`model_version`).
+- A command line writes it without serving anything:
+  `python -m sincpro_framework.entrypoints export-client-contract app.http:gateways out_dir`,
+  `<module>:<name>` a gateway or a list of them. A project wraps it in a `make contract` target.
+- A running HTTP gateway (FastAPI, JSON-RPC) **MUST** serve each context's contract at
+  `GET /client-contract/<context>.json` (`contract_path=`, `None` serves nothing) — the bytes
+  the export writes for that gateway, built per request so a use case registered while it runs
+  or a model an extension changed is served at once —, its `version` as the `ETag`, `304` to a
+  client that holds it, a problem `404` for a context it does not serve. It is out of the
+  OpenAPI document, as the health checks are.
 
 ### 4. The same facts on each wire
 
-Where a wire already describes its operations, it **MUST** add the role:
+Where a wire already describes its operations, it **MUST** say what the metamodel says:
 
-- OpenAPI: `x-sincpro-role` on each operation, next to `x-sincpro-entities`.
-- OpenRPC: the same extension on each method.
-- MCP: `metamodel://<context>` answers `metamodel_of`, so it carries the role and the shapes.
+- OpenAPI: `x-sincpro-role` on each operation, next to `x-sincpro-entities`, and
+  `x-sincpro-query` on one that only reads.
+- OpenRPC: `x-sincpro-role` on each method; `x-idempotent` on a read.
+- MCP: `metamodel://<context>` answers `metamodel_of`; a read's tool is read-only.
 - gRPC: `Describe` carries the role.
+- The manifest: a read's `kind` is `query`.
+- **The framework's reads are reads on every wire.** `Get`, `GetMany`, `LiteralSearch` and
+  `PreviewEntity` (`only_reads`, with `Query`) **MAY** be bound as `GET` without being a `Query`
+  — the key from the path, criteria as the JSON parameter `Search` already takes —; a
+  `PreviewEntity` keeps `POST`, carrying the whole record. None asks for an `Idempotency-Key`.
+  Opt-in: a read bound with no verb is served as it was, so no route moves.
+- **FastAPI's document stays light**: a JSON URL parameter points at its definitions, written once
+  under `components/schemas` — criteria's schema in every parameter of every route made forge's
+  document 44 MB; 19 `GET` lists measure 44,340,036 bytes inlined and 62,941 referenced. A
+  definition held under its name with another shape leaves that operation's parameters written
+  in place. `/openapi.json` answers its `ETag`, `304` to a client that holds it (#200).
 
 ### 5. Models that change at runtime
 
@@ -205,9 +225,15 @@ Where a wire already describes its operations, it **MUST** add the role:
   subscriber of a domain event absent.
 - Two classes named alike: neither keeps the bare name, each operation points at its own shape;
   adding an operation never points an existing name at another shape.
-- Two exports of the same code are the same bytes.
-- Changing a route changes only `bindings`. Adding a field changes only `models` and `version`.
-- An `@internal` operation is absent.
+- Two exports of the same code are the same bytes; a gateway of several contexts writes a file
+  per context; `path_fields` are the `{name}`s of the path.
+- Changing a route changes only `bindings` (and `version`). Adding a field changes only
+  `models` and `version`.
+- An `@internal` operation is absent; a wire that does not publish an operation has no binding.
+- What a gateway serves live is byte for byte what the export writes; a client holding it is
+  answered `304`; a use case registered while it runs changes the document and its `ETag`.
+- A `Get` bound as `GET` answers, is published `GET /issues/{id}`, asks no `Idempotency-Key`, and
+  MCP marks it read-only; a `Get` with no verb bound is served as before.
 - `@sincpro/criteria`'s `metaFromContract` still reads every model of the export:
   `contract-parity.json` is unchanged, because models are not touched.
 
@@ -215,9 +241,9 @@ Where a wire already describes its operations, it **MUST** add the role:
 
 | Phase | What | Release |
 |---|---|---|
-| 1 | `role`, `input`, `output` in `metamodel_of`; `x-sincpro-role` on each wire (§1, §2, §4) | minor |
-| 2 | `export_client_contract` and its command line (§3) | minor |
-| 3 | The live document with its `ETag`, split per context (§3, after #200) | minor |
+| 1 | `role`, `input`, `output` in `metamodel_of`; `x-sincpro-role` on each wire (§1, §2, §4) — built, #242 | minor |
+| 2 | `export_client_contract` and its command line (§3); the framework's reads as reads and FastAPI's light, tagged document (§4) — built | minor |
+| 3 | The live document per context with its `ETag` (§3) — built on FastAPI and JSON-RPC | minor |
 
 ## Evidence
 
@@ -243,32 +269,48 @@ Where a wire already describes its operations, it **MUST** add the role:
 - **D6 — A definition is named by its class, in one pass over every schema** (pydantic's own
   naming): a name depends on no other operation, so a generated type never changes shape under
   its name.
-- **D8 — A key is typed, open by default.** Whose record a key names is the one thing no
-  declaration said; `EntityID[E]` says it with the type a field already has, takes what a
-  `str` (or `int`) takes so typing it changes no caller, and `StrictEntityID` is the opt-in
-  rule. In the editor it is the value it holds (an alias for the type checker, a class
+- **D8 — A key is typed; the framework's id is always a UUID v7.** Whose record a key names is
+  the one thing no declaration said; the type a field already has says it. `EntityID[E]` is the
+  framework's id — always the UUID v7 `new_entity_id` mints, the owner's rule —, and a key a
+  context keeps of its own (an email, a slug, an Odoo integer, another system's UUID) is an
+  `EntityKey[E]`, taking what its plain type takes. In the editor it is the value it holds (an alias for the type checker, a class
   pydantic reads at runtime), so no call site wraps a value; whose it is is checked when its
   schema is built. `Entity.id` stays `str`: projects keep keys of their own.
 - **D9 — The standard's rules, the framework's text.** What a key takes and how it is written
   is pydantic's (`UUID`, `UUID7`): no reading of our own to keep in step. The framework's id
   stays 32 hex, not RFC 9562's 36: every id stored, drafted, recorded and held by a client is
   written so, and changing it changes them all. A key that wants the standard's own text is
-  `EntityID[E, UUID]`. Outside a model a key is read with pydantic's `TypeAdapter` — a
+  `EntityKey[E, UUID]`. Outside a model a key is read with pydantic's `TypeAdapter` — a
   constructor of its own would be a second reading, and a type checker cannot call an alias.
-- **D7 — The metamodel says what an operation is; a wire, how it is reached.** `query` is true
-  for a `Get` that is no `Query`, while REST keeps serving it as `POST` and OpenRPC's
-  `x-idempotent` stays false: making the framework's reads `Query` would move every route and turn
-  on query caching for them — a decision of its own.
+- **D7 — A read is a read on every wire, and opt-in on its verb.** What the metamodel calls
+  `query` (`only_reads`: a `Query`, or a framework read) is what every wire publishes as a read
+  — read-only, idempotent, no `Idempotency-Key`. Its verb stays the declaration's: a `Get` may
+  be bound as `GET`, and one bound with none is served as before, so no route moves and no read
+  turns on query caching by becoming a `Query`.
+- **D10 — How an operation is reached is each wire's own word** (`Wire.reached_by`), joined to
+  what it is by the Command's identity. The manifest stays as projects snapshot it; the client
+  contract is the one document that joins both. Wires keep the framework's names (`rpc`, not
+  `jsonrpc`): one word for one thing.
+- **D11 — The export lives with the gateways.** It reads their manifests, so it is
+  `sincpro_framework.entrypoints` (`export_client_contract`, `python -m
+  sincpro_framework.entrypoints`); `introspection` sits below the wires and never reads them.
+- **D12 — The live contract is built when asked.** Its `version` is its `ETag`; a client holding
+  it is answered `304`, a use case registered or a model changed while the service runs is the
+  next answer — no cache to forget.
 
 ## Open questions
 
-- **Two operations of one role for one entity** (forge: a second search of projects for ⌘K):
-  which is the entity's own? Proposal: none, unless the project declares it; a client then has
-  to name one.
-- An entity's contract does not carry a strict key's pattern (a field's description holds no
-  pattern): an operation's input does.
-- **The framework's reads as `Query`**: `Get`, `GetMany`, `LiteralSearch` and `PreviewEntity`
-  are no `Query`, so the wires serve them as writes (D7).
-- The name of the export, of the command line and of the format identifier.
+- **Two operations of one role for one entity** (forge plans a second search of projects for
+  ⌘K): which is the entity's own? Proposal, waiting for approval — derived when it is the only
+  one of its role; when there are several, declared where an operation already says which
+  entities it concerns, `@entity_tags(Project, own=True)`, and published as `"own": true` on
+  the operation. A generator takes the own one, and names none when none is said.
+- **Next, not in this release** (#230):
+  - `Entity.id` typed `EntityID`, opt-in per entity — `id` is a reserved field today, and
+    projects keep keys of their own (forge's emails and slugs).
+  - A strict key's pattern inside a model's contract — today only an operation's input carries
+    it (a field's description holds no pattern).
+  - #230 (3): semantic formats — an amount with its currency, email, url, percentage, duration.
+  - #230 (1), the rest: `enabled_when`.
 - Out of scope, unchanged: who may call an operation (each wire keeps publishing what it does
-  today), layout, and what #230 asks beyond (1).
+  today), layout.

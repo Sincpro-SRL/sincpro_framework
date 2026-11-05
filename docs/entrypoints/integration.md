@@ -150,7 +150,7 @@ wire) validate first and raise `ProgrammingError` with **every** reason at once;
 | a `location` `{field}` not a response field | |
 | the method against the Command's kind | `GET` on a Command that is not a `Query`; `DELETE` or `204` with a declared response |
 | a `PATCH` with required fields and no `body="merge-patch"` | |
-| a hint against a fact | `mcp(read_only=True)` on a Command; `read_only=False` on a Query |
+| a hint against a fact | `mcp(read_only=True)` on a Command that writes; `read_only=False` on a read (a `Query`, or a framework read) |
 | a reserved name | an RPC name starting with `rpc.` |
 | a deprecation past its sunset | |
 | a queue binding against the message | `queue.consumes` on a `DomainEvent`; `queue.hears` on a Command |

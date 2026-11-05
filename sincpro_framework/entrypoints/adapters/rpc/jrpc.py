@@ -395,7 +395,7 @@ def method_object(
     2. One tag, the context (the bus's alias) — the document is tagged per context —, and one
        per entity it belongs to; `x-sincpro-role`, what it is for its entity (`role_of`).
     3. `x-sincpro-requires`: what the use case declared (`public`, `authenticated`, the
-       requirements, `unguarded`); `x-idempotent`: a Query, or `@idempotency.once` — a retry
+       requirements, `unguarded`); `x-idempotent`: a read (`Operation.reads`), or `@idempotency.once` — a retry
        is safe.
     4. Final: `deprecated` and `x-sunset` when its binding is on its way out.
 
@@ -427,7 +427,7 @@ def method_object(
         "x-sincpro-context": operation.alias,
         "x-sincpro-dto": operation.command.__name__,
         "x-sincpro-role": str(role_of(operation.command)),
-        "x-idempotent": operation.idempotent or operation.is_query,
+        "x-idempotent": operation.idempotent or operation.reads,
     }
     if operation.access is not None:
         method["x-sincpro-requires"] = operation.access

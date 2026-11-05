@@ -15,6 +15,7 @@ the `.proto` export work without the `[grpc]` extra.
 
 import re
 from collections.abc import Sequence
+from typing import Any
 
 from sincpro_framework.common.naming import pascal
 from sincpro_framework.entrypoints.adapters.grpc.proto import (
@@ -140,6 +141,11 @@ class GrpcWire(Wire[GrpcBinding]):
     def name_of(self, resolved: Resolved[GrpcBinding]) -> str:
         """The name a manifest lists for it — on gRPC, the full method path."""
         return self.path(resolved)
+
+    def reached_by(self, resolved: Resolved[GrpcBinding]) -> dict[str, Any]:
+        """The full method a client calls:
+        `{"method": "/billing.v1.BillingService/IssueInvoice"}`."""
+        return {"method": self.name_of(resolved)}
 
     def _name_problems(self, resolved: Resolved[GrpcBinding]) -> list[str]:
         """What makes one binding's names unservable — a package proto refuses, or a service

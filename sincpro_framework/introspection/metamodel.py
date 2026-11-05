@@ -50,10 +50,10 @@ from sincpro_framework.ddd.entity.entity_id import key_of
 from sincpro_framework.ddd.events.domain_event import DomainEvent
 from sincpro_framework.ddd.metamodel import contract_of
 from sincpro_framework.ddd.metamodel.services.contract import entities_in
-from sincpro_framework.ddd.query import Query
 from sincpro_framework.ddd.reads.reads import named_in_type
-from sincpro_framework.introspection.entity_tags import Role
+from sincpro_framework.introspection.entity_tags import Role, only_reads
 from sincpro_framework.introspection.operations import OperationDescription, operations_of
+from sincpro_framework.introspection.schemas import adapter
 from sincpro_framework.sincpro_abstractions import DryRunnable
 from sincpro_framework.use_bus import UseFramework
 
@@ -133,20 +133,20 @@ def _shapes(
             schemas[key] = {"type": "null"}
             continue
         try:
-            adapter = TypeAdapter(annotation)
-            adapter.json_schema()
+            read = adapter(annotation)
+            read.json_schema()
         except Exception:
             title = getattr(annotation, "__name__", None)
             schemas[key] = {"type": "object", "title": title} if title else {"type": "object"}
             continue
-        described.append((key, "validation", adapter))
+        described.append((key, "validation", read))
     for entity in entities:
         try:
-            adapter = TypeAdapter(entity)
-            adapter.json_schema()
+            read = adapter(entity)
+            read.json_schema()
         except Exception:
             continue
-        described.append((entity, "validation", adapter))
+        described.append((entity, "validation", read))
     keyed, top = TypeAdapter.json_schemas(described)
     definitions: dict[str, Any] = top.get("$defs", {})
     pointers = {name: f"{DEFINITIONS}{name}" for name in definitions}
@@ -253,8 +253,7 @@ def _operation(
         }
     return {
         "role": str(operation.role),
-        "query": issubclass(operation.input, Query)
-        or operation.role not in (Role.EDIT, Role.COMMAND),
+        "query": only_reads(operation.input),
         "entities": [one.__name__ for one in operation.entities],
         "targets": _targets(operation),
         "reaches": sorted({one.__name__ for one in reached}),

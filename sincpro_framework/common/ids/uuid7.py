@@ -23,7 +23,7 @@ or random —, so ids of two Python versions mixed lose no guarantee they had.
 **32 hex, not the 36 of the standard's text.** RFC 9562 writes a UUID with dashes; the framework
 stores and sends it without them, in every table, draft, event and client (`new_entity_id`). A
 key that takes the standard's spellings — a `uuid.UUID`, dashes, capitals — reads them into this
-one (`StrictEntityID`); one that keeps the standard's own is `EntityID[E, UUID]`.
+one (`EntityID`); a context's key that keeps the standard's own is `EntityKey[E, UUID]`.
 """
 
 import os

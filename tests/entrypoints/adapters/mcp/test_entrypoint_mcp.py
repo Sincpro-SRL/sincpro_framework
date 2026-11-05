@@ -311,7 +311,7 @@ def test_a_hint_that_contradicts_a_fact_is_refused() -> None:
         def execute(self, dto: QueryInvoice) -> ResponseInvoice:
             return ResponseInvoice(number="x")
 
-    assert any("destructive=True on a Query" in one for one in _verify(bus))
+    assert any("destructive=True on a read" in one for one in _verify(bus))
 
 
 def test_a_deprecated_tool_says_so_first_in_its_description() -> None:

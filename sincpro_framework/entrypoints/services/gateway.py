@@ -58,6 +58,7 @@ from sincpro_framework.entrypoints.infrastructure.registry import entrypoint_bin
 from sincpro_framework.entrypoints.services.catalog import Catalog
 from sincpro_framework.entrypoints.services.readiness import ReadinessChecks
 from sincpro_framework.introspection import inspector
+from sincpro_framework.introspection.entity_tags import only_reads
 from sincpro_framework.sincpro_logger import logger
 from sincpro_framework.use_bus import UseFramework
 
@@ -154,11 +155,11 @@ def _rest_problems(
         _rest_problems("CommandIssue (rest)", CommandIssue, None,
                        RestBinding(method="GET", path="/invoices/{id}"))
         ->  ["…: path /invoices/{id} names {id}, which is not a field of CommandIssue — …",
-             "…: GET on a Command that is not a Query — a read is a Query"]
+             "…: GET on a Command that writes — a read is a Query or a framework read …"]
 
     1. Every `{field}` of the path is a field of the Command.
     2. Every `{field}` of `location` is a field of what it answers.
-    3. `GET` only on a `Query`.
+    3. `GET` only on what only reads (`only_reads`): a `Query`, or a framework read.
     4. `DELETE` or a 204 answers nothing.
     5. `PATCH` without `body="merge-patch"` leaves no required field outside the path.
     Final: every problem found, said at once.
@@ -179,10 +180,11 @@ def _rest_problems(
                 f"{where}: location {binding.location} names {{{name}}}, which is not a field "
                 f"of what it answers ({getattr(response, "__name__", str(response))})"
             )
-    if binding.method == "GET" and not (
-        isinstance(command, type) and issubclass(command, Query)
-    ):
-        problems.append(f"{where}: GET on a Command that is not a Query — a read is a Query")
+    if binding.method == "GET" and not only_reads(command):
+        problems.append(
+            f"{where}: GET on a Command that writes — a read is a Query or a framework read "
+            f"(Get, GetMany, LiteralSearch, PreviewEntity)"
+        )
     answers_no_body = binding.method == "DELETE" or binding.status == 204
     if answers_no_body and response not in (None, type(None)):
         problems.append(
@@ -219,14 +221,14 @@ def _binding_problems(
             problems.append(
                 f"{where}: its sunset {deprecation.sunset} is past — remove the binding"
             )
-    is_query = isinstance(command, type) and issubclass(command, Query)
+    reads = only_reads(command)
     if isinstance(binding, RestBinding):
         problems += _rest_problems(where, command, response, binding)
     elif isinstance(binding, McpBinding):
-        if binding.read_only is True and not is_query:
-            problems.append(f"{where}: read_only=True on a Command that is not a Query")
-        if binding.read_only is False and is_query:
-            problems.append(f"{where}: read_only=False on a Query — a Query only reads")
+        if binding.read_only is True and not reads:
+            problems.append(f"{where}: read_only=True on a Command that writes")
+        if binding.read_only is False and reads:
+            problems.append(f"{where}: read_only=False on a read — it only reads")
     elif isinstance(binding, RpcBinding):
         if binding.name is not None and binding.name.startswith("rpc."):
             problems.append(f"{where}: {binding.name} — the rpc. prefix is reserved")
@@ -832,7 +834,7 @@ class Gateway:
                 if self._port is not None
                 else operation.command.__name__
             ),
-            kind=f"{operation.layer}.{'query' if operation.is_query else 'command'}",
+            kind=f"{operation.layer}.{'query' if operation.reads else 'command'}",
             method=getattr(binding, "method", None),
             access=operation.access,
             deprecated=deprecation is not None,
@@ -854,3 +856,20 @@ class Gateway:
         for an inventory and a CI snapshot, by context and name so the order never moves."""
         entries = (self._entry(resolved) for resolved, _ in self._resolve_validated())
         return tuple(sorted(entries, key=lambda one: (one.wire, one.context, one.name)))
+
+    def addresses(self) -> dict[str, dict[str, Any]]:
+        """How a client reaches each operation it publishes, by the Command's identity — what
+        its wire says (`Wire.reached_by`), its name when it names no wire.
+
+            FastApiGateway([billing]).addresses()
+            ->  {"billing.CommandIssueInvoice": {"method": "POST", "path": "/billing/invoices",
+                                                 "path_fields": []}, …}
+        """
+        return {
+            registered_name(resolved.operation.command, resolved.operation.bus.name): (
+                self._port.reached_by(resolved)
+                if self._port is not None
+                else {"name": resolved.operation.command.__name__}
+            )
+            for resolved, _ in self._resolve_validated()
+        }

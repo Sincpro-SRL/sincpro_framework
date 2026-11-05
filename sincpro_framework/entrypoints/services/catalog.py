@@ -21,6 +21,7 @@ from sincpro_framework.entrypoints.infrastructure import json_schema
 from sincpro_framework.entrypoints.infrastructure.registry import entrypoint_bindings
 from sincpro_framework.entrypoints.services.scalar_execution import ScalarExecution
 from sincpro_framework.introspection import inspector
+from sincpro_framework.introspection.schemas import json_schema_for
 from sincpro_framework.sincpro_logger import logger
 from sincpro_framework.use_bus import UseFramework
 
@@ -118,7 +119,7 @@ class Catalog:
                     dto=metadata.dto,
                     json_schema=json_schema.dto_json_schema(metadata.dto),
                     response_json_schema=(
-                        json_schema.json_schema_for(metadata.response)
+                        json_schema_for(metadata.response)
                         if metadata.response is not None
                         else None
                     ),

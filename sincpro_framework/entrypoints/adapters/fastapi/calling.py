@@ -33,6 +33,7 @@ from sincpro_framework.data_layer.caching import (
 )
 from sincpro_framework.entrypoints.adapters.fastapi import exceptions
 from sincpro_framework.entrypoints.adapters.fastapi.problems import BUSES_STATE, TRACE_STATE
+from sincpro_framework.introspection.entity_tags import only_reads
 from sincpro_framework.observability import process
 from sincpro_framework.observability.tracing.propagation import trace_id_of
 from sincpro_framework.sincpro_abstractions import DataTransferObject
@@ -117,12 +118,14 @@ async def request_context(request: Request) -> RequestContext:
 
 def requires_idempotency_key(bus: UseFramework, command: type) -> bool:
     """A use case that runs once, whose Command says nothing of what identifies it: only the
-    header tells a retry from a new request with the same fields."""
+    header tells a retry from a new request with the same fields. A read never asks for one —
+    running it twice changes nothing (`only_reads`)."""
     handler = bus.handler_of(command)
     return (
         handler is not None
         and Idempotency.declared_by(handler)
         and not issubclass(command, IdempotentCommand)
+        and not only_reads(command)
     )
 
 

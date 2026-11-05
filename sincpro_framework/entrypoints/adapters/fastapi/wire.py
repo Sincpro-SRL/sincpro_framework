@@ -22,7 +22,7 @@ import asyncio
 import inspect
 import json
 import re
-from collections.abc import Callable, Iterable, Mapping, Sequence
+from collections.abc import Callable, Iterable, Sequence
 from typing import Annotated, Any
 
 from anyio import CapacityLimiter
@@ -42,7 +42,11 @@ from sincpro_framework.entrypoints.adapters.fastapi.calling import (
     bus_call,
     requires_idempotency_key,
 )
-from sincpro_framework.entrypoints.adapters.fastapi.contracts import CONTRACTS
+from sincpro_framework.entrypoints.adapters.fastapi.contracts import (
+    CONTRACTS,
+    DEFINITIONS,
+    inlined,
+)
 from sincpro_framework.entrypoints.adapters.fastapi.problems import (
     BODY_EXTENSION,
     INSTALLED,
@@ -51,6 +55,7 @@ from sincpro_framework.entrypoints.adapters.fastapi.problems import (
     install_problem_handlers,
     problem_response,
 )
+from sincpro_framework.entrypoints.adapters.fastapi.tagged import TaggedDocument
 from sincpro_framework.entrypoints.adapters.rest.openapi import (
     operation_security,
     security_schemes,
@@ -93,25 +98,22 @@ def _joined(*parts: str) -> str:
     return "/" + "/".join(one.strip("/") for one in parts if one.strip("/"))
 
 
-def _inlined(schema: Any, defs: Mapping[str, Any], seen: frozenset[str] = frozenset()) -> Any:
-    """`schema` with each `#/$defs/X` replaced by X itself — a query parameter's schema has no
-    document of its own to point into. A model that contains itself stays an open object."""
-    if isinstance(schema, dict):
-        reference = schema.get("$ref")
-        if isinstance(reference, str) and reference.startswith("#/$defs/"):
-            name = reference.rsplit("/", 1)[-1]
-            if name in seen or name not in defs:
-                return {"type": "object", "title": name}
-            return _inlined(defs[name], defs, seen | {name})
-        return {key: _inlined(value, defs, seen) for key, value in schema.items()}
-    if isinstance(schema, list):
-        return [_inlined(one, defs, seen) for one in schema]
-    return schema
+def _url_parameters(
+    command: type, path_fields: Sequence[str], from_query: bool
+) -> tuple[list[dict[str, Any]], dict[str, Any]]:
+    """The path fields — and, when read from the URL, every other field as a query parameter, a
+    plain one as itself and any other as JSON —, with the definitions those point at.
 
+        _url_parameters(QueryListIssues, [], True)
+            ->  ([{"name": "criteria", "in": "query",
+                   "content": {"application/json": {"schema": {"$ref": "#/$defs/Criteria"}}}},
+                  …],
+                 {"Criteria": {…}, …})
 
-def _url_parameters(command: type, path_fields: Sequence[str], from_query: bool) -> list[Any]:
-    """The path fields — and, when read from the URL, every other field as a query parameter,
-    a plain one as itself and any other as JSON."""
+    Context: a JSON parameter points at its definitions, which the document writes once under
+    `components/schemas` (`referenced_document`) — criteria's schema in every parameter of
+    every route made a document of tens of megabytes. A path field is plain, written in place.
+    """
     schema = command.model_json_schema() if issubclass(command, BaseModel) else {}
     defs = schema.get("$defs", {})
     properties = schema.get("properties") or {}
@@ -121,12 +123,12 @@ def _url_parameters(command: type, path_fields: Sequence[str], from_query: bool)
             "name": name,
             "in": "path",
             "required": True,
-            "schema": _inlined(properties.get(name, {"type": "string"}), defs),
+            "schema": inlined(properties.get(name, {"type": "string"}), defs),
         }
         for name in path_fields
     ]
     if not from_query:
-        return parameters
+        return parameters, {}
     for name, field_schema in properties.items():
         if name in path_fields:
             continue
@@ -135,13 +137,12 @@ def _url_parameters(command: type, path_fields: Sequence[str], from_query: bool)
             "in": "query",
             "required": name in required,
         }
-        inlined = _inlined(field_schema, defs)
         if is_plain(field_schema):
-            described["schema"] = inlined
+            described["schema"] = inlined(field_schema, defs)
         else:
-            described["content"] = {"application/json": {"schema": inlined}}
+            described["content"] = {"application/json": {"schema": field_schema}}
         parameters.append(described)
-    return parameters
+    return parameters, defs
 
 
 def _body_without(command: type, path_fields: Sequence[str]) -> dict[str, Any]:
@@ -387,6 +388,19 @@ class FastApiWire(Wire[RestBinding]):
         """
         return _joined(self.prefix_of(resolved.group), resolved.binding.path or "")
 
+    def reached_by(self, resolved: Resolved[RestBinding]) -> dict[str, Any]:
+        """The verb and the full path a client calls, and the Command's fields its `{name}`s
+        take — a client fills them from the body it sends:
+
+            {"method": "PUT", "path": "/v1/billing/invoices/{id}", "path_fields": ["id"]}
+        """
+        path = self.full_path(resolved)
+        return {
+            "method": resolved.binding.method or "POST",
+            "path": path,
+            "path_fields": re.findall(r"{(\w+)}", path),
+        }
+
     # Validating
 
     def validate(self, surface: Sequence[Resolved[RestBinding]]) -> list[str]:
@@ -461,8 +475,9 @@ class FastApiWire(Wire[RestBinding]):
            3.1 `GET` / `DELETE` read the DTO from the URL, every field a query parameter; any
                other reads the body, without the fields the path carries.
            3.2 `x-sincpro-dto` and `x-sincpro-layer` name what answers it, `x-sincpro-role`
-               what it is for its entity (`role_of`), `x-sincpro-entities` what it belongs to,
-               `x-sincpro-dry-run` whether its Command may be run dry; the
+               what it is for its entity (`role_of`), `x-sincpro-query` that it only reads
+               (`Operation.reads`) — a `Get` served by `POST` too —, `x-sincpro-entities` what
+               it belongs to, `x-sincpro-dry-run` whether its Command may be run dry; the
                contracts of the entities it answers ride along for `contracted_document`.
            3.3 The `POST` twin of an rpc `Query` gets `_by_body` on its `operationId`.
         Final: `add_api_route`, with `_PathIntoBody` when a body route takes fields from the
@@ -495,15 +510,17 @@ class FastApiWire(Wire[RestBinding]):
         for method in self._methods(resolved):
             from_url = method in READ_FROM_URL
             extra = operation_extra(operation.bus, command)
-            extra["parameters"] = [
-                *_url_parameters(command, path_fields, from_url),
-                *extra.get("parameters", []),
-            ]
+            parameters, definitions = _url_parameters(command, path_fields, from_url)
+            extra["parameters"] = [*parameters, *extra.get("parameters", [])]
+            if definitions:
+                extra[DEFINITIONS] = definitions
             if not from_url and path_fields:
                 extra.update(_body_without(command, path_fields))
             extra["x-sincpro-dto"] = command.__name__
             extra["x-sincpro-layer"] = str(operation.layer)
             extra["x-sincpro-role"] = str(role_of(command))
+            if operation.reads:
+                extra["x-sincpro-query"] = True
             if operation.entities:
                 extra["x-sincpro-entities"] = [one.__name__ for one in operation.entities]
             if issubclass(command, DryRunnable):
@@ -678,7 +695,8 @@ def fastapi_app(
         GET /readyz                       ->  200 every check  (503 the problem naming them)
 
     1. `separate_input_output_schemas` off unless said — one schema per DTO.
-    2. The app, titled and versioned; the problem handlers installed.
+    2. The app, titled and versioned; the problem handlers installed; its document answered
+       with its `ETag`, `304` to a client holding it (`TaggedDocument`).
     3. `router` included.
     4. The liveness check at `health_path`, out of the OpenAPI document — unless `None`.
     5. The readiness check at `ready_path`, out of the document — `readiness()` in a worker
@@ -688,6 +706,8 @@ def fastapi_app(
     fastapi_kwargs.setdefault("separate_input_output_schemas", False)
     app = FastAPI(title=title, version=version, **fastapi_kwargs)
     install_problem_handlers(app)
+    if app.openapi_url:
+        app.add_middleware(TaggedDocument, document=app.openapi, path=app.openapi_url)
     app.include_router(router)
     if health_path is not None:
 

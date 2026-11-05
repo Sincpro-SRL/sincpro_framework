@@ -3,7 +3,7 @@ and how a discovery document is tagged for a client to revalidate it."""
 
 import hashlib
 import json
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from typing import Any
 
 from sincpro_framework.context import context_propagation
@@ -40,3 +40,45 @@ def document_tag(document: Mapping[str, Any]) -> str:
     """
     written = json.dumps(document, sort_keys=True, separators=(",", ":"), default=str)
     return f'"{hashlib.sha256(written.encode()).hexdigest()}"'
+
+
+def contract_route(path: str, contract: Callable[[str], tuple[bytes, str] | None]) -> Any:
+    """`GET {path}/{context}.json` as a Starlette route: a bounded context's client contract —
+    the bytes its export writes —, tagged by its version, `304` to a client that holds it.
+
+        contract_route("/client-contract", partial(contract_of, gateway))
+        GET /client-contract/billing.json                          ->  200, ETag: "9b1c…"
+        GET /client-contract/billing.json  If-None-Match: "9b1c…"  ->  304
+        GET /client-contract/nowhere.json                          ->  404, a problem
+
+    1. `contract(context)` per request — so a use case registered while it runs, or a model an
+       extension changed, is served at once —; `None`, a context it does not serve, is a 404.
+    2. The tag the client holds answered `304`.
+    Final: the bytes, as JSON, with their `ETag`.
+    """
+    # Imported when asked: an HTTP gateway is an extra; this module is read by every entrypoint.
+    from starlette.responses import JSONResponse, Response
+    from starlette.routing import Route
+
+    async def served(request: Any) -> Any:
+        """The contract of the context the path names."""
+        context = request.path_params["context"]
+        found = contract(context)
+        if found is None:
+            return JSONResponse(
+                {
+                    "type": "about:blank",
+                    "title": "Not Found",
+                    "status": 404,
+                    "detail": f"no client contract for {context!r}",
+                },
+                status_code=404,
+                media_type="application/problem+json",
+            )
+        body, version = found
+        tag = f'"{version}"'
+        if request.headers.get("if-none-match") == tag:
+            return Response(status_code=304, headers={"ETag": tag})
+        return Response(body, media_type="application/json", headers={"ETag": tag})
+
+    return Route(f"{path.rstrip('/')}/{{context}}.json", served, methods=["GET"])

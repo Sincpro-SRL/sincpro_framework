@@ -157,9 +157,7 @@ def test_get_on_a_command_that_is_not_a_query_is_refused():
         rest.get("/invoices/{invoice_id}"), command=QueryInvoice, answers=ResponseInvoice
     )
 
-    assert "GET on a Command that is not a Query" in _refused(
-        RestSurface([write], unguarded=True)
-    )
+    assert "GET on a Command that writes" in _refused(RestSurface([write], unguarded=True))
     assert RestSurface([read], unguarded=True).verify() == []
 
 
@@ -202,10 +200,10 @@ def test_an_mcp_hint_that_contradicts_the_command_kind_is_refused():
     writes_read_only = _bus(mcp(read_only=True))
     query_writing = _bus(mcp(read_only=False), command=QueryInvoice, answers=ResponseInvoice)
 
-    assert "read_only=True on a Command that is not a Query" in "\n".join(
+    assert "read_only=True on a Command that writes" in "\n".join(
         RestSurface([writes_read_only], unguarded=True).verify()
     )
-    assert "read_only=False on a Query" in "\n".join(
+    assert "read_only=False on a read" in "\n".join(
         RestSurface([query_writing], unguarded=True).verify()
     )
 
@@ -271,7 +269,7 @@ def test_every_reason_is_said_at_once_and_nothing_is_published():
     said = _refused(gateway)
 
     assert "names {id}" in said
-    assert "GET on a Command that is not a Query" in said
+    assert "GET on a Command that writes" in said
     assert "rpc. prefix is reserved" in said
     assert "has no AccessControl" in said
     with pytest.raises(exceptions.ProgrammingError):

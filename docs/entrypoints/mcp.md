@@ -97,7 +97,7 @@ admin = McpGateway([billing], exposure=Exposure.CATALOG).server()   # every use 
 | tool name | the DTO's name without a leading `Command` / `Query`, snake_case: `issue_invoice`, `invoice` — the same rule as JSON-RPC operations. `@mcp("name")` or `override(Command, name=...)` wins |
 | clash | a **derived** name answered by two operations is prefixed by its group — `group(bus, prefix=...)`, else the alias: `ventas_issue_invoice`; the others are left as they are. A **declared** name is never renamed: a clash on it fails the build |
 | name rule | 1 to 64 characters of `A-Z a-z 0-9 _ -`; the MCP spec allows more, the model APIs behind the clients do not |
-| `readOnlyHint` | derived: a `Query`. `@mcp(read_only=True)` on a Command, or `read_only=False` on a Query, fails the build |
+| `readOnlyHint` | derived: a read — a `Query`, or a framework read (`Get`, `GetMany`, `LiteralSearch`, `PreviewEntity`). `@mcp(read_only=True)` on a Command that writes, or `read_only=False` on a read, fails the build |
 | `destructiveHint` | false on a read; on a write what `@mcp(destructive=...)` says, else **true** — the MCP default, since a write cannot be proven harmless. `destructive=True` on a Query fails the build |
 | `idempotentHint` | derived: `@idempotency.once` on the handler |
 | `openWorldHint` | `@mcp(open_world=True)`; false by default |
