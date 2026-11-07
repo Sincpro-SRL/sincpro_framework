@@ -44,6 +44,7 @@ from sincpro_framework.data_layer.orm.sqlalchemy.services.relation_resolver impo
     resolve_whole,
 )
 from sincpro_framework.ddd.entity import relations
+from sincpro_framework.ddd.entity.entity import collection_fields
 from sincpro_framework.ddd.entity.entity_collection import identity_name
 from sincpro_framework.ddd.entity.entity_meta import (
     related_class,
@@ -202,7 +203,11 @@ class RelatedAttribute:
         """An assignment replaces the set. Context: inside a unit of work, a stored record whose
         relation was not read whole reads it first — as Rails' `collection=` does — so what it
         replaced is known, the parts it owns and the pairs of a many-to-many alike; anywhere
-        else that is not possible, and the assignment is blind."""
+        else that is not possible, and the assignment is blind. A list given to a relation
+        declared `EntityCollection[…]` is held as the whole collection it is."""
+        collection = collection_fields(type(record)).get(self.name)
+        if collection is not None and isinstance(value, (list, tuple)):
+            value = collection.whole(value)  # type: ignore[attr-defined]
         state = sqlalchemy.inspect(record, raiseerr=False)
         stored = state is not None and state.has_identity
         relations = HeldRelations(record)

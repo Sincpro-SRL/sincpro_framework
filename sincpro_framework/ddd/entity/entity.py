@@ -52,6 +52,7 @@ from sincpro_framework.ddd.criteria import (
 from sincpro_framework.ddd.entity.entity_meta import (
     TEXT_TYPES,
     annotations_of,
+    collection_class,
     logical_type,
 )
 from sincpro_framework.ddd.entity.presentation import Presentation
@@ -95,6 +96,32 @@ DEFAULT_HOOKS = (
 subclass may override — always `@classmethod`, the shape it overrides, so a type checker and
 the framework agree. Upper case so it never meets a field, and so a reader knows the framework
 calls it."""
+
+
+_COLLECTION_FIELDS: dict[type, dict[str, type]] = {}
+
+
+def collection_fields(declared: type) -> dict[str, type]:
+    """The fields of a class declared `EntityCollection[…]`, with the collection class each one
+    holds — read once per class, from its resolved annotations. A class whose annotations do
+    not resolve yet (a name declared later) is read again on its next record, never cached
+    wrong: until then a list given to it stays a list."""
+    known = _COLLECTION_FIELDS.get(declared)
+    if known is not None:
+        return known
+    from sincpro_framework.ddd.metamodel import model_of
+
+    try:
+        annotations = model_of(declared).annotations
+    except Exception:  # a forward reference not resolvable yet
+        return {}
+    found = {
+        name: collection
+        for name, annotation in annotations.items()
+        if (collection := collection_class(annotation)) is not None
+    }
+    _COLLECTION_FIELDS[declared] = found
+    return found
 
 
 def reserved_fields(declared: type) -> dict[str, str]:
@@ -175,6 +202,23 @@ class Entity:
     """How many times it has been written. Zero means never — the adapter raises it, and a
     save carrying a number older than the row's is refused as `StaleAggregate`."""
     presentation: ClassVar[Presentation[Any]] = Presentation()
+
+    def __post_init__(self, *_init_vars: Any) -> None:
+        """A list given to a field declared `EntityCollection[…]` is held as the whole
+        collection it is — counted, with no cursor —, so `.append()` and `.count` read the same
+        whether the record was built here or read. Cooperative: a subclass's own
+        `__post_init__` that calls `super()` keeps it; a subclass with `InitVar`s and no
+        `__post_init__` of its own hands them here, and they are left to it.
+
+            Invoice(lines=[l1, l2]).lines   ->  EntityCollection([l1, l2], Count(2))
+        """
+        for name, collection in collection_fields(type(self)).items():
+            value = self.__dict__.get(name)
+            if isinstance(value, (list, tuple)):
+                self.__dict__[name] = collection.whole(value)
+        following = getattr(super(), "__post_init__", None)
+        if following is not None:
+            following()
 
     def __init_subclass__(cls, **kwargs: Any) -> None:
         """Refuse a subclass that redeclares a field the framework writes.

@@ -56,6 +56,12 @@ ids of the records it references (`{"labels": ["0192…"]}`), read before they a
 record and stored as the pairs of the table in between ([relations](relations.md#8-an-aggregate-is-saved-whole)).
 `changed` names what moved, so only the computations it reaches run; none runs them all.
 
+**The lines may come back as they were read.** A reading answers a to-many as a page —
+`{"items": […], "count": {"value": 3, "exact": true}, "cursor": null}` — and a form may send that
+same collection back: whole, it is written as its items. A page of it is refused with an
+`InvalidValue` on the field — a cursor, a floor, or fewer items than counted —, because written
+back it would remove every line it did not bring.
+
 **The id is the client's**: a new record is created under the `id` the client names — a UUID v7 it
 mints — or one minted for it when it names none, answered back. The draft and the stored record
 share it from the first draft save, so a record only drafted so far is found by its own id. A line

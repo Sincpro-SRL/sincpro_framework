@@ -257,6 +257,106 @@ assert body["types"][body["columns"].index("amount")] == "decimal"
 assert sales.version == cache.fetch_all(repository, InvoiceLine, posted).version
 ```
 
+## A large page, as Parquet
+
+A search answers its page as JSON; a page of millions is the slowest, largest thing JSON can
+carry. The same search answers it as Parquet — the same records, cursor and count — when asked
+(`format="parquet"`), or by itself (`format="auto"`, the default) when more than its
+`parquet_above` records are asked for (a million), by a caller that says it reads Parquet
+(`Accept: application/vnd.apache.parquet`), with pyarrow installed. Inside the process an answer
+is always objects; a caller that never wants Parquet asks `format="json"`, and a search that never
+answers it declares `parquet_above = None`.
+
+```python
+from sincpro_framework.data_layer.data_analysis.export import collection_from_parquet
+from sincpro_framework.ddd import ResponsePaginatedQuery, Search
+
+
+class ResponseLines(ResponsePaginatedQuery):
+    lines: list[InvoiceLine]
+
+
+class QueryListLines(Search[InvoiceLine, ResponseLines]):
+    parquet_above = 1_000_000          # the default; None: always JSON
+
+# GET /sales/lines?criteria={"pagination":{"limit":2000000}}   Accept: application/vnd.apache.parquet
+#   -> application/vnd.apache.parquet, written 5 000 records at a time from one snapshot
+```
+
+The cursor, the count and the model's version travel in the file's footer
+(`{"records": "lines", "cursor": …, "count": …, "model_version": …}`), so a saved file keeps
+what JSON would have said. A Python client reads it back as the collection it is —
+`collection_from_parquet(body, InvoiceLine)` —, a data-science notebook with `pl.read_parquet`,
+and the contract says which searches may answer it (`formats`, `parquet_above`), so a client
+knows before it asks.
+
+**What it costs, measured** (2026-11-06, PostgreSQL 17 in Docker on a laptop, a search of
+1 000 000 ledger entries — seven columns, an indexed order —, median of three, the server's time
+to write the whole answer):
+
+| | Time | Size |
+|---|---|---|
+| JSON | 20.9 s | 191.6 MB |
+| Parquet | 28.2 s | 26.2 MB |
+
+Parquet is seven times smaller — on a 100 Mbit/s link that is 15 s of transfer against 2 —, and a
+browser decodes it without parsing 190 MB of text; it is slower to write today, because each row
+is still read as an entity and each value converted in Python. Reading the columns straight into
+Arrow, without building the entities, is the next step for it.
+
+## Everything, as a file
+
+A frame holds what it read; two million ledger entries are not for holding. `export` writes every
+record a criteria matches a page at a time — Parquet, an Arrow stream or JSON Lines — and lets
+each page go once it is written:
+
+```python
+from sincpro_framework.data_layer.data_analysis.export import exported, write_parquet
+
+sink = io.BytesIO()                                          # a file, object storage, …
+written = write_parquet(sink, repository, InvoiceLine, posted)   # a row group per 5 000
+assert pyarrow.parquet.read_table(io.BytesIO(sink.getvalue())).num_rows == written
+
+answer = exported(repository, InvoiceLine, posted, "parquet")    # what a use case answers
+assert answer.media_type == "application/vnd.apache.parquet"
+assert answer.filename == "invoiceline.parquet"
+assert pyarrow.parquet.read_table(io.BytesIO(b"".join(answer))).num_rows == written
+```
+
+**Typed by the model, not by the values.** A day is `date32`, an instant `timestamp(us, UTC)`, an
+integer `int64`, a list of texts `list<string>`, a key what it holds, an exact number
+`decimal128(38, scale)` at the scale its column declares (`Numeric(12, 2)`) — or its exact text
+when none is declared. Relations are left out; a value object travels as its JSON. The readers
+that go straight to the database lose exactly this — ADBC answers a NUMERIC as text, a pandas frame
+makes it a float.
+
+**One snapshot.** On a store that opens one, every page is read inside a unit of work at
+`REPEATABLE_READ`, read only: the file is the set as it stood when the export began. On
+PostgreSQL that keeps a transaction open while the file is written, so an export of hours belongs
+in a job that writes it to object storage, not in a request.
+
+**Over HTTP**, an export is a read of the entity like any other — `Export[Entity, Streamed]`,
+answered by `EntityReads` — and the wire writes it as it is produced, with the name to save it
+under; the document says it answers Parquet, an Arrow stream or JSON Lines, never a JSON body:
+
+```python
+from sincpro_framework.ddd import EntityReads, Export, Streamed
+from sincpro_framework.entrypoints.entrypoint.decorators import rest
+
+
+class QueryExportLines(Export[InvoiceLine, Streamed]):
+    pass
+
+
+@rest.get("/lines/export")               # GET /sales/lines/export?format=jsonl&criteria=…
+class InvoiceLineReads(EntityReads[InvoiceLine]):
+    pass
+```
+
+The criteria filters and orders as anywhere, the repository's scope — the tenant — applies, and
+each chunk is produced in the context the use case was asked in, whichever worker thread the
+server pulls it from.
+
 ## Reference
 
 `QueryCache` holds the rows of a read in this process, for analysis; the answer of a bus Query is
@@ -273,6 +373,10 @@ cached by `QueryCaching`, in [caching](../caching/README.md).
 | `frame.append(page)` | the next page merged by `key`; `ProgrammingError` for other columns |
 | `frame.sort(keys)` / `frame.select(columns)` | ordered, `null` last / some columns |
 | `frame.to_arrow()` / `to_parquet()` / `to_ipc()` / `to_json()` | handed on |
+| `export.exported(repository, target, criteria, format)` | every match as a `Streamed` answer: `parquet`, `arrow`, `jsonl` |
+| `export.write_parquet(sink, repository, target, criteria)` | every match written to a file, a row group per page; how many |
+| `export.arrow_schema(meta, scales)` | the Arrow schema an export of the entity is written with |
+| `export.collection_from_parquet(body, target)` | a Parquet answer read back as its collection: records, cursor, count |
 | `DataFrame.from_arrow(table, key="id")` | a `pyarrow.Table` as a frame, typed by its schema |
 | `invalidate_on_commit(database, cache, *aggregates)` | `sincpro_framework.data_layer.orm`: the reads of an aggregate let go when a write of it commits |
 | `repository.fingerprint(target, criteria)` | the key of a read — pagination left out, scope put in |

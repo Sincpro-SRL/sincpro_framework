@@ -52,6 +52,20 @@ from sincpro_framework.ddd.query import ResponsePaginatedQuery
 NESTED_LIMIT = 40
 """How many of a to-many come per parent when the node did not say. A default, not a ceiling."""
 
+RELATION_COUNT_CAP = 1_000
+"""How far a to-many is counted per parent before its count says «at least» — what a node's
+`CountMode.CAPPED`, the default, means inside a relation. A parent's total is read row by row
+whatever the query looks like, so an exact count of a million children costs a million rows
+for a «40 of …» nobody reads to the unit: past this, the count is a floor, exact on demand
+(`CountMode.EXACT`). The list cap (`DEFAULT_COUNT_CAP`) is ten times this, because a relation
+is counted once per parent of a page."""
+
+WHOLE_WARNING = 10_000
+"""How many children a relation read whole — a Feature touching it inside a unit of work — may
+bring before the log says so. Never a refusal: the framework reads what it is asked to; the
+warning names the relation, how many it brought, and the cheaper ways to ask (a page, a count,
+each one by cursor)."""
+
 Groups = dict[Any, EntityCollection]
 """What every resolution answers: the related records per parent identity."""
 
@@ -284,21 +298,56 @@ def limit_of(node: Criteria, whole: bool) -> int | None:
     return node.limit if "limit" in node.pagination.model_fields_set else NESTED_LIMIT
 
 
+def count_cap(limit: int | None) -> int:
+    """Where a capped count of one parent stops: `RELATION_COUNT_CAP`, or past the page when a
+    node asked for more than that — a floor is never below what the page itself holds."""
+    return max(RELATION_COUNT_CAP, limit or 0)
+
+
+def counted(
+    node: Criteria,
+    held: int,
+    more: bool,
+    total: int | None,
+    limit: int | None,
+    exact: bool = True,
+) -> Count | None:
+    """One parent's count, as its node asked for it (`node.count`).
+
+        held 12, no more                    ->  Count(12, exact=True)      free: it is all there
+        more, CAPPED, total 1500 (cap 1000) ->  Count(1000, exact=False)   a floor
+        more, CAPPED, total 300             ->  Count(300, exact=True)
+        more, EXACT, total 1500             ->  Count(1500, exact=True)
+        CountMode.NONE                      ->  None
+
+    `total` is what the read counted — exact, or stopped one past the cap; `exact` says whether
+    the side that answered could vouch for it (a bus that filled the page it was asked for
+    cannot).
+    """
+    if node.count is CountMode.NONE:
+        return None
+    if not more:
+        return Count(value=held, exact=exact)
+    if total is None:
+        return Count(value=held, exact=False)
+    if node.count is CountMode.EXACT:
+        return Count(value=total, exact=exact)
+    cap = count_cap(limit)
+    return Count(value=min(total, cap), exact=exact and total <= cap)
+
+
 def cut(
     items: list[Any], node: Criteria, sorts: tuple, limit: int | None, exact: bool
 ) -> EntityCollection:
-    """One parent's related records as a collection: cut to the limit, counted, with a cursor
-    when there is more."""
+    """One parent's related records as a collection: cut to the limit, counted as the node
+    asked, with a cursor when there is more."""
     total = len(items)
-    shown = items if limit is None else items[:limit]
+    more = limit is not None and total > limit
+    shown = items[:limit] if more else items
     return EntityCollection(
         items=tuple(shown),
-        count=Count(value=total, exact=exact),
-        cursor=(
-            node.pagination.next_from(shown[-1], sorts)
-            if shown and limit is not None and total > limit
-            else None
-        ),
+        count=counted(node, len(shown), more, total, limit, exact),
+        cursor=node.pagination.next_from(shown[-1], sorts) if shown and more else None,
     )
 
 

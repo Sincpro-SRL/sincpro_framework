@@ -428,6 +428,44 @@ def field_translations(declared: type, key: str) -> dict[str, MultiLanguage]:
     return {**_labels_of_types(declared), **declared_here}
 
 
+def collection_class(annotation: Any) -> type | None:
+    """The `EntityCollection` class an annotation declares, optional stripped — `None` when it
+    declares none.
+
+        collection_class(EntityCollection[Line])   ->  EntityCollection
+        collection_class(Lines)                    ->  Lines     # class Lines(EntityCollection[Line])
+        collection_class(list[Line])               ->  None
+    """
+    from sincpro_framework.ddd.entity.entity_collection import EntityCollection
+
+    base = without_optional(annotation)
+    declared = get_origin(base) or base
+    if isinstance(declared, type) and issubclass(declared, EntityCollection):
+        return declared
+    return None
+
+
+def records_class(annotation: Any) -> tuple[type | None, bool]:
+    """The record class a list of records names, and whether the annotation names several —
+    `list[Line]` or `EntityCollection[Line]` alike.
+
+        records_class(list[Line])               ->  (Line, True)
+        records_class(EntityCollection[Line])   ->  (Line, True)
+        records_class(Lines)                    ->  (Line, True)
+        records_class(Line | None)              ->  (Line, False)
+    """
+    base = without_optional(annotation)
+    collection = collection_class(base)
+    if collection is not None:
+        members = get_args(base)
+        held = members[0] if members else collection.holds()  # type: ignore[attr-defined]
+        return (held if isinstance(held, type) else None), True
+    if get_origin(base) is list:
+        members = get_args(base)
+        return (members[0] if members and isinstance(members[0], type) else None), True
+    return (base if isinstance(base, type) else None), False
+
+
 def related_class(annotation: Any) -> tuple[type | None, bool]:
     """The class an annotation points at, and whether it names several of them.
 
@@ -436,15 +474,15 @@ def related_class(annotation: Any) -> tuple[type | None, bool]:
         related_class(str)               ->  (str, False)     # a plain type is still a class
         related_class(dict[str, str])    ->  (None, False)
         related_class(set[Run])          ->  (None, False)
+        related_class(EntityCollection[Run])  ->  (Run, True)   # the recommended to-many
 
-    Context: only a `list` names several; a set or a tuple of records is not a relation here.
+    Context: a `list` or an `EntityCollection` names several; a set or a tuple of records is not
+    a relation here.
     """
     base = without_optional(annotation)
-    many = get_origin(base) is list
-    if many:
-        members = get_args(base)
-        base = members[0] if members else None
-    return (base if isinstance(base, type) else None), many
+    if collection_class(base) is not None or get_origin(base) is list:
+        return records_class(base)
+    return (base if isinstance(base, type) else None), False
 
 
 def logical_type(annotation: Any) -> FieldType:
@@ -617,6 +655,12 @@ class FieldMeta(DataTransferObject):
     (`ValueObject(…, holds=lambda v: 0 <= v <= 30)`): an expression over `value`, which a client
     checks offline as the server checks it on every construction. `None`: nothing declared."""
 
+    reference: bool = False
+    """A to-many whose records are other aggregates, read a page at a time and never written
+    through this one: a foreign key declared `owned=False`, or what another context answers. A client lists and searches them — «at least 1000» is a fine
+    answer for one — and never offers them as lines to edit with the record. `False` for the
+    parts a record holds and saves whole (`list[Line]`), the pairs a many-to-many writes, and
+    every to-one."""
     navigable: bool = False
     """Whether a filter may cross this relation (`Through`): some related record answers a
     selection. A relation the store keeps — a foreign key, a many-to-many, records held in memory —
@@ -655,6 +699,7 @@ class FieldMeta(DataTransferObject):
         parent_field: str | None = None,
         related_field: str | None = None,
         navigable: bool = False,
+        reference: bool = False,
     ) -> "FieldMeta":
         """A field that points at another aggregate. Nothing to filter or order by directly:
         the key it hangs on is a scalar field of its own, and that one takes the operators; a
@@ -670,6 +715,7 @@ class FieldMeta(DataTransferObject):
             parent_field=parent_field,
             related_field=related_field,
             navigable=navigable,
+            reference=reference and logical is not FieldType.MANY2ONE,
         )
 
     @classmethod

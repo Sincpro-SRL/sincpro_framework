@@ -50,7 +50,7 @@ from sincpro_framework.ddd.entity.entity_id import key_of
 from sincpro_framework.ddd.events.domain_event import DomainEvent
 from sincpro_framework.ddd.metamodel import contract_of
 from sincpro_framework.ddd.metamodel.services.contract import entities_in
-from sincpro_framework.ddd.reads.reads import named_in_type
+from sincpro_framework.ddd.reads.reads import named_in_type, parquet_written
 from sincpro_framework.introspection.entity_tags import Role, only_reads
 from sincpro_framework.introspection.operations import OperationDescription, operations_of
 from sincpro_framework.introspection.schemas import adapter
@@ -244,6 +244,8 @@ def _operation(
     2. The entities it belongs to, the field naming each one's record (`_targets`), and every
        entity it reaches.
     3. An edit's and a preview's `values` is the record the form holds: its entity's model.
+    4. A search says how its page may travel: `formats`, and past how many records asked for it
+       answers Parquet to a caller that reads it (`parquet_above`).
     Final: with whether it runs dry, its description, and what it takes and answers.
     """
     named = named_in_type(operation.input)
@@ -258,7 +260,16 @@ def _operation(
             "$ref": f"{MODELS}{named[0].__name__}",
             **({"description": values["description"]} if "description" in values else {}),
         }
+    formats: dict[str, Any] = {}
+    if operation.role is Role.SEARCH:
+        above = getattr(operation.input, "parquet_above", None)
+        parquet = above is not None and parquet_written()
+        formats = {
+            "formats": ["json", "parquet"] if parquet else ["json"],
+            "parquet_above": above if parquet else None,
+        }
     return {
+        **formats,
         "role": str(operation.role),
         "query": only_reads(operation.input),
         "entities": [one.__name__ for one in operation.entities],

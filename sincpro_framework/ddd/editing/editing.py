@@ -13,7 +13,7 @@ import dataclasses
 from collections.abc import Callable, Iterable, Mapping, Sequence
 from contextvars import ContextVar
 from functools import cache
-from typing import Any, get_args, get_origin
+from typing import Any
 
 from pydantic import TypeAdapter, ValidationError
 
@@ -29,6 +29,8 @@ from sincpro_framework.ddd.entity.entity_collection import EntityCollection, ide
 from sincpro_framework.ddd.entity.entity_meta import (
     Check,
     Computation,
+    collection_class,
+    records_class,
     without_optional,
 )
 from sincpro_framework.ddd.entity.relations import relation_attribute
@@ -139,8 +141,9 @@ def form_values(
        record's own identity.
     2. Each value, in order, its field's optional stripped:
        2.1 a field left out is skipped;
-       2.2 a list of records — each mapping in it read the same way, nested; anything else
-           in the list left as it is;
+       2.2 a list of records — or the collection a reading answered, `{items, …}`, as its
+           items — each mapping in it read the same way, nested; anything else in the list
+           left as it is;
        2.3 one record held as a mapping — read the same way, nested;
        2.4 anything else left as it is.
     Final: the values a form edits, ready for `apply_values`.
@@ -153,13 +156,23 @@ def form_values(
         if name in left_out:
             continue
         base = without_optional(annotations.get(name))
-        members = get_args(base)
-        if get_origin(base) is list and members and _is_record_class(members[0]):
+        record, many = records_class(base)
+        if many and record is not None and _is_record_class(record):
             if isinstance(value, list):
                 value = [
-                    form_values(members[0], one, True) if isinstance(one, Mapping) else one
+                    form_values(record, one, True) if isinstance(one, Mapping) else one
                     for one in value
                 ]
+            elif isinstance(value, Mapping) and isinstance(value.get("items"), list):
+                # The collection a reading answered: its records read the same way, its count
+                # and cursor kept, so a page is still told from the whole when applied.
+                value = {
+                    **value,
+                    "items": [
+                        (form_values(record, one, True) if isinstance(one, Mapping) else one)
+                        for one in value["items"]
+                    ],
+                }
         elif _is_record_class(base) and isinstance(value, Mapping):
             value = form_values(base, value, True)
         written[name] = value
@@ -260,6 +273,45 @@ def _records(
     return records
 
 
+def _as_declared(annotation: Any, records: list[Any]) -> Any:
+    """Built records as their field declares them: the whole collection for one declared
+    `EntityCollection[…]`, the list for one declared `list[…]`."""
+    collection = collection_class(annotation)
+    return collection.whole(records) if collection is not None else records  # type: ignore[attr-defined]
+
+
+def _sent_whole(owner: type, name: str, value: Any) -> Any:
+    """A list of records as a form sends it: the list itself, or the collection a reading
+    answered — `{items, count, cursor}` — sent back whole, as the records it holds. A page of it
+    is refused: written back, it would remove every record it did not bring.
+
+        [{"qty": 2}]                                                  ->  [{"qty": 2}]
+        {"items": [{"qty": 2}], "count": {"value": 1, "exact": true}}   ->  [{"qty": 2}]
+        {"items": [l1, l2], "count": {"value": 30, …}, "cursor": "…"}    ->  InvalidValue
+    """
+    if not isinstance(value, Mapping) or "items" not in value:
+        return value
+    items = value.get("items")
+    if not isinstance(items, list):
+        raise exceptions.InvalidValue(
+            f"{owner.__name__}.{name} holds records: send them as a list", (name,)
+        )
+    count = value.get("count")
+    counted = count if isinstance(count, Mapping) else {}
+    total = counted.get("value", len(items))
+    # A page says so with its cursor, or with a floor for a count. An exact count above what it
+    # holds is a whole collection a form edited — a record removed, the count left as it read it.
+    partial = value.get("cursor") is not None or counted.get("exact", True) is False
+    if partial:
+        raise exceptions.InvalidValue(
+            f"{owner.__name__}.{name} was sent as a page — {len(items)} of "
+            f"{'at least ' if counted.get('exact', True) is False else ''}{total} — and a page "
+            "written back would remove every record it did not bring: send all of them",
+            (name,),
+        )
+    return items
+
+
 def _read(record: Any, name: str, annotation: Any, value: Any) -> Any:
     """`value` as the field `name` of `record` holds it.
 
@@ -269,23 +321,20 @@ def _read(record: Any, name: str, annotation: Any, value: Any) -> Any:
     """
     owner = type(record)
     base = without_optional(annotation)
-    members = get_args(base)
-    if (
-        get_origin(base) is list
-        and members
-        and _is_record_class(members[0])
-        and isinstance(value, list)
-    ):
-        kind = members[0]
-        held = _held_by_identity(record, name, kind, value)
-        tied = _tied_to(record, name, kind)
-        return _records(
-            owner,
-            name,
-            kind,
-            value,
-            lambda one: _edited_or_built(kind, {**one, **tied}, held),
-        )
+    kind, many = records_class(base)
+    if many and kind is not None and _is_record_class(kind):
+        value = _sent_whole(owner, name, value)
+        if isinstance(value, list):
+            held = _held_by_identity(record, name, kind, value)
+            tied = _tied_to(record, name, kind)
+            built = _records(
+                owner,
+                name,
+                kind,
+                value,
+                lambda one: _edited_or_built(kind, {**one, **tied}, held),
+            )
+            return _as_declared(base, built)
     if _is_record_class(base) and isinstance(value, Mapping):
         held = _held_by_identity(record, name, base, [value])
         try:
@@ -346,11 +395,13 @@ def _edited_or_built(kind: type, values: Mapping[str, Any], held: dict[str, Any]
 def _plain(kind: type, name: str, annotation: Any, value: Any) -> Any:
     """A value for a record being built: nothing is held yet, so every nested one is new."""
     base = without_optional(annotation)
-    members = get_args(base)
-    if get_origin(base) is list and members and _is_record_class(members[0]):
+    held, many = records_class(base)
+    if many and held is not None and _is_record_class(held):
+        value = _sent_whole(kind, name, value)
         if isinstance(value, list):
-            kind = members[0]
-            return _records(kind, name, kind, value, lambda one: _built(kind, one))
+            return _as_declared(
+                base, _records(held, name, held, value, lambda one: _built(held, one))
+            )
     if _is_record_class(base) and isinstance(value, Mapping):
         try:
             return _built(base, value)

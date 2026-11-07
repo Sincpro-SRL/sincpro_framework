@@ -1,5 +1,5 @@
-"""The reads of one aggregate, written once: `Get`, `GetMany`, `LiteralSearch`, `Search` and
-`PreviewEntity`, answered by one Feature that reads what the entity answers about itself: its
+"""The reads of one aggregate, written once: `Get`, `GetMany`, `LiteralSearch`, `Search`,
+`Export` and `PreviewEntity`, answered by one Feature that reads what the entity answers about itself: its
 `DEFAULT_*` class methods (the key, what a record brings, the order, how a text finds it).
 
     class ResponseAccount(ResponseRecord):
@@ -29,6 +29,9 @@
     class QueryAccountEvents(DomainEvents[Account, ResponseAccountEvents]):  its events, oldest first
         pass
 
+    class QueryExportAccounts(Export[Account, Streamed]):                   every one, as a file
+        pass
+
     @accounting.feature(
         [QueryGetAccount, QueryGetManyAccounts, QueryFindAccounts, QueryListAccounts]
     )
@@ -50,7 +53,7 @@ nothing, so it reads exactly what the entity says.
 import copy
 import dataclasses
 from collections.abc import Callable, Mapping, Sequence
-from typing import Any, ClassVar, cast, get_args, get_origin
+from typing import Any, ClassVar, Literal, cast
 
 from pydantic import field_validator
 
@@ -79,17 +82,22 @@ from sincpro_framework.ddd.entity.entity_collection import (
     identity_of,
 )
 from sincpro_framework.ddd.entity.entity_meta import (
+    records_class,
     related_class,
 )
 from sincpro_framework.ddd.entity.relations import relation_attribute
 from sincpro_framework.ddd.events import DomainEvent
 from sincpro_framework.ddd.metamodel import model_of
 from sincpro_framework.ddd.query import (
+    ACCEPTED_FORMATS,
+    PARQUET,
+    PARQUET_ABOVE,
     DraftState,
     Query,
     ResponsePaginatedQuery,
     ResponseRecord,
     ResponseRecords,
+    Streamed,
     writing_out,
 )
 from sincpro_framework.ddd.reads.defaults import detail_of, matching
@@ -137,6 +145,23 @@ class LiteralSearch[T, R: ResponsePaginatedQuery](DataTransferObject):
     brings, each replacing the select's own."""
 
 
+class Export[T, R: Streamed](Query):
+    """Every record by criteria, as a file — Parquet, an Arrow stream or JSON Lines —, read a
+    page at a time from one snapshot and streamed as it is written.
+
+    QueryExportEntries(criteria=…)                    every scalar field, Parquet
+    QueryExportEntries(criteria=…, format="jsonl")    each record as an answer writes it
+
+    What a data-science notebook or a nightly dump needs, and a page of 40 over HTTP is not:
+    `sincpro_framework.data_layer.data_analysis.export`. The criteria filters and orders; its
+    specification, when it names fields, picks the columns.
+    """
+
+    format: Literal["parquet", "arrow", "jsonl"] = "parquet"
+    """`parquet` to keep or open in a dataframe library, `arrow` for a client that appends batch
+    after batch, `jsonl` for one that reads JSON."""
+
+
 class Search[T, R: ResponsePaginatedQuery](Query):
     """A page by criteria: each record as the entity's `DEFAULT_READING` brings it, in its
     `DEFAULT_ORDER`, unless the criteria names its own.
@@ -149,6 +174,16 @@ class Search[T, R: ResponsePaginatedQuery](Query):
     """The caller's drafts instead of the stored records: filtered and ordered by the same
     criteria, the most recently saved first when it names no order — one page, an owner's
     drafts being few. What a client asks after it lost its state: what was I editing?"""
+
+    format: Literal["auto", "json", "parquet"] = "auto"
+    """How the page travels. `json`, or `parquet`: the same records, cursor and count, as a
+    Parquet file (the cursor and the count in its footer). `auto`, the default: JSON, unless more
+    than `parquet_above` records are asked for, over a wire whose caller reads Parquet, with
+    pyarrow installed — inside the process an answer is always objects."""
+
+    parquet_above: ClassVar[int | None] = PARQUET_ABOVE
+    """Past how many records asked for `auto` answers Parquet; `None` on a search that never
+    does. Published in the contract, so a client knows before it asks."""
 
 
 class DomainEvents[T, R: ResponsePaginatedQuery](Query):
@@ -302,8 +337,8 @@ def events_of(response: type) -> type:
     The records field must be a list of a `DomainEvent` class — nothing else is read.
     """
     annotation = response.model_fields[response.records_field()].annotation
-    arguments = get_args(annotation) if get_origin(annotation) is list else ()
-    held = arguments[0] if arguments else None
+    held, many = records_class(annotation)
+    held = held if many else None
     if not (isinstance(held, type) and issubclass(held, DomainEvent)):
         raise exceptions.ProgrammingError(
             f"{response.__name__} holds {annotation!r}, not events: `DomainEvents` answers "
@@ -694,7 +729,23 @@ class EntityReads[T](Feature):
         criteria = (detail_of(entity) or Criteria()).replaced_by(dto.criteria)
         if dto.drafts:
             return response.of(self.drafted_page(entity, criteria), criteria)
+        if encoding_of(dto, criteria) == "parquet":
+            from sincpro_framework.data_layer.data_analysis.export import searched_as_parquet
+
+            return searched_as_parquet(self.reads_from(), entity, criteria, response)
         return response.of(self.reads_from().search(entity, criteria), criteria)
+
+    def export(self, dto: Any) -> Any:
+        """Every record the criteria matches, as the file its format names, streamed a page at a
+        time from one snapshot of the store this Feature reads.
+
+            QueryExportEntries(criteria=posted)
+                ->  Streamed(media_type="application/vnd.apache.parquet", filename="entry.parquet")
+        """
+        from sincpro_framework.data_layer.data_analysis.export import exported
+
+        entity, _ = declared_by(type(dto))
+        return exported(self.reads_from(), entity, dto.criteria, dto.format)
 
     def domain_events(self, dto: Any) -> Any:
         """The record's events, oldest first, each filtered by the record's type and identity.
@@ -811,6 +862,8 @@ class EntityReads[T](Feature):
         `DomainEvents` is matched before `Search`; any other DTO is a `ProgrammingError`.
         """
         match dto:
+            case Export():
+                return self.export(dto)
             case Get():
                 return self.get(dto)
             case GetMany():
@@ -824,9 +877,45 @@ class EntityReads[T](Feature):
             case PreviewEntity():
                 return self.preview(dto)
         raise exceptions.ProgrammingError(
-            f"{type(self).__name__} answers Get, GetMany, LiteralSearch, Search, DomainEvents and "
-            f"PreviewEntity, not {type(dto).__name__}"
+            f"{type(self).__name__} answers Get, GetMany, LiteralSearch, Search, Export, "
+            f"DomainEvents and PreviewEntity, not {type(dto).__name__}"
         )
+
+
+def parquet_written() -> bool:
+    """Whether this process writes Parquet — pyarrow, the `[data-analysis]` extra, installed."""
+    try:
+        import pyarrow  # noqa: F401
+    except ImportError:
+        return False
+    return True
+
+
+def encoding_of(dto: Any, criteria: Criteria) -> Literal["json", "parquet"]:
+    """How a search's page travels: what the caller chose, or — `auto` — Parquet when more than
+    the search's `parquet_above` records are asked for, the caller reads Parquet (`Accept`, as
+    a wire writes it in the context) and this process writes it; JSON otherwise.
+
+        format="parquet"                                   ->  "parquet"
+        format="auto", limit 2 000 000, Accept: parquet    ->  "parquet"
+        format="auto", limit 2 000 000, inside the process ->  "json"     (objects, never bytes)
+        format="auto", limit 50                            ->  "json"
+    """
+    if dto.format == "parquet" and not parquet_written():
+        raise exceptions.InvalidCriteria(
+            "this service writes no Parquet (pyarrow, the [data-analysis] extra, is not "
+            "installed): ask format=json"
+        )
+    if dto.format != "auto":
+        return dto.format
+    above = type(dto).parquet_above
+    if above is None or criteria.limit <= above:
+        return "json"
+    accepted = use_context().get(ACCEPTED_FORMATS) or {}
+    # What the caller of the wire reads is for the use case it asked, never for one that use case
+    # calls inside the process.
+    reads = accepted.get("types", ()) if accepted.get("for") == type(dto).__name__ else ()
+    return "parquet" if PARQUET in reads and parquet_written() else "json"
 
 
 def with_computed_relations(entity: type, criteria: Criteria) -> Criteria:

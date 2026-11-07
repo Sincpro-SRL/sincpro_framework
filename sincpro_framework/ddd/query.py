@@ -23,6 +23,8 @@ from typing import Any, Literal, Self, get_args, get_origin
 
 from pydantic import (
     BaseModel,
+    ConfigDict,
+    Field,
     GetJsonSchemaHandler,
     PrivateAttr,
     SerializationInfo,
@@ -31,6 +33,7 @@ from pydantic import (
     model_validator,
 )
 from pydantic.errors import PydanticInvalidForJsonSchema, PydanticSchemaGenerationError
+from pydantic.json_schema import SkipJsonSchema
 from pydantic_core import to_jsonable_python
 
 from sincpro_framework.ddd import exceptions
@@ -45,6 +48,8 @@ from sincpro_framework.ddd.entity.entity_collection import (
 from sincpro_framework.ddd.entity.entity_meta import (
     FieldType,
     Meta,
+    collection_class,
+    records_class,
 )
 from sincpro_framework.ddd.metamodel import model_of
 from sincpro_framework.sincpro_abstractions import DataTransferObject
@@ -272,8 +277,11 @@ def _version_of(annotation: Any) -> str:
     one it loaded; empty for what the metamodel does not describe.
 
         _version_of(list[Sale])     ->  "3f9c…"
+        _version_of(Sales)          ->  "3f9c…"     # class Sales(EntityCollection[Sale])
         _version_of(list[dict])     ->  ""
     """
+    if collection_class(annotation) is not None and not get_args(annotation):
+        annotation = records_class(annotation)[0]
     for argument in get_args(annotation):
         found = _version_of(argument)
         if found:
@@ -288,9 +296,17 @@ def _version_of(annotation: Any) -> str:
 def _properties(
     cls: Any, fields: dict[str, Any], handler: GetJsonSchemaHandler, holder: str
 ) -> dict[str, Any]:
-    """The properties of an answer: each declared field, the one holding the records extended."""
+    """The properties of an answer: each declared field, the one holding the records extended.
+    A records field declared as a collection travels as the array of its records — its count and
+    cursor are the answer's own — and is published so."""
     written = {name: handler(one["schema"]) for name, one in fields.items()}
-    written[holder] = _extended(written[holder], cls.model_fields[holder].annotation)
+    declared = cls.model_fields[holder].annotation
+    if collection_class(declared) is not None:
+        held = written[holder].get("properties", {}).get("items")
+        if held is not None:
+            written[holder] = held
+        declared = list[records_class(declared)[0]]  # type: ignore[misc]
+    written[holder] = _extended(written[holder], declared)
     return written
 
 
@@ -426,8 +442,12 @@ class ResponsePaginatedQuery(DataTransferObject):
         'labs.csv'
         """
         records = cls.records_field()
+        declared = cls.model_fields[records].annotation
+        # A field declared as a collection holds the page itself — its count and cursor with it;
+        # one declared as a list holds its records.
+        held = page if collection_class(declared) is not None else list(page.items)
         response = cls(
-            **{records: list(page.items)},
+            **{records: held},
             cursor=page.cursor,
             count=page.count,
             model_version=_version_of(cls.model_fields[records].annotation),
@@ -722,3 +742,56 @@ class ResponseRecords(DataTransferObject):
         response._specification = criteria.specification
         response._meta = page.meta
         return response
+
+
+PARQUET = "application/vnd.apache.parquet"
+"""The media type of a Parquet file (IANA, 2024)."""
+
+PARQUET_ABOVE = 1_000_000
+"""Past how many records asked for a search answers Parquet instead of JSON, when its caller
+reads Parquet and nobody chose the format: a JSON page of millions of records is the slowest,
+largest way to send them. A search declares its own (`Search.parquet_above`, `None`: never)."""
+
+ACCEPTED_FORMATS = "accepted_formats"
+"""The context key a wire writes what its caller reads under — HTTP's `Accept` —, for the one use
+case it asked: `{"for": "QueryListEntries", "types": [...]}`. Read by a search deciding its
+format; absent inside the process, and ignored by a use case another one calls, where an answer
+is objects."""
+
+
+class Streamed(DataTransferObject):
+    """An answer too large to hold: its bytes as they are produced, what they are, and the name
+    to save them under — what an export answers.
+
+        Streamed(media_type="application/vnd.apache.parquet", filename="entries.parquet",
+                 chunks=<an iterator of bytes>)
+
+    A wire writes the chunks as they come — `StreamingResponse` over HTTP — and never holds the
+    whole; anywhere else, iterating it is reading it. `chunks` never travels as a field, and the
+    schema says `x-sincpro-streamed` — the media types it may be — so a generated client reads
+    the bytes instead of parsing JSON.
+    """
+
+    model_config = ConfigDict(
+        json_schema_extra={
+            "x-sincpro-streamed": [
+                "application/vnd.apache.parquet",
+                "application/vnd.apache.arrow.stream",
+                "application/jsonl",
+            ]
+        }
+    )
+
+    media_type: str
+    filename: str = ""
+    chunks: SkipJsonSchema[Any] = Field(default=None, exclude=True, repr=False)
+
+    def __iter__(self) -> Iterator[bytes]:  # type: ignore[override]
+        """The bytes, in order, read once."""
+        return iter(self.chunks or ())
+
+    def disposition(self) -> dict[str, str]:
+        """The headers that make a browser save it under its name."""
+        if not self.filename:
+            return {}
+        return {"Content-Disposition": f'attachment; filename="{self.filename}"'}

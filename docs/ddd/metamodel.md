@@ -77,7 +77,8 @@ metamodel_of(billing)["operations"]["billing.CommandVoidInvoice"]["targets"]
 
 - **`role`** is read off the Command's type, never declared (`role_of`): the framework DTO it
   descends from — `Get` → `get`, `GetMany` → `get_many`, `LiteralSearch` → `literal_search`,
-  `Search` → `search`, `DomainEvents` → `events`, `PreviewEntity` → `preview`, `Edit` → `edit` —,
+  `Search` → `search`, `DomainEvents` → `events`, `PreviewEntity` → `preview`, `Edit` → `edit`,
+  `Export` → `export` (its answer is bytes: `x-sincpro-streamed` on its output) —,
   so a project's own base over one (forge's `TenantSearch(Search)`) keeps it; anything else is a
   `command`, with the entities `@entity_tags` names, or none.
 - **`query`**: it writes nothing, so a retry or a cache is safe — every role that reads, and a

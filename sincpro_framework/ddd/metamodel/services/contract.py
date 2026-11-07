@@ -64,12 +64,44 @@ SAID = (
     "parent_field",
     "related_field",
     "navigable",
+    "reference",
     "holds",
     "computes",
     "affects",
     "judged_by",
 )
 """What a property's `x-sincpro` may say, in this order; what says nothing is left out."""
+
+
+COUNT = {
+    "type": "object",
+    "title": "Count",
+    "properties": {"value": {"type": "integer"}, "exact": {"type": "boolean"}},
+    "required": ["value", "exact"],
+}
+"""How many a collection holds: `exact`, or a floor — «at least `value`»."""
+
+
+def _collection(pointed: dict[str, Any], shapes: dict[str, Any]) -> dict[str, Any]:
+    """A to-many as a reading answers it: a page of its records — the records, how many there
+    are, and the cursor to go on inside this parent — never a bare list, which would say the
+    page is all there is.
+
+        {"type": "object", "properties": {"items": {"type": "array", "items": {"$ref": …}},
+         "count": {"anyOf": [{"$ref": "#/$defs/Count"}, {"type": "null"}]},
+         "cursor": {"anyOf": [{"type": "string"}, {"type": "null"}]}}, "required": ["items"]}
+
+    `Count` is written once under `$defs`, unless an entity holds the name: then in place."""
+    count = {"$ref": "#/$defs/Count"} if shapes.setdefault("Count", COUNT) == COUNT else COUNT
+    return {
+        "type": "object",
+        "properties": {
+            "items": {"type": "array", "items": pointed},
+            "count": {"anyOf": [count, {"type": "null"}]},
+            "cursor": {"anyOf": [{"type": "string"}, {"type": "null"}]},
+        },
+        "required": ["items"],
+    }
 
 
 def _held(field: FieldMeta, shapes: dict[str, Any]) -> dict[str, Any]:
@@ -84,6 +116,8 @@ def _held(field: FieldMeta, shapes: dict[str, Any]) -> dict[str, Any]:
     of the same name, or an entity's — leaves this one written in place: no pointer ever reaches
     a shape not its own.
 
+    A to-many relation holds a page of its records, as a reading answers it (`_collection`).
+
     An exact number travels as a text (`"12.50"`), so no numeric keyword is written on it — a
     validator would skip `minimum` on a string, silently; what it holds travels whole under
     `x-sincpro.holds`, the one check that reads it."""
@@ -95,7 +129,7 @@ def _held(field: FieldMeta, shapes: dict[str, Any]) -> dict[str, Any]:
         return {"type": "array", "items": shape} if field.many else shape
     if field.type.is_relational and field.relation is not None:
         pointed = {"$ref": f"#/$defs/{field.relation}"}
-        return {"type": "array", "items": pointed} if field.many else pointed
+        return _collection(pointed, shapes) if field.many else pointed
     if field.type is FieldType.NUMBER and field.exact:
         return {"type": "string", "format": "decimal"}
     held: dict[str, Any] = dict(PRIMITIVE.get(field.type, {}))

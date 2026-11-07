@@ -38,6 +38,7 @@ from sincpro_framework.ddd.entity.entity_id import key_of
 from sincpro_framework.ddd.query import Query
 from sincpro_framework.ddd.reads.reads import (
     DomainEvents,
+    Export,
     Get,
     GetMany,
     LiteralSearch,
@@ -53,7 +54,8 @@ _declared: WeakKeyDictionary[type, tuple[type, ...]] = WeakKeyDictionary()
 class Role(StrEnum):
     """What an operation is for the entity it belongs to — what a client builds a screen from
     without being told a route: the list is its `search`, the record its `get`, the form its
-    `edit` and `preview`, the history its `events`, the buttons its `command`s."""
+    `edit` and `preview`, the history its `events`, the download of all of it its `export`, the
+    buttons its `command`s."""
 
     GET = "get"
     GET_MANY = "get_many"
@@ -62,6 +64,7 @@ class Role(StrEnum):
     EVENTS = "events"
     PREVIEW = "preview"
     EDIT = "edit"
+    EXPORT = "export"
     COMMAND = "command"
 
 
@@ -73,6 +76,7 @@ _ROLES: tuple[tuple[type, Role], ...] = (
     (DomainEvents, Role.EVENTS),
     (PreviewEntity, Role.PREVIEW),
     (Edit, Role.EDIT),
+    (Export, Role.EXPORT),
 )
 """Each framework DTO of one entity and the role it gives — none of them descends from
 another, so the order never decides."""

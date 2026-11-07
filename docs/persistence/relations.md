@@ -63,7 +63,8 @@ by surprise:
 5. **Everything else is ignored.** A dataclass with no table and no declaration is not a
    relation and not a field.
 
-Cardinality always comes from the annotation: `list[Run]` is many, `Run | None` is one. Only
+Cardinality always comes from the annotation: `EntityCollection[Run]` — the recommended type,
+[§9](#9-a-to-many-is-an-entitycollection) — or `list[Run]` is many, `Run | None` is one. Only
 `many_to_many` is a declared type, because a list cannot say there is a table in between.
 `tests/data_layer/orm/test_relation_precedence.py` pins each rule.
 
@@ -97,7 +98,23 @@ For a page of parents `P` and a named node `name: C`:
 
 `RESOLVE` by kind:
 
-**Foreign key, to-many** (`Author.works`, key on the related table):
+**Foreign key, to-many** (`Author.works`, key on the related table). On PostgreSQL, for each
+parent its count and its first rows, each stopping where it has read enough:
+
+```sql
+SELECT children.*, counted.total
+FROM (VALUES (:p1), (:p2), …) AS parents (key)
+JOIN LATERAL (SELECT count(*) AS total FROM (SELECT 1 FROM work
+              WHERE work.author_id = parents.key AND <C.where> LIMIT :cap + 1) AS capped)
+     AS counted ON true
+JOIN LATERAL (SELECT work.*, work.author_id AS parent_key,
+                     row_number() OVER (ORDER BY <C.order>, work.id) AS position
+              FROM work WHERE work.author_id = parents.key AND <C.where>
+              ORDER BY <C.order>, work.id LIMIT :C.limit + 1) AS children ON true
+ORDER BY children.parent_key, children.position
+```
+
+Elsewhere — SQLite, the engines without `LATERAL` — the portable form, a window:
 
 ```sql
 SELECT related.*, parent_key, total FROM (
@@ -107,19 +124,34 @@ SELECT related.*, parent_key, total FROM (
          count(*)     OVER (PARTITION BY work.author_id)          AS total
   FROM work
   WHERE work.author_id IN (:P) AND <C.where>
-) WHERE position <= :C.limit
+) WHERE position <= :C.limit + 1
 ORDER BY parent_key, position
 ```
 
-One statement. Each parent gets its rows in the node's order, at most `limit`, an exact `total`,
-and a cursor minted from its last row when there is more. Paging on inside one parent is an
-ordinary `search` on `Work` with `author_id = X` and that cursor.
+One statement either way, with the same answer. Each parent gets its rows in the node's order, at
+most `limit` — the row past it is read only to know there is more, and a cursor is minted from
+the last row kept —, and the count its node asked for (`C.count`):
+
+| `C.count` | The count per parent |
+|---|---|
+| `capped`, the default | exact up to `RELATION_COUNT_CAP` (1 000), past it a floor: `Count(1000, exact=False)`, «at least 1000» |
+| `exact` | every row counted |
+| `none` | none; the cursor alone says there is more |
+
+A parent whose rows did not fill the page is counted for free, exactly. Paging on inside one
+parent is an ordinary `search` on `Work` with `author_id = X` and that cursor.
+
+Why two forms: a window partitioned by the parent numbers and counts every row of each parent
+before the outer `WHERE` keeps 40 of them — PostgreSQL's own window optimisation does not stop
+early under `PARTITION BY` — so a parent with a million children cost a million rows for a page of
+40. The `LATERAL` join reads `limit + 1` rows per parent off an index on `(author_id, <order>)`
+and stops, and the capped count stops one past the cap.
 
 **Foreign key, to-one** (`Work.author`, key on this table): the distinct keys the parents hold,
 `SELECT author.* WHERE id IN (:keys) AND <C.where>`, matched back by identity.
 
-**Many-to-many**: the same window, joined through the table in between, partitioned by its key
-pointing at the parent.
+**Many-to-many**: the same two forms, joined through the table in between, matched — or
+partitioned — by its key pointing at the parent.
 
 **List of ids**: `SELECT related WHERE id IN (union of every parent's list) AND <C.where>`, ordered
 by `C.order`; the cut per parent is in memory, because the related table has no column pointing
@@ -132,7 +164,8 @@ as the other side's aggregate and are cut per parent in memory. The count per pa
 unless the other side filled the page it was asked for, in which case it says `exact = False`.
 The other side is an ordinary `search`, so its own nested specification is resolved there.
 
-**Whole** (a Feature touching the relation inside a unit of work): the same, with no limit.
+**Whole** (a Feature touching the relation inside a unit of work): the same, with no page and no
+count asked — every row, said in the log past `WHOLE_WARNING` ([§7](#7-lazy-inside-a-unit-of-work-refused-outside)).
 
 ## 6. What it costs
 
@@ -143,6 +176,16 @@ The other side is an ordinary `search`, so its own nested specification is resol
 | a page with a relation and, inside it, another | `+ 2` |
 | a page with a relation from another context | `+ 1` statement on this side, `+ 1` command on the other |
 | the same at 500 rows | the same numbers |
+
+| One parent with 1 000 000 children, a page of 40 | median |
+|---|---|
+| `LATERAL`, capped count (the default) | 6.9 ms |
+| `LATERAL`, exact count | 29.2 ms |
+| `LATERAL`, no count | 3.6 ms |
+| the window, either count | 357–377 ms |
+
+Measured 2026-11-06 through `repository.search` with the relation named, PostgreSQL 17 in Docker
+on a laptop, an index on `(customer_id, number, id)`, median of seven runs after a warm-up.
 
 The tests count statements, not shapes. A change that passes every functional test and adds a
 statement per row fails `test_nesting_goes_as_deep_as_asked_with_one_statement_per_node`.
@@ -155,6 +198,10 @@ Where the chain does **not** compose, and is not meant to:
   never answers a listing filtered by the other side.
 - **Exact counts and global order across a bus.** Only per parent, and only as exact as the
   other side's page allows.
+- **An exact count of a parent with a million children** reads a million index entries
+  whatever the query looks like; that is why the default stops at a thousand and says «at
+  least». A total a screen shows on every row belongs in the parent's own table, kept by an
+  event, like the filter above.
 - **Per-parent limit through a bus** travels as `grouping` by `identified_by` with the node's
   page in the reflected criteria. A repository of ours reads `grouping` with a page as «`limit`
   rows for every key» and cuts it in SQL, so no parent starves another; its answer has no
@@ -181,6 +228,17 @@ decides a rule and needs the whole relation; outside one, a loop over two hundre
 records would be two hundred queries hidden in an attribute access. A page a client cut with the
 specification that is still on a record gives way to the whole when touched inside a context; a
 Feature never decides on a cut page.
+
+**Whole, and said when it is large.** A relation read whole by touching it brings every row —
+the framework reads what it is asked to. Past `WHOLE_WARNING` (ten thousand) the log says so,
+naming the relation, how many it brought and the cheaper ways to ask: a page, a count, each one by
+cursor (`repository.search` / `count` / `stream` with the relation's key).
+
+```python
+with self.repository.context() as repository:
+    customer = repository.get(Customer, customer_id)
+    customer.invoices        # 2 million of them: all in memory, and a warning in the log
+```
 
 A record built in memory holds what its constructor was given: `Author(name="x").books == []`.
 A record the mapper loaded starts unresolved.
@@ -306,7 +364,53 @@ descriptors, not SQLAlchemy relationships, so it is planned before the flush and
 same write path. `MemoryRepository` stores the root as the object it is, children inside, so the
 aggregate it hands back is the one it was given.
 
-## 9. Extending it
+## 9. A to-many is an `EntityCollection`
+
+A read already answers a to-many as an `EntityCollection` — its records, how many there are, the
+cursor to go on —, and the wire sends it so. Declaring it so makes the domain say the truth, and
+it is the same type a TypeScript client holds (`EntityCollection<T>` in @sincpro/client-framework):
+
+```python
+@dataclass
+class Invoice(Entity):
+    lines: EntityCollection[InvoiceLine] = field(default_factory=EntityCollection)
+
+invoice.lines.count          # Count(value=3, exact=True)
+invoice.lines.cursor         # None: all of them are here
+invoice.lines.is_partial     # False
+for line in invoice.lines: ...
+```
+
+It is immutable and edited the way a `str` or a `date` is — every edit answers a new collection:
+
+```python
+invoice.lines = invoice.lines.append(InvoiceLine(qty=2))
+invoice.lines = invoice.lines.extend([one, another])
+invoice.lines = invoice.lines.remove(line)              # by itself or by its identity
+invoice.lines = invoice.lines.replace(replace(line, qty=5))   # the same identity, other values
+repository.save(invoice)
+```
+
+- An edit keeps what the collection says: a page stays a page (its cursor, a floor stays a floor),
+  an exact count moves with what was added or removed. `remove` and `replace` of a record that is
+  not held are a `ValueError`, as `list.remove` is.
+- A copy made with `dataclasses.replace` is saved as an update of the stored row it copies,
+  never an insert — and refused as `StaleAggregate` when the row moved on since the copy's
+  version was read.
+- A list given to the field — `Invoice(lines=[l1, l2])`, an assignment, a form's values — is held
+  as the whole collection it is.
+- `list[InvoiceLine]` keeps working, read and saved the same: the framework is permissive about
+  the annotation; `EntityCollection` is the one it recommends, because it carries the count and
+  the cursor a list throws away.
+- A response declares either: `invoices: EntityCollection[Invoice]` holds the page with its
+  count and cursor, `invoices: list[Invoice]` its records. On the wire both travel the same.
+
+**A part or a reference** is the relation's declaration, not its type: a to-many is a part of its
+root — saved whole with it, its orphans settled — unless declared `owned=False`, a reference to
+other aggregates the root reads and never writes. The definition says `reference: true` on such a
+to-many, so a screen lists and searches it and never offers it as lines to edit.
+
+## 10. Extending it
 
 **A new place to bring a relation from** is a callable. Nothing in the core changes:
 
@@ -349,7 +453,7 @@ each one — the contract the vocabulary asks, every answer given without readin
 `ddd/entity/relations.py`: `Relation`, `Resolver`, `resolve_elsewhere`, `cut`, `limit_of`. Only the
 window-function statement is SQLAlchemy's.
 
-## 10. A worked example, all kinds at once
+## 11. A worked example, all kinds at once
 
 `tests/data_layer/orm/every_kind_models.py` declares one aggregate with every kind of field and
 `tests/data_layer/orm/test_field_meta_unified.py` asks for all of it in one criteria: nine scalars filtered,
