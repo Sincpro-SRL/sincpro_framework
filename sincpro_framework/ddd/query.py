@@ -310,6 +310,70 @@ def _properties(
     return written
 
 
+def _is_page(option: Any) -> bool:
+    """The page a collection accepts beside a list: `{"items", "count", "cursor"}`."""
+    if not isinstance(option, dict) or option.get("type") != "object":
+        return False
+    items = option.get("properties", {}).get("items")
+    return isinstance(items, dict) and items.get("type") == "array"
+
+
+def _as_records(schema: dict[str, Any], holder: str) -> dict[str, Any]:
+    """The validation schema with the records field as the array the answer writes.
+
+    Context: a collection validates as a list or as a page. An answer writes the list — the
+    count and the cursor are its own fields — and the contract is this schema, so the page is
+    not published. The field's title stays, which is how a `list` of the same records is
+    published.
+
+    1. Drop the page branch.
+    2. With only the array left, the field is that array.
+    Final: a null beside the array stays, when the collection was declared optional.
+    """
+    properties = schema.get("properties")
+    field = properties.get(holder) if isinstance(properties, dict) else None
+    options = field.get("anyOf") if isinstance(field, dict) else None
+    if (
+        not isinstance(properties, dict)
+        or not isinstance(field, dict)
+        or not isinstance(options, list)
+    ):
+        return schema
+    kept = [one for one in options if not _is_page(one)]
+    if len(kept) == len(options):
+        return schema
+    if len(kept) == 1 and isinstance(kept[0], dict) and kept[0].get("type") == "array":
+        carried = {
+            key: field[key] for key in ("title", "description", "default") if key in field
+        }
+        properties[holder] = {**kept[0], **carried}
+        return schema
+    properties[holder] = {**field, "anyOf": kept}
+    return schema
+
+
+def _validation_schema(
+    cls: Any,
+    core_schema: Any,
+    handler: GetJsonSchemaHandler,
+    holder_of: Callable[[], str],
+) -> dict[str, Any]:
+    """What an answer publishes in validation mode — the mode the contract is built in.
+
+    Context: building that schema in serialization mode splits every definition that differs
+    between the two (`Event-Input`, `Event-Output`) and rewrites the whole contract. A class
+    that declares no records field (the base answers) keeps the schema pydantic produced.
+    """
+    schema = handler.resolve_ref_schema(handler(core_schema))
+    try:
+        holder = holder_of()
+    except exceptions.ProgrammingError:
+        return schema
+    if collection_class(cls.model_fields[holder].annotation) is None:
+        return schema
+    return _as_records(schema, holder)
+
+
 class ResponsePaginatedQuery(DataTransferObject):
     """What any paged answer returns beside its records.
 
@@ -407,11 +471,15 @@ class ResponsePaginatedQuery(DataTransferObject):
         The shape is not a guess: the serializer writes the declared fields and no others, so
         the schema is built from them.
 
+        A collection field is that array in validation mode too. The contract reads this mode,
+        and the collection's own schema also accepts the page it was read from; an answer
+        writes the list.
+
         One thing it cannot say: a `specification` cuts the fields of each record, so a record
         may arrive with fewer than its type declares. Only the identity is always there.
         """
         if handler.mode != "serialization":
-            return handler(core_schema)
+            return _validation_schema(cls, core_schema, handler, cls.records_field)
 
         fields = core_schema["schema"]["fields"]
         return {
@@ -609,7 +677,7 @@ class ResponseRecord(DataTransferObject):
         """The declared fields, said for the OpenAPI too: a plain serializer alone publishes
         `{"type": "object"}`."""
         if handler.mode != "serialization":
-            return handler(core_schema)
+            return _validation_schema(cls, core_schema, handler, cls.record_field)
 
         fields = core_schema["schema"]["fields"]
         return {
@@ -704,7 +772,7 @@ class ResponseRecords(DataTransferObject):
         """The declared fields, said for the OpenAPI too: a plain serializer alone publishes
         `{"type": "object"}`."""
         if handler.mode != "serialization":
-            return handler(core_schema)
+            return _validation_schema(cls, core_schema, handler, cls.records_field)
 
         fields = core_schema["schema"]["fields"]
         return {
