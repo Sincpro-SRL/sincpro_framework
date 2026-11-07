@@ -35,7 +35,6 @@ except ImportError as error:  # pragma: no cover - depends on the installed extr
     raise ImportError(GRPC_MISSING) from error
 
 CONTEXT_PREFIX = "sp-ctx-"
-CORRELATION_HEADER = "x-correlation-id"
 HEADER_OF = {key: header for header, key in context_propagation.identity_headers.items()}
 SHUTDOWN_SIGNALS = (signal.SIGTERM, signal.SIGINT)
 DEADLINE_KEY = "deadline"
