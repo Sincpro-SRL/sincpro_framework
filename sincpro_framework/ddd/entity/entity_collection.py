@@ -8,7 +8,11 @@ itself. See `docs/persistence/reference.md`.
 from collections.abc import Callable, Hashable, Iterable, Iterator
 from dataclasses import dataclass, fields, is_dataclass
 from functools import partial
+from types import GenericAlias
 from typing import TYPE_CHECKING, Any, get_args, get_origin
+
+from pydantic import GetCoreSchemaHandler
+from pydantic_core import CoreSchema, core_schema
 
 from sincpro_framework.ddd import exceptions
 from sincpro_framework.ddd.criteria import Evaluation
@@ -520,6 +524,179 @@ class EntityCollection[T]:
         out     EntityCollection([c, a, b])
         """
         return self._derived(sorted(self.items, key=key, reverse=descending))
+
+    @classmethod
+    def whole(cls, records: Iterable[T]) -> "EntityCollection[T]":
+        """The collection of these records, all there are: counted exactly, no cursor — what a
+        list given to a field declared `EntityCollection[…]` is held as.
+
+            EntityCollection.whole([a, b])   ->  EntityCollection([a, b], Count(2, exact=True))
+        """
+        items = tuple(records)
+        return cls(items=items, count=Count(value=len(items), exact=True))
+
+    @classmethod
+    def of_page(cls, page: "EntityCollection[T]") -> "EntityCollection[T]":
+        """`page` — its records, cursor, count, what was dropped and its definition — as this
+        class: what a field declared `Lines` holds when a reading answered a plain collection.
+        """
+        return cls(
+            items=page.items,
+            cursor=page.cursor,
+            count=page.count,
+            dropped=page.dropped,
+            meta=page.meta,
+        )
+
+    def _edited(self, items: Iterable[T], moved: int) -> "EntityCollection[T]":
+        """This same set, edited: the records changed, everything else it says kept — its
+        cursor, its definition, what was dropped — and its count moved by `moved` when it was
+        exact. A floor stays a floor: «at least 1000» plus one is still «at least».
+
+        Context: an edit is not a derivation. `filtered` answers another set, which is no page
+        of anything; `append` answers the same set with one more, so a page stays a page —
+        appending to forty of a thousand never makes it look whole.
+        """
+        count = self.count
+        if count is not None and count.exact:
+            count = Count(value=max(count.value + moved, 0), exact=True)
+        return type(self)(
+            items=tuple(items),
+            cursor=self.cursor,
+            count=count,
+            dropped=self.dropped,
+            meta=self.meta,
+        )
+
+    def append(self, *records: T) -> "EntityCollection[T]":
+        """A new collection with `records` at the end; this one never changes — as `str.replace`
+        and `date.replace` answer anew.
+
+            invoice.lines = invoice.lines.append(InvoiceLine(qty=2))
+            EntityCollection([a, b], count=Count(2)).append(c)   ->  [a, b, c], Count(3)
+        """
+        return self._edited([*self.items, *records], len(records))
+
+    def extend(self, records: Iterable[T]) -> "EntityCollection[T]":
+        """A new collection with every one of `records` at the end, in order.
+
+        EntityCollection([a]).extend([b, c])   ->  EntityCollection([a, b, c])
+        """
+        return self.append(*records)
+
+    def remove(self, *records: Any) -> "EntityCollection[T]":
+        """A new collection without these records — each named by itself or by its identity.
+        Like `list.remove`, one that is not held is a `ValueError`, naming it.
+
+            invoice.lines = invoice.lines.remove(line)        # or remove(line.id)
+            EntityCollection([a, b, c]).remove(b)   ->  EntityCollection([a, c])
+        """
+        held = {identity_of(record) for record in self.items}
+        unwanted = [
+            (
+                one
+                if not hasattr(one, "__dataclass_fields__")
+                and not hasattr(one, "model_fields")
+                else identity_of(one)
+            )
+            for one in records
+        ]
+        missing = [one for one in unwanted if one not in held]
+        if missing:
+            raise ValueError(f"not in the collection: {', '.join(map(str, missing))}")
+        gone = set(unwanted)
+        kept = [record for record in self.items if identity_of(record) not in gone]
+        return self._edited(kept, -len(gone))
+
+    def replace(self, *records: T) -> "EntityCollection[T]":
+        """A new collection where each of `records` takes the place of the held one with its
+        identity, in that same position. One whose identity is not held is a `ValueError`:
+        `append` adds.
+
+            invoice.lines = invoice.lines.replace(replace(line, qty=5))
+        """
+        by_identity = {identity_of(record): record for record in records}
+        held = {identity_of(record) for record in self.items}
+        missing = [key for key in by_identity if key not in held]
+        if missing:
+            raise ValueError(
+                f"not in the collection: {', '.join(map(str, missing))} — append adds a record"
+            )
+        return self._edited(
+            [by_identity.get(identity_of(record), record) for record in self.items], 0
+        )
+
+    def __class_getitem__(cls, held: Any) -> Any:
+        """`EntityCollection[Invoice]`, as `list[Invoice]` is: a `types.GenericAlias`, which hands
+        what is asked of it to the class — so pydantic finds the collection's own schema
+        (`__get_pydantic_core_schema__`) for a parametrized one too, where `typing`'s alias hid it
+        and pydantic read the collection's fields instead."""
+        return GenericAlias(cls, held)
+
+    @classmethod
+    def __get_pydantic_core_schema__(
+        cls, source: Any, handler: GetCoreSchemaHandler
+    ) -> CoreSchema:
+        """A collection as a field of a DTO or an entity: read from the collection itself, from
+        a list of records — the whole set, counted —, or from the page a wire sent
+        (`{items, count, cursor}`); written as that page.
+
+            ResponseInvoices(invoices=[i1, i2]).invoices   ->  EntityCollection([i1, i2], Count(2))
+            on the wire                                    ->  {"items": [...], "count": {...}, "cursor": null}
+        """
+        declared = get_args(source)
+        held = (
+            declared[0] if declared else (cls.holds() if isinstance(source, type) else None)
+        )
+        kind = get_origin(source) or source
+        if not (isinstance(kind, type) and issubclass(kind, EntityCollection)):
+            kind = cls
+        item = handler.generate_schema(held) if held is not None else core_schema.any_schema()
+        count = core_schema.nullable_schema(handler.generate_schema(Count))
+        cursor = core_schema.nullable_schema(core_schema.str_schema())
+
+        def whole(records: list[Any]) -> EntityCollection[Any]:
+            return kind.whole(records)
+
+        def sent(page: dict[str, Any]) -> EntityCollection[Any]:
+            return kind(
+                items=tuple(page["items"]), count=page.get("count"), cursor=page.get("cursor")
+            )
+
+        def written(value: Any) -> dict[str, Any]:
+            """The page a field holds, as the wire writes it — a list held in its place (a
+            draft, a record built in memory) written as the whole collection it is."""
+            if not isinstance(value, EntityCollection):
+                value = kind.whole(value or ())
+            return {"items": list(value.items), "count": value.count, "cursor": value.cursor}
+
+        page = core_schema.typed_dict_schema(
+            {
+                "items": core_schema.typed_dict_field(core_schema.list_schema(item)),
+                "count": core_schema.typed_dict_field(count, required=False),
+                "cursor": core_schema.typed_dict_field(cursor, required=False),
+            }
+        )
+
+        def as_declared(held: EntityCollection[Any]) -> EntityCollection[Any]:
+            """A collection of another class held as the one the field declares."""
+            return held if isinstance(held, kind) else kind.of_page(held)
+
+        return core_schema.union_schema(
+            [
+                core_schema.is_instance_schema(kind),
+                core_schema.no_info_after_validator_function(
+                    as_declared, core_schema.is_instance_schema(EntityCollection)
+                ),
+                core_schema.no_info_after_validator_function(
+                    whole, core_schema.list_schema(item)
+                ),
+                core_schema.no_info_after_validator_function(sent, page),
+            ],
+            serialization=core_schema.plain_serializer_function_ser_schema(
+                written, return_schema=page
+            ),
+        )
 
     def take(self, how_many: int) -> "EntityCollection[T]":
         """The first `how_many`, in order.

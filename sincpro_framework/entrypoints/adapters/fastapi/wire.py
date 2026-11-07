@@ -28,6 +28,7 @@ from typing import Annotated, Any
 from anyio import CapacityLimiter
 from fastapi import APIRouter, Body, Depends, FastAPI, Request, Response
 from fastapi.exceptions import RequestValidationError
+from fastapi.responses import StreamingResponse
 from fastapi.routing import APIRoute
 from pydantic import BaseModel, ValidationError
 
@@ -37,6 +38,8 @@ from sincpro_framework.common.naming import kebab
 from sincpro_framework.data_layer.caching import Idempotency
 from sincpro_framework.ddd.metamodel import contract_of
 from sincpro_framework.ddd.metamodel.services.contract import entities_in
+from sincpro_framework.ddd.query import PARQUET, Streamed
+from sincpro_framework.ddd.reads.reads import Search, named_in_type, parquet_written
 from sincpro_framework.entrypoints.adapters.fastapi import exceptions
 from sincpro_framework.entrypoints.adapters.fastapi.calling import (
     bus_call,
@@ -506,6 +509,24 @@ class FastApiWire(Wire[RestBinding]):
         }
         if status == NO_CONTENT:
             common["response_class"] = Response
+        if _streams(operation.response, command):
+            # Bytes as they are produced, never a JSON body: what it answers is said by the
+            # media types an export is written in.
+            common["response_model"] = None
+            common["response_class"] = StreamingResponse
+            common["responses"] = {
+                **common["responses"],
+                200: {
+                    "description": "The records, streamed as they are read",
+                    "content": {media: {} for media in STREAMED_MEDIA},
+                },
+            }
+        if _searches_as_parquet(command):
+            # The same page as Parquet when it is large and the caller reads it: said beside
+            # the JSON answer, never in place of it.
+            answered = dict(common["responses"].get(200, {}))
+            answered.setdefault("content", {})[PARQUET] = {}
+            common["responses"] = {**common["responses"], 200: answered}
         call = bus_call(operation.bus, self.limiter)
         for method in self._methods(resolved):
             from_url = method in READ_FROM_URL
@@ -583,6 +604,34 @@ def _location(request: Request, template: str, answer: Any, prefix: str) -> str:
     return _joined(outer, prefix, template.format(**values))
 
 
+STREAMED_MEDIA = (
+    "application/vnd.apache.parquet",
+    "application/vnd.apache.arrow.stream",
+    "application/jsonl",
+)
+"""What a streamed answer may be written as — the formats an export writes."""
+
+
+def _streams(response: Any, command: type) -> bool:
+    """Whether a use case answers bytes as they are produced (`Streamed`): its `execute` says
+    so, or its DTO names it (`Export[Sale, Streamed]`, answered by the entity's reads)."""
+    named = named_in_type(command)
+    declared = named[1] if named is not None else response
+    return any(
+        isinstance(one, type) and issubclass(one, Streamed) for one in (response, declared)
+    )
+
+
+def _searches_as_parquet(command: type) -> bool:
+    """Whether a search may answer its page as Parquet (`Search.parquet_above`)."""
+    return (
+        isinstance(command, type)
+        and issubclass(command, Search)
+        and getattr(command, "parquet_above", None) is not None
+        and parquet_written()
+    )
+
+
 def _endpoint(
     command: type,
     from_url: bool,
@@ -599,12 +648,19 @@ def _endpoint(
 
         1. `call(dto)`: the bus, through `bus_call`.
         2. A 204 answers no body, whatever the bus returned.
+        3. A `Streamed` answer — an export — is written as it is produced, never held.
         Final: the answer, with a `Location` header filled from it when the binding declares
         one.
         """
         answer = await call(dto if dto is not None else command())
         if status == NO_CONTENT:
             return Response(status_code=NO_CONTENT)
+        if isinstance(answer, Streamed):
+            # Each chunk is produced as the client reads it, in a worker thread — the export
+            # carries the context it was asked in.
+            return StreamingResponse(
+                iter(answer), media_type=answer.media_type, headers=answer.disposition()
+            )
         if location is not None:
             response.headers["Location"] = _location(request, location, answer, prefix)
         return answer

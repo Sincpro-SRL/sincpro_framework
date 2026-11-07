@@ -27,7 +27,7 @@ every ORM that diffs a collection has shipped once.
 """
 
 from collections.abc import Iterable
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from typing import Any, cast
 
 import sqlalchemy
@@ -51,7 +51,11 @@ from sincpro_framework.data_layer.orm.sqlalchemy.services.model_introspection im
     ModelIntrospection,
 )
 from sincpro_framework.data_layer.orm.sqlalchemy.services.upsert import unique_on
-from sincpro_framework.ddd.entity.entity_collection import identity_name, identity_of
+from sincpro_framework.ddd.entity.entity_collection import (
+    EntityCollection,
+    identity_name,
+    identity_of,
+)
 from sincpro_framework.ddd.entity.relations import RelationKind, key_pair
 from sincpro_framework.sincpro_logger import logger
 
@@ -376,6 +380,63 @@ def _changed(record: Any) -> bool:
     return state is None or state.transient or state.pending or state.modified
 
 
+def _stored_copy(record: Any) -> bool:
+    """Whether a child is a copy of a stored record — `dataclasses.replace(line, qty=5)`,
+    `lines.replace(…)` —: a new object, never in a session, carrying a stored identity and the
+    version it was read at."""
+    state = sqlalchemy.inspect(record, raiseerr=False)
+    return state is not None and state.transient and not getattr(record, "is_new", True)
+
+
+def _merged(session: Session, copy: Any) -> Any:
+    """The stored record a copy edits, carrying the copy's values — refused as stale when the
+    row moved on since the copy's version was read, or is no longer there: a merge alone would
+    write over what another writer saved."""
+    stored = session.get(type(copy), identity_of(copy))
+    if stored is None or stored.version != copy.version:
+        raise exceptions.StaleAggregate(
+            f"{type(copy).__name__} {identity_of(copy)} changed since this copy of it was read "
+            f"(version {copy.version}, stored "
+            f"{'none' if stored is None else stored.version}); read it again before writing"
+        )
+    merged = session.merge(copy)
+    # A merge copies the columns; the relations the copy holds — its own lines, edited the same
+    # way — are carried over as the copy held them, so the save writes them too.
+    held, kept = HeldRelations(copy), HeldRelations(merged)
+    for name in held.names():
+        how = held.held(name)
+        if how is not None:
+            kept.hold(name, held.value(name), how, held.read_before(name))
+    return merged
+
+
+def _stored_copies_merged(session: Session, relations: Any, name: str, how: Any) -> None:
+    """The copies a relation holds put back as the stored records they edit, each carrying the
+    copy's values — so editing a part the immutable way, a new object with the same identity,
+    is an update of its row, never an insert that collides with it.
+
+        sale.items = sale.items.replace(replace(line, qty=20))
+            ->  UPDATE item SET qty=20 … WHERE id=… AND version=1   (a stale copy: StaleAggregate)
+
+    The relation keeps what it held otherwise — its collection's count and cursor, how it was
+    held.
+    """
+    held = relations.value(name)
+    if not held:
+        return
+    children = list(held)
+    if not any(_stored_copy(child) for child in children):
+        return
+    with session.no_autoflush:
+        merged = [
+            _merged(session, child) if _stored_copy(child) else child for child in children
+        ]
+    value = (
+        replace(held, items=tuple(merged)) if isinstance(held, EntityCollection) else merged
+    )
+    relations.hold(name, value, how, relations.read_before(name))
+
+
 def _refuse_a_child_removed_before(records: list[Any]) -> None:
     """A child about to be written that this unit of work already deleted — as the orphan of
     the root that held it — is refused: writing it again would not bring it back. Moving
@@ -523,6 +584,7 @@ def planned_save(session: Session, records: list[Any]) -> Plan:
             if how is None:
                 continue
             key = getattr(record, owned.here)
+            _stored_copies_merged(session, relations, owned.name, how)
             for child in relations.value(owned.name) or ():
                 if getattr(child, owned.there) != key:
                     setattr(child, owned.there, key)

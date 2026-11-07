@@ -106,6 +106,19 @@ def _key_is_unique(entity: type, table: Any, key: str, identity: str) -> None:
     )
 
 
+def _is_reference(relation: Any) -> bool:
+    """Whether a to-many holds other aggregates rather than parts: a foreign key declared
+    `owned=False`, or answered by another context."""
+    if relation is None:
+        return False
+    if relation.kind is RelationKind.RESOLVER:
+        return True
+    return (
+        relation.kind is RelationKind.FOREIGN_KEY
+        and getattr(relation, "owned", True) is False
+    )
+
+
 class ModelIntrospection:
     """What this layer asks SQLAlchemy about a mapped class — the one place it does.
 
@@ -188,6 +201,7 @@ class ModelIntrospection:
                 related_field=there,
                 navigable=relation is None
                 or relation.kind in (RelationKind.FOREIGN_KEY, RelationKind.MANY_TO_MANY),
+                reference=_is_reference(relation),
             )
             if relation is not None:
                 targets[name] = relation.related

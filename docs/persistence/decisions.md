@@ -795,3 +795,38 @@ history. Events that are stored and not sourced leave it empty.
 they are recorded and pulled as before), which events are deliverable, how long they are retained,
 and whether a consumer is idempotent are the project's. Retention and erasing a person from stored
 events (crypto-shredding) come later.
+
+## 32. A to-many is an EntityCollection, read and counted at any size, and travels as JSON or Parquet
+
+**Decision.** The type of a to-many is `EntityCollection[Line]` — recommended — or `list[Line]`,
+both read and saved the same. `EntityCollection` is immutable with a `str`-like API: `append`,
+`extend`, `remove`, `replace` answer a new collection, an edit keeps what the collection says (a
+page stays a page), and a copy of a stored record is saved as an update of its row, stale copies
+refused. Whether a to-many is a part or a reference is its declaration (`owned=False`), published
+as `reference: true`. At any size:
+
+- **A relation's page per parent** is read with `LATERAL … LIMIT` on PostgreSQL — its cost is the
+  page, not the parent's children —; the portable window stays for the other engines.
+- **A relation's count** follows its node's `CountMode`: capped at `RELATION_COUNT_CAP` (a
+  thousand) by default, a floor past it, exact on demand, none to skip it.
+- **A relation read whole** by touching it brings every row; past `WHOLE_WARNING` the log says so.
+- **A search's page travels as JSON or Parquet** (`Search.format`): chosen by the caller, or —
+  `auto` — Parquet when more than `parquet_above` (a million) records are asked for, over a wire
+  whose caller reads Parquet (`Accept`), with pyarrow installed. Inside the process an answer is
+  always objects. The cursor, the count and the model's version travel in the file's footer.
+- **Everything as a file** stays its own word, `Export[Entity, Streamed]`: Parquet, an Arrow
+  stream or JSON Lines, from one snapshot.
+
+**Why.** The framework is permissive: it refuses only what it cannot do (decision 30), so a large
+read is said, never refused, and `list` keeps working beside the type it recommends. The type it
+recommends is the one a read already answers — a list annotation was a lie after the first read —
+and the one a client holds, so the domain and the wire say the same. Immutability with returned
+copies is how a `date` is edited: nobody wonders whether a collection held by a page changed under
+it. The count is capped because an exact per-parent total reads every child whatever the SQL looks
+like — the capped form is Elasticsearch's `track_total_hits` and Stripe's search total. The window
+gave way to `LATERAL` on PostgreSQL because its window optimisation does not stop early under
+`PARTITION BY`; one parent with a million children went from 376 ms to 6.9 ms (relations §6).
+Parquet over a threshold, and not always, because a page of fifty is smaller and simpler as JSON,
+and a page of millions is the slowest and largest thing JSON can carry; only a caller that says it
+reads Parquet gets it, so no client breaks. `format` (how a page travels) and `Export` (asking for
+everything as a file) stay two words because they say two things.

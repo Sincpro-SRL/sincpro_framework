@@ -86,6 +86,10 @@ class HeldRelations:
     def __init__(self, record: Any) -> None:
         self._state = record.__dict__
 
+    def names(self) -> list[str]:
+        """The relations whose value is on the record."""
+        return list(self._state.get(self.RESOLVED, {}))
+
     def holds(self, name: str) -> bool:
         """Whether a value of this relation is on the record — resolved or assigned."""
         return name in self._state.get(self.RESOLVED, {})

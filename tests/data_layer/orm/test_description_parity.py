@@ -181,7 +181,14 @@ def test_the_published_contract_says_what_the_store_that_keeps_it_knows():
     contract = contract_of(Book)
     topics = contract["properties"]["topics"]
 
-    assert topics["items"] == {"$ref": "#/$defs/Topic"}
+    # A to-many holds a page of its records, as a reading answers it — never a bare list.
+    assert topics["properties"]["items"] == {
+        "type": "array",
+        "items": {"$ref": "#/$defs/Topic"},
+    }
+    assert topics["properties"]["count"]["anyOf"][0] == {"$ref": "#/$defs/Count"}
+    assert topics["required"] == ["items"]
+    assert contract["$defs"]["Count"]["required"] == ["value", "exact"]
     assert {key: topics["x-sincpro"][key] for key in ("type", "widget", "navigable")} == {
         "type": "many2many",
         "widget": "many2many",

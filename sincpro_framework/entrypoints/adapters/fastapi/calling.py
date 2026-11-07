@@ -31,6 +31,7 @@ from sincpro_framework.data_layer.caching import (
     Idempotency,
     IdempotentCommand,
 )
+from sincpro_framework.ddd.query import ACCEPTED_FORMATS
 from sincpro_framework.entrypoints.adapters.fastapi import exceptions
 from sincpro_framework.entrypoints.adapters.fastapi.problems import BUSES_STATE, TRACE_STATE
 from sincpro_framework.introspection.entity_tags import only_reads
@@ -57,6 +58,9 @@ class RequestContext(DataTransferObject):
     carried: dict[str, Any] = Field(default_factory=dict)
     """What the caller carried beside the identity — `baggage`, `sincpro-context` (what a
     frontend sends back)."""
+    accepts: tuple[str, ...] = ()
+    """The media types the caller reads (`Accept`): a search may answer Parquet to one that
+    reads it."""
 
     def bus_context(self) -> dict[str, Any]:
         """The keys the bus context opens with for this request — what was carried, the
@@ -95,6 +99,20 @@ async def acting_credentials(request: Request) -> Credentials:
     return Credentials.from_asgi(request.scope)
 
 
+def _accepted(header: str) -> tuple[str, ...]:
+    """The media types an `Accept` header reads, without the ones it refuses (`q=0`)."""
+    found: list[str] = []
+    for one in header.split(","):
+        kind, *parameters = [part.strip() for part in one.split(";")]
+        refused = any(
+            parameter.replace(" ", "") in ("q=0", "q=0.0", "q=0.00", "q=0.000")
+            for parameter in parameters
+        )
+        if kind and not refused:
+            found.append(kind)
+    return tuple(found)
+
+
 async def request_context(request: Request) -> RequestContext:
     """The `Idempotency-Key`, the W3C trace headers, the identity of the request and the context
     the caller carried (`baggage`, `sincpro-context`)."""
@@ -102,6 +120,7 @@ async def request_context(request: Request) -> RequestContext:
     carried = context_propagation.extract(dict(headers))
     return RequestContext(
         idempotency_key=headers.get("idempotency-key") or None,
+        accepts=_accepted(headers.get("accept", "")),
         traceparent=headers.get("traceparent") or None,
         tracestate=headers.get("tracestate") or None,
         **{
@@ -152,6 +171,12 @@ def run_on_bus(
     with ExitStack() as stack:
         stack.enter_context(security.authenticated_as(bus, credentials))
         extra = context.bus_context()
+        if context.accepts:
+            # For this use case only: one it calls inside the process answers objects.
+            extra[ACCEPTED_FORMATS] = {
+                "for": type(dto).__name__,
+                "types": list(context.accepts),
+            }
         if extra:
             stack.enter_context(bus.context(extra, kind=EntrypointKind.REST))
         if process.trace_ids():
