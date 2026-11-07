@@ -30,6 +30,7 @@ from sincpro_framework.ddd import (
     DomainEvents,
     Edit,
     Entity,
+    EntityCollection,
     EntityEdits,
     EntityID,
     EntityReads,
@@ -511,6 +512,78 @@ def test_an_entity_an_operation_takes_or_answers_points_at_its_model():
     assert operations["CommandEscalateTicket"]["output"]["properties"]["ticket"] == {
         "$ref": "#/models/Ticket"
     }
+
+
+def test_an_answer_of_a_collection_publishes_the_same_contract_as_a_list():
+    """The contract describes an answer in validation mode. A collection accepts a list or a
+    page there; an answer writes the list, so the published field is that array — the same
+    contract a `list` of the same records publishes. The response's own name is the only
+    difference, and it is not part of the wire."""
+
+    @dataclass
+    class ProjectEvent(Entity):
+        name: str = ""
+
+    class QueryListEvents(Query):
+        pass
+
+    class QueryCollectEvents(Query):
+        pass
+
+    class QueryGetEvent(Query):
+        pass
+
+    class QueryGetCollectedEvent(Query):
+        pass
+
+    class QueryGetEvents(Query):
+        pass
+
+    class QueryGetCollectedEvents(Query):
+        pass
+
+    class ResponseListEvents(ResponsePaginatedQuery):
+        events: list[ProjectEvent]
+
+    class ResponseCollectEvents(ResponsePaginatedQuery):
+        events: EntityCollection[ProjectEvent]
+
+    class ResponseEvent(ResponseRecord):
+        event: list[ProjectEvent]
+
+    class ResponseCollectedEvent(ResponseRecord):
+        event: EntityCollection[ProjectEvent]
+
+    class ResponseEvents(ResponseRecords):
+        events: list[ProjectEvent]
+
+    class ResponseCollectedEvents(ResponseRecords):
+        events: EntityCollection[ProjectEvent]
+
+    def published(
+        command: type, response: type
+    ) -> tuple[dict[str, Any], dict[str, Any], dict[str, Any]]:
+        bus = UseFramework(command.__name__, log_after_execution=False)
+
+        @bus.feature(command)
+        @entity_tags(ProjectEvent)
+        class Read(Feature):
+            def execute(self, dto: command) -> response:
+                raise AssertionError("the contract is read from the annotation")
+
+        metamodel = metamodel_of(bus)
+        [operation] = metamodel["operations"].values()
+        output = dict(operation["output"])
+        output.pop("title", None)
+        return output, metamodel["models"], metamodel["$defs"]
+
+    pairs = (
+        (QueryListEvents, ResponseListEvents, QueryCollectEvents, ResponseCollectEvents),
+        (QueryGetEvent, ResponseEvent, QueryGetCollectedEvent, ResponseCollectedEvent),
+        (QueryGetEvents, ResponseEvents, QueryGetCollectedEvents, ResponseCollectedEvents),
+    )
+    for listed, list_response, collected, collection_response in pairs:
+        assert published(collected, collection_response) == published(listed, list_response)
 
 
 def test_an_answer_of_nothing_is_null_and_an_undeclared_one_is_not_promised():
