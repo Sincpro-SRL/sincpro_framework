@@ -13,6 +13,7 @@ import json
 from dataclasses import dataclass
 from typing import Any
 
+import pytest
 from structlog.testing import capture_logs
 
 from sincpro_framework import (
@@ -49,6 +50,7 @@ from sincpro_framework.ddd import (
 )
 from sincpro_framework.ddd.entity import extensions
 from sincpro_framework.ddd.metamodel import contract_of, forget_models, model_of
+from sincpro_framework.exceptions import ProgrammingError
 from sincpro_framework.introspection import (
     entity_tags,
     export_metamodel,
@@ -890,3 +892,145 @@ def test_one_use_case_names_the_records_of_each_of_its_entities_a_list_of_keys_t
     }
     assert lines["type"] == "array"
     assert lines["items"]["x-sincpro"] == {"relation": "MoveLine"}
+
+
+# ---------------------------------------------------------------------------------------------
+# Domain events, only when asked
+#
+# A ticket is closed and reopened — facts the help desk records, subclasses of its own event
+# class (the one its history reads answer). The desk itself handles that base class. An agent is
+# an entity only an event's field reaches.
+# ---------------------------------------------------------------------------------------------
+
+
+@dataclass
+class Agent(Entity):
+    login: str = ""
+
+
+@dataclass(kw_only=True)
+class TicketClosed(TicketEvent):
+    """A ticket was closed by whoever answered it.
+
+    What a list of events shows needs only the first paragraph.
+    """
+
+    name = "desk.ticket.v1.closed"
+    reason: str
+    by: Agent | None = None
+    customer: Partner | None = None
+
+
+@dataclass(kw_only=True)
+class TicketReopened(TicketEvent):
+    name = "desk.ticket.v1.reopened"
+
+
+@dataclass(kw_only=True)
+class ElsewhereClosed(DomainEvent):
+    """Another context's event with the desk's wire name."""
+
+    name = "desk.ticket.v1.closed"
+
+
+def test_events_are_left_out_unless_asked_and_the_document_stays_what_it_was():
+    desk = help_desk()
+    plain = metamodel_of(desk)
+    told = metamodel_of(desk, events=True)
+
+    assert "events" not in plain
+    assert plain == metamodel_of(desk, events=False)
+    assert told["operations"] == plain["operations"]
+    assert told["version"] != plain["version"]  # the fingerprint of what is written
+
+
+def test_asked_for_its_events_a_context_tells_those_it_records_and_those_it_handles():
+    events = metamodel_of(help_desk(), events=True)["events"]
+
+    assert list(events) == ["TicketEvent", "desk.ticket.v1.closed", "desk.ticket.v1.reopened"]
+    assert {name: (one["recorded"], one["handled"]) for name, one in events.items()} == {
+        "TicketEvent": (True, True),  # its own event class, which the desk reacts to
+        "desk.ticket.v1.closed": (True, False),
+        "desk.ticket.v1.reopened": (True, False),
+    }
+    assert events["desk.ticket.v1.closed"]["title"] == "TicketClosed"
+    assert events["desk.ticket.v1.closed"]["description"] == (
+        "A ticket was closed by whoever answered it."
+    )
+    assert events["desk.ticket.v1.reopened"]["description"] is None
+
+
+def test_an_event_is_its_whole_shape_its_wire_name_a_required_constant():
+    closed = metamodel_of(help_desk(), events=True)["events"]["desk.ticket.v1.closed"]
+    schema = closed["schema"]
+
+    assert schema["title"] == "TicketClosed"
+    assert schema["properties"]["name"] == {
+        "const": "desk.ticket.v1.closed",
+        "type": "string",
+    }
+    assert schema["required"] == ["name", "reason"]
+    assert {
+        "id",
+        "label",
+        "created_at",
+        "entity_type",
+        "entity_id",
+        "correlation_id",
+        "causation_id",
+        "entity_version",
+        "reason",
+    } <= set(schema["properties"])
+    # Even the context's own event class, a model already, is described in place.
+    assert (
+        "$ref"
+        not in metamodel_of(help_desk(), events=True)["events"]["TicketEvent"]["schema"]
+    )
+
+
+def test_an_events_pointers_resolve_in_the_document_and_what_only_it_reaches_is_a_model():
+    plain = metamodel_of(help_desk())
+    told = metamodel_of(help_desk(), events=True)
+    closed = told["events"]["desk.ticket.v1.closed"]["schema"]["properties"]
+
+    assert closed["by"]["anyOf"][0] == {"$ref": "#/models/Agent"}
+    assert closed["customer"]["anyOf"][0] == {"$ref": "#/models/Partner"}
+    assert "Agent" not in plain["models"] and "Agent" in told["models"]
+    pointers = _refs(told["events"])
+    assert pointers and all(_resolved(told, one) is not None for one in pointers)
+
+
+def test_events_named_are_exactly_those_said_of_the_context_still():
+    events = metamodel_of(help_desk(), events=[TicketClosed])["events"]
+
+    assert list(events) == ["desk.ticket.v1.closed"]
+    assert (
+        events["desk.ticket.v1.closed"]["recorded"],
+        events["desk.ticket.v1.closed"]["handled"],
+    ) == (
+        True,
+        False,
+    )
+    other = metamodel_of(help_desk(), events=[ElsewhereClosed])["events"]
+    assert other["desk.ticket.v1.closed"]["recorded"] is False  # not one of the desk's own
+
+
+def test_only_domain_events_are_events_and_a_wire_name_means_one_event():
+    with pytest.raises(ProgrammingError, match="not a DomainEvent class"):
+        metamodel_of(help_desk(), events=[Ticket])  # type: ignore[list-item]
+    with pytest.raises(
+        ProgrammingError, match="ElsewhereClosed.*TicketClosed|TicketClosed.*ElsewhereClosed"
+    ):
+        metamodel_of(help_desk(), events=[TicketClosed, ElsewhereClosed])
+
+
+def test_the_file_a_build_writes_holds_the_events_when_asked(tmp_path):
+    plain, told = tmp_path / "plain.json", tmp_path / "told.json"
+
+    version = export_metamodel(help_desk(), told, events=True)
+    export_metamodel(help_desk(), plain)
+
+    written = json.loads(told.read_text())
+    assert written["version"] == version
+    assert "desk.ticket.v1.closed" in written["events"]
+    assert "events" not in json.loads(plain.read_text())

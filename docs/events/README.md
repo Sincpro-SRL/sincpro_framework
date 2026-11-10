@@ -325,6 +325,19 @@ classes must remain imported and mapped while those rows exist; an unknown discr
 cannot be reconstructed just because its JSON is still present. Removing a class requires
 an explicit migration or compatibility plan.
 
+The published language also travels as a contract, for whoever cannot import Python — a
+TypeScript client, another backend: the metamodel and the client contract write the events,
+by wire name, with their JSON Schema, **only when asked**, since most contexts never publish their
+facts to a client and an event is no operation a client calls ([metamodel.md](../ddd/metamodel.md#domain-events-only-when-asked)):
+
+```python
+export_client_contract(gateways, "web/src/contracts", events=PUBLISHED)  # exactly the published ones
+export_client_contract(gateways, "web/src/contracts", events=True)       # every event of the context
+```
+
+Each says whether the context records it (`recorded`) and whether its bus handles it
+(`handled`). Not asked, the contract does not change by a byte.
+
 The direction never flips: `entrypoints/` imports `domain/`, and only an entrypoint imports another
 entrypoint. Inside one service, a context that reacts to another's facts declares its own class
 under the same name — the two identities above.

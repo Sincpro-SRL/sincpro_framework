@@ -23,6 +23,11 @@ the live route are named after. Only what a gateway exposes is in it — an `@in
 wire that does not publish an operation has no binding for it. The same gateways write the same
 bytes: `version` is the fingerprint of the whole document, what a client compares its snapshot
 with; each model keeps the version of its own (`model_version`), what a read answers.
+
+The context's domain events are in it only when asked (`events=True`): an `events` section, by
+wire name, of every event of the whole bus — not only of what a gateway exposes, since an event
+is published apart from any wire (`metamodel_of`). A client generates their types from it; another
+backend reads what it may subscribe to. Not asked, the document and its version are what they were.
 """
 
 import hashlib
@@ -33,6 +38,7 @@ from typing import Any
 
 from sincpro_framework import exceptions
 from sincpro_framework.common.naming import local_name
+from sincpro_framework.ddd.events import DomainEvent
 from sincpro_framework.entrypoints.domain.surface import ManifestEntry
 from sincpro_framework.entrypoints.services.gateway import Gateway
 from sincpro_framework.introspection import metamodel_of
@@ -74,22 +80,27 @@ def _binding(entry: ManifestEntry, address: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def client_contracts(gateways: Gateway | Iterable[Gateway]) -> dict[str, dict[str, Any]]:
+def client_contracts(
+    gateways: Gateway | Iterable[Gateway],
+    events: bool | Iterable[type[DomainEvent]] = False,
+) -> dict[str, dict[str, Any]]:
     """The client contract of each bounded context `gateways` publish — one gateway per wire,
     or a single one —, by the alias they publish it under.
 
         client_contracts(rest)            ->  {"billing": {…, "bindings": {"rest": {…}}}}
         client_contracts([rest, rpc])     ->  {"billing": {…, "bindings": {"rest": …, "rpc": …}}}
+        client_contracts(rest, events=True)   ->  {"billing": {…, "events": {"billing.…": …}}}
 
     1. Each gateway's surface: its manifest lines (`manifest`) and how its wire reaches each
        operation (`addresses`), by the alias of their context; an alias that names two bounded
        contexts across the gateways is refused.
     2. Per context, the metamodel of what the gateways expose (`metamodel_of`): what a client
-       calls, each model as its contract, what they share written once.
+       calls, each model as its contract, what they share written once — and, asked for, the
+       domain events of the whole bus.
     3. Each operation with its deprecation (`_deprecation`); each wire's bindings, of the
        operations in the contract, by the same identity (`_binding`).
-    Final: the document — the bounded context's own name and its alias —, `version` the
-    fingerprint of all of it.
+    Final: the document — the bounded context's own name and its alias, its events only when
+    asked —, `version` the fingerprint of all of it.
     """
     listed = [gateways] if isinstance(gateways, Gateway) else list(gateways)
     buses: dict[str, UseFramework] = {}
@@ -109,7 +120,9 @@ def client_contracts(gateways: Gateway | Iterable[Gateway]) -> dict[str, dict[st
     for alias in sorted(published):
         lines, bounded_context = published[alias], buses[alias].name
         metamodel = metamodel_of(
-            buses[alias], {local_name(entry.command, bounded_context) for entry, _ in lines}
+            buses[alias],
+            {local_name(entry.command, bounded_context) for entry, _ in lines},
+            events=events,
         )
         operations = metamodel["operations"]
         for identity, operation in operations.items():
@@ -128,6 +141,7 @@ def client_contracts(gateways: Gateway | Iterable[Gateway]) -> dict[str, dict[st
             "operations": operations,
             "$defs": metamodel["$defs"],
             "bindings": bindings,
+            **({"events": metamodel["events"]} if "events" in metamodel else {}),
         }
         written = json.dumps(content, sort_keys=True, separators=(",", ":"), default=str)
         contracts[alias] = {
@@ -145,18 +159,22 @@ def contract_bytes(contract: dict[str, Any]) -> bytes:
 
 
 def export_client_contract(
-    gateways: Gateway | Iterable[Gateway], out_dir: str | Path
+    gateways: Gateway | Iterable[Gateway],
+    out_dir: str | Path,
+    events: bool | Iterable[type[DomainEvent]] = False,
 ) -> dict[str, Path]:
     """Write each bounded context's contract to `<out_dir>/<alias>.contract.json` — for a
     build or a CI step, nothing served — and answer where each one went, by alias.
 
         export_client_contract([rest, rpc], "web/contracts")
             ->  {"billing": Path("web/contracts/billing.contract.json"), "stock": Path(…)}
+        export_client_contract([rest, rpc], "web/contracts", events=True)
+            ->  the same files, each with its context's domain events
     """
     directory = Path(out_dir)
     directory.mkdir(parents=True, exist_ok=True)
     written: dict[str, Path] = {}
-    for alias, contract in client_contracts(gateways).items():
+    for alias, contract in client_contracts(gateways, events).items():
         path = directory / f"{alias}.contract.json"
         path.write_bytes(contract_bytes(contract))
         written[alias] = path
