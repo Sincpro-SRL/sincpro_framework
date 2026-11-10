@@ -31,26 +31,45 @@ of its fields names each entity's record (`targets`) and what it takes and answe
 `output`, JSON Schema 2020-12) — protocol-agnostic: how it is reached is each wire's binding. A
 use case that reacts to a domain event is no operation a client calls, and is left out.
 
+The domain events are left out too, unless asked for (`events=`): an event is a fact a context
+records and others react to, not something a client calls, and most contexts never publish their
+facts to a client. Asked for, they are under `events`, by wire name — what another backend
+subscribing to them, or a client that wants to know them, reads:
+
+    metamodel_of(billing, events=True)["events"]
+        ->  {"billing.invoice.v1.paid": {"title": "InvoicePaid", "description": "…",
+                                         "recorded": True, "handled": False,
+                                         "schema": {"properties": {"name": {"const":
+                                                    "billing.invoice.v1.paid", …}, …}}}}
+
+`recorded`: one of the context's own events — the event class its history reads answer
+(`DomainEvents`), or a subclass of it. `handled`: a Feature or ApplicationService of the bus is
+registered for it. Without `events=`, the document is byte for byte what it was, and so is its
+version.
+
 What the schemas share is written once: an entity is a pointer into `models`, anything else
 nested — criteria's schema above all — a pointer into the metamodel's own `$defs`, named by its
 class: its name, or, when another class has the same name, its module — so a name never comes
 to mean another class because an operation was added.
 """
 
+import dataclasses
 import hashlib
 import json
-from collections.abc import Collection, Mapping
+import typing
+from collections.abc import Collection, Iterable, Mapping
 from pathlib import Path
 from typing import Any
 
 from pydantic import TypeAdapter
 
+from sincpro_framework import exceptions
 from sincpro_framework.common.naming import registered_name, snake
 from sincpro_framework.ddd.entity.entity_id import key_of
 from sincpro_framework.ddd.events.domain_event import DomainEvent
 from sincpro_framework.ddd.metamodel import contract_of
 from sincpro_framework.ddd.metamodel.services.contract import entities_in
-from sincpro_framework.ddd.reads.reads import named_in_type, parquet_written
+from sincpro_framework.ddd.reads.reads import events_of, named_in_type, parquet_written
 from sincpro_framework.introspection.entity_tags import Role, only_reads
 from sincpro_framework.introspection.operations import OperationDescription, operations_of
 from sincpro_framework.introspection.schemas import adapter
@@ -101,7 +120,9 @@ def _referenced(node: Any) -> set[str]:
 
 
 def _shapes(
-    annotations: Mapping[tuple[str, str], Any], entities: Collection[type]
+    annotations: Mapping[tuple[str, str], Any],
+    entities: Collection[type],
+    inline: Collection[tuple[str, str]] = (),
 ) -> tuple[dict[tuple[str, str], Any], dict[str, Any]]:
     """What each operation takes and answers, described in one pass, so each definition they
     share is written once and named by its class — and the definitions they still point at.
@@ -120,7 +141,8 @@ def _shapes(
        share the name —, so no name depends on which other operations exist.
     3. An entity's definition pointed at its model (`#/models/<Entity>`); every other one kept.
     4. A schema that is only a pointer to its own class's definition is that definition, written
-       in place; an answer that is an entity stays a pointer to its model.
+       in place; an answer that is an entity stays a pointer to its model — but a key `inline`
+       names (a domain event, which is an entity too) is always its own definition, in place.
     Final: the schemas by key, and the definitions some schema reaches.
     """
     schemas: dict[tuple[str, str], Any] = {}
@@ -156,6 +178,10 @@ def _shapes(
     pointed = {name: _pointed(one, pointers) for name, one in definitions.items()}
     for (key, _), schema in keyed.items():
         if isinstance(key, type):
+            continue
+        raw = str(schema.get("$ref", "")) if set(schema) == {"$ref"} else ""
+        if key in inline and raw.startswith(DEFINITIONS):
+            schemas[key] = _pointed(definitions[raw[len(DEFINITIONS) :]], pointers)
             continue
         body = _pointed(schema, pointers)
         own = str(body.get("$ref", "")) if set(body) == {"$ref"} else ""
@@ -306,8 +332,143 @@ def _modelled(contract: dict[str, Any], name: str, models: dict[str, Any]) -> No
     models[name] = _pointed(contract, pointers)
 
 
+def _is_event(annotation: Any) -> bool:
+    """Whether `annotation` is a domain event class."""
+    return isinstance(annotation, type) and issubclass(annotation, DomainEvent)
+
+
+def _subclasses(base: type) -> list[type]:
+    """Every subclass of `base`, at any depth, each once, ordered by name.
+
+    _subclasses(TicketEvent)    ->  [TicketClosed, TicketReopened, TicketReopenedByAgent]
+    """
+    found: dict[type, None] = {}
+    waiting = list(base.__subclasses__())
+    while waiting:
+        one = waiting.pop()
+        if one not in found:
+            found[one] = None
+            waiting += one.__subclasses__()
+    return sorted(found, key=lambda one: (one.__name__, one.__module__))
+
+
+def _event_classes(
+    described: Mapping[str, OperationDescription],
+    asked: bool | Iterable[type[DomainEvent]],
+) -> tuple[dict[str, type[DomainEvent]], tuple[type, ...], set[type]]:
+    """The events a metamodel describes, by wire name — with the context's own event classes (the
+    ones its history reads answer) and the ones the bus is registered for.
+
+        _event_classes(operations_of(desk), True)
+            ->  ({"TicketEvent": TicketEvent, "desk.ticket.v1.closed": TicketClosed},
+                 (TicketEvent,), {TicketEvent})
+        _event_classes(operations_of(desk), [TicketClosed])
+            ->  ({"desk.ticket.v1.closed": TicketClosed}, (TicketEvent,), {TicketEvent})
+
+    1. The context's own event classes: the one each `DomainEvents` read answers (`events_of`).
+    2. The events the bus handles: each DomainEvent a Feature or ApplicationService is
+       registered for.
+    3. Asked as `True`: those handled, and every subclass of the context's own — what its
+       aggregates record —, never the context's base itself unless the bus handles it (it is a
+       model already). Asked as classes: exactly those, each a DomainEvent or refused.
+    Final: by wire name, sorted; two classes with one wire name are refused, naming both — the
+    name is what crosses contexts, so it means one event.
+    """
+    bases: dict[type, None] = {}
+    handled: set[type] = set()
+    for operation in described.values():
+        if _is_event(operation.input):
+            handled.add(operation.input)
+        elif operation.role is Role.EVENTS and isinstance(operation.answer, type):
+            bases.setdefault(events_of(operation.answer), None)
+    if asked is True:
+        chosen = [
+            *sorted(handled, key=lambda one: (one.__name__, one.__module__)),
+            *(one for base in bases for one in _subclasses(base)),
+        ]
+    else:
+        chosen = list(asked)  # type: ignore[arg-type]
+        for one in chosen:
+            if not _is_event(one):
+                raise exceptions.ProgrammingError(
+                    f"{one!r} is not a DomainEvent class: only domain events are exported as "
+                    "events"
+                )
+    events: dict[str, type[DomainEvent]] = {}
+    for one in chosen:
+        held = events.setdefault(one.name, one)
+        if held is not one:
+            raise exceptions.ProgrammingError(
+                f"{held.__module__}.{held.__name__} and {one.__module__}.{one.__name__} are both "
+                f"named {one.name!r} on the wire: an event's name means one event"
+            )
+    return dict(sorted(events.items())), tuple(bases), handled
+
+
+def _reached_by_event(event: type) -> list[type]:
+    """The entities an event's fields reach — never the event itself, which is an entity too.
+
+    _reached_by_event(TicketClosed)    ->  [Partner]       # by: Partner | None
+    """
+    seen: set[Any] = {event}
+    try:
+        hints = typing.get_type_hints(event)
+    except Exception:
+        hints = {}
+    reached: list[type] = []
+    for field in dataclasses.fields(event):
+        if field.name in hints:
+            reached += entities_in(hints[field.name], seen)
+    return reached
+
+
+def _first_paragraph(text: str | None) -> str | None:
+    """What a description says first: its first paragraph, or `None` when there is none."""
+    if not text:
+        return None
+    first = text.strip().split("\n\n", 1)[0].strip()
+    return first or None
+
+
+def _event(
+    event: type[DomainEvent],
+    schema: dict[str, Any] | None,
+    bases: tuple[type, ...],
+    handled: set[type],
+) -> dict[str, Any]:
+    """One event as a client reads it, `schema` its shape (`_shapes`).
+
+        _event(TicketClosed, {…}, (TicketEvent,), set())
+            ->  {"title": "TicketClosed", "description": "A ticket was closed.",
+                 "recorded": True, "handled": False,
+                 "schema": {"properties": {"name": {"const": "desk.ticket.v1.closed",
+                            "type": "string"}, "reason": {…}, …},
+                            "required": ["name", "reason"], …}}
+
+    1. Its shape, with its wire name as a constant `name` — the field its JSON (`as_json`)
+       carries, what a reader tells one event from another by —, required.
+    Final: its class's name, the first paragraph of its description, whether it is one of the
+    context's own (`recorded`) and whether the bus handles it (`handled`).
+    """
+    body: dict[str, Any] = dict(schema or {"type": "object", "title": event.__name__})
+    body["properties"] = {
+        "name": {"const": event.name, "type": "string"},
+        **body.get("properties", {}),
+    }
+    body["required"] = ["name", *(one for one in body.get("required", []) if one != "name")]
+    return {
+        "title": event.__name__,
+        "description": _first_paragraph(body.get("description")),
+        "recorded": any(issubclass(event, base) for base in bases),
+        "handled": event in handled,
+        "schema": body,
+    }
+
+
 def metamodel_of(
-    bus: UseFramework, operations: Collection[str] | None = None
+    bus: UseFramework,
+    operations: Collection[str] | None = None,
+    events: bool | Iterable[type[DomainEvent]] = False,
 ) -> dict[str, Any]:
     """Every model `bus` reaches, the operations a client calls, and the version of the whole —
     of the `operations` named (their Commands' class names), when a wire publishes only what
@@ -315,6 +476,8 @@ def metamodel_of(
 
         metamodel_of(billing)                                  the whole bounded context
         metamodel_of(billing, {"QueryGetInvoice"})             what that one operation reaches
+        metamodel_of(billing, events=True)                     and its domain events
+        metamodel_of(billing, events=[InvoicePaid])            and exactly those events
 
     1. Each operation of the bus (`operations_of`) — of those named, when named — a client
        calls: not a use case that reacts to a domain event. Keyed by its Command's identity
@@ -324,18 +487,18 @@ def metamodel_of(
        one its DTO names (`answer`) —, each as its contract (`contract_of`), the entities its
        relations point at and the shapes its records hold beside it, by name, once each
        (`_modelled`); every pointer between models pointed at `models`.
-    3. What every operation takes and answers, in one pass (`_shapes`).
-    4. Each operation as a client reads it (`_operation`).
-    Final: the bounded context's name, the models, the operations and the shared definitions,
-    with the fingerprint of all of them as the version.
+    3. Asked for events: those of the whole bus — not only of the operations named
+       (`_event_classes`) —, and the entities their fields reach as models too.
+    4. What every operation takes and answers, and every event is, in one pass (`_shapes`).
+    5. Each operation as a client reads it (`_operation`); each event (`_event`).
+    Final: the bounded context's name, the models, the operations and the shared definitions —
+    and the events, only when asked —, with the fingerprint of all of them as the version.
     """
+    described = operations_of(bus)
     chosen = {
         registered_name(operation.input, bus.name): operation
-        for name, operation in operations_of(bus).items()
-        if (operations is None or name in operations)
-        and not (
-            isinstance(operation.input, type) and issubclass(operation.input, DomainEvent)
-        )
+        for name, operation in described.items()
+        if (operations is None or name in operations) and not _is_event(operation.input)
     }
     models: dict[str, Any] = {}
     reaches: dict[str, list[type]] = {}
@@ -349,17 +512,40 @@ def metamodel_of(
         for entity in reaches[identity]:
             if entity.__name__ not in models:
                 _modelled(contract_of(entity), entity.__name__, models)
+    told, bases, handled = (
+        _event_classes(described, events) if events is not False else ({}, (), set())
+    )
+    event_reaches: list[type] = []
+    for event in told.values():
+        for entity in _reached_by_event(event):
+            event_reaches.append(entity)
+            if entity.__name__ not in models:
+                _modelled(contract_of(entity), entity.__name__, models)
     models = {
         name: _pointed(model, {one: f"{MODELS}{one}" for one in models})
         for name, model in models.items()
     }
     shapes, definitions = _shapes(
         {
-            (identity, side): annotation
-            for identity, operation in chosen.items()
-            for side, annotation in (("input", operation.input), ("output", operation.answer))
+            **{
+                (identity, side): annotation
+                for identity, operation in chosen.items()
+                for side, annotation in (
+                    ("input", operation.input),
+                    ("output", operation.answer),
+                )
+            },
+            **{(name, "event"): event for name, event in told.items()},
         },
-        list(dict.fromkeys(entity for reached in reaches.values() for entity in reached)),
+        list(
+            dict.fromkeys(
+                [
+                    *(entity for reached in reaches.values() for entity in reached),
+                    *event_reaches,
+                ]
+            )
+        ),
+        inline={(name, "event") for name in told},
     )
     content = {
         "bounded_context": bus.name,
@@ -375,18 +561,26 @@ def metamodel_of(
         },
         "$defs": definitions,
     }
+    if events is not False:
+        content["events"] = {
+            name: _event(event, shapes[(name, "event")], bases, handled)
+            for name, event in told.items()
+        }
     written = json.dumps(content, sort_keys=True, separators=(",", ":"), default=str)
     return {"version": hashlib.sha256(written.encode()).hexdigest(), **content}
 
 
-def export_metamodel(bus: UseFramework, path: str | Path) -> str:
+def export_metamodel(
+    bus: UseFramework, path: str | Path, events: bool | Iterable[type[DomainEvent]] = False
+) -> str:
     """Write the metamodel of `bus` to `path` as JSON — keys sorted, indented, ending in a
     newline, so the same code writes the same bytes and a diff shows only what changed — and
     answer its version.
 
-        export_metamodel(billing, "web/src/metamodel.json")    ->  "9b1c…"
+        export_metamodel(billing, "web/src/metamodel.json")                 ->  "9b1c…"
+        export_metamodel(billing, "web/src/metamodel.json", events=True)    ->  with its events
     """
-    metamodel = metamodel_of(bus)
+    metamodel = metamodel_of(bus, events=events)
     Path(path).write_text(
         json.dumps(metamodel, indent=2, sort_keys=True, ensure_ascii=False, default=str)
         + "\n",

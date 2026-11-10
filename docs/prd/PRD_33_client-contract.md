@@ -325,6 +325,15 @@ Where a wire already describes its operations, it **MUST** say what the metamode
 - **D12 — The live contract is built when asked.** Its `version` is its `ETag`; a client holding
   it is answered `304`, a use case registered or a model changed while the service runs is the
   next answer — no cache to forget.
+- **D16 — Domain events, only when asked.** An event is a fact a context records and others react
+  to, not an operation a client calls, and most contexts never publish their facts to a client: by
+  default the contract has none, and its bytes and `version` stay what they were. Asked
+  (`events=True`, an explicit list such as the context's `PUBLISHED`, or `--events`), an `events`
+  section keyed by wire name says each event's class name, its description, whether the context
+  records it (`recorded`: a subclass of the event class its `DomainEvents` reads answer) and
+  whether its bus handles it (`handled`), and its whole JSON Schema with `name` a required
+  constant. Events come from the whole bus — they are published apart from any wire. The live
+  route serves the contract without them.
 
 ## Open questions
 

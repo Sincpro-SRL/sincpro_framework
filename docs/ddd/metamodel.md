@@ -57,6 +57,7 @@ from sincpro_framework.introspection import export_metamodel, metamodel_of
 
 metamodel_of(billing)                                   # {"bounded_context", "version", "models", "operations", "$defs"}
 metamodel_of(billing, {"QueryGetInvoice"})              # what those operations reach, named by class
+metamodel_of(billing, events=True)                      # and its domain events, under "events"
 export_metamodel(billing, "web/src/metamodel.json")     # the same code writes the same bytes
 ```
 
@@ -105,6 +106,46 @@ metamodel_of(billing)["operations"]["billing.CommandVoidInvoice"]["targets"]
   nothing is declared.
 - A use case that reacts to a domain event is no operation a client calls: the bus runs it, the
   metamodel leaves it out.
+
+### Domain events, only when asked
+
+An event is a fact a context records and others react to — not something a client calls —, and
+most contexts never publish their facts to a client, so the metamodel leaves them out. A client
+that wants to know them, or another backend that subscribes to them, asks:
+
+```python
+metamodel_of(billing, events=True)            # every event of the context
+metamodel_of(billing, events=[InvoicePaid])   # exactly those
+export_metamodel(billing, "web/src/metamodel.json", events=True)
+```
+
+```json
+"events": {
+  "billing.invoice.v1.paid": {
+    "title": "InvoicePaid", "description": "An invoice was paid in full.",
+    "recorded": true, "handled": false,
+    "schema": {"title": "InvoicePaid", "type": "object",
+               "properties": {"name": {"const": "billing.invoice.v1.paid", "type": "string"},
+                              "id": {…}, "created_at": {…}, "entity_id": {…}, "amount": {…},
+                              "partner": {"anyOf": [{"$ref": "#/models/Partner"}, …]}, …},
+               "required": ["name", "amount"]}}
+}
+```
+
+- **Keyed by the wire name** (`DomainEvent.name`), what crosses contexts — never the class's: two
+  classes of one wire name are refused.
+- **Which ones, asked `True`**: every subclass of the context's own event class — the one its
+  history reads (`DomainEvents`) answer: what its aggregates record —, and every event the bus is
+  registered for, of any context. The base class itself is a model already, and is here only when
+  the bus handles it. Events come from the whole bus, not only from the operations named.
+- **`recorded`**: one of the context's own events. **`handled`**: a Feature or
+  ApplicationService of the bus is registered for it (exactly that class: the bus routes by it).
+- **`schema`**: the whole event — the envelope (`id`, `label`, `created_at`, `entity_type`,
+  `entity_id`, `correlation_id`, `causation_id`, `entity_version`) and what it adds —, with its
+  wire name as a required constant `name`, the field its JSON carries (`as_json`). Written in
+  place; what it reaches points into the document, an entity at its model — an entity only an
+  event reaches becomes a model too.
+- **Not asked, nothing moves**: the document and its `version` are byte for byte what they were.
 
 ### A key that says whose it is
 
@@ -241,6 +282,11 @@ export_client_contract([rest, rpc, grpc, mcp], "web/src/contracts")
   `{name}`s take, filled from the body —; JSON-RPC and gRPC the `method`; MCP the `tool`.
 - **Deprecation**: an operation every wire deprecates alike says it (`deprecated`, `sunset`,
   `replacement`); a binding deprecated on its own wire says so in the binding.
+- **Events, when asked**: `export_client_contract(gateways, out_dir, events=True)` (`--events` on
+  the command line) adds the context's `events`, as the metamodel writes them, of the whole bus —
+  an event is published apart from any wire, so no gateway decides it. The TypeScript generator
+  writes their types from them. Not asked, the contract and its `version` do not change. The live
+  route serves the contract without events.
 - **The same code, the same bytes**: keys sorted, indented, a final newline; `version` is the
   fingerprint of the whole file, and each model keeps its own (`model_version`).
 - **Without serving anything**, for a build or a CI step:
@@ -248,7 +294,7 @@ export_client_contract([rest, rpc, grpc, mcp], "web/src/contracts")
   ```make
   contract:
       poetry run python -m sincpro_framework.entrypoints export-client-contract \
-          app.http:gateways web/src/contracts
+          app.http:gateways web/src/contracts          # --events: with the domain events
   ```
 
 - **Live**: every HTTP gateway (FastAPI, JSON-RPC) serves `GET /client-contract/<alias>.json`

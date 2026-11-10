@@ -1,10 +1,12 @@
 """Write a service's client contract without serving anything — for a build or a CI step:
 
     python -m sincpro_framework.entrypoints export-client-contract app.http:gateways web/contracts
+    python -m sincpro_framework.entrypoints export-client-contract app.http:gateways web/contracts --events
 
 `<module>:<name>` names a gateway, or a list of them — one per wire —; each bounded context's
-contract is written to `<out_dir>/<alias>.contract.json` (`export_client_contract`). A project
-wraps it in its Makefile:
+contract is written to `<out_dir>/<alias>.contract.json` (`export_client_contract`). `--events`
+adds each context's domain events (`events`), left out unless asked. A project wraps it in its
+Makefile:
 
     contract:
         poetry run python -m sincpro_framework.entrypoints export-client-contract \\
@@ -31,7 +33,8 @@ def _loaded(target: str) -> Any:
 def main(argv: list[str] | None = None) -> int:
     """Run the command `argv` names, and say what it wrote.
 
-    1. `export-client-contract <module:gateways> <out_dir>`: each context's contract written.
+    1. `export-client-contract <module:gateways> <out_dir> [--events]`: each context's contract
+       written — with its domain events, when asked.
     Final: one line per file written, `<context>: <path>`.
     """
     parser = argparse.ArgumentParser(prog="python -m sincpro_framework.entrypoints")
@@ -42,8 +45,15 @@ def main(argv: list[str] | None = None) -> int:
     )
     export.add_argument("gateways", help="module:name of a gateway, or of a list of gateways")
     export.add_argument("out_dir", help="the directory the contracts are written to")
+    export.add_argument(
+        "--events",
+        action="store_true",
+        help="add each bounded context's domain events (left out by default)",
+    )
     arguments = parser.parse_args(argv)
-    written = export_client_contract(_loaded(arguments.gateways), arguments.out_dir)
+    written = export_client_contract(
+        _loaded(arguments.gateways), arguments.out_dir, events=arguments.events
+    )
     for context, path in written.items():
         print(f"{context}: {path}")
     return 0

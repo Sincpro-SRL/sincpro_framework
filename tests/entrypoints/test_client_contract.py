@@ -15,7 +15,14 @@ import pytest
 
 from sincpro_framework import DataTransferObject, Feature, UseFramework, exceptions
 from sincpro_framework.data_layer.repositories import MemoryRepository
-from sincpro_framework.ddd import Entity, EntityID, EntityReads, Get, ResponseRecord
+from sincpro_framework.ddd import (
+    DomainEvent,
+    Entity,
+    EntityID,
+    EntityReads,
+    Get,
+    ResponseRecord,
+)
 from sincpro_framework.entrypoints import (
     GrpcGateway,
     McpGateway,
@@ -113,6 +120,30 @@ def wires(*buses: UseFramework) -> list[Any]:
 
 EXPORTED = wires(tracker(), stock())
 """What the command line exports in `test_the_command_line_writes_what_the_function_does`."""
+
+
+@dataclass(kw_only=True)
+class IssueMoved(DomainEvent):
+    """An issue went to another project."""
+
+    name = "tracker.issue.v1.moved"
+    issue_id: str
+
+
+def tracker_hearing_moves() -> UseFramework:
+    """The tracker, reacting to its own moves — a subscriber no wire exposes."""
+    bus = tracker()
+
+    @bus.feature(IssueMoved)
+    class NoteMove(Feature):
+        def execute(self, dto: IssueMoved) -> None:
+            return None
+
+    return bus
+
+
+EXPORTED_WITH_EVENTS = wires(tracker_hearing_moves())
+"""What the command line exports with `--events`."""
 
 
 def _without(contract: dict[str, Any], *parts: str) -> dict[str, Any]:
@@ -314,6 +345,51 @@ def test_the_command_line_writes_what_the_function_does(tmp_path, capsys):
         f"stock: {tmp_path / 'stock.contract.json'}",
         f"tracker: {tmp_path / 'tracker.contract.json'}",
     ]
+
+
+def test_the_command_line_adds_the_events_only_when_asked(tmp_path, capsys):
+    plain, told = tmp_path / "plain", tmp_path / "told"
+    target = "tests.entrypoints.test_client_contract:EXPORTED_WITH_EVENTS"
+
+    assert main(["export-client-contract", target, str(plain)]) == 0
+    assert main(["export-client-contract", target, str(told), "--events"]) == 0
+
+    assert "events" not in json.loads((plain / "tracker.contract.json").read_text())
+    events = json.loads((told / "tracker.contract.json").read_text())["events"]
+    assert list(events) == ["tracker.issue.v1.moved"]
+
+
+# ---------------------------------------------------------------------------------------------
+# Domain events, only when asked
+# ---------------------------------------------------------------------------------------------
+
+
+def test_a_contract_holds_the_contexts_events_only_when_asked_and_of_the_whole_bus(tmp_path):
+    gateways = wires(tracker_hearing_moves())
+
+    [plain] = client_contracts(gateways).values()
+    [told] = client_contracts(gateways, events=True).values()
+    written = export_client_contract(gateways, tmp_path, events=True)
+
+    assert "events" not in plain
+    assert _without(told, "events", "version") == _without(plain, "version")
+    assert told["version"] != plain["version"]
+    moved = told["events"]["tracker.issue.v1.moved"]
+    assert (moved["title"], moved["handled"], moved["recorded"]) == (
+        "IssueMoved",
+        True,
+        False,
+    )
+    assert "tracker.IssueMoved" not in told["operations"]  # no client calls it
+    assert not any("IssueMoved" in one for wire in told["bindings"].values() for one in wire)
+    assert json.loads(written["tracker"].read_text()) == told
+
+
+def test_a_subscriber_changes_nothing_in_a_contract_not_asked_for_events():
+    gateways = wires(tracker())
+
+    assert client_contracts(gateways) == client_contracts(gateways, events=False)
+    assert client_contracts(gateways) == client_contracts(wires(tracker_hearing_moves()))
 
 
 # ---------------------------------------------------------------------------------------------
