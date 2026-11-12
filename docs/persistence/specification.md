@@ -126,8 +126,10 @@ A literal is read as itself: `50%` finds `Descuento 50% off`, and `a_b` does not
 `like` and `starts with` ignore case and accents on both sides: `impresion` finds `Impresión`.
 The text is split into words, and each word has to appear in some field the template searches:
 `factura 2026` finds the record holding `factura` in its name and `2026` in its code.
-On PostgreSQL the search reads `translate(lower(col), …)`, so a large table that searches a text
-field wants an expression index over that same expression.
+On PostgreSQL the search reads `translate(lower(col), '<accented letters>', '<plain letters>')`,
+with the letters of `ddd.criteria.domain.accents` (`FROM_LETTERS`, `TO_LETTERS`) written into the
+statement. A large table that searches a text field wants a trigram index over that exact
+expression (`pg_trgm`, `USING gin (… gin_trgm_ops)`). A btree index does not serve a `%…%` pattern.
 A blank literal drops the conditions that hold `TEXT` and preserves the rest of the template: an
 `active = true` beside the text still applies.
 

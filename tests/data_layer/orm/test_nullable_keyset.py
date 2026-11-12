@@ -7,6 +7,7 @@ to the same placement and the same cursor.
 """
 
 import pytest
+from sqlalchemy.dialects import postgresql
 
 from sincpro_framework.data_layer.orm.sqlalchemy.entrypoint.repository import Repository
 from sincpro_framework.data_layer.repositories.memory_repository import MemoryRepository
@@ -81,3 +82,55 @@ def test_a_walk_descending_over_a_nullable_column_reaches_the_null_rows(reposito
     )
 
     assert {f"th_{number:04d}" for number in range(0, ROW_COUNT, 3)} <= set(seen)
+
+
+@pytest.fixture
+def sqlite_store(things: list[Thing]) -> Repository:
+    store = Repository(fresh("sqlite://", mapper_registry.metadata))
+    with store.context() as repository:
+        for thing in things:
+            repository.save(thing)
+    return store
+
+
+def written_for_postgres(store: Repository, criteria: Criteria) -> str:
+    """The statement a page runs, as PostgreSQL would be sent it."""
+    return str(store.statement(Things, criteria).compile(dialect=postgresql.dialect()))
+
+
+def test_a_field_that_is_never_null_is_ordered_without_placing_null(sqlite_store):
+    """PostgreSQL reads `thing_id DESC NULLS LAST` as an order no ordinary index gives, and
+    sorts the whole table for every page instead of walking the primary key."""
+    written = written_for_postgres(sqlite_store, Criteria(pagination=Pagination(limit=4)))
+
+    assert "ORDER BY thing.thing_id DESC" in written
+    assert "NULLS" not in written
+
+
+def test_only_the_nullable_field_places_null(sqlite_store):
+    written = written_for_postgres(
+        sqlite_store, Criteria(order=Sort.parse("owner"), pagination=Pagination(limit=4))
+    )
+
+    assert "ORDER BY thing.owner ASC NULLS FIRST, thing.thing_id" in written
+    assert written.count("NULLS") == 1
+
+
+@pytest.mark.parametrize(
+    ("order", "comparison"),
+    [
+        ("made_at", "(thing.made_at, thing.thing_id) >"),
+        ("-made_at", "(thing.made_at, thing.thing_id) <"),
+    ],
+)
+def test_the_next_page_of_fields_never_null_is_one_row_value_comparison(
+    sqlite_store, order, comparison
+):
+    """One direction and no NULL: the comparison a planner reads as a range over the index."""
+    criteria = Criteria(order=Sort.parse(order), pagination=Pagination(limit=4))
+    cursor = sqlite_store.search(Things, criteria).cursor
+
+    written = written_for_postgres(sqlite_store, criteria.resuming_from(cursor))
+
+    assert comparison in written
+    assert " OR " not in written

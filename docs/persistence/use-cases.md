@@ -40,7 +40,7 @@ The columns:
 |---|---|---|---|---|
 | Filter | `Criteria(selection=…)`: `= != in not in > >= < <= between like is null contains not contains` | translated to WHERE | `select().where()` | ✅ |
 | Combine | `all` / `any` / `negate` | AND / OR / NOT | `and_`, `or_`, `not_` | ✅ |
-| Text search, case- and accent-insensitive | `like` on text | `translate(lower(col), …) LIKE '%…%'` (PostgreSQL), `sincpro_fold(col) LIKE …` (SQLite) | `ilike` | ✅ |
+| Text search, case- and accent-insensitive | `like` on text | `translate(lower(col), …) LIKE '%…%'` (PostgreSQL, DuckDB), `sincpro_fold(col) LIKE …` (SQLite), `lower(col) LIKE …` elsewhere (accents left to the collation) | `ilike` | ✅ |
 | Full-text search, ranked | — | — | `func.to_tsvector`, `@@` (Postgres) | ⬜ |
 | Order | `order=[Sort]`, `Sort.parse("-total")` | ORDER BY + identity tiebreaker | `order_by` | ✅ |
 | Page | `pagination` keyset (cursor) or offset | keyset by `(sort, id) < (…)` | `limit`/`offset` | ✅ |

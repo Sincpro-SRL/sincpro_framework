@@ -14,6 +14,8 @@ from sincpro_framework.ddd.criteria.domain.accents import (
     ("text", "folded"),
     [
         ("Impresión", "impresion"),
+        ("IMPRESIÓN", "impresion"),
+        ("İstanbul", "istanbul"),
         ("Año NUEVO", "ano nuevo"),
         ("Ñandú", "nandu"),
         ("Crème brûlée", "creme brulee"),
@@ -34,3 +36,10 @@ def test_sql_replaces_the_letters_the_fold_replaces_one_for_one():
     position, so they have to be the same length and cover the same letters."""
     assert len(FROM_LETTERS) == len(TO_LETTERS) == len(PLAIN)
     assert dict(zip(FROM_LETTERS, TO_LETTERS)) == PLAIN
+
+
+def test_an_uppercase_accent_is_in_the_table_too():
+    """A database's `lower()` follows its collation, and under `C` it leaves `Ó` as it is: the
+    table has to replace the uppercase letter itself."""
+    assert PLAIN["Ó"] == PLAIN["ó"] == "o"
+    assert PLAIN["Ñ"] == PLAIN["ñ"] == "n"

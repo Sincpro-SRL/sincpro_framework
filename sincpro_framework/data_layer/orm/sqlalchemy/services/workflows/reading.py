@@ -2,11 +2,9 @@
 export, a short question — and the relations a specification names, once per page."""
 
 from collections.abc import Iterator, Sequence
-from functools import partial
 from types import SimpleNamespace
 from typing import Any, cast, overload
 
-import sqlalchemy
 from sqlalchemy import Select, func, literal, select
 from sqlalchemy.orm import Session, aliased
 from sqlalchemy.sql.expression import TextualSelect
@@ -132,11 +130,13 @@ def _a_read(statement: TextualSelect) -> TextualSelect:
 
 class RowPage(DataTransferObject):
     """One page of a statement's rows, as a criteria asks for it: the rows as the statement
-    returns them, where the next page starts, and how many there are."""
+    returns them, where the next page starts, how many there are, and what of the criteria the
+    statement could not answer."""
 
     rows: tuple[dict[str, Any], ...]
     cursor: str | None = None
     count: Count | None = None
+    dropped: tuple[Dropped, ...] = ()
 
 
 class Reading(RepositoryState):
@@ -161,7 +161,7 @@ class Reading(RepositoryState):
         clause = readable_clause(model, sql_translator.where_clause(model, expression))
         return (
             clause,
-            sql_translator.ordering_for(criteria, meta),
+            meta.ordering(criteria.order),
             meta,
             dropped + unanswerable,
         )
@@ -417,64 +417,48 @@ class Reading(RepositoryState):
                 target, self._page(session, model, holder, statement, criteria, prepared)
             )
 
-    def _statement_as(self, model: type, statement: TextualSelect) -> Any:
-        """The caller's statement as a subquery, checked to return every column the model maps
-        under the name it maps it by — a row read as the model needs each of them.
-
-            in      Thing (thing_id, name, size, tags, made_at, owner), a statement without `tags`
-            out     ProgrammingError: the statement does not return 'tags' …
-        """
-        source = _a_read(statement).subquery(STATEMENT)
-        mapped = [
-            column.name for column in sqlalchemy.inspect(model).persist_selectable.columns
-        ]
-        missing = [name for name in mapped if name not in source.c]
-        if missing:
-            raise exceptions.ProgrammingError(
-                f"the statement does not return {', '.join(missing)}: a row read as "
-                f"{model.__name__} needs every column the model maps, under its name"
-            )
-        return source
-
     def search_sql(
         self, target: type, statement: TextualSelect, criteria: Criteria | None = None
     ) -> Any:
-        """A page of `target` read from a statement the caller wrote, with the criteria applied
-        over it: its filter, its order, its cursor, its count. The statement is the join or the
-        subquery the framework does not build; the criteria filters, orders and pages what it
-        returns.
+        """A page of `target` read from a statement the caller wrote — the join or the subquery
+        the framework does not build — with the criteria applied over it exactly as `search`
+        applies one: its filter, its order, its cursor, its count.
 
             statement   text("SELECT t.thing_id, t.name, … FROM thing t JOIN …")
                         .columns(*thing_table.c, column("label", Text))
             in          Thing, Criteria(selection=Condition("label", LIKE, "imp"), limit=20)
             out         EntityCollection(20 Things of the rows that match, cursor, count)
 
-        Every value the criteria carries is bound as a parameter, never written into the
-        statement. A filter over a relation is refused: a statement has no relation to cross.
-
-        1. The statement as a subquery, with the model's columns checked to be in it.
-        2. The criteria's ordering with the identity as the tiebreaker; its filter and cursor
-           read over the subquery's columns.
-        3. The rows hydrated as the model, the count read over the same subquery.
-        Final: the page answered as the collection `target` names.
+        1. The statement checked to be one read, and described: the model's fields — which it
+           has to return under their names — and each other column it returns, by its type.
+        2. The criteria read as `search` reads it: the repository's scope and the archived
+           added, each value read as its field's type, the dynamic values resolved, what the
+           statement cannot answer dropped and reported; the ordering with the identity as the
+           tiebreaker.
+        3. The filter, the cursor and the order written over the statement's columns; every value
+           bound as a parameter. A filter over a relation is refused: a statement has none.
+        Final: the rows read as the model in one session, counted over the same statement.
         """
         criteria = criteria or Criteria()
         model, holder = model_and_collection(target)
-        meta = ModelIntrospection.describe(model)
-        source = self._statement_as(model, statement)
+        source = _a_read(statement).subquery(STATEMENT)
+        meta = ModelIntrospection.describe_statement(statement, model)
+        expression, dropped = meta.accept(self._asked(model, meta, criteria))
+        _, unanswerable = meta.accept_specification(criteria.specification)
+        clause = sql_translator.statement_clause(source, expression)
+        sorts = meta.ordering(criteria.order)
 
-        columns = partial(sql_translator.statement_column, source)
-        clause = sql_translator.statement_clause(source, criteria.expression)
-        sorts = sql_translator.tiebroken(
-            criteria.order or Sort.parse(meta.default_order), meta.identity
-        )
         page = select(aliased(model, source))
         if clause is not None:
             page = page.where(clause)
-        resume = sql_translator.resume_over(columns, criteria.pagination, sorts)
+        resume = sql_translator.resume_over(
+            lambda field: source.c[field], criteria.pagination, sorts, meta
+        )
         if resume is not None:
             page = page.where(resume)
-        page = page.order_by(*sql_translator.order_over(columns, sorts))
+        page = page.order_by(
+            *sql_translator.order_over(lambda field: source.c[field], sorts, meta)
+        )
 
         with self._session() as session:
             return self._searched(
@@ -485,57 +469,64 @@ class Reading(RepositoryState):
                     holder,
                     page,
                     criteria,
-                    (clause, sorts, meta, []),
+                    (clause, sorts, meta, dropped + unanswerable),
                     source=source,
                 ),
             )
 
     def query_page(
-        self, statement: TextualSelect, criteria: Criteria | None = None, *, identity: str
+        self, statement: TextualSelect, identity: str, criteria: Criteria | None = None
     ) -> RowPage:
         """A page of the rows a statement returns — a report, with no entity to read them as.
-        The criteria's fields are the statement's columns; its ordering ends on `identity`, so
-        the cursor names one row.
+        The criteria's fields are the statement's columns, read as `search` reads a model's; its
+        ordering ends on `identity`, so the cursor names one row.
 
-            statement   text("SELECT o.id, c.name, o.total FROM …").columns(column("id", Text), …)
-            in          Criteria(order=Sort.parse("-total"), limit=50), identity="id"
-            out         RowPage(rows=50 dicts, cursor, count)
+            statement   text("SELECT o.id, c.name, o.total FROM …")
+                        .columns(column("id", Text), column("name", Text), column("total", Numeric))
+            in          "id", Criteria(order=Sort.parse("-total"), limit=50)
+            out         RowPage(rows=50 dicts, cursor, count, dropped)
 
-        1. The statement as a subquery; a criteria naming a column it does not return is refused.
-        2. The ordering with the identity appended, the filter and the cursor over the columns.
+        1. The statement checked to be one read, and described column by column, the identity
+           among them.
+        2. The criteria read as `search` reads one — the repository's scope added, values read as
+           their column's type, dynamic values resolved, what it cannot answer dropped — and the
+           ordering with the identity appended.
         3. The rows, one past the limit to know whether a next page exists, and the count.
-        Final: the rows as dicts, with where the next page starts and how many there are.
+        Final: the rows as dicts, with where the next page starts, how many there are and what
+        was dropped.
         """
         criteria = criteria or Criteria()
         source = _a_read(statement).subquery(STATEMENT)
-        columns = partial(sql_translator.statement_column, source)
-        clause = sql_translator.statement_clause(source, criteria.expression)
-        sorts = sql_translator.tiebroken(
-            criteria.order or (Sort(field=identity, descending=True),), identity
-        )
+        meta = ModelIntrospection.describe_statement(statement, None, identity)
+        expression, dropped = meta.accept(self._asked(None, meta, criteria))
+        clause = sql_translator.statement_clause(source, expression)
+        sorts = meta.ordering(criteria.order)
+
         query = select(*source.c)
         if clause is not None:
             query = query.where(clause)
-        resume = sql_translator.resume_over(columns, criteria.pagination, sorts)
+        resume = sql_translator.resume_over(
+            lambda field: source.c[field], criteria.pagination, sorts, meta
+        )
         if resume is not None:
             query = query.where(resume)
-        query = query.order_by(*sql_translator.order_over(columns, sorts))
+        query = query.order_by(
+            *sql_translator.order_over(lambda field: source.c[field], sorts, meta)
+        )
 
         page = criteria.pagination
-        skipped = page.skipped()
-        if skipped:
-            query = query.offset(skipped)
+        if page.skipped():
+            query = query.offset(page.skipped())
         with self._session() as session:
             fetched = session.execute(query.limit(page.limit + 1)).mappings().all()
-            kept = [dict(row) for row in fetched[: page.limit]]
-            has_more = len(fetched) > page.limit
+            rows = [dict(row) for row in fetched[: page.limit]]
             cursor = (
-                page.next_from(SimpleNamespace(**kept[-1]), sorts)
-                if has_more and kept
+                page.next_from(SimpleNamespace(**rows[-1]), sorts)
+                if len(fetched) > page.limit and rows
                 else None
             )
-            count = self._counted(session, source, clause, criteria, len(kept))
-        return RowPage(rows=tuple(kept), cursor=cursor, count=count)
+            count = self._counted(session, source, clause, criteria, len(rows))
+        return RowPage(rows=tuple(rows), cursor=cursor, count=count, dropped=tuple(dropped))
 
     def _partitioned_page(
         self,
