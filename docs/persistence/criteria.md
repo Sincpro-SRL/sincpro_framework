@@ -24,7 +24,7 @@ hands it to the repository. It is JSON, it is typed, and every part of it is opt
 | Part | What it says | Notes |
 |---|---|---|
 | `selection` | the filter: a `Condition`, `all` / `any` / `negate` of more, or `through` a relation | the operators a field takes come from its type and are published in `Meta`; a value written as text is read into the field's type |
-| `order` | the ordering, `-` for descending | the identity is appended as tiebreaker so a keyset is a total order; a nullable column is refused for ordering because a keyset over NULLs loses rows |
+| `order` | the ordering, `-` for descending | the identity is appended as tiebreaker so a keyset is a total order; a nullable column orders too: NULL first ascending, last descending, and the keyset places it the same way |
 | `pagination` | how many and from where | `Cursor` (keyset, the default; the token is opaque and typed, it carries datetimes and decimals) or `Offset` (skip rows; costs grow with the offset) |
 | `specification` | what to bring back of each record | field → criteria, recursive; see [specification.md](specification.md) |
 | `grouping` | how to split the set when counting rather than listing | `group_by` the levels (a level's `grain` cuts a date: `day`, `week` ISO, `month`, `quarter` as `2026-Q3`, `year`; its `part` extracts a number from it; its `fill` lists the groups with no rows — see [analytics](analytics.md)), `measures` the folds (`sum avg min max count count_distinct percentile median bool_and bool_or`), `where_measures` a filter over what they folded, `order` by a level, a total or `count`, `pagination` for how many groups of the first level. One statement per level; drilling down one click at a time is opening a bucket with a grouping of its own. **With an explicit `pagination` on the criteria, a page per group**: every group of the deepest level carries the ids of its first `limit` rows, an exact count and a cursor; `search` with both answers `limit` rows for every group |
@@ -212,6 +212,28 @@ The nodes carry the names the JSON uses — `All`, `Any`, `Not` and `Condition`,
 returns the page with its definition cut by the same specification. A client pages by the answer's
 `cursor`, sent back in the `Query`'s own `cursor` field — never by rewriting the criteria's
 `pagination` (see [paging](../entrypoints/fastapi.md#paging-one-cursor-sent-back-as-it-came)).
+
+## A page over a statement you wrote
+
+A join, a subquery or a report is not a table the framework maps, so a criteria cannot name its
+fields as model fields. `search_sql` takes the statement and reads the criteria over its columns:
+the filter, the ordering, the cursor and the count are the same as for `search`.
+
+```python
+statement = text(
+    "SELECT t.thing_id, t.name, t.size, t.tags, t.made_at, t.owner, l.label "
+    "FROM thing t JOIN thing_label l ON l.thing_id = t.thing_id"
+).columns(*thing_table.c, column("label", Text))
+
+page = repository.search_sql(Thing, statement, Criteria(selection=..., pagination=Pagination(limit=20)))
+```
+
+- The rows come back as the model: the statement names every column the model maps, under its
+  name, and a statement missing one is refused.
+- A report has no model to read as: `query_page(statement, criteria, identity="thing_id")` returns a
+  `RowPage` of dicts, the cursor and the count. Its ordering ends on `identity`, so a cursor names one row.
+- Every value a criteria carries is bound as a parameter. A filter over a relation is refused: a
+  statement has no relation to cross.
 
 ## What a client reads
 

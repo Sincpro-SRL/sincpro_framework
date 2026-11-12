@@ -28,13 +28,13 @@ from sincpro_framework.ddd import (
     ResponseRecord,
     Search,
 )
-from sincpro_framework.ddd import exceptions as ddd_exceptions
 from sincpro_framework.ddd.criteria import (
     Condition,
     Grouping,
     GroupingLevel,
     Measure,
     MeasureFunction,
+    Pagination,
     Sort,
     Specification,
 )
@@ -126,9 +126,7 @@ def test_the_definition_of_the_core_says_whose_each_field_is(engine_url):
         "MoveTracking",
         "MoveFiscal",
     )
-    assert (
-        core["route"].nullable and not core["route"].sortable
-    )  # a record may have no delivery
+    assert core["route"].nullable and core["route"].sortable  # a record may have no delivery
     assert delivery["route"].owner is None and delivery["carrier"].owner == "MoveTracking"
 
 
@@ -146,13 +144,17 @@ def test_the_core_is_filtered_by_a_field_of_an_extension(engine_url):
     ] or sorted(type(one).__name__ for one in found) == ["MoveDelivery", "MoveTracking"]
 
 
-def test_a_field_of_an_extension_is_not_a_field_to_order_by_because_a_record_may_lack_it(
-    engine_url,
-):
+def test_a_field_of_an_extension_orders_a_record_without_it_as_null(engine_url):
+    """A record may lack the extension, so its value is NULL there: it still pages, placed as
+    NULL is, and no record drops out of the ordering."""
     world = World(engine_url).fill()
 
-    with pytest.raises(ddd_exceptions.InvalidCriteria, match="nullable"):
-        world.store.search(world.Move, Criteria(order=(Sort(field="route"),)))
+    everything = world.store.search(world.Move, Criteria(pagination=Pagination(limit=500)))
+    ordered = world.store.search(
+        world.Move, Criteria(order=(Sort(field="route"),), pagination=Pagination(limit=500))
+    )
+
+    assert sorted(ordered.ids) == sorted(everything.ids)
 
 
 def test_the_core_is_filtered_ordered_and_grouped_with_a_field_of_an_extension_in_play(

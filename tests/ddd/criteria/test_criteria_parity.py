@@ -78,6 +78,14 @@ ROWS = [
         owner=None,
         made_at="2026-03-27T00:00:00Z",
     ),
+    Row(
+        id="f",
+        name="Impresión.pdf",
+        size=50,
+        tags=["print"],
+        owner="ines",
+        made_at="2026-04-02T00:00:00Z",
+    ),
 ]
 
 CASES: list[dict[str, Any]] = [
@@ -131,8 +139,20 @@ CASES: list[dict[str, Any]] = [
         "selection": {"field": "name", "operator": "like", "value": "s_c"},
     },
     {
+        "name": "like ignores accents: impresion finds Impresión",
+        "selection": {"field": "name", "operator": "like", "value": "impresion"},
+    },
+    {
+        "name": "like ignores accents in the value as well as the column",
+        "selection": {"field": "name", "operator": "like", "value": "IMPRESIÓN"},
+    },
+    {
         "name": "starts with is case-insensitive and anchored at the start",
         "selection": {"field": "name", "operator": "starts with", "value": "LAB"},
+    },
+    {
+        "name": "starts with ignores accents",
+        "selection": {"field": "name", "operator": "starts with", "value": "impre"},
     },
     {
         "name": "starts with does not match in the middle",

@@ -31,6 +31,7 @@ from typing import Any, Self
 
 from sqlalchemy import Select
 from sqlalchemy.orm import Session
+from sqlalchemy.sql.expression import TextualSelect
 
 from sincpro_framework.data_layer import exceptions
 from sincpro_framework.data_layer.orm.sqlalchemy.domain.transaction import Isolation, Writes
@@ -196,6 +197,13 @@ class DatabaseAggregateRepository[T](AggregateRepository[T]):
     def statement(self, criteria: Criteria | None = None) -> Select:
         """This criteria as an ordinary `Select` over the aggregate's table, to take further."""
         return self.repository.statement(self.aggregate, criteria or Criteria())
+
+    def search_sql(
+        self, statement: TextualSelect, criteria: Criteria | None = None
+    ) -> EntityCollection[T]:
+        """A page of this aggregate read from a statement the caller wrote — a join or a
+        subquery — with the criteria applied over it. `Repository.search_sql`."""
+        return self.repository.search_sql(self.aggregate, statement, criteria)
 
     def run(self, statement: Select, criteria: Criteria | None = None) -> EntityCollection[T]:
         """A statement built from `statement()`, executed and wrapped in the usual envelope."""

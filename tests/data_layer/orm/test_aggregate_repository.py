@@ -222,6 +222,7 @@ LEFT_TO_THE_STORE = {
     "extend": "names the extension it gives a record, which is not the aggregate a view is bound to",
     "reclassify": "works out the stored type of an entity's rows, which is not a view of one aggregate",
     "fingerprint": "a cache key of the store, taken with the aggregate by QueryCache",
+    "query_page": "a page of rows with no aggregate to read them as, so no view of one aggregate",
     "prepare": "the translator's preparation, not a question a Feature asks",
 }
 

@@ -2,10 +2,14 @@
 export, a short question — and the relations a specification names, once per page."""
 
 from collections.abc import Iterator, Sequence
+from functools import partial
+from types import SimpleNamespace
 from typing import Any, cast, overload
 
+import sqlalchemy
 from sqlalchemy import Select, func, literal, select
 from sqlalchemy.orm import Session, aliased
+from sqlalchemy.sql.expression import TextualSelect
 
 from sincpro_framework.data_layer import exceptions
 from sincpro_framework.data_layer.orm.sqlalchemy.infrastructure.mapping_registry import (
@@ -104,6 +108,19 @@ def _relations_named(
     return named
 
 
+STATEMENT = "sincpro_statement"
+"""The name a statement written by the caller is read under, as a subquery."""
+
+
+class RowPage(DataTransferObject):
+    """One page of a statement's rows, as a criteria asks for it: the rows as the statement
+    returns them, where the next page starts, and how many there are."""
+
+    rows: tuple[dict[str, Any], ...]
+    cursor: str | None = None
+    count: Count | None = None
+
+
 class Reading(RepositoryState):
     """Reads are generic because a filter is a filter: one `prepare` per criteria, one statement
     per page, relations resolved once for the whole page."""
@@ -159,7 +176,7 @@ class Reading(RepositoryState):
         return [Dropped(field="name", reason=UNKNOWN_EVENT)]
 
     def _counted(
-        self, session: Session, model: type, clause: Any, criteria: Criteria, held: int | None
+        self, session: Session, source: Any, clause: Any, criteria: Criteria, held: int | None
     ) -> Count | None:
         """How many matched, at the cheapest price that still answers honestly.
 
@@ -169,7 +186,8 @@ class Reading(RepositoryState):
             count=NONE                     →  None
 
         `held` is how many rows the page brought back, or `None` when no page was fetched —
-        reading "no page" as "zero rows" would answer `0` to every bare count.
+        reading "no page" as "zero rows" would answer `0` to every bare count. `source` is what
+        is counted: the model's table, or the subquery of a statement the caller wrote.
         """
         if criteria.count is CountMode.NONE:
             return None
@@ -179,13 +197,14 @@ class Reading(RepositoryState):
             return Count(value=held, exact=True)
 
         if criteria.count is CountMode.EXACT:
-            statement = select(func.count()).select_from(model)
+            statement = select(func.count()).select_from(source)
             if clause is not None:
                 statement = statement.where(clause)
             return Count(value=session.scalar(statement) or 0, exact=True)
 
         seen = (
-            session.scalar(sql_translator.capped_count(model, clause, DEFAULT_COUNT_CAP)) or 0
+            session.scalar(sql_translator.capped_count(source, clause, DEFAULT_COUNT_CAP))
+            or 0
         )
         return Count(value=min(seen, DEFAULT_COUNT_CAP), exact=seen <= DEFAULT_COUNT_CAP)
 
@@ -197,6 +216,7 @@ class Reading(RepositoryState):
         statement: Select,
         criteria: Criteria,
         prepared: Prepared,
+        source: Any = None,
     ) -> EntityCollection:
         """Runs a prepared statement and wraps what comes back with honest metadata.
 
@@ -206,7 +226,8 @@ class Reading(RepositoryState):
             out     EntityCollection(items=20, cursor=<of row 20>, count=Count(197, exact=True))
 
         Asking for one more row is how "is there a next page" is answered without a second
-        query, and the last row of the page is what the cursor is minted from.
+        query, and the last row of the page is what the cursor is minted from. `source` is what
+        the count reads, when the rows come from a statement rather than the model's table.
         """
         clause, sorts, meta, dropped = prepared
 
@@ -229,7 +250,9 @@ class Reading(RepositoryState):
         return holder(
             items=tuple(items),
             cursor=next_cursor,
-            count=self._counted(session, model, clause, criteria, len(items)),
+            count=self._counted(
+                session, source if source is not None else model, clause, criteria, len(items)
+            ),
             dropped=(*dropped, *self._unreadable(session, model, criteria)),
             meta=meta,
         )
@@ -375,6 +398,126 @@ class Reading(RepositoryState):
             return self._searched(
                 target, self._page(session, model, holder, statement, criteria, prepared)
             )
+
+    def _statement_as(self, model: type, statement: TextualSelect) -> Any:
+        """The caller's statement as a subquery, checked to return every column the model maps
+        under the name it maps it by — a row read as the model needs each of them.
+
+            in      Thing (thing_id, name, size, tags, made_at, owner), a statement without `tags`
+            out     ProgrammingError: the statement does not return 'tags' …
+        """
+        source = statement.subquery(STATEMENT)
+        mapped = [
+            column.name for column in sqlalchemy.inspect(model).persist_selectable.columns
+        ]
+        missing = [name for name in mapped if name not in source.c]
+        if missing:
+            raise exceptions.ProgrammingError(
+                f"the statement does not return {', '.join(missing)}: a row read as "
+                f"{model.__name__} needs every column the model maps, under its name"
+            )
+        return source
+
+    def search_sql(
+        self, target: type, statement: TextualSelect, criteria: Criteria | None = None
+    ) -> Any:
+        """A page of `target` read from a statement the caller wrote, with the criteria applied
+        over it: its filter, its order, its cursor, its count. The statement is the join or the
+        subquery the framework does not build; the criteria filters, orders and pages what it
+        returns.
+
+            statement   text("SELECT t.thing_id, t.name, … FROM thing t JOIN …")
+                        .columns(*thing_table.c, column("label", Text))
+            in          Thing, Criteria(selection=Condition("label", LIKE, "imp"), limit=20)
+            out         EntityCollection(20 Things of the rows that match, cursor, count)
+
+        Every value the criteria carries is bound as a parameter, never written into the
+        statement. A filter over a relation is refused: a statement has no relation to cross.
+
+        1. The statement as a subquery, with the model's columns checked to be in it.
+        2. The criteria's ordering with the identity as the tiebreaker; its filter and cursor
+           read over the subquery's columns.
+        3. The rows hydrated as the model, the count read over the same subquery.
+        Final: the page answered as the collection `target` names.
+        """
+        criteria = criteria or Criteria()
+        model, holder = model_and_collection(target)
+        meta = ModelIntrospection.describe(model)
+        source = self._statement_as(model, statement)
+
+        columns = partial(sql_translator.statement_column, source)
+        clause = sql_translator.statement_clause(source, criteria.expression)
+        sorts = sql_translator.tiebroken(
+            criteria.order or Sort.parse(meta.default_order), meta.identity
+        )
+        page = select(aliased(model, source))
+        if clause is not None:
+            page = page.where(clause)
+        resume = sql_translator.resume_over(columns, criteria.pagination, sorts)
+        if resume is not None:
+            page = page.where(resume)
+        page = page.order_by(*sql_translator.order_over(columns, sorts))
+
+        with self._session() as session:
+            return self._searched(
+                target,
+                self._page(
+                    session,
+                    model,
+                    holder,
+                    page,
+                    criteria,
+                    (clause, sorts, meta, []),
+                    source=source,
+                ),
+            )
+
+    def query_page(
+        self, statement: TextualSelect, criteria: Criteria | None = None, *, identity: str
+    ) -> RowPage:
+        """A page of the rows a statement returns — a report, with no entity to read them as.
+        The criteria's fields are the statement's columns; its ordering ends on `identity`, so
+        the cursor names one row.
+
+            statement   text("SELECT o.id, c.name, o.total FROM …").columns(column("id", Text), …)
+            in          Criteria(order=Sort.parse("-total"), limit=50), identity="id"
+            out         RowPage(rows=50 dicts, cursor, count)
+
+        1. The statement as a subquery; a criteria naming a column it does not return is refused.
+        2. The ordering with the identity appended, the filter and the cursor over the columns.
+        3. The rows, one past the limit to know whether a next page exists, and the count.
+        Final: the rows as dicts, with where the next page starts and how many there are.
+        """
+        criteria = criteria or Criteria()
+        source = statement.subquery(STATEMENT)
+        columns = partial(sql_translator.statement_column, source)
+        clause = sql_translator.statement_clause(source, criteria.expression)
+        sorts = sql_translator.tiebroken(
+            criteria.order or (Sort(field=identity, descending=True),), identity
+        )
+        query = select(*source.c)
+        if clause is not None:
+            query = query.where(clause)
+        resume = sql_translator.resume_over(columns, criteria.pagination, sorts)
+        if resume is not None:
+            query = query.where(resume)
+        query = query.order_by(*sql_translator.order_over(columns, sorts))
+
+        page = criteria.pagination
+        skipped = page.skipped()
+        if skipped:
+            query = query.offset(skipped)
+        with self._session() as session:
+            fetched = session.execute(query.limit(page.limit + 1)).mappings().all()
+            kept = [dict(row) for row in fetched[: page.limit]]
+            has_more = len(fetched) > page.limit
+            cursor = (
+                page.next_from(SimpleNamespace(**kept[-1]), sorts)
+                if has_more and kept
+                else None
+            )
+            count = self._counted(session, source, clause, criteria, len(kept))
+        return RowPage(rows=tuple(kept), cursor=cursor, count=count)
 
     def _partitioned_page(
         self,

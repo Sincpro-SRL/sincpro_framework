@@ -219,6 +219,29 @@ def test_a_prefix_finds_the_children_and_not_a_code_that_only_contains_it(accoun
     assert [one.code for one in found] == ["1.2.3", "1.2.30"]
 
 
+def test_each_word_of_the_text_has_to_appear_in_some_field(accounts):
+    """`caja chica` is both words in the one name; `Caja` alone has no `chica` to find."""
+    found = accounts.search(matching(Account, "caja chica"))
+
+    assert [one.code for one in found] == ["1.2.1.2.3"]
+
+
+def test_the_words_may_be_split_across_fields(accounts):
+    """`1.2.3` finds a code and `caja` a name: the one record holding both answers."""
+    found = accounts.search(matching(Account, "1.2.3 caja"))
+
+    assert [one.code for one in found] == ["1.2.3"]
+
+
+@pytest.mark.parametrize("text", ["impresion", "IMPRESIÓN", "Impresion"])
+def test_a_word_without_its_accents_finds_the_word_with_them(text):
+    repository = MemoryRepository()
+    repository.save(Account(code="7", name="Impresión"))
+    accounts = AggregateRepository(repository, Account)
+
+    assert [one.code for one in accounts.search(matching(Account, text))] == ["7"]
+
+
 def test_a_blank_literal_lists_the_first_ones_in_the_declared_order(accounts):
     found = accounts.search(matching(Account, "   "))
 

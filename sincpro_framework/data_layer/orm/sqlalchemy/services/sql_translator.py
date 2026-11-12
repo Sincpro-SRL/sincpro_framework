@@ -22,7 +22,9 @@ from sqlalchemy import (
     any_,
     bindparam,
     cast,
+    false,
     func,
+    literal,
     not_,
     or_,
     select,
@@ -54,6 +56,12 @@ from sincpro_framework.ddd.criteria import (
     Pagination,
     Sort,
     Through,
+)
+from sincpro_framework.ddd.criteria.domain.accents import (
+    FOLDING_FUNCTION,
+    FROM_LETTERS,
+    TO_LETTERS,
+    fold,
 )
 from sincpro_framework.ddd.entity import ArchivableMixin, extensions
 from sincpro_framework.ddd.entity.entity_meta import Meta, related_class
@@ -103,8 +111,47 @@ def _escaped(value: Any) -> str:
 
 
 def _literal(value: Any) -> str:
-    """`_escaped`, lowercased: what a case-insensitive `LIKE` compares against."""
-    return _escaped(str(value).lower())
+    """`_escaped`, folded: what a `LIKE` compares against once the column is folded too — lower
+    case and no accents, the same as `fold` answers in memory."""
+    return _escaped(fold(str(value)))
+
+
+class _Folded(ColumnElement[str]):
+    """A text column read without case or accents: `fold`, written for the engine that runs it.
+
+    SQLite has no `translate` and no `unaccent`, so it calls the function `Database` registers
+    (`sincpro_fold`). PostgreSQL and DuckDB replace the letters with `translate`, from and to the
+    two strings the accents module writes — the same mapping, bound as parameters.
+
+    in      _Folded(dataset.name), PostgreSQL     ->  translate(lower(dataset.name), :from, :to)
+    in      _Folded(dataset.name), SQLite         ->  sincpro_fold(dataset.name)
+    """
+
+    inherit_cache = False
+    type = Text()
+
+    def __init__(self, column: Any) -> None:
+        """The column whose text is read folded; how is decided at compile time, by the dialect."""
+        self.column = column
+
+
+@compiles(_Folded)
+def _folded_as_function(element: _Folded, compiler: Any, **kw: Any) -> str:
+    """Every engine but PostgreSQL and DuckDB: the function the database registered."""
+    return f"{FOLDING_FUNCTION}({compiler.process(element.column, **kw)})"
+
+
+@compiles(_Folded, "postgresql")
+@compiles(_Folded, "duckdb")
+def _folded_as_translate(element: _Folded, compiler: Any, **kw: Any) -> str:
+    """PostgreSQL and DuckDB: lowercase, then each accented letter replaced by its plain one.
+
+    out     translate(lower(dataset.name), 'áéíó…', 'aeio…')
+    """
+    folded = func.translate(
+        func.lower(element.column), literal(FROM_LETTERS), literal(TO_LETTERS)
+    )
+    return compiler.process(folded, **kw)
 
 
 MANY_MEMBERS = 2000
@@ -212,10 +259,11 @@ def _comparison(column: Any, operator: Operator, value: Any) -> ColumnElement[bo
         case Operator.IS_NULL:
             return column.is_(None) if value else column.is_not(None)
         case Operator.LIKE:
-            # Case-insensitive containment: what the interface has always meant by searching.
-            return func.lower(column).like(f"%{_literal(value)}%", escape=LIKE_ESCAPE)
+            # Containment, ignoring case and accents: what the interface has always meant by
+            # searching, and «impresion» finds «Impresión».
+            return _Folded(column).like(f"%{_literal(value)}%", escape=LIKE_ESCAPE)
         case Operator.STARTS_WITH:
-            return func.lower(column).like(f"{_literal(value)}%", escape=LIKE_ESCAPE)
+            return _Folded(column).like(f"{_literal(value)}%", escape=LIKE_ESCAPE)
         case Operator.CONTAINS:
             return _as_stored_text(column).like(f'%"{_escaped(value)}"%', escape=LIKE_ESCAPE)
         case Operator.NOT_CONTAINS:
@@ -422,7 +470,7 @@ def ordering_for(criteria: Criteria, meta: Meta) -> tuple[Sort, ...]:
     """The ordering a page will actually use, tiebreaker included.
 
         in      Criteria(order=(Sort(row_count, desc),)), Meta of Dataset
-        check   row_count is orderable                   nullable ones are refused
+        check   row_count is orderable                   a list is refused, a NULL is not
         out     (Sort(row_count, desc), Sort(dataset_id, desc))
 
         in      Criteria()                               nothing asked
@@ -440,70 +488,154 @@ def ordering_for(criteria: Criteria, meta: Meta) -> tuple[Sort, ...]:
     return sorts + (Sort(field=meta.identity, descending=sorts[0].descending),)
 
 
+def order_over(
+    columns: Callable[[str], Any], sorts: tuple[Sort, ...]
+) -> list[UnaryExpression]:
+    """The sorts as ordering, each field read through `columns`. NULL is written out where it
+    goes, because the engines disagree: PostgreSQL puts it last ascending and first descending,
+    SQLite first ascending and last descending.
+
+    in      (Sort(owner, asc),)
+    out     [dataset.owner ASC NULLS FIRST]
+    """
+    clauses: list[UnaryExpression] = []
+    for sort in sorts:
+        column = columns(sort.field)
+        clauses.append(
+            column.desc().nulls_last() if sort.descending else column.asc().nulls_first()
+        )
+    return clauses
+
+
 def order_clauses(entity: type, sorts: tuple[Sort, ...]) -> list[UnaryExpression]:
-    """The sorts as SQLAlchemy ordering.
+    """The sorts as SQLAlchemy ordering over the entity's columns.
 
     in      (Sort(row_count, desc), Sort(dataset_id, desc))
-    out     [dataset.row_count DESC, dataset.dataset_id DESC]
+    out     [dataset.row_count DESC NULLS LAST, dataset.dataset_id DESC]
     """
-    return [
-        (
-            column_attribute(entity, sort.field).desc()
-            if sort.descending
-            else column_attribute(entity, sort.field)
-        )
-        for sort in sorts
-    ]
+    return order_over(lambda field: column_attribute(entity, field), sorts)
 
 
-def resume_clause(
-    model: type, pagination: Pagination, sorts: tuple[Sort, ...]
+def _equal_to_key(column: Any, key: Any) -> ColumnElement[bool]:
+    """A column equal to a key, where NULL is equal to NULL — `IS`, not `=`, because `=` never
+    matches a NULL and a row holding NULL in the key's place is still a row of the same tie.
+    """
+    return column.is_(None) if key is None else column == key
+
+
+def _past_key(column: Any, key: Any, descending: bool) -> ColumnElement[bool]:
+    """A column strictly past a key in its sort, NULL placed as `order_clauses` places it.
+
+    ascending   NULL first:  key NULL → column IS NOT NULL;  key v → column > v
+    descending  NULL last:   key NULL → nothing is past it;  key v → column < v OR column IS NULL
+    """
+    if descending:
+        return false() if key is None else or_(column < key, column.is_(None))
+    return column.is_not(None) if key is None else column > key
+
+
+def resume_over(
+    columns: Callable[[str], Any], pagination: Pagination, sorts: tuple[Sort, ...]
 ) -> ColumnElement[bool] | None:
-    """Everything past where the previous page ended, or nothing for a first page.
+    """Everything past where the previous page ended, each field read through `columns`.
 
         in      Pagination(strategy=Cursor(token=…)), (size, -thing_id)
         keys    CursorKeys(keys=(3, 'th_9'), ordering='size,-thing_id')
-        uniform (size, thing_id) > (3, 'th_9')                    one row-value comparison
         mixed   size > 3 OR (size = 3 AND thing_id < 'th_9')      the disjunction
 
-        in      Pagination()  or  Pagination(strategy=Offset(rows=160))
-        out     None                                             nothing to resume past
+        in      Pagination(strategy=Cursor(token=…)), (size, thing_id)  keys (3, 'th_9')
+        uniform (size, thing_id) > (3, 'th_9')                    one row-value comparison
 
-    A uniform ordering compiles to one row-value comparison, which a planner reads as a
-    range scan over the composite index. A mixed one has no single tuple comparison, so it
-    expands to the lexicographic disjunction `a < :a OR (a = :a AND b > :b)` — same rows,
-    leading column still indexed.
+    A nullable column breaks the row-value comparison: a NULL in the row makes the whole
+    comparison unknown, and a descending column places NULL past every key. So the tuple form
+    is used only for an ascending ordering whose keys hold no NULL; everything else expands to
+    the lexicographic disjunction, where each column is compared on its own with NULL placed
+    as the ordering places it (`_past_key`) and a tie is `IS` (`_equal_to_key`).
 
     1. The keys the cursor carries for this ordering; none — a first page, an offset — is
        no clause.
-    2. Each sort's column on the model.
-    3. Every sort one way: one tuple comparison, `<` when they all descend, `>` otherwise.
-    4. Mixed directions: per sort, the sorts before it equal to their keys and this one
-       past its key in its own direction.
+    2. Each sort's column, read through `columns`.
+    3. Ascending throughout with no NULL key: one tuple comparison, `>`.
+    4. Otherwise: per sort, the sorts before it equal to their keys and this one past its key
+       in its own direction.
     Final: those alternatives joined by OR.
     """
     resumed = pagination.keys_for(sorts)
     if resumed is None:
         return None
 
-    columns = [column_attribute(model, sort.field) for sort in sorts]
-    directions = {sort.descending for sort in sorts}
-
-    if len(directions) == 1:
-        descending = directions.pop()
-        left, right = tuple_(*columns), tuple_(*resumed.keys)
-        return left < right if descending else left > right
+    held = [columns(sort.field) for sort in sorts]
+    ascending = not any(sort.descending for sort in sorts)
+    if ascending and all(key is not None for key in resumed.keys):
+        return tuple_(*held) > tuple_(*resumed.keys)
 
     clauses = []
     for index, sort in enumerate(sorts):
-        equal_so_far = [columns[before] == resumed.keys[before] for before in range(index)]
-        past_it = (
-            columns[index] < resumed.keys[index]
-            if sort.descending
-            else columns[index] > resumed.keys[index]
-        )
+        equal_so_far = [
+            _equal_to_key(held[before], resumed.keys[before]) for before in range(index)
+        ]
+        past_it = _past_key(held[index], resumed.keys[index], sort.descending)
         clauses.append(and_(*equal_so_far, past_it))
     return or_(*clauses)
+
+
+def resume_clause(
+    model: type, pagination: Pagination, sorts: tuple[Sort, ...]
+) -> ColumnElement[bool] | None:
+    """Everything past where the previous page ended, over the entity's columns, or nothing
+    for a first page.
+
+        in      Pagination(strategy=Cursor(token=…)), (size, -thing_id)  keys (3, 'th_9')
+        out     size > 3 OR (size = 3 AND thing_id < 'th_9')
+
+        in      Pagination()  or  Pagination(strategy=Offset(rows=160))
+        out     None                                             nothing to resume past
+    """
+    return resume_over(lambda field: column_attribute(model, field), pagination, sorts)
+
+
+def tiebroken(sorts: tuple[Sort, ...], identity: str) -> tuple[Sort, ...]:
+    """The ordering with the identity appended as the last tiebreaker, in the leading sort's
+    direction, unless it is already there — the total order a keyset needs.
+
+        in      (Sort(size, asc),), "thing_id"       out  (size ASC, thing_id ASC)
+        in      (Sort(thing_id, desc),), "thing_id"  out  (thing_id DESC,)
+    """
+    if any(sort.field == identity for sort in sorts):
+        return sorts
+    return sorts + (Sort(field=identity, descending=sorts[0].descending),)
+
+
+def statement_column(source: Any, field: str) -> Any:
+    """A field as a column of a statement's subquery: what a criteria names when the rows come
+    from a statement the caller wrote, not from a table the framework maps.
+
+        in      the subquery of  SELECT t.thing_id, t.size FROM thing t …,  "size"
+        out     sincpro_statement.size
+        in      "colour"  (not one of its columns)
+        out     InvalidCriteria: the statement has no column 'colour'
+    """
+    if field not in source.c:
+        raise exceptions.InvalidCriteria(f"the statement has no column '{field}'")
+    return source.c[field]
+
+
+def statement_clause(
+    source: Any, expression: Expression | None
+) -> ColumnElement[bool] | None:
+    """A filter over a statement's columns. A condition is answered over the columns the statement
+    returns; a filter that crosses a relation has no table to cross, so it is refused.
+
+        in      All([Condition(size, GT, 100), Condition(label, LIKE, "imp")])
+        out     sincpro_statement.size > 100 AND sincpro_fold(sincpro_statement.label) LIKE …
+    """
+
+    def refused(_node: Through) -> ColumnElement[bool]:
+        raise exceptions.InvalidCriteria(
+            "a filter that crosses a relation cannot be answered over a statement's rows"
+        )
+
+    return clause_over(lambda field: statement_column(source, field), expression, refused)
 
 
 def capped_count(entity: type, clause: ColumnElement[bool] | None, cap: int) -> Select:

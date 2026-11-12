@@ -38,6 +38,7 @@ from sincpro_framework.data_layer.orm.sqlalchemy.infrastructure.read_tracking im
 from sincpro_framework.data_layer.orm.sqlalchemy.infrastructure.transaction_hooks import (
     install as hooks_per_transaction,
 )
+from sincpro_framework.ddd.criteria.domain.accents import FOLDING_FUNCTION, fold
 from sincpro_framework.ddd.editing.preview import is_read_only
 from sincpro_framework.ddd.entity import utc_now
 from sincpro_framework.ddd.repositories.repository import refuse_writing_in_preview
@@ -107,6 +108,18 @@ def _enforcing_foreign_keys(connection: Any, _record: Any) -> None:
     cursor.close()
 
 
+def _fold_or_none(value: Any) -> str | None:
+    """`fold` of a text, and `NULL` for a `NULL`: what SQL expects of a function over a column."""
+    return None if value is None else fold(str(value))
+
+
+def _folding_text(connection: Any, _record: Any) -> None:
+    """SQLite has no `translate`, so the text read without case or accents is a function this
+    connection is given: `fold`, the same one the in-memory evaluator uses. Given on every new
+    connection, because a function lives on the connection that registered it."""
+    connection.create_function(FOLDING_FUNCTION, 1, _fold_or_none, deterministic=True)
+
+
 ENGINES: "weakref.WeakSet[Engine]" = weakref.WeakSet()
 """Every engine built here: what has to forget its compiled statements when a mapper changes."""
 
@@ -173,6 +186,8 @@ class Database:
         observe(self.engine, self.name, logger)
         if enforce_foreign_keys and self.engine.dialect.name == "sqlite":
             event.listen(self.engine, "connect", _enforcing_foreign_keys)
+        if self.engine.dialect.name == "sqlite":
+            event.listen(self.engine, "connect", _folding_text)
 
         self.open_session = sessionmaker(
             bind=self.engine, expire_on_commit=False, autoflush=True, info={IN_PLACE: True}

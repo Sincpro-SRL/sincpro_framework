@@ -34,8 +34,9 @@ Three rules, each preventing a failure that was observed in real code:
   take goes into `EntityCollection.dropped`; a dropped filter *widens* the result, so it is said out loud.
 - **A partial collection refuses to fold itself.** `sum_by` over a page raises and names
   `self.repository.measures(...)`, the call that answers about the whole set.
-- **Ordering by a nullable column is refused.** A keyset comparison omits rows holding `NULL`, which
-  is the one failure in this design that loses data without raising.
+- **A nullable column orders like any other.** `NULL` has a place in the order: first ascending,
+  last descending, on every engine. The keyset compares it that way, so a walk over a nullable
+  column yields every row once.
 
 `Entity` is a convention, not a requirement: the engine works for any mapped class, and identity is
 read from the primary key. What the convention adds is the version check and the stamped

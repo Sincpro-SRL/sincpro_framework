@@ -10,6 +10,7 @@ A select must not load the detail, and a get is one record, never a page.
 
 from sincpro_framework.ddd.criteria import (
     Criteria,
+    Node,
     Pagination,
     Specification,
 )
@@ -25,12 +26,17 @@ def matching(model: type, text: str) -> Criteria:
 
         in      Account (code starts with TEXT or name like TEXT), "1.2.3"
         out     code starts with 1.2.3 OR name contains 1.2.3, first 8, {id, display}
+        in      Account, "factura 2026"
+        out     (code starts with factura OR name contains factura)
+                AND (code starts with 2026 OR name contains 2026)   each word, in some field
         in      Account, "   "      →  out  no filter on the text, first 8 in the list order
         in      Line, "x"           →  out  an empty page: Line has nothing to search
 
     1. A blank literal drops every condition holding `TEXT`; what the template asks besides the
        text (an `active = true`) still applies.
-    2. With no template, a literal finds nothing: an empty page, never every record.
+    2. The text is split into words, and each word has to appear in some field the template
+       searches: the words are the `and` of the template filled with each one.
+    3. With no template, a literal finds nothing: an empty page, never every record.
     Final: the page is in the entity's list order, which the store applies when the criteria
     names none. Each record comes back as a reference: its identity and its display field.
     """
@@ -40,10 +46,13 @@ def matching(model: type, text: str) -> Criteria:
     if template is None:
         limit = NAME_SEARCH_LIMIT if not literal else 0
         return Criteria(pagination=Pagination(limit=limit), specification=reference)
+    selection = template.selection
+    if selection is not None:
+        selection = Node.combined(
+            *(selection.with_text(word) for word in literal.split() or [""])
+        )
     return Criteria(
-        selection=(
-            template.selection.with_text(literal) if template.selection is not None else None
-        ),
+        selection=selection,
         pagination=Pagination(limit=NAME_SEARCH_LIMIT),
         specification=reference,
     )

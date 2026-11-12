@@ -86,6 +86,7 @@
                 "es": "Actualizado el"
               },
               "readonly": true,
+              "sortable": true,
               "groupable": true,
               "aggregates": [
                 "min",
@@ -276,6 +277,7 @@
             "x-sincpro": {
               "type": "date",
               "widget": "date",
+              "sortable": true,
               "groupable": true,
               "aggregates": [
                 "min",
@@ -444,6 +446,7 @@
                     "es": "Actualizado el"
                   },
                   "readonly": true,
+                  "sortable": true,
                   "groupable": true,
                   "aggregates": [
                     "min",
@@ -688,6 +691,7 @@
               "es": "Actualizado el"
             },
             "readonly": true,
+            "sortable": true,
             "groupable": true,
             "aggregates": [
               "min",
@@ -707,8 +711,7 @@
             ],
             "type": "datetime",
             "kind": "scalar",
-            "nullable": true,
-            "sortable": false
+            "nullable": true
           },
           "version": {
             "widget": "number",
@@ -928,6 +931,7 @@
           },
           "delivery": {
             "widget": "date",
+            "sortable": true,
             "groupable": true,
             "aggregates": [
               "min",
@@ -950,8 +954,7 @@
             ],
             "type": "date",
             "kind": "scalar",
-            "nullable": true,
-            "sortable": false
+            "nullable": true
           },
           "note": {
             "widget": "text",
@@ -1086,6 +1089,7 @@
                 "es": "Actualizado el"
               },
               "readonly": true,
+              "sortable": true,
               "groupable": true,
               "aggregates": [
                 "min",
@@ -1255,6 +1259,7 @@
               "es": "Actualizado el"
             },
             "readonly": true,
+            "sortable": true,
             "groupable": true,
             "aggregates": [
               "min",
@@ -1274,8 +1279,7 @@
             ],
             "type": "datetime",
             "kind": "scalar",
-            "nullable": true,
-            "sortable": false
+            "nullable": true
           },
           "version": {
             "widget": "number",
@@ -1436,6 +1440,7 @@
                 "es": "Actualizado el"
               },
               "readonly": true,
+              "sortable": true,
               "groupable": true,
               "aggregates": [
                 "min",
@@ -1503,6 +1508,7 @@
             "x-sincpro": {
               "type": "text",
               "widget": "text",
+              "sortable": true,
               "groupable": true,
               "aggregates": [
                 "min",
@@ -1534,6 +1540,7 @@
             "x-sincpro": {
               "type": "text",
               "widget": "text",
+              "sortable": true,
               "groupable": true,
               "aggregates": [
                 "min",
@@ -1565,6 +1572,7 @@
             "x-sincpro": {
               "type": "integer",
               "widget": "number",
+              "sortable": true,
               "groupable": true,
               "aggregates": [
                 "sum",
@@ -1603,6 +1611,7 @@
             "x-sincpro": {
               "type": "text",
               "widget": "text",
+              "sortable": true,
               "groupable": true,
               "aggregates": [
                 "min",
@@ -1719,6 +1728,7 @@
               "es": "Actualizado el"
             },
             "readonly": true,
+            "sortable": true,
             "groupable": true,
             "aggregates": [
               "min",
@@ -1738,8 +1748,7 @@
             ],
             "type": "datetime",
             "kind": "scalar",
-            "nullable": true,
-            "sortable": false
+            "nullable": true
           },
           "version": {
             "widget": "number",
@@ -1777,6 +1786,7 @@
           },
           "order_id": {
             "widget": "text",
+            "sortable": true,
             "groupable": true,
             "aggregates": [
               "min",
@@ -1796,11 +1806,11 @@
             "relation": "Order",
             "type": "text",
             "kind": "scalar",
-            "nullable": true,
-            "sortable": false
+            "nullable": true
           },
           "buyer_code": {
             "widget": "text",
+            "sortable": true,
             "groupable": true,
             "aggregates": [
               "min",
@@ -1820,11 +1830,11 @@
             "relation": "Buyer",
             "type": "text",
             "kind": "scalar",
-            "nullable": true,
-            "sortable": false
+            "nullable": true
           },
           "carrier_number": {
             "widget": "number",
+            "sortable": true,
             "groupable": true,
             "aggregates": [
               "sum",
@@ -1851,11 +1861,11 @@
             "relation": "Carrier",
             "type": "integer",
             "kind": "scalar",
-            "nullable": true,
-            "sortable": false
+            "nullable": true
           },
           "warehouse_id": {
             "widget": "text",
+            "sortable": true,
             "groupable": true,
             "aggregates": [
               "min",
@@ -1875,8 +1885,7 @@
             "relation": "stock.Warehouse",
             "type": "text",
             "kind": "scalar",
-            "nullable": true,
-            "sortable": false
+            "nullable": true
           },
           "merged_order_ids": {
             "widget": "tags",
