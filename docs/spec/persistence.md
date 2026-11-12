@@ -49,7 +49,7 @@ nobody wrote yet, and goes stale).
 | Filter language | ✅ | `Condition`, `All`, `Any`, `Not`; operators by type; a value is a literal or a dynamic value | `tests/ddd/criteria/test_criteria.py` |
 | Dynamic values | ✅ | `today`, `now`, `period` (named or a window), `context`, `param`, `field`; stored symbolic, read by the server; UTC | `tests/ddd/criteria/test_resolve.py` |
 | Column against column | ✅ | `FromField`; same type, comparing operator | `tests/ddd/criteria/test_resolve.py` |
-| Ordering, keyset and offset pages | ✅ | a nullable column is refused for ordering; a cursor is opaque and typed | `tests/ddd/criteria/test_pagination.py` |
+| Ordering, keyset and offset pages | ✅ | a nullable column orders too, NULL first ascending and last descending; a cursor is opaque and typed | `tests/ddd/criteria/test_pagination.py` |
 | Specification (what to bring) | ✅ | field → criteria, at any depth; the identity always travels | `tests/ddd/criteria/test_specification.py` |
 | Same answer in memory and SQL | ✅ | one parity file run through both evaluators and the TypeScript client | `tests/ddd/criteria/test_criteria_parity.py` |
 | Built-in reads | ✅ | `EntityReads`: get, get many, select by text, list, history | `tests/ddd/reads/test_reads.py` |

@@ -161,12 +161,21 @@ def _measure_of(values: list[Any], measure: Measure) -> Any:
     return MEASURES[measure.function](values)
 
 
+def _placed(value: Any) -> tuple[bool, Any]:
+    """A value as the order places it: NULL before every value, as ascending puts it first.
+    Descending reverses that, so NULL lands last — the placement the database's
+    `NULLS FIRST` / `NULLS LAST` gives. The flag keeps `None` out of every comparison."""
+    return (value is not None, value)
+
+
 def _sorted(records: list[Any], sorts: tuple[Sort, ...]) -> list[Any]:
     """The records in the criteria's order, one sort at a time from the last to the first, so
     an earlier sort wins over a later one — what a stable sort gives for free."""
     ordered = list(records)
     for sort in reversed(sorts):
-        ordered.sort(key=lambda record: getattr(record, sort.field), reverse=sort.descending)
+        ordered.sort(
+            key=lambda record: _placed(getattr(record, sort.field)), reverse=sort.descending
+        )
     return ordered
 
 
@@ -174,16 +183,17 @@ def _after(records: list[Any], keys: CursorKeys, sorts: tuple[Sort, ...]) -> lis
     """The rows past the one a cursor names, compared the way the keyset compares them.
 
     The first sort that differs decides, in its own direction; a row equal on every key is the
-    row the cursor was minted from and does not come back.
+    row the cursor was minted from and does not come back. NULL is placed as `_placed` places
+    it, so a NULL key is past nothing ascending and everything with a value descending.
     """
 
     def beyond(record: Any) -> bool:
         """Whether `record` comes after the cursor — the first key that differs decides."""
         for value, sort in zip(keys.keys, sorts):
-            mine = getattr(record, sort.field)
-            if mine == value:
+            mine, theirs = _placed(getattr(record, sort.field)), _placed(value)
+            if mine == theirs:
                 continue
-            return bool(mine < value) if sort.descending else bool(mine > value)
+            return bool(mine < theirs) if sort.descending else bool(mine > theirs)
         return False
 
     return [record for record in records if beyond(record)]

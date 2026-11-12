@@ -183,7 +183,7 @@ two refusals. They run on SQLite and PostgreSQL.
 nests under. `map_aggregates` fills it; everything that has to know whose a field is asks it.
 
 - **`Meta`** lists the fields of every extension on the core, each with `owner` (`"MoveDelivery"`),
-  nullable and not sortable (`test_the_definition_of_the_core_says_whose_each_field_is`). The
+  nullable and sortable (`test_the_definition_of_the_core_says_whose_each_field_is`). The
   extension's own definition has its fields with no owner.
 - **The answer's schema** — what OpenAPI and a generated client are built from — describes the
   extensions' fields too: flat and optional, or as one nullable object per extension

@@ -139,10 +139,13 @@ def test_a_page_knows_it_is_a_fragment_and_refuses_to_fold_itself(store):
         page.sum_by(lambda thing: thing.size)
 
 
-def test_ordering_by_a_nullable_column_is_refused(store):
-    """The one refusal in the compiler: a NULL in a keyset column drops the row silently."""
-    with pytest.raises(exceptions.InvalidCriteria, match="nullable"):
-        store.search(Things, Criteria(order=Sort.parse("owner")))
+def test_ordering_by_a_nullable_column_places_null_first_ascending(store):
+    """A NULL is a place in the order, not a row the page drops: ascending it comes first."""
+    page = store.search(
+        Things, Criteria(order=Sort.parse("owner"), pagination=Pagination(limit=ROW_COUNT))
+    )
+
+    assert page.ids[:9] == [f"th_{number:04d}" for number in range(0, ROW_COUNT, 3)]
 
 
 def test_ordering_by_a_field_that_does_not_exist_is_refused(store):

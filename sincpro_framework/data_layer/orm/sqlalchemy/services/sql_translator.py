@@ -22,6 +22,7 @@ from sqlalchemy import (
     any_,
     bindparam,
     cast,
+    false,
     func,
     not_,
     or_,
@@ -422,7 +423,7 @@ def ordering_for(criteria: Criteria, meta: Meta) -> tuple[Sort, ...]:
     """The ordering a page will actually use, tiebreaker included.
 
         in      Criteria(order=(Sort(row_count, desc),)), Meta of Dataset
-        check   row_count is orderable                   nullable ones are refused
+        check   row_count is orderable                   a list is refused, a NULL is not
         out     (Sort(row_count, desc), Sort(dataset_id, desc))
 
         in      Criteria()                               nothing asked
@@ -441,19 +442,40 @@ def ordering_for(criteria: Criteria, meta: Meta) -> tuple[Sort, ...]:
 
 
 def order_clauses(entity: type, sorts: tuple[Sort, ...]) -> list[UnaryExpression]:
-    """The sorts as SQLAlchemy ordering.
+    """The sorts as SQLAlchemy ordering. NULL is written out where it goes, because the
+    engines disagree: PostgreSQL puts it last ascending and first descending, SQLite first
+    ascending and last descending.
 
     in      (Sort(row_count, desc), Sort(dataset_id, desc))
-    out     [dataset.row_count DESC, dataset.dataset_id DESC]
+    out     [dataset.row_count DESC NULLS LAST, dataset.dataset_id DESC]
+    in      (Sort(owner, asc),)
+    out     [dataset.owner ASC NULLS FIRST]
     """
-    return [
-        (
-            column_attribute(entity, sort.field).desc()
-            if sort.descending
-            else column_attribute(entity, sort.field)
+    clauses: list[UnaryExpression] = []
+    for sort in sorts:
+        column = column_attribute(entity, sort.field)
+        clauses.append(
+            column.desc().nulls_last() if sort.descending else column.asc().nulls_first()
         )
-        for sort in sorts
-    ]
+    return clauses
+
+
+def _equal_to_key(column: Any, key: Any) -> ColumnElement[bool]:
+    """A column equal to a key, where NULL is equal to NULL — `IS`, not `=`, because `=` never
+    matches a NULL and a row holding NULL in the key's place is still a row of the same tie.
+    """
+    return column.is_(None) if key is None else column == key
+
+
+def _past_key(column: Any, key: Any, descending: bool) -> ColumnElement[bool]:
+    """A column strictly past a key in its sort, NULL placed as `order_clauses` places it.
+
+    ascending   NULL first:  key NULL → column IS NOT NULL;  key v → column > v
+    descending  NULL last:   key NULL → nothing is past it;  key v → column < v OR column IS NULL
+    """
+    if descending:
+        return false() if key is None else or_(column < key, column.is_(None))
+    return column.is_not(None) if key is None else column > key
 
 
 def resume_clause(
@@ -463,23 +485,26 @@ def resume_clause(
 
         in      Pagination(strategy=Cursor(token=…)), (size, -thing_id)
         keys    CursorKeys(keys=(3, 'th_9'), ordering='size,-thing_id')
-        uniform (size, thing_id) > (3, 'th_9')                    one row-value comparison
         mixed   size > 3 OR (size = 3 AND thing_id < 'th_9')      the disjunction
+
+        in      Pagination(strategy=Cursor(token=…)), (size, thing_id)  keys (3, 'th_9')
+        uniform (size, thing_id) > (3, 'th_9')                    one row-value comparison
 
         in      Pagination()  or  Pagination(strategy=Offset(rows=160))
         out     None                                             nothing to resume past
 
-    A uniform ordering compiles to one row-value comparison, which a planner reads as a
-    range scan over the composite index. A mixed one has no single tuple comparison, so it
-    expands to the lexicographic disjunction `a < :a OR (a = :a AND b > :b)` — same rows,
-    leading column still indexed.
+    A nullable column breaks the row-value comparison: a NULL in the row makes the whole
+    comparison unknown, and a descending column places NULL past every key. So the tuple form
+    is used only for an ascending ordering whose keys hold no NULL; everything else expands to
+    the lexicographic disjunction, where each column is compared on its own with NULL placed
+    as the ordering places it (`_past_key`) and a tie is `IS` (`_equal_to_key`).
 
     1. The keys the cursor carries for this ordering; none — a first page, an offset — is
        no clause.
     2. Each sort's column on the model.
-    3. Every sort one way: one tuple comparison, `<` when they all descend, `>` otherwise.
-    4. Mixed directions: per sort, the sorts before it equal to their keys and this one
-       past its key in its own direction.
+    3. Ascending throughout with no NULL key: one tuple comparison, `>`.
+    4. Otherwise: per sort, the sorts before it equal to their keys and this one past its key
+       in its own direction.
     Final: those alternatives joined by OR.
     """
     resumed = pagination.keys_for(sorts)
@@ -487,21 +512,16 @@ def resume_clause(
         return None
 
     columns = [column_attribute(model, sort.field) for sort in sorts]
-    directions = {sort.descending for sort in sorts}
-
-    if len(directions) == 1:
-        descending = directions.pop()
-        left, right = tuple_(*columns), tuple_(*resumed.keys)
-        return left < right if descending else left > right
+    ascending = not any(sort.descending for sort in sorts)
+    if ascending and all(key is not None for key in resumed.keys):
+        return tuple_(*columns) > tuple_(*resumed.keys)
 
     clauses = []
     for index, sort in enumerate(sorts):
-        equal_so_far = [columns[before] == resumed.keys[before] for before in range(index)]
-        past_it = (
-            columns[index] < resumed.keys[index]
-            if sort.descending
-            else columns[index] > resumed.keys[index]
-        )
+        equal_so_far = [
+            _equal_to_key(columns[before], resumed.keys[before]) for before in range(index)
+        ]
+        past_it = _past_key(columns[index], resumed.keys[index], sort.descending)
         clauses.append(and_(*equal_so_far, past_it))
     return or_(*clauses)
 

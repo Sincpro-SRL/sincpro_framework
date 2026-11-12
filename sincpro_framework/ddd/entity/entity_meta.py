@@ -585,8 +585,8 @@ class FieldMeta(DataTransferObject):
     entity's `presentation` declared it (`totals`). `None`: nothing is added up. A hint."""
 
     sortable: bool
-    """False for every nullable column: a keyset comparison omits rows holding NULL, so
-    ordering by one loses rows from the pagination in silence."""
+    """False for a list or a translation, which no order reads. A nullable column is sortable:
+    NULL has a place in the order (first ascending, last descending) and the keyset walks it."""
 
     groupable: bool = False
     """Whether a grouping may split by this field (`GroupingLevel(field=…)`): a scalar that is not a list
@@ -600,7 +600,7 @@ class FieldMeta(DataTransferObject):
     owner: str | None = None
     """The extension that adds this field, by class name (`MoveDelivery`); `None` for a field the
     entity has itself. An extension's field may be absent on a record that has no extension, so
-    it is nullable and not sortable here whatever its column says."""
+    it is nullable, and an absent value sorts where NULL does."""
 
     ops: tuple[Operator, ...]
     """Included although derivable from `type`, so a consumer never has to carry the table."""
@@ -742,13 +742,13 @@ class FieldMeta(DataTransferObject):
         """The definition of one column, from what the reader knows about it.
 
             in      INTEGER, nullable=False   →  sortable, every comparable operator
-            in      TEXT, nullable=True       →  not sortable, and `is null` offered too
+            in      TEXT, nullable=True       →  sortable (NULL first, then last), `is null` offered too
 
         1. Offer the operators its type takes, plus `is_null` when it may be absent.
         2. List the values of an enum as its choices, with what each is called.
-        3. Final: sortable only when NOT NULL and not a list or a translation — a keyset
-           comparison drops rows holding NULL, and there is no order over a JSON value a
-           cursor could page through.
+        3. Final: sortable unless it is a list or a translation — there is no order over a JSON
+           value a cursor could page through. A nullable column sorts too: NULL goes first
+           ascending and last descending, and the keyset compares it that way.
         """
         unsortable = (FieldType.TEXT_LIST, FieldType.TRANSLATED)
         return cls(
@@ -757,7 +757,7 @@ class FieldMeta(DataTransferObject):
             choices=list(members or []),
             choice_labels=dict(choice_labels or {}),
             exact=exact,
-            sortable=not nullable and logical not in unsortable,
+            sortable=logical not in unsortable,
             groupable=logical in AGGREGATES_BY_TYPE,
             aggregates=AGGREGATES_BY_TYPE.get(logical, ()),
             ops=OPERATORS_BY_TYPE[logical] + ((IS_NULL,) if nullable else ()),
@@ -969,18 +969,15 @@ class Meta(DataTransferObject):
     def orderable(self, name: str) -> FieldMeta:
         """The field, if a page may be ordered by it.
 
-            in  "registered_at"  →  out  FieldMeta(...)    NOT NULL, so it can be paged
-            in  "produced_by"    →  out  InvalidCriteria   nullable
-            in  "nope"           →  out  InvalidCriteria   no such field
-
-        A nullable column is refused because a page ordered by one silently drops the rows
-        that hold no value — the one failure here that loses data without raising.
+        in  "registered_at"  →  out  FieldMeta(...)
+        in  "produced_by"    →  out  FieldMeta(...)    nullable: NULL pages first, then last
+        in  "tags"           →  out  InvalidCriteria   a list has no order
+        in  "nope"           →  out  InvalidCriteria   no such field
         """
         found = self.field(name)
         if not found.sortable:
             raise exceptions.InvalidCriteria(
-                f"cannot order by '{name}': it is nullable, and a page ordered by a nullable "
-                "column silently drops the rows that hold no value"
+                f"cannot order by '{name}': a list or a translation has no order to page by"
             )
         return found
 

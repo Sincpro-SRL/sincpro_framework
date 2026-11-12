@@ -61,12 +61,12 @@ def test_the_operators_offered_match_the_type():
     )
 
 
-def test_a_nullable_column_gains_is_null_and_loses_sortability():
+def test_a_nullable_column_gains_is_null_and_stays_sortable():
     fields = ModelIntrospection.describe(Thing).fields
 
     assert fields["owner"].nullable
     assert Operator.IS_NULL in fields["owner"].ops
-    assert not fields["owner"].sortable
+    assert fields["owner"].sortable
 
 
 def test_a_not_null_column_is_sortable_and_has_no_is_null():
