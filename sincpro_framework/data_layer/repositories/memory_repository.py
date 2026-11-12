@@ -752,21 +752,16 @@ class MemoryRepository(
         return rows, dropped + unanswerable
 
     def _ordering(self, aggregate: type, criteria: Criteria) -> tuple[Sort, ...]:
-        """The sorts a read applies: the criteria's, or the aggregate's default order, each
-        checked as orderable, with the identity appended as the last tie-breaker unless
-        already there — the same total order the engine gives, so a cursor names exactly one
-        row.
+        """The sorts a read applies — `Meta.ordering`, the same total order the engine gives, so
+        a cursor names exactly one row — after refusing a field an extension adds that this
+        store cannot answer.
 
             Criteria(order="-issued_at")  ->  (Sort("issued_at", desc), Sort("id", desc))
         """
         meta = self.definition(aggregate)
-        sorts = criteria.order or Sort.parse(meta.default_order)
-        self._refuse_unanswerable(aggregate, [sort.field for sort in sorts])
-        for sort in sorts:
-            meta.orderable(sort.field)
-        if any(sort.field == meta.identity for sort in sorts):
-            return sorts
-        return sorts + (Sort(field=meta.identity, descending=sorts[0].descending),)
+        asked = criteria.order or Sort.parse(meta.default_order)
+        self._refuse_unanswerable(aggregate, [sort.field for sort in asked])
+        return meta.ordering(asked)
 
     def _events_about(self, aggregate: type, identity: Any) -> list[DomainEvent]:
         """Every domain event stored about one aggregate — its type's name and its id — which

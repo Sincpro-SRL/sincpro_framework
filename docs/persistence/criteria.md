@@ -215,9 +215,9 @@ returns the page with its definition cut by the same specification. A client pag
 
 ## A page over a statement you wrote
 
-A join, a subquery or a report is not a table the framework maps, so a criteria cannot name its
-fields as model fields. `search_sql` takes the statement and reads the criteria over its columns:
-the filter, the ordering, the cursor and the count are the same as for `search`.
+A join, a subquery or a report is not a table the framework maps. `search_sql` takes the
+statement and reads the criteria over its columns exactly as `search` reads one over a model: the
+same filter, ordering, cursor, offset and count.
 
 ```python
 statement = text(
@@ -228,16 +228,29 @@ statement = text(
 page = repository.search_sql(Thing, statement, Criteria(selection=..., pagination=Pagination(limit=20)))
 ```
 
-- The rows come back as the model: the statement names every column the model maps, under its
-  name, and a statement missing one is refused.
-- A report has no model to read as: `query_page(statement, criteria, identity="thing_id")` returns a
-  `RowPage` of dicts, the cursor and the count. Its ordering ends on `identity`, so a cursor names one row.
-- Every value a criteria carries is bound as a parameter. A filter over a relation is refused: a
-  statement has no relation to cross.
-- The statement must be one read: a write (`UPDATE`, `DELETE`, `INSERT`), a row lock (`FOR UPDATE`)
-  or a second statement after `;` is refused with `ProgrammingError`. The statement itself is still
-  written by the server: the framework binds values, it cannot tell a fixed statement from one built
-  from a request, so that stays the developer's rule.
+- **The rows come back as the model.** The statement returns every column the model maps, under
+  its name; a statement missing one is refused.
+- **Each other column is a field as its type says.** A column typed with `.columns(column("label",
+  Text))` is filtered as a text. An untyped one can be ordered and shown, but takes no condition.
+  A column that does not say it is NOT NULL may hold NULL.
+- **The criteria is read as `search` reads it:**
+  - each value as its field's type, so a date sent as JSON text is a date;
+  - its dynamic values resolved (`{"$": "today"}`, the context);
+  - a field the statement does not return dropped and reported in `dropped`, never a 400.
+- **What the repository adds is added here too:**
+  - the scope of a `narrowed()` repository;
+  - the archived records left out.
+  A statement that cannot answer the scope is refused rather than read wide.
+- **A report has no model to read as.** `query_page(statement, "id", criteria)` returns a
+  `RowPage` with the rows as dicts, the cursor, the count and `dropped`. Its ordering ends on the
+  identity column, which the statement has to return, so a cursor names one row.
+- **Values never enter the statement.** Every value a criteria carries is bound as a parameter. A
+  filter over a relation is refused: a statement has no relation to cross.
+- **The statement must be one read.** A write (`UPDATE`, `DELETE`, `INSERT`), a row lock
+  (`FOR UPDATE`) or a second statement after `;` is refused with `ProgrammingError`. The check
+  reads the SQL text, so it is conservative: a `WITH` that names a column `update` is refused too.
+  The statement itself stays the server's to write. The framework binds values, but it cannot tell
+  a fixed statement from one built from a request.
 
 ### Exposing it to a client
 
@@ -257,10 +270,9 @@ class ListLabelledThings(Feature):
 ```
 
 Use it for the resources a plain `search` cannot express — a join to another entity, a projection
-that crosses tables — and not as a generic capability. The statement must filter what the model's
-own reads filter (archived records, tenant), because `search_sql` does not add it. The columns a
-statement returns beyond the model's are filterable but not hydrated onto the entity: a UI that
-shows them reads them with `query_page`, or the model gains the field.
+that crosses tables — and not as a generic capability. The columns a statement returns beyond the
+model's are filterable, but they are not hydrated onto the entity and not published in the client
+contract: a UI that shows them reads them with `query_page`, or the model gains the field.
 
 ## What a client reads
 

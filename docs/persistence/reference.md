@@ -37,6 +37,11 @@ Three rules, each preventing a failure that was observed in real code:
 - **A nullable column orders like any other.** `NULL` has a place in the order: first ascending,
   last descending, on every engine. The keyset compares it that way, so a walk over a nullable
   column yields every row once.
+  - Only a nullable column is written with `NULLS FIRST` / `NULLS LAST`, because PostgreSQL's
+    default places NULL the other way.
+  - On PostgreSQL, an index that serves that order is declared the same way:
+    `(due_on NULLS FIRST, id)`.
+  - A column that is never NULL is ordered without it, so its ordinary index serves the page.
 
 `Entity` is a convention, not a requirement: the engine works for any mapped class, and identity is
 read from the primary key. What the convention adds is the version check and the stamped

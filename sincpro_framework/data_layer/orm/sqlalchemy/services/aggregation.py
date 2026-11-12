@@ -213,7 +213,7 @@ def ids_per_group(
     Final: per group, its ids and a cursor minted from its last row — `None` when the page
     already holds every row of the group.
     """
-    sorts = sql_translator.ordering_for(criteria, meta)
+    sorts = meta.ordering(criteria.order)
     order = sql_translator.order_clauses(model, sorts)
     keys = [
         column.label(f"{sql_translator.GROUP_KEY}{index}")
