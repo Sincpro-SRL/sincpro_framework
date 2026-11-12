@@ -213,6 +213,28 @@ returns the page with its definition cut by the same specification. A client pag
 `cursor`, sent back in the `Query`'s own `cursor` field — never by rewriting the criteria's
 `pagination` (see [paging](../entrypoints/fastapi.md#paging-one-cursor-sent-back-as-it-came)).
 
+## A page over a statement you wrote
+
+A join, a subquery or a report is not a table the framework maps, so a criteria cannot name its
+fields as model fields. `search_sql` takes the statement and reads the criteria over its columns:
+the filter, the ordering, the cursor and the count are the same as for `search`.
+
+```python
+statement = text(
+    "SELECT t.thing_id, t.name, t.size, t.tags, t.made_at, t.owner, l.label "
+    "FROM thing t JOIN thing_label l ON l.thing_id = t.thing_id"
+).columns(*thing_table.c, column("label", Text))
+
+page = repository.search_sql(Thing, statement, Criteria(selection=..., pagination=Pagination(limit=20)))
+```
+
+- The rows come back as the model: the statement names every column the model maps, under its
+  name, and a statement missing one is refused.
+- A report has no model to read as: `query_page(statement, criteria, identity="thing_id")` returns a
+  `RowPage` of dicts, the cursor and the count. Its ordering ends on `identity`, so a cursor names one row.
+- Every value a criteria carries is bound as a parameter. A filter over a relation is refused: a
+  statement has no relation to cross.
+
 ## What a client reads
 
 `Meta.resolvers` lists the dynamic values the server reads — each one's name, what it reads to and

@@ -108,16 +108,16 @@ def _enforcing_foreign_keys(connection: Any, _record: Any) -> None:
     cursor.close()
 
 
+def _fold_or_none(value: Any) -> str | None:
+    """`fold` of a text, and `NULL` for a `NULL`: what SQL expects of a function over a column."""
+    return None if value is None else fold(str(value))
+
+
 def _folding_text(connection: Any, _record: Any) -> None:
     """SQLite has no `translate`, so the text read without case or accents is a function this
     connection is given: `fold`, the same one the in-memory evaluator uses. Given on every new
     connection, because a function lives on the connection that registered it."""
     connection.create_function(FOLDING_FUNCTION, 1, _fold_or_none, deterministic=True)
-
-
-def _fold_or_none(value: Any) -> str | None:
-    """`fold` of a text, and `NULL` for a `NULL`: what SQL expects of a function over a column."""
-    return None if value is None else fold(str(value))
 
 
 ENGINES: "weakref.WeakSet[Engine]" = weakref.WeakSet()

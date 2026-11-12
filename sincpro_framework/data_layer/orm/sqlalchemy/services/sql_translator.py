@@ -488,23 +488,32 @@ def ordering_for(criteria: Criteria, meta: Meta) -> tuple[Sort, ...]:
     return sorts + (Sort(field=meta.identity, descending=sorts[0].descending),)
 
 
-def order_clauses(entity: type, sorts: tuple[Sort, ...]) -> list[UnaryExpression]:
-    """The sorts as SQLAlchemy ordering. NULL is written out where it goes, because the
-    engines disagree: PostgreSQL puts it last ascending and first descending, SQLite first
-    ascending and last descending.
+def order_over(
+    columns: Callable[[str], Any], sorts: tuple[Sort, ...]
+) -> list[UnaryExpression]:
+    """The sorts as ordering, each field read through `columns`. NULL is written out where it
+    goes, because the engines disagree: PostgreSQL puts it last ascending and first descending,
+    SQLite first ascending and last descending.
 
-    in      (Sort(row_count, desc), Sort(dataset_id, desc))
-    out     [dataset.row_count DESC NULLS LAST, dataset.dataset_id DESC]
     in      (Sort(owner, asc),)
     out     [dataset.owner ASC NULLS FIRST]
     """
     clauses: list[UnaryExpression] = []
     for sort in sorts:
-        column = column_attribute(entity, sort.field)
+        column = columns(sort.field)
         clauses.append(
             column.desc().nulls_last() if sort.descending else column.asc().nulls_first()
         )
     return clauses
+
+
+def order_clauses(entity: type, sorts: tuple[Sort, ...]) -> list[UnaryExpression]:
+    """The sorts as SQLAlchemy ordering over the entity's columns.
+
+    in      (Sort(row_count, desc), Sort(dataset_id, desc))
+    out     [dataset.row_count DESC NULLS LAST, dataset.dataset_id DESC]
+    """
+    return order_over(lambda field: column_attribute(entity, field), sorts)
 
 
 def _equal_to_key(column: Any, key: Any) -> ColumnElement[bool]:
@@ -525,10 +534,10 @@ def _past_key(column: Any, key: Any, descending: bool) -> ColumnElement[bool]:
     return column.is_not(None) if key is None else column > key
 
 
-def resume_clause(
-    model: type, pagination: Pagination, sorts: tuple[Sort, ...]
+def resume_over(
+    columns: Callable[[str], Any], pagination: Pagination, sorts: tuple[Sort, ...]
 ) -> ColumnElement[bool] | None:
-    """Everything past where the previous page ended, or nothing for a first page.
+    """Everything past where the previous page ended, each field read through `columns`.
 
         in      Pagination(strategy=Cursor(token=…)), (size, -thing_id)
         keys    CursorKeys(keys=(3, 'th_9'), ordering='size,-thing_id')
@@ -536,9 +545,6 @@ def resume_clause(
 
         in      Pagination(strategy=Cursor(token=…)), (size, thing_id)  keys (3, 'th_9')
         uniform (size, thing_id) > (3, 'th_9')                    one row-value comparison
-
-        in      Pagination()  or  Pagination(strategy=Offset(rows=160))
-        out     None                                             nothing to resume past
 
     A nullable column breaks the row-value comparison: a NULL in the row makes the whole
     comparison unknown, and a descending column places NULL past every key. So the tuple form
@@ -548,7 +554,7 @@ def resume_clause(
 
     1. The keys the cursor carries for this ordering; none — a first page, an offset — is
        no clause.
-    2. Each sort's column on the model.
+    2. Each sort's column, read through `columns`.
     3. Ascending throughout with no NULL key: one tuple comparison, `>`.
     4. Otherwise: per sort, the sorts before it equal to their keys and this one past its key
        in its own direction.
@@ -558,19 +564,78 @@ def resume_clause(
     if resumed is None:
         return None
 
-    columns = [column_attribute(model, sort.field) for sort in sorts]
+    held = [columns(sort.field) for sort in sorts]
     ascending = not any(sort.descending for sort in sorts)
     if ascending and all(key is not None for key in resumed.keys):
-        return tuple_(*columns) > tuple_(*resumed.keys)
+        return tuple_(*held) > tuple_(*resumed.keys)
 
     clauses = []
     for index, sort in enumerate(sorts):
         equal_so_far = [
-            _equal_to_key(columns[before], resumed.keys[before]) for before in range(index)
+            _equal_to_key(held[before], resumed.keys[before]) for before in range(index)
         ]
-        past_it = _past_key(columns[index], resumed.keys[index], sort.descending)
+        past_it = _past_key(held[index], resumed.keys[index], sort.descending)
         clauses.append(and_(*equal_so_far, past_it))
     return or_(*clauses)
+
+
+def resume_clause(
+    model: type, pagination: Pagination, sorts: tuple[Sort, ...]
+) -> ColumnElement[bool] | None:
+    """Everything past where the previous page ended, over the entity's columns, or nothing
+    for a first page.
+
+        in      Pagination(strategy=Cursor(token=…)), (size, -thing_id)  keys (3, 'th_9')
+        out     size > 3 OR (size = 3 AND thing_id < 'th_9')
+
+        in      Pagination()  or  Pagination(strategy=Offset(rows=160))
+        out     None                                             nothing to resume past
+    """
+    return resume_over(lambda field: column_attribute(model, field), pagination, sorts)
+
+
+def tiebroken(sorts: tuple[Sort, ...], identity: str) -> tuple[Sort, ...]:
+    """The ordering with the identity appended as the last tiebreaker, in the leading sort's
+    direction, unless it is already there — the total order a keyset needs.
+
+        in      (Sort(size, asc),), "thing_id"       out  (size ASC, thing_id ASC)
+        in      (Sort(thing_id, desc),), "thing_id"  out  (thing_id DESC,)
+    """
+    if any(sort.field == identity for sort in sorts):
+        return sorts
+    return sorts + (Sort(field=identity, descending=sorts[0].descending),)
+
+
+def statement_column(source: Any, field: str) -> Any:
+    """A field as a column of a statement's subquery: what a criteria names when the rows come
+    from a statement the caller wrote, not from a table the framework maps.
+
+        in      the subquery of  SELECT t.thing_id, t.size FROM thing t …,  "size"
+        out     sincpro_statement.size
+        in      "colour"  (not one of its columns)
+        out     InvalidCriteria: the statement has no column 'colour'
+    """
+    if field not in source.c:
+        raise exceptions.InvalidCriteria(f"the statement has no column '{field}'")
+    return source.c[field]
+
+
+def statement_clause(
+    source: Any, expression: Expression | None
+) -> ColumnElement[bool] | None:
+    """A filter over a statement's columns. A condition is answered over the columns the statement
+    returns; a filter that crosses a relation has no table to cross, so it is refused.
+
+        in      All([Condition(size, GT, 100), Condition(label, LIKE, "imp")])
+        out     sincpro_statement.size > 100 AND sincpro_fold(sincpro_statement.label) LIKE …
+    """
+
+    def refused(_node: Through) -> ColumnElement[bool]:
+        raise exceptions.InvalidCriteria(
+            "a filter that crosses a relation cannot be answered over a statement's rows"
+        )
+
+    return clause_over(lambda field: statement_column(source, field), expression, refused)
 
 
 def capped_count(entity: type, clause: ColumnElement[bool] | None, cap: int) -> Select:
