@@ -310,10 +310,39 @@ CROSSING: list[dict[str, Any]] = [
 ]
 """Cases over `SALES`: a filter that crosses a relation, answered over the records it holds."""
 
+SEARCH_TEMPLATE: dict[str, Any] = {
+    "any": [
+        {"field": "name", "operator": "like", "value": {"$": "param", "name": "text"}},
+        {
+            "field": "owner",
+            "operator": "starts with",
+            "value": {"$": "param", "name": "text"},
+        },
+    ]
+}
+"""An entity's `DEFAULT_LITERAL_SEARCH`: where the text a person types goes."""
+
+LITERAL: list[dict[str, Any]] = [
+    {"name": "one word, found in any field the template searches", "text": "ana"},
+    {"name": "a word without its accents finds the one with them", "text": "impresion"},
+    {"name": "every word has to appear, each in some field", "text": "labs ana"},
+    {"name": "a word no record holds leaves nothing", "text": "labs beto"},
+    {"name": "the spaces around and between words do not count", "text": "  labs   ana  "},
+    {"name": "a code with a dot stays one word", "text": "sales.csv beto"},
+    {"name": "a blank text does not filter", "text": "   "},
+]
+"""Cases over `ROWS`: the search template filled with what a person typed (`with_text`)."""
+
 
 def _answered(case: dict[str, Any], rows: list[Any] = ROWS) -> list[str]:
     expression = None if case["selection"] is None else Node.read(case["selection"])
     return [row.id for row in rows if Evaluation.matches(row, expression)]
+
+
+def _found(case: dict[str, Any]) -> list[str]:
+    """What the search template filled with the case's text keeps of `ROWS`."""
+    expression = Node.read(SEARCH_TEMPLATE).with_text(case["text"])
+    return [row.id for row in ROWS if Evaluation.matches(row, expression)]
 
 
 def test_every_case_is_answered_by_the_in_memory_evaluator():
@@ -330,6 +359,9 @@ def test_every_case_is_answered_by_the_in_memory_evaluator():
     assert written["crossing"]["rows"] == [asdict(one) for one in SALES]
     for case, saved in zip(CROSSING, written["crossing"]["cases"], strict=True):
         assert saved["expected"] == _answered(case, SALES), case["name"]
+    assert written["literal"]["template"] == SEARCH_TEMPLATE
+    for case, saved in zip(LITERAL, written["literal"]["cases"], strict=True):
+        assert saved["expected"] == _found(case), case["name"]
 
 
 def test_the_cases_cover_every_operator_the_engine_declares():
@@ -390,6 +422,19 @@ def write_parity() -> Path:
                             "expected": _answered(one, SALES),
                         }
                         for one in CROSSING
+                    ],
+                },
+                "literal": {
+                    "about": (
+                        "The text a person typed, read by a search template "
+                        "(`DEFAULT_LITERAL_SEARCH`, `meta.search`) over `rows`: split on "
+                        "whitespace, each word has to appear in some field the template "
+                        "searches, and a blank text drops every condition that holds the text."
+                    ),
+                    "template": SEARCH_TEMPLATE,
+                    "cases": [
+                        {"name": one["name"], "text": one["text"], "expected": _found(one)}
+                        for one in LITERAL
                     ],
                 },
             },

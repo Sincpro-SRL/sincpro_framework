@@ -10,7 +10,6 @@ A select must not load the detail, and a get is one record, never a page.
 
 from sincpro_framework.ddd.criteria import (
     Criteria,
-    Node,
     Pagination,
     Specification,
 )
@@ -34,8 +33,8 @@ def matching(model: type, text: str) -> Criteria:
 
     1. A blank literal drops every condition holding `TEXT`; what the template asks besides the
        text (an `active = true`) still applies.
-    2. The text is split into words, and each word has to appear in some field the template
-       searches: the words are the `and` of the template filled with each one.
+    2. Each word of the text has to appear in some field the template searches
+       (`Expression.with_text`).
     3. With no template, a literal finds nothing: an empty page, never every record.
     Final: the page is in the entity's list order, which the store applies when the criteria
     names none. Each record comes back as a reference: its identity and its display field.
@@ -46,13 +45,10 @@ def matching(model: type, text: str) -> Criteria:
     if template is None:
         limit = NAME_SEARCH_LIMIT if not literal else 0
         return Criteria(pagination=Pagination(limit=limit), specification=reference)
-    selection = template.selection
-    if selection is not None:
-        selection = Node.combined(
-            *(selection.with_text(word) for word in literal.split() or [""])
-        )
     return Criteria(
-        selection=selection,
+        selection=(
+            template.selection.with_text(literal) if template.selection is not None else None
+        ),
         pagination=Pagination(limit=NAME_SEARCH_LIMIT),
         specification=reference,
     )

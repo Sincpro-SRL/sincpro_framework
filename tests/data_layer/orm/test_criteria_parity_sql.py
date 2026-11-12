@@ -81,3 +81,16 @@ def test_the_database_answers_each_parity_case_as_the_file_says(
     found = rows.search(ParityRow, Criteria(selection=where, pagination=everything))
 
     assert sorted(one.id for one in found) == sorted(case["expected"])
+
+
+@pytest.mark.parametrize("case", PARITY["literal"]["cases"], ids=lambda case: case["name"])
+def test_the_database_answers_each_literal_search_as_the_file_says(
+    rows: Repository, case: dict[str, Any]
+):
+    """The search template filled with a typed text, word by word, answered by the database."""
+    where = Node.read(PARITY["literal"]["template"]).with_text(case["text"])
+    everything = Pagination(limit=len(PARITY["rows"]) + 1)
+
+    found = rows.search(ParityRow, Criteria(selection=where, pagination=everything))
+
+    assert sorted(one.id for one in found) == sorted(case["expected"])

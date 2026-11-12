@@ -514,7 +514,7 @@ TEXT = Param(name="text")
 
     Condition(field="code", operator=Operator.STARTS_WITH, value=TEXT)
 
-`Node.with_text` puts the literal in its place. It is a value, so a template is still a `Criteria`
+`Node.with_text` puts each word of the typed text in its place. It is a value, so a template is still a `Criteria`
 that travels as JSON — `{"$": "param", "name": "text"}` — and a client fills the same way."""
 
 
