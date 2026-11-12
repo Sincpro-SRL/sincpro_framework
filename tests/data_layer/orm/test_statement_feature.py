@@ -6,6 +6,8 @@ goes back and forth exactly as for any paginated Query. Its permission is declar
 the bus refuses a caller who lacks it.
 """
 
+from datetime import timedelta
+
 import pytest
 from sqlalchemy import Column, MetaData, Table, Text, column, text
 
@@ -14,10 +16,10 @@ from sincpro_framework.auth import AccessControl, Identity, Permission, security
 from sincpro_framework.auth.domain import exceptions as auth_exceptions
 from sincpro_framework.data_layer.orm.sqlalchemy.entrypoint.repository import Repository
 from sincpro_framework.ddd import Criteria, Query, ResponsePaginatedQuery
-from sincpro_framework.ddd.criteria import Condition, Operator, Pagination
+from sincpro_framework.ddd.criteria import Pagination
 
 from .engines import fresh
-from .models import ROW_COUNT, Things, mapper_registry, thing_table
+from .models import EPOCH, ROW_COUNT, Things, mapper_registry, thing_table
 
 label_metadata = MetaData()
 label_table = Table(
@@ -41,7 +43,13 @@ class ResponseLabelledThings(ResponsePaginatedQuery):
     things: list[dict]
 
 
-def _bus(engine_url, things, guard: AccessControl | None = None) -> UseFramework:
+READER = Identity.user("user:8", permissions={LabelPermission.READ})
+
+
+@pytest.fixture
+def billing(engine_url, things):
+    """The bounded context whose Feature answers from the join, guarded by its permission, and
+    called as a reader who holds it."""
     database = fresh(engine_url, mapper_registry.metadata)
     label_table.create(database.engine)
     repository = Repository(database)
@@ -56,12 +64,12 @@ def _bus(engine_url, things, guard: AccessControl | None = None) -> UseFramework
                 )
             )
 
+    guard = AccessControl[LabelPermission]()
     bus = UseFramework("labelled-things", log_after_execution=False)
     bus.add_dependency("repository", repository)
-    declared = guard.requires(LabelPermission.READ) if guard is not None else _nothing
 
     @bus.feature(QueryLabelledThings)
-    @declared
+    @guard.requires(LabelPermission.READ)
     class ListLabelledThings(Feature):
         """The server's statement: the join. The criteria filters, orders and pages it."""
 
@@ -79,25 +87,9 @@ def _bus(engine_url, things, guard: AccessControl | None = None) -> UseFramework
                 cursor=page.cursor,
             )
 
-    if guard is not None:
-        guard.on(bus)
-    return bus
-
-
-def _nothing(cls):
-    return cls
-
-
-@pytest.fixture
-def billing(engine_url, things):
-    return _bus(engine_url, things)
-
-
-def _impressions() -> Criteria:
-    return Criteria(
-        selection=Condition(field="label", operator=Operator.LIKE, value="impresion"),
-        pagination=Pagination(limit=50),
-    )
+    guard.on(bus)
+    with security.as_identity(READER):
+        yield bus
 
 
 def test_the_client_can_send_no_statement_only_a_criteria():
@@ -105,13 +97,38 @@ def test_the_client_can_send_no_statement_only_a_criteria():
 
 
 def test_a_criteria_filters_the_statement_the_server_wrote(billing):
-    answer = billing(QueryLabelledThings(criteria=_impressions()), ResponseLabelledThings)
+    asked = QueryLabelledThings.model_validate(
+        {
+            "criteria": {
+                "selection": {"field": "label", "operator": "like", "value": "impresion"}
+            }
+        }
+    )
+
+    answer = billing(asked, ResponseLabelledThings)
 
     # Every third thing carries the label `Impresión`. The filter read that column, though the
     # answer carries only the model's own fields.
     assert {row["id"] for row in answer.things} == {
         f"th_{number:04d}" for number in range(0, ROW_COUNT, 3)
     }
+
+
+def test_a_date_a_client_sends_as_text_filters_the_statement(billing):
+    """What a UI sends: JSON, where a date is text. It is read as the date it names."""
+    since = (EPOCH + timedelta(minutes=10)).isoformat()
+    asked = QueryLabelledThings.model_validate(
+        {
+            "criteria": {
+                "selection": {"field": "made_at", "operator": ">=", "value": since},
+                "pagination": {"limit": 50},
+            }
+        }
+    )
+
+    answer = billing(asked, ResponseLabelledThings)
+
+    assert len(answer.things) == ROW_COUNT - 10
 
 
 def test_pages_walk_the_statement_through_the_query(billing):
@@ -125,24 +142,11 @@ def test_pages_walk_the_statement_through_the_query(billing):
     assert len(set(seen)) == ROW_COUNT
 
 
-def test_a_caller_without_the_declared_permission_is_refused(engine_url, things):
-    guard = AccessControl[LabelPermission]()
-    bus = _bus(engine_url, things, guard)
-    query = QueryLabelledThings(criteria=_impressions())
+def test_a_caller_without_the_declared_permission_is_refused(billing):
+    query = QueryLabelledThings(criteria=Criteria(pagination=Pagination(limit=4)))
 
     with security.as_identity(Identity.user("user:9")), pytest.raises(
         auth_exceptions.PermissionDenied
     ) as refused:
-        bus(query, ResponseLabelledThings)
+        billing(query, ResponseLabelledThings)
     assert refused.value.requirement == LabelPermission.READ
-
-
-def test_a_caller_holding_the_permission_gets_the_page(engine_url, things):
-    guard = AccessControl[LabelPermission]()
-    bus = _bus(engine_url, things, guard)
-    reader = Identity.user("user:8", permissions={LabelPermission.READ})
-
-    with security.as_identity(reader):
-        answer = bus(QueryLabelledThings(criteria=_impressions()), ResponseLabelledThings)
-
-    assert len(answer.things) == 9

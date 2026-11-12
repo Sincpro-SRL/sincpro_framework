@@ -86,6 +86,14 @@ ROWS = [
         owner="ines",
         made_at="2026-04-02T00:00:00Z",
     ),
+    Row(
+        id="g",
+        name="ÉCOLE.txt",
+        size=70,
+        tags=["print"],
+        owner="ines",
+        made_at="2026-04-09T00:00:00Z",
+    ),
 ]
 
 CASES: list[dict[str, Any]] = [
@@ -145,6 +153,10 @@ CASES: list[dict[str, Any]] = [
     {
         "name": "like ignores accents in the value as well as the column",
         "selection": {"field": "name", "operator": "like", "value": "IMPRESIÓN"},
+    },
+    {
+        "name": "like folds an uppercase accent stored in the field",
+        "selection": {"field": "name", "operator": "like", "value": "ecole"},
     },
     {
         "name": "starts with is case-insensitive and anchored at the start",

@@ -14,6 +14,7 @@ from typing import Any, TypeGuard
 
 from sqlalchemy import UniqueConstraint, inspect
 from sqlalchemy.exc import NoInspectionAvailable
+from sqlalchemy.sql.expression import TextualSelect
 
 from sincpro_framework.data_layer import exceptions
 from sincpro_framework.data_layer.orm.sqlalchemy.infrastructure.mapping_registry import (
@@ -31,11 +32,13 @@ from sincpro_framework.ddd.entity.entity_meta import (
     FieldMeta,
     FieldType,
     Meta,
+    logical_type,
     related_class,
     without_optional,
 )
 from sincpro_framework.ddd.entity.relations import RelationKind, key_pair
 from sincpro_framework.ddd.metamodel import StoredField, StoreFacts, description_of, model_of
+from sincpro_framework.ddd.multi_language import MultiLanguage
 
 
 def _relational_type(kind: RelationKind | None, many: bool) -> FieldType:
@@ -265,3 +268,67 @@ class ModelIntrospection:
         meta = description_of(entity, facts)
         _key_is_unique(entity, inspect(entity).local_table, meta.get_id, facts.identity)
         return meta
+
+    @staticmethod
+    def describe_statement(
+        statement: TextualSelect, model: type | None = None, identity: str = ""
+    ) -> Meta:
+        """What a statement the caller wrote returns, described the way a model is, so a
+        criteria over it is read exactly as `search` reads one: each value as its field's type,
+        what it cannot answer dropped and reported.
+
+            in      text("SELECT t.*, l.label FROM thing t JOIN …").columns(*thing.c, column("label", Text)),
+                    Thing
+            out     Thing's Meta, and `label` as a nullable text beside its fields
+            in      text("SELECT o.id, o.total FROM …").columns(column("id", Text), column("total", Numeric)),
+                    identity="id"
+            out     Meta(aggregate="statement", identity="id", default_order="-id",
+                         fields={"id": text, "total": decimal})
+
+        1. Read as a model: the model's definition, and every column the model maps has to come
+           back under its name — a row read as the model needs each of them.
+        2. Read as rows: the identity names the column that tells two rows apart, so it has to
+           be one of them.
+        3. Each other column, as its type says: a column typed by `.columns()` is filtered as that
+           type; an untyped one is ordered and shown but takes no condition. A column that does
+           not say it is NOT NULL may hold NULL.
+        Final: the model's definition with those columns beside its fields, or a definition of
+        the rows alone ordered newest first by the identity.
+        """
+        returned = statement.selected_columns
+        mapped = (
+            [column.name for column in inspect(model).persist_selectable.columns]
+            if model is not None
+            else []
+        )
+        if model is not None:
+            missing = [name for name in mapped if name not in returned]
+            if missing:
+                raise exceptions.ProgrammingError(
+                    f"the statement does not return {', '.join(missing)}: a row read as "
+                    f"{model.__name__} needs every column the model maps, under its name"
+                )
+        elif identity not in returned:
+            raise exceptions.ProgrammingError(
+                f"the statement does not return its identity '{identity}': a page of rows is "
+                "ordered and resumed by the column that tells two rows apart"
+            )
+
+        base = ModelIntrospection.describe(model) if model is not None else None
+        held = base.fields if base is not None else {}
+        columns = {
+            name: FieldMeta.for_column(
+                logical_type(_column_type(column)), bool(getattr(column, "nullable", True))
+            )
+            for name, column in returned.items()
+            if name not in held and name not in mapped
+        }
+        if base is not None:
+            return base.model_copy(update={"fields": {**columns, **held}})
+        return Meta(
+            aggregate="statement",
+            identity=identity,
+            default_order=f"-{identity}",
+            fields=columns,
+            name=MultiLanguage("statement"),
+        )

@@ -6,13 +6,12 @@ so a hostile value finds nothing rather than changing the statement. Runs on eac
 is given.
 """
 
-from datetime import datetime
+from datetime import datetime, timedelta
 
 import pytest
-from sqlalchemy import Column, MetaData, Table, Text, column, text
+from sqlalchemy import Column, Integer, MetaData, Table, Text, column, text
 
 from sincpro_framework.data_layer.orm.sqlalchemy.entrypoint.repository import Repository
-from sincpro_framework.ddd import exceptions
 from sincpro_framework.ddd.criteria import (
     Condition,
     CountMode,
@@ -25,7 +24,16 @@ from sincpro_framework.ddd.criteria import (
 from sincpro_framework.exceptions import ProgrammingError
 
 from .engines import fresh
-from .models import ROW_COUNT, Thing, Things, mapper_registry, thing_table
+from .models import (
+    EPOCH,
+    ROW_COUNT,
+    Client,
+    Thing,
+    Things,
+    client_table,
+    mapper_registry,
+    thing_table,
+)
 
 LABELS = ["Impresión", "Factura", "Recibo"]
 
@@ -44,7 +52,7 @@ JOINED = text("""
 
 REPORT = text(
     "SELECT t.thing_id, l.label, t.size FROM thing t JOIN thing_label l ON l.thing_id = t.thing_id"
-).columns(column("thing_id", Text), column("label", Text), column("size"))
+).columns(column("thing_id", Text), column("label", Text), column("size", Integer))
 
 
 @pytest.fixture
@@ -157,11 +165,72 @@ def test_a_hostile_value_is_a_parameter_and_finds_nothing(joined):
     assert page.count.value == 0
 
 
-def test_a_criteria_naming_a_column_the_statement_lacks_is_refused(joined):
-    with pytest.raises(exceptions.InvalidCriteria, match="no column 'colour'"):
-        joined.search_sql(
-            Things, JOINED, Criteria(selection=Condition(field="colour", value="red"))
-        )
+def test_a_field_the_statement_does_not_return_is_dropped_and_reported(joined):
+    """As `search` answers a stale saved filter: the rest still runs, and the caller is told."""
+    asked = Criteria(selection=Condition(field="colour", value="red"))
+
+    page = joined.search_sql(Things, JOINED, asked)
+    report = joined.query_page(REPORT, "thing_id", asked)
+
+    assert len(page) == ROW_COUNT
+    assert [one.reason for one in page.dropped] == ["unknown_field"]
+    assert [one.reason for one in report.dropped] == ["unknown_field"]
+
+
+def test_a_date_sent_as_text_is_read_as_the_date_it_names(joined):
+    """A date travels in JSON as text; it is read as the field's type, not compared as text."""
+    since = (EPOCH + timedelta(minutes=10)).isoformat()
+    sent = Criteria.model_validate(
+        {
+            "selection": {"field": "made_at", "operator": ">=", "value": since},
+            "pagination": {"limit": 50},
+        }
+    )
+
+    assert len(joined.search_sql(Things, JOINED, sent)) == ROW_COUNT - 10
+
+
+def test_a_dynamic_value_is_read_before_the_statement_runs(joined):
+    sent = Criteria.model_validate(
+        {
+            "selection": {"field": "made_at", "operator": "<=", "value": {"$": "today"}},
+            "pagination": {"limit": 50},
+        }
+    )
+
+    assert len(joined.search_sql(Things, JOINED, sent)) == ROW_COUNT
+
+
+def test_a_narrowed_repository_reads_a_statement_within_its_scope(joined):
+    """A scope is what a tenant or a permission is: a statement does not read past it."""
+    narrowed = joined.narrowed(Criteria(selection=Condition(field="owner", value="owner-1")))
+
+    page = narrowed.search_sql(Things, JOINED, Criteria(pagination=Pagination(limit=50)))
+
+    assert {one.owner for one in page} == {"owner-1"}
+    assert len(page) == len(range(1, ROW_COUNT, 3))
+
+
+def test_a_report_that_cannot_answer_the_scope_is_refused_rather_than_read_wide(joined):
+    narrowed = joined.narrowed(Criteria(selection=Condition(field="owner", value="owner-1")))
+
+    with pytest.raises(ProgrammingError, match="cannot answer the scope"):
+        narrowed.query_page(REPORT, "thing_id")
+
+
+def test_an_archived_record_is_left_out_of_a_statement_unless_asked(engine_url):
+    repository = Repository(fresh(engine_url, mapper_registry.metadata))
+    live, gone = Client(name="Live"), Client(name="Gone")
+    repository.save([live, gone])
+    repository.archive(gone)
+    every_client = text("SELECT * FROM client").columns(*client_table.c)
+
+    assert [one.name for one in repository.search_sql(Client, every_client)] == ["Live"]
+
+
+def test_a_report_without_its_identity_is_refused(joined):
+    with pytest.raises(ProgrammingError, match="does not return its identity 'id'"):
+        joined.query_page(REPORT, "id")
 
 
 def test_a_statement_missing_a_mapped_column_is_refused(joined):
@@ -176,13 +245,13 @@ def test_a_statement_missing_a_mapped_column_is_refused(joined):
 def test_a_report_pages_rows_with_no_entity_to_read_them_as(joined):
     page = joined.query_page(
         REPORT,
+        "thing_id",
         Criteria(
             selection=impressions().selection,
             order=Sort.parse("-size"),
             pagination=Pagination(limit=4),
             count=CountMode.EXACT,
         ),
-        identity="thing_id",
     )
 
     assert len(page.rows) == 4
@@ -194,14 +263,12 @@ def test_a_report_pages_rows_with_no_entity_to_read_them_as(joined):
 def test_a_report_walk_yields_every_row_once(joined):
     criteria = Criteria(order=Sort.parse("-size"), pagination=Pagination(limit=4))
     seen: list[str] = []
-    page = joined.query_page(REPORT, criteria, identity="thing_id")
+    page = joined.query_page(REPORT, "thing_id", criteria)
     while True:
         seen.extend(row["thing_id"] for row in page.rows)
         if page.cursor is None:
             break
-        page = joined.query_page(
-            REPORT, criteria.resuming_from(page.cursor), identity="thing_id"
-        )
+        page = joined.query_page(REPORT, "thing_id", criteria.resuming_from(page.cursor))
 
     assert len(seen) == ROW_COUNT
     assert len(set(seen)) == ROW_COUNT
@@ -210,13 +277,13 @@ def test_a_report_walk_yields_every_row_once(joined):
 def test_a_report_hostile_value_is_bound_not_written(joined):
     page = joined.query_page(
         REPORT,
+        "thing_id",
         Criteria(
             selection=Condition(
                 field="label", operator=Operator.EQ, value="'; DROP TABLE thing; --"
             ),
             count=CountMode.EXACT,
         ),
-        identity="thing_id",
     )
 
     assert page.rows == ()
@@ -246,4 +313,4 @@ def test_a_statement_that_writes_or_locks_is_refused(joined, written):
     with pytest.raises(ProgrammingError, match="must be one read"):
         joined.search_sql(Things, statement)
     with pytest.raises(ProgrammingError, match="must be one read"):
-        joined.query_page(statement, identity="thing_id")
+        joined.query_page(statement, "thing_id")

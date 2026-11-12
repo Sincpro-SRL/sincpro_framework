@@ -120,11 +120,12 @@ class RepositoryState(IRepository):
             percentiles=dialect not in WITHOUT_PERCENTILES,
         )
 
-    def _asked(self, model: type, meta: Meta, criteria: Criteria) -> Any:
+    def _asked(self, model: type | None, meta: Meta, criteria: Criteria) -> Any:
         """The filter that actually runs: what the caller asked, and what the repository adds.
+        `model` is `None` for the rows of a statement, which are no aggregate to archive.
 
-        1. The scope, when this repository is narrowed, refused outright if this aggregate
-           cannot answer it.
+        1. The scope, when this repository is narrowed, refused outright if this aggregate —
+           or this statement — cannot answer it.
         2. Final: the archived left out, unless the caller named `archived_at` itself.
         """
         expression = criteria.expression
@@ -137,9 +138,13 @@ class RepositoryState(IRepository):
                     "reading it wide is not an option"
                 )
             expression = Node.combined(accepted, expression)
-        if issubclass(model, ArchivableMixin) and not any(
-            one.field == "archived_at"
-            for one in (expression.conditions() if expression is not None else [])
+        if (
+            model is not None
+            and issubclass(model, ArchivableMixin)
+            and not any(
+                one.field == "archived_at"
+                for one in (expression.conditions() if expression is not None else [])
+            )
         ):
             expression = Node.combined(
                 expression,

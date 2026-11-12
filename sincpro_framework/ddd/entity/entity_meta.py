@@ -970,16 +970,38 @@ class Meta(DataTransferObject):
         """The field, if a page may be ordered by it.
 
         in  "registered_at"  →  out  FieldMeta(...)
-        in  "produced_by"    →  out  FieldMeta(...)    nullable: NULL pages first, then last
+        in  "produced_by"    →  out  FieldMeta(...)    nullable: NULL first ascending, last descending
         in  "tags"           →  out  InvalidCriteria   a list has no order
         in  "nope"           →  out  InvalidCriteria   no such field
         """
         found = self.field(name)
         if not found.sortable:
             raise exceptions.InvalidCriteria(
-                f"cannot order by '{name}': a list or a translation has no order to page by"
+                f"cannot order by '{name}': a list, a translation, a relation or an embedded "
+                "value has no order to page by"
             )
         return found
+
+    def ordering(self, asked: tuple[Sort, ...]) -> tuple[Sort, ...]:
+        """The ordering a page actually uses: what was asked, or this model's default order, with
+        the identity as the last tiebreaker. Every store reads a page by this one rule, so a cursor
+        names the same row in memory, in SQL and over a statement.
+
+            in      (Sort(row_count, desc),)        out  (row_count desc, dataset_id desc)
+            in      ()                              out  (dataset_id desc,)    the default order
+            in      (Sort(tags, asc),)              out  InvalidCriteria       a list has no order
+
+        1. The asked sorts, else the default order; each one has to be orderable.
+        2. A keyset needs a total order or rows repeat across pages, so the identity is appended
+           unless already there — in the leading sort's direction, so a composite index on
+           `(column, identity)` serves the whole ordering.
+        """
+        sorts = asked or Sort.parse(self.default_order)
+        for sort in sorts:
+            self.orderable(sort.field)
+        if any(sort.field == self.identity for sort in sorts):
+            return sorts
+        return sorts + (Sort(field=self.identity, descending=sorts[0].descending),)
 
     def accept_specification(
         self, specification: Specification | None
