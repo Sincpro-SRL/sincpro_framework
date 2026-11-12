@@ -4,6 +4,7 @@ from collections.abc import Callable
 from typing import Any
 
 from sincpro_framework.ddd import exceptions
+from sincpro_framework.ddd.criteria.domain.accents import fold
 from sincpro_framework.ddd.criteria.domain.expression import Operator
 
 
@@ -22,6 +23,7 @@ def compare(actual: Any, operator: Operator, value: Any) -> bool:
         compare(None, Operator.EQ, [])                ->  True     # the empty-list question,
         compare([], Operator.EQ, [])                  ->  True     # both spellings
         compare("Sincpro SRL", Operator.LIKE, "pro")  ->  True     # contained, any case
+        compare("Impresión", Operator.LIKE, "impresion") -> True   # and any accent
         compare(5, Operator.BETWEEN, [1, 5])          ->  True     # closed at both ends
 
     1. `IS_NULL`: a true value asks for `None`, a false one for anything else.
@@ -32,7 +34,7 @@ def compare(actual: Any, operator: Operator, value: Any) -> bool:
        4.2 `IN`, `NOT_IN` — the actual among the values or not;
        4.3 `BETWEEN` — between both values, inclusive;
        4.4 `LIKE` — the value inside the actual, `STARTS_WITH` — the actual begins with it,
-           both as text and in any case;
+           both as text, in any case and without accents (`fold`);
        4.5 `CONTAINS`, `NOT_CONTAINS` — the value among the actual's members, or not.
     Final: an operator with none of those is `InvalidCriteria`.
     """
@@ -67,9 +69,9 @@ def compare(actual: Any, operator: Operator, value: Any) -> bool:
         case Operator.BETWEEN:
             return value[0] <= actual <= value[1]
         case Operator.LIKE:
-            return str(value).lower() in str(actual).lower()
+            return fold(str(value)) in fold(str(actual))
         case Operator.STARTS_WITH:
-            return str(actual).lower().startswith(str(value).lower())
+            return fold(str(actual)).startswith(fold(str(value)))
         case Operator.CONTAINS:
             return value in actual
         case Operator.NOT_CONTAINS:
@@ -86,7 +88,7 @@ def comparator(operator: Operator, value: Any) -> Callable[[Any], bool]:
 
         comparator(Operator.GT, 1)(3)                  ->  True
         comparator(Operator.GT, 1)(None)               ->  False    NULL compares to nothing
-        comparator(Operator.LIKE, "PRO")("Sincpro")    ->  True     the value lowered once
+        comparator(Operator.LIKE, "PRO")("Sincpro")    ->  True     the value folded once
 
     Context: what `compare` asks of every record — which operator, whether the value is the empty
     list, the value's lower case — does not change between records, so it is asked here once.
@@ -120,13 +122,11 @@ def comparator(operator: Operator, value: Any) -> Callable[[Any], bool]:
             low, high = value[0], value[1]
             return lambda actual: actual is not None and low <= actual <= high
         case Operator.LIKE:
-            lowered = str(value).lower()
-            return lambda actual: actual is not None and lowered in str(actual).lower()
+            folded = fold(str(value))
+            return lambda actual: actual is not None and folded in fold(str(actual))
         case Operator.STARTS_WITH:
-            lowered = str(value).lower()
-            return lambda actual: actual is not None and str(actual).lower().startswith(
-                lowered
-            )
+            folded = fold(str(value))
+            return lambda actual: actual is not None and fold(str(actual)).startswith(folded)
         case Operator.CONTAINS:
             return lambda actual: actual is not None and value in actual
         case Operator.NOT_CONTAINS:

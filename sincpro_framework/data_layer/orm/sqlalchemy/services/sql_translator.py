@@ -24,6 +24,7 @@ from sqlalchemy import (
     cast,
     false,
     func,
+    literal,
     not_,
     or_,
     select,
@@ -55,6 +56,12 @@ from sincpro_framework.ddd.criteria import (
     Pagination,
     Sort,
     Through,
+)
+from sincpro_framework.ddd.criteria.domain.accents import (
+    FOLDING_FUNCTION,
+    FROM_LETTERS,
+    TO_LETTERS,
+    fold,
 )
 from sincpro_framework.ddd.entity import ArchivableMixin, extensions
 from sincpro_framework.ddd.entity.entity_meta import Meta, related_class
@@ -104,8 +111,47 @@ def _escaped(value: Any) -> str:
 
 
 def _literal(value: Any) -> str:
-    """`_escaped`, lowercased: what a case-insensitive `LIKE` compares against."""
-    return _escaped(str(value).lower())
+    """`_escaped`, folded: what a `LIKE` compares against once the column is folded too — lower
+    case and no accents, the same as `fold` answers in memory."""
+    return _escaped(fold(str(value)))
+
+
+class _Folded(ColumnElement[str]):
+    """A text column read without case or accents: `fold`, written for the engine that runs it.
+
+    SQLite has no `translate` and no `unaccent`, so it calls the function `Database` registers
+    (`sincpro_fold`). PostgreSQL and DuckDB replace the letters with `translate`, from and to the
+    two strings the accents module writes — the same mapping, bound as parameters.
+
+    in      _Folded(dataset.name), PostgreSQL     ->  translate(lower(dataset.name), :from, :to)
+    in      _Folded(dataset.name), SQLite         ->  sincpro_fold(dataset.name)
+    """
+
+    inherit_cache = False
+    type = Text()
+
+    def __init__(self, column: Any) -> None:
+        """The column whose text is read folded; how is decided at compile time, by the dialect."""
+        self.column = column
+
+
+@compiles(_Folded)
+def _folded_as_function(element: _Folded, compiler: Any, **kw: Any) -> str:
+    """Every engine but PostgreSQL and DuckDB: the function the database registered."""
+    return f"{FOLDING_FUNCTION}({compiler.process(element.column, **kw)})"
+
+
+@compiles(_Folded, "postgresql")
+@compiles(_Folded, "duckdb")
+def _folded_as_translate(element: _Folded, compiler: Any, **kw: Any) -> str:
+    """PostgreSQL and DuckDB: lowercase, then each accented letter replaced by its plain one.
+
+    out     translate(lower(dataset.name), 'áéíó…', 'aeio…')
+    """
+    folded = func.translate(
+        func.lower(element.column), literal(FROM_LETTERS), literal(TO_LETTERS)
+    )
+    return compiler.process(folded, **kw)
 
 
 MANY_MEMBERS = 2000
@@ -213,10 +259,11 @@ def _comparison(column: Any, operator: Operator, value: Any) -> ColumnElement[bo
         case Operator.IS_NULL:
             return column.is_(None) if value else column.is_not(None)
         case Operator.LIKE:
-            # Case-insensitive containment: what the interface has always meant by searching.
-            return func.lower(column).like(f"%{_literal(value)}%", escape=LIKE_ESCAPE)
+            # Containment, ignoring case and accents: what the interface has always meant by
+            # searching, and «impresion» finds «Impresión».
+            return _Folded(column).like(f"%{_literal(value)}%", escape=LIKE_ESCAPE)
         case Operator.STARTS_WITH:
-            return func.lower(column).like(f"{_literal(value)}%", escape=LIKE_ESCAPE)
+            return _Folded(column).like(f"{_literal(value)}%", escape=LIKE_ESCAPE)
         case Operator.CONTAINS:
             return _as_stored_text(column).like(f'%"{_escaped(value)}"%', escape=LIKE_ESCAPE)
         case Operator.NOT_CONTAINS:

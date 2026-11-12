@@ -49,6 +49,16 @@
       ],
       "owner": null,
       "made_at": "2026-03-27T00:00:00Z"
+    },
+    {
+      "id": "f",
+      "name": "Impresión.pdf",
+      "size": 50,
+      "tags": [
+        "print"
+      ],
+      "owner": "ines",
+      "made_at": "2026-04-02T00:00:00Z"
     }
   ],
   "cases": [
@@ -72,7 +82,8 @@
         "value": "ana"
       },
       "expected": [
-        "b"
+        "b",
+        "f"
       ]
     },
     {
@@ -84,7 +95,8 @@
       },
       "expected": [
         "a",
-        "d"
+        "d",
+        "f"
       ]
     },
     {
@@ -109,7 +121,8 @@
       "expected": [
         "a",
         "b",
-        "d"
+        "d",
+        "f"
       ]
     },
     {
@@ -146,7 +159,8 @@
         "value": 120
       },
       "expected": [
-        "c"
+        "c",
+        "f"
       ]
     },
     {
@@ -159,7 +173,8 @@
       "expected": [
         "b",
         "c",
-        "e"
+        "e",
+        "f"
       ]
     },
     {
@@ -214,7 +229,8 @@
         ]
       },
       "expected": [
-        "b"
+        "b",
+        "f"
       ]
     },
     {
@@ -248,6 +264,28 @@
       "expected": []
     },
     {
+      "name": "like ignores accents: impresion finds Impresión",
+      "selection": {
+        "field": "name",
+        "operator": "like",
+        "value": "impresion"
+      },
+      "expected": [
+        "f"
+      ]
+    },
+    {
+      "name": "like ignores accents in the value as well as the column",
+      "selection": {
+        "field": "name",
+        "operator": "like",
+        "value": "IMPRESIÓN"
+      },
+      "expected": [
+        "f"
+      ]
+    },
+    {
       "name": "starts with is case-insensitive and anchored at the start",
       "selection": {
         "field": "name",
@@ -257,6 +295,17 @@
       "expected": [
         "a",
         "e"
+      ]
+    },
+    {
+      "name": "starts with ignores accents",
+      "selection": {
+        "field": "name",
+        "operator": "starts with",
+        "value": "impre"
+      },
+      "expected": [
+        "f"
       ]
     },
     {
@@ -290,7 +339,8 @@
       "expected": [
         "c",
         "d",
-        "e"
+        "e",
+        "f"
       ]
     },
     {
@@ -315,7 +365,8 @@
         "a",
         "b",
         "d",
-        "e"
+        "e",
+        "f"
       ]
     },
     {
@@ -327,7 +378,8 @@
       },
       "expected": [
         "d",
-        "e"
+        "e",
+        "f"
       ]
     },
     {
@@ -384,7 +436,8 @@
       "expected": [
         "b",
         "c",
-        "e"
+        "e",
+        "f"
       ]
     },
     {
@@ -399,7 +452,8 @@
       "expected": [
         "a",
         "b",
-        "d"
+        "d",
+        "f"
       ]
     },
     {
@@ -433,7 +487,8 @@
         "a",
         "b",
         "d",
-        "e"
+        "e",
+        "f"
       ]
     },
     {
@@ -444,7 +499,8 @@
         "b",
         "c",
         "d",
-        "e"
+        "e",
+        "f"
       ]
     }
   ],

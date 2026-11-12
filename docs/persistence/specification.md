@@ -120,9 +120,14 @@ containment.
 |---|---|---|
 | `Condition(field="code", value=TEXT)` | `=` | `1.2.3` |
 | `Condition(field="code", operator=Operator.STARTS_WITH, value=TEXT)` | `starts with` | `1.2.3`, `1.2.30`, `1.2.3.01` — not `1.2.1.2.3` |
-| `Condition(field="name", operator=Operator.LIKE, value=TEXT)` | `like` | any text holding `1.2.3`, case-insensitive |
+| `Condition(field="name", operator=Operator.LIKE, value=TEXT)` | `like` | any text holding `1.2.3`, in any case and with or without accents |
 
 A literal is read as itself: `50%` finds `Descuento 50% off`, and `a_b` does not find `axb`.
+`like` and `starts with` ignore case and accents on both sides: `impresion` finds `Impresión`.
+The text is split into words, and each word has to appear in some field the template searches:
+`factura 2026` finds the record holding `factura` in its name and `2026` in its code.
+On PostgreSQL the search reads `translate(lower(col), …)`, so a large table that searches a text
+field wants an expression index over that same expression.
 A blank literal drops the conditions that hold `TEXT` and preserves the rest of the template: an
 `active = true` beside the text still applies.
 
