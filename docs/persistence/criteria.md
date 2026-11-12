@@ -234,6 +234,10 @@ page = repository.search_sql(Thing, statement, Criteria(selection=..., paginatio
   `RowPage` of dicts, the cursor and the count. Its ordering ends on `identity`, so a cursor names one row.
 - Every value a criteria carries is bound as a parameter. A filter over a relation is refused: a
   statement has no relation to cross.
+- The statement must be one read: a write (`UPDATE`, `DELETE`, `INSERT`), a row lock (`FOR UPDATE`)
+  or a second statement after `;` is refused with `ProgrammingError`. The statement itself is still
+  written by the server: the framework binds values, it cannot tell a fixed statement from one built
+  from a request, so that stays the developer's rule.
 
 ### Exposing it to a client
 

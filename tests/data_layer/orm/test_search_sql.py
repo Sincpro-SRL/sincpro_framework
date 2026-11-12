@@ -229,3 +229,21 @@ def test_a_timestamp_is_the_datetime_the_model_holds(joined):
     page = joined.search_sql(Things, JOINED, Criteria(pagination=Pagination(limit=1)))
 
     assert isinstance(page.items[0].made_at, datetime)
+
+
+@pytest.mark.parametrize(
+    "written",
+    [
+        "UPDATE thing SET name = 'x'",
+        "SELECT t.thing_id FROM thing t FOR UPDATE",
+        "SELECT t.thing_id FROM thing t; DELETE FROM thing",
+        "WITH x AS (SELECT 1) UPDATE thing SET name = 'x'",
+    ],
+)
+def test_a_statement_that_writes_or_locks_is_refused(joined, written):
+    statement = text(written).columns(column("thing_id", Text))
+
+    with pytest.raises(ProgrammingError, match="must be one read"):
+        joined.search_sql(Things, statement)
+    with pytest.raises(ProgrammingError, match="must be one read"):
+        joined.query_page(statement, identity="thing_id")

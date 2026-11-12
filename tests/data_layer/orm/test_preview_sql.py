@@ -24,7 +24,7 @@ from sincpro_framework.data_layer.orm.sqlalchemy.entrypoint.template_table.numbe
 )
 from sincpro_framework.data_layer.orm.sqlalchemy.infrastructure.database import (
     Database,
-    _reads_only,
+    reads_only,
 )
 from sincpro_framework.data_layer.repositories import MemoryRepository
 from sincpro_framework.ddd import (
@@ -1025,10 +1025,10 @@ def test_a_preview_inside_a_unit_of_work_with_pending_changes_reads_without_flus
 
 
 def test_the_reading_test_is_one_statement_that_reads_and_locks_nothing():
-    assert _reads_only("(SELECT 1) UNION (SELECT 2)")
-    assert _reads_only("select 1 -- trailing note")
-    assert not _reads_only("SELECT * FROM t FOR NO KEY UPDATE")
-    assert not _reads_only("SELECT * FROM t for share")
-    assert not _reads_only("WITH x AS (DELETE FROM t RETURNING id) SELECT * FROM x")
-    assert not _reads_only("select nextval('s'); select 1")
-    assert not _reads_only("")
+    assert reads_only("(SELECT 1) UNION (SELECT 2)")
+    assert reads_only("select 1 -- trailing note")
+    assert not reads_only("SELECT * FROM t FOR NO KEY UPDATE")
+    assert not reads_only("SELECT * FROM t for share")
+    assert not reads_only("WITH x AS (DELETE FROM t RETURNING id) SELECT * FROM x")
+    assert not reads_only("select nextval('s'); select 1")
+    assert not reads_only("")

@@ -12,6 +12,7 @@ from sqlalchemy.orm import Session, aliased
 from sqlalchemy.sql.expression import TextualSelect
 
 from sincpro_framework.data_layer import exceptions
+from sincpro_framework.data_layer.orm.sqlalchemy.infrastructure.database import reads_only
 from sincpro_framework.data_layer.orm.sqlalchemy.infrastructure.mapping_registry import (
     mapping_registry,
 )
@@ -110,6 +111,23 @@ def _relations_named(
 
 STATEMENT = "sincpro_statement"
 """The name a statement written by the caller is read under, as a subquery."""
+
+
+def _a_read(statement: TextualSelect) -> TextualSelect:
+    """The statement, if it is one read and nothing else; a refusal otherwise.
+
+    A statement the caller wrote is run as it is, so a write or a row lock inside it would reach
+    the database. The same rule that refuses writes inside a preview refuses them here.
+
+        SELECT … FROM …                 →  the statement
+        UPDATE … / SELECT … FOR UPDATE  →  ProgrammingError
+        SELECT 1; DELETE …              →  ProgrammingError
+    """
+    if not reads_only(statement.element.text):
+        raise exceptions.ProgrammingError(
+            "a statement given to search_sql or query_page must be one read: it writes or locks rows"
+        )
+    return statement
 
 
 class RowPage(DataTransferObject):
@@ -406,7 +424,7 @@ class Reading(RepositoryState):
             in      Thing (thing_id, name, size, tags, made_at, owner), a statement without `tags`
             out     ProgrammingError: the statement does not return 'tags' …
         """
-        source = statement.subquery(STATEMENT)
+        source = _a_read(statement).subquery(STATEMENT)
         mapped = [
             column.name for column in sqlalchemy.inspect(model).persist_selectable.columns
         ]
@@ -489,7 +507,7 @@ class Reading(RepositoryState):
         Final: the rows as dicts, with where the next page starts and how many there are.
         """
         criteria = criteria or Criteria()
-        source = statement.subquery(STATEMENT)
+        source = _a_read(statement).subquery(STATEMENT)
         columns = partial(sql_translator.statement_column, source)
         clause = sql_translator.statement_clause(source, criteria.expression)
         sorts = sql_translator.tiebroken(
