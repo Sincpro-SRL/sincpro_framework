@@ -301,7 +301,7 @@ def _refused_in_preview(session: Session) -> None:
         refuse_writing_in_preview("a flush")
 
 
-def _reads_only(sql: str) -> bool:
+def reads_only(sql: str) -> bool:
     """Whether a text statement is one read and nothing else.
 
         SELECT … / WITH … SELECT … / -- a note\nSELECT …          →  True
@@ -338,7 +338,7 @@ def _statement_refused_in_preview(state: Any) -> None:
     if state.is_insert or state.is_update or state.is_delete:
         refuse_writing_in_preview("a statement that writes")
     statement = state.statement
-    if isinstance(statement, TextClause) and not _reads_only(statement.text):
+    if isinstance(statement, TextClause) and not reads_only(statement.text):
         refuse_writing_in_preview("a text statement that is not a read")
     if getattr(statement, "_for_update_arg", None) is not None:
         refuse_writing_in_preview("a read that locks rows")

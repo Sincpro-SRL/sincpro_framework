@@ -234,6 +234,33 @@ page = repository.search_sql(Thing, statement, Criteria(selection=..., paginatio
   `RowPage` of dicts, the cursor and the count. Its ordering ends on `identity`, so a cursor names one row.
 - Every value a criteria carries is bound as a parameter. A filter over a relation is refused: a
   statement has no relation to cross.
+- The statement must be one read: a write (`UPDATE`, `DELETE`, `INSERT`), a row lock (`FOR UPDATE`)
+  or a second statement after `;` is refused with `ProgrammingError`. The statement itself is still
+  written by the server: the framework binds values, it cannot tell a fixed statement from one built
+  from a request, so that stays the developer's rule.
+
+### Exposing it to a client
+
+A `Query` answered from a statement is a Feature that declares the statement, and nothing on the
+wire carries SQL. The Query has only `criteria` and `cursor`; the Feature holds the statement and
+its permission:
+
+```python
+@bus.feature(QueryLabelledThings)
+@auth.requires(Labels.READ)
+class ListLabelledThings(Feature):
+    STATEMENT = text("SELECT … FROM thing t JOIN thing_label l …").columns(...)
+
+    def execute(self, dto: QueryLabelledThings) -> ResponseLabelledThings:
+        page = self.repository.search_sql(Thing, self.STATEMENT, dto.criteria)
+        return ResponseLabelledThings(things=..., cursor=page.cursor)
+```
+
+Use it for the resources a plain `search` cannot express — a join to another entity, a projection
+that crosses tables — and not as a generic capability. The statement must filter what the model's
+own reads filter (archived records, tenant), because `search_sql` does not add it. The columns a
+statement returns beyond the model's are filterable but not hydrated onto the entity: a UI that
+shows them reads them with `query_page`, or the model gains the field.
 
 ## What a client reads
 
