@@ -286,37 +286,46 @@ class Node(Strict):
         raise exceptions.InvalidCriteria(f"not a filter expression: {self!r}")
 
     def with_text(self, text: str) -> "Expression | None":
-        """A search template's filter with the literal a person typed in place of every `TEXT`.
+        """A search template's filter with what a person typed in place of every `TEXT`, read
+        word by word: each word has to appear in some field the template searches.
 
             in   Any([code starts with TEXT, active = true]), "1.2"
             out  Any([code starts with "1.2", active = true])
-            in   All([name like TEXT, active = true]), ""
-            out  active = true                        a blank literal asks nothing of the text
+            in   Any([code starts with TEXT, name like TEXT]), "factura 2026"
+            out  All([Any([code starts with "factura", name like "factura"]),
+                      Any([code starts with "2026", name like "2026"])])
+            in   All([name like TEXT, active = true]), "   "
+            out  active = true                        a blank text asks nothing of the text
 
-        A condition holding `TEXT` — alone or in a list — takes the literal; with no literal,
-        it is dropped. The template itself is never changed.
+        1. The text split on whitespace: a code such as `T-1` or `1.2.3` stays one word.
+        2. Each word put where `TEXT` stood — the whole value, or each `TEXT` member of a list.
+        3. No word: every condition holding `TEXT` is dropped, the rest of the template stays.
+        Final: the template filled once per word, joined by `and`. The template never changes.
         """
 
-        def filled(condition: Condition) -> Condition | None:
-            """One leaf: untouched without `TEXT`, dropped when there is no literal, else the
-            literal put where `TEXT` stood — the whole value, or each `TEXT` member of a list.
-            """
-            if not condition.holds_text():
-                return condition
-            if not text:
-                return None
-            value = condition.value
-            return condition.model_copy(
-                update={
-                    "value": (
-                        [text if one == TEXT else one for one in value]
-                        if isinstance(value, list)
-                        else text
-                    )
-                }
-            )
+        def filled(word: str) -> "Expression | None":
+            """The template with one word where `TEXT` stood; no word drops what held it."""
 
-        return self.mapped(filled)
+            def leaf(condition: Condition) -> Condition | None:
+                if not condition.holds_text():
+                    return condition
+                if not word:
+                    return None
+                value = condition.value
+                return condition.model_copy(
+                    update={
+                        "value": (
+                            [word if one == TEXT else one for one in value]
+                            if isinstance(value, list)
+                            else word
+                        )
+                    }
+                )
+
+            return self.mapped(leaf)
+
+        words = text.split()
+        return Node.combined(*(filled(word) for word in words)) if words else filled("")
 
 
 class Condition(Node):

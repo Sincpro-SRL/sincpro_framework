@@ -677,5 +677,84 @@
         ]
       }
     ]
+  },
+  "literal": {
+    "about": "The text a person typed, read by a search template (`DEFAULT_LITERAL_SEARCH`, `meta.search`) over `rows`: split on whitespace, each word has to appear in some field the template searches, and a blank text drops every condition that holds the text.",
+    "template": {
+      "any": [
+        {
+          "field": "name",
+          "operator": "like",
+          "value": {
+            "$": "param",
+            "name": "text"
+          }
+        },
+        {
+          "field": "owner",
+          "operator": "starts with",
+          "value": {
+            "$": "param",
+            "name": "text"
+          }
+        }
+      ]
+    },
+    "cases": [
+      {
+        "name": "one word, found in any field the template searches",
+        "text": "ana",
+        "expected": [
+          "a",
+          "d"
+        ]
+      },
+      {
+        "name": "a word without its accents finds the one with them",
+        "text": "impresion",
+        "expected": [
+          "f"
+        ]
+      },
+      {
+        "name": "every word has to appear, each in some field",
+        "text": "labs ana",
+        "expected": [
+          "a"
+        ]
+      },
+      {
+        "name": "a word no record holds leaves nothing",
+        "text": "labs beto",
+        "expected": []
+      },
+      {
+        "name": "the spaces around and between words do not count",
+        "text": "  labs   ana  ",
+        "expected": [
+          "a"
+        ]
+      },
+      {
+        "name": "a code with a dot stays one word",
+        "text": "sales.csv beto",
+        "expected": [
+          "b"
+        ]
+      },
+      {
+        "name": "a blank text does not filter",
+        "text": "   ",
+        "expected": [
+          "a",
+          "b",
+          "c",
+          "d",
+          "e",
+          "f",
+          "g"
+        ]
+      }
+    ]
   }
 }
