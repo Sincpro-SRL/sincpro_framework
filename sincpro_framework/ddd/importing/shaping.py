@@ -13,13 +13,17 @@ holds the question until `resolve` answers it with an identity. Everything else 
 holds is worked out once per entity (`slots_of`), not once per row.
 """
 
+import dataclasses
+import json
 from collections.abc import Iterator, Mapping
 from dataclasses import dataclass
 from datetime import date, datetime
 from decimal import Decimal
 from enum import StrEnum
 from functools import cache
-from typing import Any
+from typing import Any, get_origin
+
+from pydantic import BaseModel
 
 from sincpro_framework.ddd import exceptions
 from sincpro_framework.ddd.entity import Entity, entity_id
@@ -34,6 +38,9 @@ KEY = "@key"
 
 NUMBERS = (int, float, Decimal)
 """The field types a decimal comma is read in."""
+
+STRUCTURES = (list, dict, set, tuple, frozenset)
+"""The collections a field may hold, which a cell writes as JSON."""
 
 
 class Holds(StrEnum):
@@ -62,6 +69,9 @@ class Slot:
     """The entity a key, a record or the records name."""
     by_id: bool = False
     """The records are named by id — a many-to-many the store manages —, never owned."""
+    structured: bool = False
+    """The value is more than one cell holds — a list, a mapping, a value object —, so a cell
+    writes it as JSON."""
 
 
 @dataclass
@@ -103,7 +113,15 @@ def slots_of(entity: type) -> dict[str, Slot]:
                 Holds.RECORDS if many else Holds.RECORD, annotation, target=kind, by_id=by_id
             )
         else:
-            slots[name] = Slot(Holds.VALUE, annotation, base=without_optional(annotation))
+            base = without_optional(annotation)
+            structured = get_origin(base) in STRUCTURES or (
+                isinstance(base, type)
+                and (
+                    issubclass(base, (BaseModel, *STRUCTURES))
+                    or dataclasses.is_dataclass(base)
+                )
+            )
+            slots[name] = Slot(Holds.VALUE, annotation, base=base, structured=structured)
     return slots
 
 
@@ -199,6 +217,7 @@ def _scalar(slot: Slot, value: Any, decimal: str) -> Any:
     2. A number in a text field is its text — Excel holds `1020304050` as a number.
     3. A moment in a date field is its day — Excel holds a date as a moment.
     4. A decimal comma is read as a point, the point as the thousands' separator.
+    5. A text in a field holding a structure is read as its JSON, when it is JSON.
     """
     if is_blank(value):
         return "" if slot.annotation is str else None
@@ -209,6 +228,11 @@ def _scalar(slot: Slot, value: Any, decimal: str) -> Any:
         return value.date()
     if base in NUMBERS and isinstance(value, str) and decimal != ".":
         return value.replace(".", "").replace(decimal, ".")
+    if slot.structured and isinstance(value, str) and value.lstrip()[:1] in ("[", "{"):
+        try:
+            return json.loads(value)
+        except ValueError:
+            return value
     return value
 
 

@@ -58,7 +58,28 @@ the identity from the outside key** (no `uuid5`): `EntityID` is a UUID v7 and a 
   key repeated in the file updates the record above (Odoo's rule); a record naming one left out is
   left out too, so nothing dangles.
 
-## 5. Extending
+## 5. The way back: export, edit, import again
+
+```python
+from sincpro_framework.ddd import Export, ExportFormat, Streamed
+
+class QueryExportPartners(Export[Partner, Streamed]):
+    pass
+
+@sales.feature([CommandImportPartners, QueryExportPartners])
+class PartnerImports(EntityImports[Partner]):   # answers the Export too
+    pass
+
+sales(QueryExportPartners(format=ExportFormat.EXCEL), Streamed)   # or ExportFormat.CSV
+```
+
+The file is the import's columns: `id` first (a re-import updates, never duplicates), each
+reference by its natural key, a many-to-many as comma-separated keys, children in the rows
+below, a list or value object as JSON. Left out: framework fields, computed fields nobody edits.
+The criteria's specification picks the columns. No `@key` is written — the identity names each
+record. One Excel sheet holds 1,048,576 rows; larger exports go as CSV.
+
+## 6. Extending
 
 Override a step on the Feature, calling `super()`: `rows(dto)` (a format of its own),
 `records(dto, rows)`, `resolve(dto, batch, keys)`, `identities(dto, kind, by, keys)` (how a key is
@@ -72,3 +93,5 @@ looked up), `build(dto, batch)` (a rule of this import alone), `write(dto, batch
 - Expecting a forward reference (a parent below its child) to resolve: put the parent first.
 - Using `upsert` for an import that must judge rules or write children: `upsert` skips both, and
   measured slower than `save` in batches.
+- Exporting with `ExportFormat.JSON_LINES` or Parquet for a person to edit and re-import: those
+  write every column as an answer does; `CSV`/`EXCEL` write the columns the import reads.

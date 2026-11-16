@@ -261,10 +261,10 @@ assert sales.version == cache.fetch_all(repository, InvoiceLine, posted).version
 
 A search answers its page as JSON; a page of millions is the slowest, largest thing JSON can
 carry. The same search answers it as Parquet — the same records, cursor and count — when asked
-(`format="parquet"`), or by itself (`format="auto"`, the default) when more than its
+(`format=PageFormat.PARQUET`), or by itself (`PageFormat.AUTO`, the default) when more than its
 `parquet_above` records are asked for (a million), by a caller that says it reads Parquet
 (`Accept: application/vnd.apache.parquet`), with pyarrow installed. Inside the process an answer
-is always objects; a caller that never wants Parquet asks `format="json"`, and a search that never
+is always objects; a caller that never wants Parquet asks `PageFormat.JSON`, and a search that never
 answers it declares `parquet_above = None`.
 
 ```python
@@ -307,17 +307,18 @@ Arrow, without building the entities, is the next step for it.
 ## Everything, as a file
 
 A frame holds what it read; two million ledger entries are not for holding. `export` writes every
-record a criteria matches a page at a time — Parquet, an Arrow stream or JSON Lines — and lets
-each page go once it is written:
+record a criteria matches a page at a time — Parquet, an Arrow stream or JSON Lines (`ExportFormat`)
+— and lets each page go once it is written:
 
 ```python
 from sincpro_framework.data_layer.data_analysis.export import exported, write_parquet
+from sincpro_framework.ddd import ExportFormat
 
 sink = io.BytesIO()                                          # a file, object storage, …
 written = write_parquet(sink, repository, InvoiceLine, posted)   # a row group per 5 000
 assert pyarrow.parquet.read_table(io.BytesIO(sink.getvalue())).num_rows == written
 
-answer = exported(repository, InvoiceLine, posted, "parquet")    # what a use case answers
+answer = exported(repository, InvoiceLine, posted, ExportFormat.PARQUET)   # a use case's answer
 assert answer.media_type == "application/vnd.apache.parquet"
 assert answer.filename == "invoiceline.parquet"
 assert pyarrow.parquet.read_table(io.BytesIO(b"".join(answer))).num_rows == written
@@ -337,7 +338,8 @@ in a job that writes it to object storage, not in a request.
 
 **Over HTTP**, an export is a read of the entity like any other — `Export[Entity, Streamed]`,
 answered by `EntityReads` — and the wire writes it as it is produced, with the name to save it
-under; the document says it answers Parquet, an Arrow stream or JSON Lines, never a JSON body:
+under; the document says it answers Parquet, an Arrow stream, JSON Lines, CSV or an Excel sheet,
+never a JSON body:
 
 ```python
 from sincpro_framework.ddd import EntityReads, Export, Streamed
@@ -357,6 +359,10 @@ The criteria filters and orders as anywhere, the repository's scope — the tena
 each chunk is produced in the context the use case was asked in, whichever worker thread the
 server pulls it from.
 
+**For a person to edit and import again**, `ExportFormat.CSV` and `ExportFormat.EXCEL` write
+the columns an import reads — the identity, each reference by its natural key, the children in
+the rows below — not every column: [importing](../persistence/importing.md#the-way-back-export-edit-import-again).
+
 ## Reference
 
 `QueryCache` holds the rows of a read in this process, for analysis; the answer of a bus Query is
@@ -373,7 +379,7 @@ cached by `QueryCaching`, in [caching](../caching/README.md).
 | `frame.append(page)` | the next page merged by `key`; `ProgrammingError` for other columns |
 | `frame.sort(keys)` / `frame.select(columns)` | ordered, `null` last / some columns |
 | `frame.to_arrow()` / `to_parquet()` / `to_ipc()` / `to_json()` | handed on |
-| `export.exported(repository, target, criteria, format)` | every match as a `Streamed` answer: `parquet`, `arrow`, `jsonl` |
+| `export.exported(repository, target, criteria, format)` | every match as a `Streamed` answer, in an `ExportFormat`: `PARQUET`, `ARROW`, `JSON_LINES`, `CSV`, `EXCEL` |
 | `export.write_parquet(sink, repository, target, criteria)` | every match written to a file, a row group per page; how many |
 | `export.arrow_schema(meta, scales)` | the Arrow schema an export of the entity is written with |
 | `export.collection_from_parquet(body, target)` | a Parquet answer read back as its collection: records, cursor, count |

@@ -181,7 +181,7 @@ def _query_parameters(
             "in": "query",
             "required": name in required,
         }
-        if is_plain(field_schema):
+        if is_plain(field_schema, schema.get("$defs")):
             parameter["schema"] = pointed
         else:
             parameter["content"] = {"application/json": {"schema": pointed}}

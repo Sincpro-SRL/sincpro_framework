@@ -277,6 +277,54 @@ class ImportOpening(ApplicationService):
         return ResponseImportOpening()
 ```
 
+## The way back: export, edit, import again
+
+An `Export` written as `ExportFormat.CSV` or `ExportFormat.EXCEL` is the file this import reads —
+what Odoo calls an import-compatible export. A person exports the partners, corrects three hundred
+rows in a spreadsheet and imports the file: the same records are updated, none added, none lost.
+
+```python
+from sincpro_framework.ddd import Export, ExportFormat, Streamed
+
+
+class QueryExportPartners(Export[Partner, Streamed]):
+    pass
+
+
+@sales.feature([CommandImportPartners, QueryExportPartners])
+class PartnerImports(EntityImports[Partner]):     # an EntityReads: it answers Export too
+    pass
+
+
+workbook = b"".join(sales(QueryExportPartners(format=ExportFormat.EXCEL), Streamed))
+# … edited in a spreadsheet …
+sales(CommandImportPartners(content=workbook, format=ImportFormat.EXCEL), ResponseImport)
+#   ->  ResponseImport(created=0, updated=300, unchanged=…)
+```
+
+What it writes, column by column:
+
+| Column | Written as |
+|---|---|
+| `id` | the record's identity, first: importing it again updates that record |
+| a field | its value as a cell shows it — in Excel a day is a date cell, a number a number |
+| `country_id` | the natural key of the record it names (`BO`), each looked up once per export |
+| `labels` | a many-to-many: the keys of its records, comma-separated |
+| `lines/id`, `lines/…` | the children, the first beside its record, the rest in the rows below |
+| a list, a value object | its JSON, which the import reads back into the field |
+
+- **What a form cannot edit is left out**: the framework's fields (`version`, `created_at`), a
+  field the database computes, one an `@compute` computes and nobody edits, a to-one record (its
+  key field is written). The import would refuse the first and compute the others again.
+- **The criteria picks the records and the columns**: its selection filters, its specification
+  names the fields to write — the identity always travels.
+- **Exact in both formats**: a number Excel cannot hold exactly (more than 15 digits) and a moment
+  with its zone are written as text, a decimal never in exponent notation, so they come back as
+  they went. The CSV is UTF-8 with its BOM, so Excel opens it with its accents.
+- **One Excel sheet holds 1,048,576 rows**: a larger export is refused at that row, naming CSV.
+- **No `@key` is written.** The identity already names each record; an external key is the name
+  *another* system gives it.
+
 ## Stores
 
 The import speaks the repository port alone — `fetch_all` with `in` to look keys up, `save` to
@@ -340,3 +388,16 @@ What holds is the ratio: the whole import runs at about 60% of a bare `save`.
 - **A write past the aggregate** — an insert through SQLAlchemy Core measured 149,000 rows per
   second, `COPY` on Postgres more — is the next step for files of tens of millions of rows; it
   skips hooks and rules, so it is chosen, never the default.
+
+The way back, the same 100,000 partners, one run:
+
+| Work | Rows per second |
+|---|---|
+| export as JSON Lines, for comparison | 65,000 |
+| **export as CSV** | **62,000** |
+| export as Excel | 46,000 |
+| importing that CSV again, every record unchanged | 10,300 |
+| importing that Excel sheet again, every record unchanged | 7,400 |
+
+An export reads a page of 5,000 records at a time from one snapshot and writes it; the keys a page
+names cost one search per entity, and only for the ones no page named before.
