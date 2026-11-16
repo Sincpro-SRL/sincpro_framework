@@ -110,8 +110,8 @@ The store records three more facts on a tracked aggregate, whichever way it was 
 | `archived_at` going back to nothing | `restore_event` — `EntityRestored` |
 
 Each is stored with the write, in the context's event table, so a deleted record's history still
-answers after its row is gone — and carries `entity_display`, the record as a person named it then
-(its `DEFAULT_DISPLAY`), as `EntityUpdated` does: «Se eliminó Ana Pérez», not an id. A bounded context names its own once, on the base its entities
+answers after its row is gone — and, as every event its record records, carries `entity_display`
+(the record as a person named it then) and `actor` (who did it): «Se eliminó Ana Pérez», not an id. A bounded context names its own once, on the base its entities
 inherit — the same way `change_event` names its update:
 
 ```python
@@ -369,18 +369,5 @@ When it went out and how — `delivered_at`, `delivery` — is stamped on its ro
 
 ## Not built yet
 
-- **The actor inside the event — queued, and it depends on something else first.** An
-  `EntityUpdated` does not say *who* made the change. Two reasons, and only the second is
-  about this feature: there is no global context a use case reads the acting user from yet,
-  and `updated_by` is stamped by the session's `before_flush`, which runs *after* `save()`
-  built the event.
-
-  **The guideline for whoever closes it:** the actor is never read off the aggregate at the
-  moment the event is built — `updated_by` is not set yet and never will be in time. It is
-  read from the same `actor()` callable the `Database` was already given
-  (`Database(url, actor=lambda: bus.current_context().get("user_id"))`), which is the one place that
-  answers "who is writing" for every path, including a raw session. When the global context
-  lands, that callable is what it feeds; nothing in the tracking hook has to learn where the
-  user came from.
 - **Accumulating across transactions.** One consolidated event for a flow that spans several
   saves needs a scope somebody opens and closes; nothing here does that.

@@ -189,10 +189,12 @@ project(QueryIssueEvents(id=issue_id, criteria=Criteria(
   the envelope's (`Evento`, `Cuándo`, `Tipo de registro`, `ID del registro`, …) and each event's
   own as its class labels it (`reason` → `Motivo`). A grouping offers what means something to a
   person — the event, the moment, the record — and never the trace ids or the versions.
-- **Who the record was** travels on its lifecycle facts (`EntityUpdated`, `EntityDeleted`,
-  `EntityArchived`, `EntityRestored`) as `entity_display`: its `DEFAULT_DISPLAY` — the field called
-  `name` by default — when it happened, so «Se eliminó Ana Pérez» still reads after the row is
-  gone. Empty when the entity shows nothing beside its identity: a screen shows the id then.
+- **Who the record was, and who did it**, travel on every event its record records:
+  `entity_display` — its `DEFAULT_DISPLAY`, the field called `name` by default, when it happened —
+  and `actor` — the context's `user_id`. «Se eliminó Ana Pérez — por juan» still reads after the
+  row is gone. `entity_display` is empty when the entity shows nothing beside its identity: a
+  screen shows the id then. A ref to the record (`billing.Member:0192…`) is resolved by its own
+  `Get` ([references](../core/references.md)).
 
 ## The caller's drafts
 

@@ -66,7 +66,7 @@ is the parts.
 
 | Piece | Module | What it is |
 |---|---|---|
-| `DomainEvent` | `ddd/events/domain_event.py` | An `Entity` with the envelope: `id` (UUID v7), `created_at`, `entity_type`, `entity_id`, `entity_version`, `correlation_id`, `causation_id`, `label` |
+| `DomainEvent` | `ddd/events/domain_event.py` | An `Entity` with the envelope: `id` (UUID v7), `created_at`, `entity_type`, `entity_id`, `entity_display` (who the record was), `actor` (who did it: the context's `user_id`), `entity_version`, `correlation_id`, `causation_id`, `label` — each labelled for a screen; `Entity.record()` stamps the record's and the call's |
 | `Entity.record` / `pull_events` | `ddd/entity/entity.py` | Records with the aggregate's type and id; pulling hands them back and forgets them |
 | `ChangeTrackingMixin` | `ddd/events/mixins/change_tracking.py` | One `Updated` event with every field that changed — see [change-tracking.md](change-tracking.md) |
 | `DeliverableEventMixin` | `ddd/events/mixins/deliverable.py` | Marks a contract other contexts hear — warned without a versioned `name` — and stores when it went out: `delivered_at`, `delivery` |

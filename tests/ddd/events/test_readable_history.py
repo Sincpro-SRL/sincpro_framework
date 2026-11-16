@@ -91,10 +91,14 @@ def test_every_field_of_a_log_has_a_label_and_only_the_meaningful_ones_group():
         "correlation_id": "Correlación",
         "causation_id": "Causado por",
         "entity_version": "Versión del registro",
+        "entity_display": "Registro",
+        "actor": "Por",
         "reason": "Motivo",  # an event's own field keeps the label its class gives it
     }
     assert sorted(name for name, one in said.items() if one.get("groupable")) == [
+        "actor",
         "created_at",
+        "entity_display",
         "entity_id",
         "entity_type",
         "name",
@@ -127,3 +131,14 @@ def test_a_lifecycle_fact_says_who_the_record_was_when_it_happened():
     assert isinstance(updated, EntityUpdated) and isinstance(deleted, EntityDeleted)
     assert (updated.entity_display, deleted.entity_display) == ("Ana Pérez Soto",) * 2
     assert deleted.label["es"] == "Se eliminó"
+
+
+def test_any_event_says_who_did_it_and_who_the_record_was():
+    bus, _ = dues()
+    member = Member(name="Ana Pérez")
+
+    with bus.context({"user_id": "juan"}):
+        member.record(PaymentRefused(reason="blurry proof"))
+
+    [refused] = member.pull_events()
+    assert (refused.actor, refused.entity_display) == ("juan", "Ana Pérez")

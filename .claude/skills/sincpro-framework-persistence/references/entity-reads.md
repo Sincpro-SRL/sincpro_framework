@@ -147,8 +147,9 @@ replaces the order. Several records at once: `repository.search(ProjectEvent,
 history_of(issue, *runs))`. Never one hand-written "list X events" Feature per aggregate.
 
 A screen needs nothing more: each event answers its `name`; the contract labels the envelope and
-each event's own fields (`field(metadata={"label": …})` on the event class); lifecycle facts carry
-`entity_display` (who the record was). Don't relabel the envelope or format the log by hand.
+each event's own fields (`field(metadata={"label": …})` on the event class); every event carries
+`entity_display` (who the record was) and `actor` (who did it). Don't relabel the envelope or format
+the log by hand.
 `field(metadata={"groupable": False})` keeps a field of your own out of «group by».
 
 ## Mistakes to avoid

@@ -34,6 +34,7 @@ covers those three: `bus.context(...)`, `@bus.interceptor(...)` / `replaces=`, a
 | `self.context` | What a Feature/ApplicationService reads: the context of the execution in progress | DTO | attribute of `Feature` / `ApplicationService` |
 | `bus.current_context()` | The context in play as this bus sees it, read-only — the object `self.context` is | function | method of `UseFramework` |
 | `use_context()` | The same context from anywhere, no bus in hand (`sincpro-framework-context`) | function | `from sincpro_framework.context import use_context` |
+| `EntityRef` / `EntityRefs` / `Resolve` | A record of any bounded context as one text (`billing.Invoice:0192…`) for a payload that comes back later; resolved only through that record's own `Get`, its guards deciding anew; `Resolve` publishes it on every wire — docs/core/references.md | value / service / DTO | `from sincpro_framework.references import EntityRef, EntityRefs, Resolve, EntityRefResolution` |
 | `bus.thread_context()` | The bus bound to the caller's context (`in_context`), for one `ThreadPoolExecutor` task — hand its `.execute` to the pool (prefer `ContextExecutor`) | function | method of every `Bus` |
 | `AsyncBus` | Stateless `async` facade over a bus (`asyncio.to_thread` per call) | adapter | `from sincpro_framework.aio import AsyncBus` |
 | `@bus.interceptor(*Commands)` | Registers a function `(dto, call_next) -> response` around those Commands (all when none) | decorator | method of `UseFramework` |
