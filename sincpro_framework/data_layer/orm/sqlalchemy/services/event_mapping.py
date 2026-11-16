@@ -32,6 +32,8 @@ from sqlalchemy.exc import NoInspectionAvailable
 from sqlalchemy.orm import registry
 
 from sincpro_framework.data_layer import exceptions
+from sincpro_framework.ddd.entity import Entity
+from sincpro_framework.ddd.entity.utils.annotations import own_annotations
 from sincpro_framework.ddd.events import DomainEvent
 from sincpro_framework.ddd.events.domain_event import NAME
 from sincpro_framework.ddd.events.mixins.deliverable import DELIVERY_FIELDS
@@ -39,6 +41,12 @@ from sincpro_framework.sincpro_logger import logger
 
 ENVELOPE = frozenset(one.name for one in dataclasses.fields(DomainEvent))
 """What every event carries; what a subclass declares on top is its payload."""
+
+UNUSED = frozenset(one.name for one in dataclasses.fields(Entity)) - frozenset(
+    own_annotations(DomainEvent)
+)
+"""What an event inherits from `Entity` and never uses — `updated_at`, `version`: an event is
+written once. Neither a column nor its payload."""
 
 COLUMNS_OF_DELIVERY = DELIVERY_FIELDS
 """A deliverable event's delivery fields are columns of their own, never its payload."""
@@ -64,14 +72,21 @@ def _is_mapped(cls: type) -> bool:
     return True
 
 
-def packed(_mapper: Any, _connection: Any, target: Any) -> None:
-    """Before an event is inserted: what its class adds goes to `payload`. Its `name` and a
-    deliverable one's delivery are columns of their own, never part of the payload."""
+def packed(mapper: Any, _connection: Any, target: Any) -> None:
+    """Before an event is inserted: what has no column of its own goes to `payload` — what its
+    class adds, and a field of the envelope the table was made before (`actor`, say): a table
+    made by an older release keeps storing every event whole, and gains the column when its
+    migration adds it. Its `name` and a deliverable one's delivery are never part of the
+    payload."""
+    columns = set(mapper.columns.keys())
     written = json.loads(target.as_json())
     target.payload_of_class = {
         key: value
         for key, value in written.items()
-        if key not in ENVELOPE and key not in COLUMNS_OF_DELIVERY and key != NAME
+        if key not in columns
+        and key not in UNUSED
+        and key not in COLUMNS_OF_DELIVERY
+        and key != NAME
     }
 
 

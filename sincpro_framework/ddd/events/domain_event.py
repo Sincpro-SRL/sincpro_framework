@@ -122,6 +122,17 @@ class DomainEvent(Entity):
     """Its place in the history of the entity it is about — 1, 2, 3 — set when the entity's
     state is its events (`EventSourcedMixin`), so two writers of one entity cannot both append
     the same place. `None` for an event about an entity whose state is a row of its own."""
+    entity_display: str = field(
+        default="", metadata={"label": {"default": "Record", "es": "Registro"}}
+    )
+    """The record as a person names it when this happened — its `DEFAULT_DISPLAY`, the field
+    called `name` by default —, carried so the history still says who after the record changed
+    or is gone. Empty when the entity shows nothing beside its identity: a screen shows the id."""
+    actor: str | None = field(
+        default=None, metadata={"label": {"default": "By", "es": "Por"}}
+    )
+    """Who did it: the context's `user_id` when it happened — the id `created_by` is stamped
+    with. `None` when nobody was named: a cron, a migration, a script."""
 
     def __init_subclass__(cls, **kwargs: Any) -> None:
         """Gives every event class its wire name, and refuses the ways of getting it wrong.

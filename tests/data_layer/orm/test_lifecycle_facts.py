@@ -9,7 +9,7 @@ from dataclasses import dataclass
 from datetime import timedelta
 
 import pytest
-from sqlalchemy import Column, Text
+from sqlalchemy import Column, MetaData, Table, Text
 from sqlalchemy.orm import registry
 
 from sincpro_framework import UseFramework
@@ -170,3 +170,63 @@ def test_a_purge_deletes_the_long_archived_and_leaves_each_deletion_in_the_histo
     left = repository.search(Product, archived(recent.id)).items
     assert [one.name for one in left] == ["recent"]
     assert history(repository, old) == ["ShopDeleted"]
+
+
+older = registry()
+older_product_table = entity_table(
+    "lf_older_product",
+    older.metadata,
+    Column("name", Text, nullable=False),
+    *template_table.archive_columns(),
+)
+older_events = (
+    Table(  # an event table as an older release made it: no entity_display, no actor
+        "lf_older_events",
+        older.metadata,
+        *(
+            Column(
+                column.name,
+                column.type,
+                primary_key=column.primary_key,
+                nullable=column.nullable,
+            )
+            for column in template_table.event_table("lf_template", MetaData()).columns
+            if column.name not in ("entity_display", "actor")
+        ),
+    )
+)
+
+
+@dataclass(kw_only=True)
+class OlderEvent(DomainEvent):
+    name = "tests.facts.older.v1.event"
+
+
+@dataclass(kw_only=True)
+class OlderDeleted(EntityDeleted, OlderEvent):
+    name = "tests.facts.older.v1.deleted"
+
+
+@dataclass
+class OlderProduct(ChangeTrackingMixin, Entity):
+    delete_event = OlderDeleted
+    name: str = ""
+
+
+map_aggregates(older, {OlderProduct: older_product_table})
+map_events(older, OlderEvent, older_events)
+
+
+def test_an_event_table_made_before_its_envelope_grew_still_keeps_every_field(engine_url):
+    """Who did it and who the record was land in the payload of a table that has no column for
+    them yet, and are read back the same: upgrading never breaks a write."""
+    repository = Repository(fresh(engine_url, older.metadata))
+    product = OlderProduct(name="mug")
+    repository.save(product)
+    bus = UseFramework("facts-older", log_after_execution=False)
+
+    with bus.context({"user_id": "ana"}):
+        repository.remove(repository.get(OlderProduct, product.id))
+
+    [deleted] = repository.search(OlderEvent, history_of(product)).items
+    assert (deleted.entity_display, deleted.actor) == ("mug", "ana")

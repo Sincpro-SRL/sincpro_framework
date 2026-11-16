@@ -29,6 +29,7 @@ def event_table(name: str, metadata: MetaData) -> Table:
         out     id TEXT PRIMARY KEY — a UUID v7: ordering by it is ordering by time
                 name TEXT (the class, by its wire name)
                 entity_type · entity_id · entity_version (its place in that entity's history)
+                entity_display (who the record was) · actor (who did it)
                 correlation_id · causation_id · label · created_at
                 payload JSON — what the event's own class adds (JSONB on Postgres)
                 delivered_at — when a deliverable event went out, empty while it has not
@@ -48,6 +49,8 @@ def event_table(name: str, metadata: MetaData) -> Table:
         Column("entity_type", Text, nullable=False, default=""),
         Column("entity_id", Text, nullable=False, default=""),
         Column("entity_version", Integer),
+        Column("entity_display", Text),
+        Column("actor", Text),
         Column("correlation_id", Text),
         Column("causation_id", Text),
         Column("label", JsonText),
@@ -66,8 +69,8 @@ def event_table(name: str, metadata: MetaData) -> Table:
 def event_columns() -> list[Column]:
     """The envelope every `DomainEvent` carries, for a table that stores one.
 
-        out     label JSON · entity_type TEXT · entity_id TEXT
-                correlation_id TEXT · causation_id TEXT · entity_version INTEGER
+        out     label JSON · entity_type TEXT · entity_id TEXT · entity_display TEXT
+                actor TEXT · correlation_id TEXT · causation_id TEXT · entity_version INTEGER
 
         entity_table("run_advanced", metadata, *event_columns(), Column("run_id", Text))
 
@@ -83,6 +86,8 @@ def event_columns() -> list[Column]:
         Column("label", JsonText),
         Column("entity_type", Text),
         Column("entity_id", Text),
+        Column("entity_display", Text),
+        Column("actor", Text),
         Column("correlation_id", Text),
         Column("causation_id", Text),
         Column("entity_version", Integer),

@@ -692,8 +692,13 @@ assert [type(one) for one in repository.fetch_all(BillingEvent, about_the_paymen
 |---|---|
 | `id`, `name`, `created_at` | the event: who it is, which class, when |
 | `entity_type`, `entity_id`, `entity_version` | what it is about — empty for an event about no entity |
+| `entity_display`, `actor` | who the record was when it happened, and who did it (the context's `user_id`) |
 | `correlation_id`, `causation_id`, `label` | the envelope every `DomainEvent` carries |
-| `payload` | what the subclass declares, as JSON, typed back on load |
+| `payload` | what the subclass declares, as JSON, typed back on load — and a field of the envelope the table has no column for |
+
+**A table made by an older release keeps working.** A field of the envelope it has no column for
+— `entity_display`, `actor` — is stored in `payload` and read back the same; the migration that
+adds the column is only needed to filter or group by it.
 | `delivered_at`, `delivery` | when a deliverable event went out, and how its delivery went (§12) |
 
 What this gives, with nothing else to learn:

@@ -39,7 +39,7 @@ from typing import TYPE_CHECKING, Any, ClassVar
 from pydantic import TypeAdapter
 
 from sincpro_framework.common.ids import new_entity_id
-from sincpro_framework.context import context_executions
+from sincpro_framework.context import ContextKey, context_executions, use_context
 from sincpro_framework.ddd import exceptions
 from sincpro_framework.ddd.criteria import (
     TEXT,
@@ -355,13 +355,19 @@ class Entity:
         announce facts a rollback then undoes.
 
         Recorded inside an execution, the event is caused by it and joins its flow
-        (`causation_id`, `correlation_id`) unless it already says otherwise.
+        (`causation_id`, `correlation_id`) unless it already says otherwise. It says who the
+        record was — its `DEFAULT_DISPLAY` now — and who did it — the context's `user_id` —,
+        each unless it already says.
         """
         recorded: list[DomainEvent] = self.__dict__.setdefault(RECORDED, [])
+        display = type(self).DEFAULT_DISPLAY()
+        shown = getattr(self, display, None) if display else None
         stamped = dataclasses.replace(
             event,
             entity_type=event.entity_type or type(self).__name__,
             entity_id=event.entity_id or self.id,
+            entity_display=event.entity_display or ("" if shown is None else str(shown)),
+            actor=event.actor or use_context().get(ContextKey.USER_ID),
             **context_executions.chain_for(event),
         )
         recorded.append(stamped)

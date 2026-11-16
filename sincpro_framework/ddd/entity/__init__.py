@@ -18,6 +18,7 @@ from sincpro_framework.ddd.entity.entity import (
     utc_now,
 )
 from sincpro_framework.ddd.entity.entity_id import EntityID, EntityKey, Reference
+from sincpro_framework.ddd.entity.entity_ref import EntityRef
 from sincpro_framework.ddd.entity.mixins.archivable import ArchivableMixin
 from sincpro_framework.ddd.entity.mixins.audited import AuditedMixin
 from sincpro_framework.ddd.entity.mixins.event_sourced import EventSourcedMixin
@@ -30,6 +31,7 @@ __all__ = [
     "Entity",
     "EntityID",
     "EntityKey",
+    "EntityRef",
     "Reference",
     "json_serializer",
     "new_entity_id",
