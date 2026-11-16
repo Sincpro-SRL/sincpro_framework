@@ -8,6 +8,7 @@
     InvalidCriteria       the caller asked what cannot be answered          (invalid, 400)
     InvalidValue          a form's value its field cannot take, and where   (invalid, 422)
       ChecksFailed          every `@check` a save found broken, each where it points
+      ImportRefused         every record a file could not import, each at its cell
     CurrencyMismatch      two currencies added, subtracted or compared      (invalid, 422)
     AggregateNotFound     the record the caller named is not there          (not found, 404)
     TimedOut              the engine stopped at a bound it was given        (unavailable, 503)
@@ -120,6 +121,48 @@ class ChecksFailed(InvalidValue):
 
     def refine_problem(self, problem: Problem) -> Problem:
         """The problem with one error per failure, each pointing at its value."""
+        return problem.model_copy(
+            update={
+                "errors": [
+                    FieldError(
+                        pointer=pointer((one.field, *one.path)),
+                        detail=str(one),
+                        rule=one.rule,
+                    )
+                    for one in self.failures
+                ]
+            }
+        )
+
+
+class ImportRefused(InvalidValue):
+    """A file an import does not take: every record it could not read, find or judge, each
+    pointing at its cell, so the file is fixed in one round. Nothing of it was written.
+
+        ImportRefused((InvalidValue("no Country has code 'BX'", (12, "country_id"), "content"),
+                       InvalidValue("must be > 0", (14, "lines", 0, "quantity"), "content")))
+        ->  Problem(errors=[FieldError(pointer="#/content/12/country_id", …),
+                            FieldError(pointer="#/content/14/lines/0/quantity", …)])
+
+    An `InvalidValue`: whoever handles one handles this; `failures` holds each, in the file's
+    order.
+    """
+
+    def __init__(self, failures: tuple[InvalidValue, ...]) -> None:
+        """`failures` are the cells refused, at least one; the message counts them and reads
+        the first."""
+        first = failures[0]
+        super().__init__(
+            f"{len(failures)} problem{'s' if len(failures) > 1 else ''} in the file, nothing "
+            f"imported; the first: {first}",
+            first.path,
+            first.field,
+            first.rule,
+        )
+        self.failures = failures
+
+    def refine_problem(self, problem: Problem) -> Problem:
+        """The problem with one error per failure, each pointing at its cell."""
         return problem.model_copy(
             update={
                 "errors": [

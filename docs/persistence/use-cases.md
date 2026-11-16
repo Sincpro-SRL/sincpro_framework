@@ -143,6 +143,7 @@ The columns:
 | Use case | Vocabulary | Framework · SQLAlchemy | SQLAlchemy directly | Status |
 |---|---|---|---|---|
 | Idempotent import / mirror another system | `upsert(on=, update=)` → `Upserted(written, skipped)` | `ON CONFLICT … RETURNING`, bounded by the scope | `insert().on_conflict_do_update` | ✅ Postgres, SQLite |
+| Import a file with its references (CSV, JSON, Excel) | `Import[T, R]` + `EntityImports[T]`; `@key` kept in `ExternalKey` ([importing](importing.md)) | `save` in batches, one unit of work; `external_key_table` | — | ✅ any store the port answers |
 | Mass update / delete by filter | `update_all`, `remove_all` | one statement; version raised; a page, an unanswerable condition or a value a rule reads refused | `update()`, `delete()` | ✅ |
 | Raw SQL, COPY, a stored procedure | — | — | `session.execute(text(...))`, the DBAPI connection | ✅ escape hatch |
 
