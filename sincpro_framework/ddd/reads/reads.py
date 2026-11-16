@@ -53,7 +53,8 @@ nothing, so it reads exactly what the entity says.
 import copy
 import dataclasses
 from collections.abc import Callable, Mapping, Sequence
-from typing import Any, ClassVar, Literal, cast
+from enum import StrEnum
+from typing import Any, ClassVar, cast
 
 from pydantic import field_validator
 
@@ -93,6 +94,7 @@ from sincpro_framework.ddd.query import (
     PARQUET,
     PARQUET_ABOVE,
     DraftState,
+    ExportFormat,
     Query,
     ResponsePaginatedQuery,
     ResponseRecord,
@@ -146,20 +148,34 @@ class LiteralSearch[T, R: ResponsePaginatedQuery](DataTransferObject):
 
 
 class Export[T, R: Streamed](Query):
-    """Every record by criteria, as a file — Parquet, an Arrow stream or JSON Lines —, read a
-    page at a time from one snapshot and streamed as it is written.
+    """Every record by criteria, as a file — Parquet, an Arrow stream, JSON Lines, or the CSV or
+    Excel sheet an import reads back —, read a page at a time from one snapshot and streamed as
+    it is written.
 
-    QueryExportEntries(criteria=…)                    every scalar field, Parquet
-    QueryExportEntries(criteria=…, format="jsonl")    each record as an answer writes it
+    QueryExportEntries(criteria=…)                                  every scalar field, Parquet
+    QueryExportEntries(criteria=…, format=ExportFormat.JSON_LINES)  as an answer writes each
+    QueryExportEntries(criteria=…, format=ExportFormat.EXCEL)       to edit and import again
 
     What a data-science notebook or a nightly dump needs, and a page of 40 over HTTP is not:
     `sincpro_framework.data_layer.data_analysis.export`. The criteria filters and orders; its
     specification, when it names fields, picks the columns.
     """
 
-    format: Literal["parquet", "arrow", "jsonl"] = "parquet"
-    """`parquet` to keep or open in a dataframe library, `arrow` for a client that appends batch
-    after batch, `jsonl` for one that reads JSON."""
+    format: ExportFormat = ExportFormat.PARQUET
+    """`PARQUET` to keep or open in a dataframe library, `ARROW` for a client that appends batch
+    after batch, `JSON_LINES` for one that reads JSON, `CSV` or `EXCEL` for a person who edits
+    the records and imports them again (`ddd.importing.writing`)."""
+
+
+class PageFormat(StrEnum):
+    """How a search's page travels."""
+
+    AUTO = "auto"
+    """JSON, unless more records are asked for than the search's `parquet_above`, over a wire
+    whose caller reads Parquet, with pyarrow installed."""
+    JSON = "json"
+    PARQUET = "parquet"
+    """The same records, cursor and count, as a Parquet file."""
 
 
 class Search[T, R: ResponsePaginatedQuery](Query):
@@ -175,9 +191,9 @@ class Search[T, R: ResponsePaginatedQuery](Query):
     criteria, the most recently saved first when it names no order — one page, an owner's
     drafts being few. What a client asks after it lost its state: what was I editing?"""
 
-    format: Literal["auto", "json", "parquet"] = "auto"
-    """How the page travels. `json`, or `parquet`: the same records, cursor and count, as a
-    Parquet file (the cursor and the count in its footer). `auto`, the default: JSON, unless more
+    format: PageFormat = PageFormat.AUTO
+    """How the page travels. `JSON`, or `PARQUET`: the same records, cursor and count, as a
+    Parquet file (the cursor and the count in its footer). `AUTO`, the default: JSON, unless more
     than `parquet_above` records are asked for, over a wire whose caller reads Parquet, with
     pyarrow installed — inside the process an answer is always objects."""
 
@@ -729,7 +745,7 @@ class EntityReads[T](Feature):
         criteria = (detail_of(entity) or Criteria()).replaced_by(dto.criteria)
         if dto.drafts:
             return response.of(self.drafted_page(entity, criteria), criteria)
-        if encoding_of(dto, criteria) == "parquet":
+        if encoding_of(dto, criteria) == PageFormat.PARQUET:
             from sincpro_framework.data_layer.data_analysis.export import searched_as_parquet
 
             return searched_as_parquet(self.reads_from(), entity, criteria, response)
@@ -891,31 +907,33 @@ def parquet_written() -> bool:
     return True
 
 
-def encoding_of(dto: Any, criteria: Criteria) -> Literal["json", "parquet"]:
+def encoding_of(dto: Any, criteria: Criteria) -> PageFormat:
     """How a search's page travels: what the caller chose, or — `auto` — Parquet when more than
     the search's `parquet_above` records are asked for, the caller reads Parquet (`Accept`, as
     a wire writes it in the context) and this process writes it; JSON otherwise.
 
-        format="parquet"                                   ->  "parquet"
-        format="auto", limit 2 000 000, Accept: parquet    ->  "parquet"
-        format="auto", limit 2 000 000, inside the process ->  "json"     (objects, never bytes)
-        format="auto", limit 50                            ->  "json"
+        format=PARQUET                                   ->  PARQUET
+        format=AUTO, limit 2 000 000, Accept: parquet    ->  PARQUET
+        format=AUTO, limit 2 000 000, inside the process ->  JSON     (objects, never bytes)
+        format=AUTO, limit 50                            ->  JSON
     """
-    if dto.format == "parquet" and not parquet_written():
+    if dto.format == PageFormat.PARQUET and not parquet_written():
         raise exceptions.InvalidCriteria(
             "this service writes no Parquet (pyarrow, the [data-analysis] extra, is not "
             "installed): ask format=json"
         )
-    if dto.format != "auto":
-        return dto.format
+    if dto.format != PageFormat.AUTO:
+        return PageFormat(dto.format)
     above = type(dto).parquet_above
     if above is None or criteria.limit <= above:
-        return "json"
+        return PageFormat.JSON
     accepted = use_context().get(ACCEPTED_FORMATS) or {}
     # What the caller of the wire reads is for the use case it asked, never for one that use case
     # calls inside the process.
     reads = accepted.get("types", ()) if accepted.get("for") == type(dto).__name__ else ()
-    return "parquet" if PARQUET in reads and parquet_written() else "json"
+    if PARQUET in reads and parquet_written():
+        return PageFormat.PARQUET
+    return PageFormat.JSON
 
 
 def with_computed_relations(entity: type, criteria: Criteria) -> Criteria:

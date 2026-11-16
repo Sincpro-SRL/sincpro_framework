@@ -20,7 +20,6 @@ from sqlalchemy import Column, Date, DateTime, Integer, Numeric, Text, text
 from sqlalchemy.orm import registry
 
 from sincpro_framework.data_layer.data_analysis.export import (
-    FORMATS,
     arrow_schema,
     exported,
     write_parquet,
@@ -34,6 +33,7 @@ from sincpro_framework.data_layer.orm.sqlalchemy.services.model_introspection im
 )
 from sincpro_framework.ddd.criteria import Condition, Criteria, Operator, Specification
 from sincpro_framework.ddd.entity import Entity
+from sincpro_framework.ddd.query import MEDIA_TYPES, ExportFormat
 from sincpro_framework.exceptions import ProgrammingError
 
 from .engines import fresh
@@ -163,7 +163,8 @@ def test_an_arrow_stream_is_a_message_per_page(ledger):
 
     reader = pyarrow.ipc.open_stream(io.BytesIO(b"".join(answer)))
     batches = list(reader)
-    assert answer.media_type == FORMATS["arrow"] == "application/vnd.apache.arrow.stream"
+    assert answer.media_type == MEDIA_TYPES[ExportFormat.ARROW]
+    assert answer.media_type == "application/vnd.apache.arrow.stream"
     assert [one.num_rows for one in batches] == [3, 3, 1]
 
 
@@ -205,8 +206,8 @@ def test_the_export_reads_one_snapshot_whatever_is_written_meanwhile(ledger, eng
 
 
 def test_a_format_it_does_not_write_is_refused_before_anything_is_read(ledger):
-    with pytest.raises(ProgrammingError, match="parquet, arrow, jsonl"):
-        exported(ledger, Posting, None, "xlsx")
+    with pytest.raises(ProgrammingError, match="parquet, arrow, jsonl, csv, xlsx"):
+        exported(ledger, Posting, None, "xml")
 
 
 def test_an_export_under_an_offset_reads_every_page_after_it(ledger):

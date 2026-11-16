@@ -8,8 +8,13 @@ their own table — and one unit of work, so a failure in a later batch undoes t
     imp_invoice         number UNIQUE, partner_id → imp_partner
     imp_invoice_line    invoice_id → imp_invoice, product_id → imp_product
     imp_external_keys   the names another system gives the records
+
+And the way back: the records exported as the CSV or Excel sheet the import reads, imported
+again unchanged.
 """
 
+import csv
+import io
 from dataclasses import dataclass, field
 
 import pytest
@@ -28,10 +33,13 @@ from sincpro_framework.ddd import (
     EntityCollection,
     EntityID,
     EntityImports,
+    Export,
+    ExportFormat,
     ExternalKey,
     Import,
     ImportFormat,
     ResponseImport,
+    Streamed,
 )
 from sincpro_framework.ddd import exceptions as ddd_exceptions
 
@@ -151,6 +159,14 @@ class CommandImportInvoices(Import[Invoice, ResponseImport]):
     origin: str = "odoo"
 
 
+class QueryExportPartners(Export[Partner, Streamed]):
+    pass
+
+
+class QueryExportInvoices(Export[Invoice, Streamed]):
+    pass
+
+
 @pytest.fixture
 def store(engine_url: str) -> Repository:
     repository = Repository(fresh(engine_url, sales.metadata, enforce_foreign_keys=True))
@@ -166,7 +182,14 @@ def bus(store: Repository) -> UseFramework:
     framework = UseFramework("imports-sql", log_after_execution=False)
     framework.add_dependency("repository", store)
 
-    @framework.feature([CommandImportPartners, CommandImportInvoices])
+    @framework.feature(
+        [
+            CommandImportPartners,
+            CommandImportInvoices,
+            QueryExportPartners,
+            QueryExportInvoices,
+        ]
+    )
     class SalesImports(EntityImports[Partner]):
         external_keys = SalesExternalKey
 
@@ -247,3 +270,50 @@ def test_external_keys_a_repository_does_not_store_are_refused_saying_what_to_ma
     with pytest.raises(exceptions.ProgrammingError, match="external_key_table"):
         framework(CommandImportPartners(content=PARTNERS, format=ImportFormat.CSV))
     assert len(store.fetch_all(Partner)) == 0
+
+
+@pytest.mark.parametrize("format", [ExportFormat.CSV, ExportFormat.EXCEL])
+def test_an_export_imported_again_changes_nothing(bus, store, format):
+    bus(CommandImportPartners(content=PARTNERS, format=ImportFormat.CSV))
+    bus(
+        CommandImportInvoices(
+            content=b"number,partner_id/@key,lines/product_id,lines/quantity\n"
+            b"F-1,res_partner_1,SKU-7,2\n,,SKU-9,1\n",
+            format=ImportFormat.CSV,
+        )
+    )
+
+    again = [
+        bus(
+            command(
+                content=b"".join(bus(query(format=format), Streamed)),
+                format=ImportFormat(format.value),
+            ),
+            ResponseImport,
+        )
+        for query, command in (
+            (QueryExportPartners, CommandImportPartners),
+            (QueryExportInvoices, CommandImportInvoices),
+        )
+    ]
+
+    assert [(one.created, one.updated, one.unchanged) for one in again] == [
+        (0, 0, 3),
+        (0, 0, 1),
+    ]
+    assert len(store.fetch_all(Partner)) == 3
+
+
+def test_a_many_to_many_is_written_as_its_keys_and_a_reference_by_its_natural_key(bus, store):
+    bus(CommandImportPartners(content=PARTNERS, format=ImportFormat.CSV))
+
+    content = b"".join(bus(QueryExportPartners(format=ExportFormat.CSV), Streamed))
+    found = {
+        row["name"]: row for row in csv.DictReader(io.StringIO(content.decode("utf-8-sig")))
+    }
+
+    assert list(found["ACME SRL"]) == ["id", "name", "country_id", "parent_id", "labels"]
+    assert found["ACME SRL"]["country_id"] == "BO"
+    assert sorted(found["ACME SRL"]["labels"].split(",")) == ["retail", "vip"]
+    assert found["ACME Santa Cruz"]["parent_id"] == found["ACME SRL"]["id"]
+    assert found["Andes Ltda"]["labels"] == ""

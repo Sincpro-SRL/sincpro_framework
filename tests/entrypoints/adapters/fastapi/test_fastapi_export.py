@@ -68,6 +68,8 @@ def test_the_document_says_an_export_answers_bytes_never_a_json_body():
         "application/vnd.apache.parquet",
         "application/vnd.apache.arrow.stream",
         "application/jsonl",
+        "text/csv",
+        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
     }
     assert all("schema" not in one for one in answers.values())
 
@@ -90,5 +92,7 @@ def test_the_client_contract_says_the_answer_is_streamed_bytes():
         "application/vnd.apache.parquet",
         "application/vnd.apache.arrow.stream",
         "application/jsonl",
+        "text/csv",
+        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
     ]
     assert "chunks" not in output["properties"]

@@ -111,6 +111,7 @@ from sincpro_framework.ddd.multi_currency import MultiCurrency
 from sincpro_framework.ddd.multi_language import MultiLanguage
 from sincpro_framework.ddd.query import (
     DraftState,
+    ExportFormat,
     Query,
     ResponsePaginatedQuery,
     ResponseRecord,
@@ -126,6 +127,7 @@ from sincpro_framework.ddd.reads.reads import (
     Get,
     GetMany,
     LiteralSearch,
+    PageFormat,
     PreviewEntity,
     ResponsePreviewEntity,
     Search,
@@ -187,6 +189,7 @@ __all__ = [
     "EntityImports",
     "EntityReads",
     "Export",
+    "ExportFormat",
     "EntityUpdated",
     "EventSourcedMixin",
     "ExchangeRate",
@@ -220,6 +223,7 @@ __all__ = [
     "Now",
     "Offset",
     "Operator",
+    "PageFormat",
     "Pagination",
     "Part",
     "Period",

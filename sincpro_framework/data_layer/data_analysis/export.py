@@ -1,6 +1,7 @@
-"""Every record a criteria matches, out as Parquet, an Arrow stream or JSON Lines — a page at a
-time, never all of them in memory — for whoever needs the whole set: a data-science notebook,
-a nightly dump to a lake, a spreadsheet.
+"""Every record a criteria matches, out as Parquet, an Arrow stream, JSON Lines, or the CSV or
+Excel sheet an import reads back — a page at a time, never all of them in memory — for whoever
+needs the whole set: a data-science notebook, a nightly dump to a lake, a person who edits the
+records in a spreadsheet and imports them again.
 
     with open("entries.parquet", "wb") as sink:
         write_parquet(sink, repository, Entry, posted)               # 2 million rows, 5 000 at a time
@@ -31,17 +32,23 @@ long as the download lasts — on PostgreSQL that holds back the vacuum, and a r
 query that outlives `max_standby_streaming_delay` —, so an export of hours belongs in a job that
 writes a file, not in a request.
 
+**CSV and Excel are written to be imported again** (`ddd.importing.writing`): the identity, each
+field as a person writes it, each record a key names by its natural key — found once per export
+—, the children in the rows below. They are the import's columns, not every column: a framework
+field or a computed one is left out.
+
 Parquet and Arrow need the `[data-analysis]` extra, pyarrow, imported when asked for; JSON
-Lines needs nothing beyond the framework.
+Lines, CSV and Excel need nothing beyond the framework.
 """
 
 import contextvars
+import csv
 import inspect
 import io
 import json
 from collections.abc import Callable, Generator, Iterator, Mapping
 from contextlib import AbstractContextManager, nullcontext
-from datetime import datetime, timezone
+from datetime import date, datetime, time, timezone
 from decimal import Decimal
 from enum import Enum
 from typing import Any, BinaryIO
@@ -52,7 +59,16 @@ from pydantic_core import to_jsonable_python
 from sincpro_framework.ddd.criteria import CountMode, Criteria, Offset
 from sincpro_framework.ddd.entity.entity_collection import Count, EntityCollection
 from sincpro_framework.ddd.entity.entity_meta import FieldMeta, FieldType, Meta
-from sincpro_framework.ddd.query import Streamed, _record, _version_of, writing_out
+from sincpro_framework.ddd.importing.excel import SheetWriter
+from sincpro_framework.ddd.importing.writing import find_names, layout_of, loading, rows_of
+from sincpro_framework.ddd.query import (
+    MEDIA_TYPES,
+    ExportFormat,
+    Streamed,
+    _record,
+    _version_of,
+    writing_out,
+)
 from sincpro_framework.exceptions import ProgrammingError
 
 PYARROW_MISSING = (
@@ -72,15 +88,13 @@ def _pyarrow() -> Any:
     return pyarrow
 
 
-FORMATS = {
-    "parquet": "application/vnd.apache.parquet",
-    "arrow": "application/vnd.apache.arrow.stream",
-    "jsonl": "application/jsonl",
+EXTENSIONS = {
+    ExportFormat.PARQUET: "parquet",
+    ExportFormat.ARROW: "arrows",
+    ExportFormat.JSON_LINES: "jsonl",
+    ExportFormat.CSV: "csv",
+    ExportFormat.EXCEL: "xlsx",
 }
-"""The formats an export is written in, by name, with the media type each one travels as —
-both Arrow types are registered with IANA; `application/jsonl` is what FastAPI streams."""
-
-EXTENSIONS = {"parquet": "parquet", "arrow": "arrows", "jsonl": "jsonl"}
 
 EXPORT_BATCH = 5_000
 """How many records each page of an export reads, and each batch writes: what the export holds
@@ -362,10 +376,66 @@ def jsonl_chunks(
             yield ("\n".join(lines) + "\n").encode()
 
 
+def import_rows(
+    repository: Any, target: type, criteria: Criteria | None = None, batch: int = EXPORT_BATCH
+) -> Iterator[list[list[Any]]]:
+    """The rows an import reads back, a page of them at a time, the header first: each page read
+    with its children and the records of its many-to-manys (`loading`), and every record its
+    keys name found once for the whole export (`find_names`)."""
+    layout = layout_of(target, criteria.specification if criteria else None)
+    names: dict[type, dict[str, str]] = {}
+    yield [layout.header]
+    for page in pages(repository, target, loading(layout, criteria), batch):
+        records = list(page)
+        find_names(repository, layout, records, names)
+        yield list(rows_of(layout, records, names))
+
+
+def _csv_cell(value: Any) -> Any:
+    """A cell as a CSV holds it: a boolean as `true`/`false`, an exact number never in exponent
+    notation, a day or a moment as ISO 8601."""
+    if isinstance(value, bool):
+        return "true" if value else "false"
+    if isinstance(value, Decimal):
+        return f"{value:f}"
+    if isinstance(value, (date, time)):
+        return value.isoformat()
+    return value
+
+
+def csv_chunks(
+    repository: Any, target: type, criteria: Criteria | None = None, batch: int = EXPORT_BATCH
+) -> Iterator[bytes]:
+    """The rows an import reads back, as CSV: UTF-8 with its BOM — what tells Excel the file is
+    UTF-8 —, a page of lines at a time."""
+    yield "\ufeff".encode()
+    for rows in import_rows(repository, target, criteria, batch):
+        text = io.StringIO()
+        csv.writer(text, lineterminator="\n").writerows(
+            [_csv_cell(value) for value in row] for row in rows
+        )
+        yield text.getvalue().encode()
+
+
+def xlsx_chunks(
+    repository: Any, target: type, criteria: Criteria | None = None, batch: int = EXPORT_BATCH
+) -> Iterator[bytes]:
+    """The rows an import reads back, as an Excel workbook of one sheet named after the entity:
+    a page of rows written and handed on at a time."""
+    sink = _Drain()
+    with SheetWriter(sink, target.__name__) as sheet:
+        for rows in import_rows(repository, target, criteria, batch):
+            sheet.write(rows)
+            yield sink.drained()
+    yield sink.drained()
+
+
 WRITERS: dict[str, Callable[..., Iterator[bytes]]] = {
-    "parquet": parquet_chunks,
-    "arrow": arrow_chunks,
-    "jsonl": jsonl_chunks,
+    ExportFormat.PARQUET: parquet_chunks,
+    ExportFormat.ARROW: arrow_chunks,
+    ExportFormat.JSON_LINES: jsonl_chunks,
+    ExportFormat.CSV: csv_chunks,
+    ExportFormat.EXCEL: xlsx_chunks,
 }
 
 
@@ -423,7 +493,7 @@ def exported(
     repository: Any,
     target: type,
     criteria: Criteria | None = None,
-    format: str = "parquet",
+    format: ExportFormat | str = ExportFormat.PARQUET,
     batch: int = EXPORT_BATCH,
     filename: str = "",
 ) -> Streamed:
@@ -442,11 +512,12 @@ def exported(
         raise ProgrammingError(
             f"an export is written as {', '.join(WRITERS)}, not {format!r}"
         )
-    write = WRITERS[format]
+    chosen = ExportFormat(format)
+    write = WRITERS[chosen]
     chunks = _in_snapshot(repository, lambda unit: write(unit, target, criteria, batch))
     return Streamed(
-        media_type=FORMATS[format],
-        filename=filename or f"{target.__name__.lower()}.{EXTENSIONS[format]}",
+        media_type=MEDIA_TYPES[chosen],
+        filename=filename or f"{target.__name__.lower()}.{EXTENSIONS[chosen]}",
         chunks=_carried(chunks, contextvars.copy_context()),
     )
 
@@ -583,7 +654,7 @@ def searched_as_parquet(
 
     chunks = _in_snapshot(repository, write)
     return Streamed(
-        media_type=FORMATS["parquet"],
+        media_type=MEDIA_TYPES[ExportFormat.PARQUET],
         filename=f"{records}.parquet",
         chunks=_carried(chunks, contextvars.copy_context()),
     )

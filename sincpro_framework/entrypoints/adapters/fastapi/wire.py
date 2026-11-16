@@ -38,7 +38,7 @@ from sincpro_framework.common.naming import kebab
 from sincpro_framework.data_layer.caching import Idempotency
 from sincpro_framework.ddd.metamodel import contract_of
 from sincpro_framework.ddd.metamodel.services.contract import entities_in
-from sincpro_framework.ddd.query import PARQUET, Streamed
+from sincpro_framework.ddd.query import MEDIA_TYPES, PARQUET, Streamed
 from sincpro_framework.ddd.reads.reads import Search, named_in_type, parquet_written
 from sincpro_framework.entrypoints.adapters.fastapi import exceptions
 from sincpro_framework.entrypoints.adapters.fastapi.calling import (
@@ -140,7 +140,7 @@ def _url_parameters(
             "in": "query",
             "required": name in required,
         }
-        if is_plain(field_schema):
+        if is_plain(field_schema, defs):
             described["schema"] = inlined(field_schema, defs)
         else:
             described["content"] = {"application/json": {"schema": field_schema}}
@@ -604,11 +604,7 @@ def _location(request: Request, template: str, answer: Any, prefix: str) -> str:
     return _joined(outer, prefix, template.format(**values))
 
 
-STREAMED_MEDIA = (
-    "application/vnd.apache.parquet",
-    "application/vnd.apache.arrow.stream",
-    "application/jsonl",
-)
+STREAMED_MEDIA = tuple(MEDIA_TYPES.values())
 """What a streamed answer may be written as — the formats an export writes."""
 
 

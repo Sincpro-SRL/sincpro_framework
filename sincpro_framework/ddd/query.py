@@ -18,6 +18,7 @@ from collections.abc import Callable, Iterator
 from contextlib import contextmanager
 from contextvars import ContextVar
 from datetime import datetime
+from enum import StrEnum
 from functools import cache
 from typing import Any, Literal, Self, get_args, get_origin
 
@@ -815,6 +816,32 @@ class ResponseRecords(DataTransferObject):
 PARQUET = "application/vnd.apache.parquet"
 """The media type of a Parquet file (IANA, 2024)."""
 
+
+class ExportFormat(StrEnum):
+    """What an export is written as."""
+
+    PARQUET = "parquet"
+    """A file to keep or open in a dataframe library."""
+    ARROW = "arrow"
+    """A stream a client appends batch after batch."""
+    JSON_LINES = "jsonl"
+    """One record per line, written as an answer writes it."""
+    CSV = "csv"
+    """The rows an import reads back: a record per row, its children in the rows below."""
+    EXCEL = "xlsx"
+    """The same rows, as an Excel sheet."""
+
+
+MEDIA_TYPES = {
+    ExportFormat.PARQUET: PARQUET,
+    ExportFormat.ARROW: "application/vnd.apache.arrow.stream",
+    ExportFormat.JSON_LINES: "application/jsonl",
+    ExportFormat.CSV: "text/csv",
+    ExportFormat.EXCEL: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+}
+"""The media type each export format travels as — both Arrow types are registered with IANA;
+`application/jsonl` is what FastAPI streams."""
+
 PARQUET_ABOVE = 1_000_000
 """Past how many records asked for a search answers Parquet instead of JSON, when its caller
 reads Parquet and nobody chose the format: a JSON page of millions of records is the slowest,
@@ -841,13 +868,7 @@ class Streamed(DataTransferObject):
     """
 
     model_config = ConfigDict(
-        json_schema_extra={
-            "x-sincpro-streamed": [
-                "application/vnd.apache.parquet",
-                "application/vnd.apache.arrow.stream",
-                "application/jsonl",
-            ]
-        }
+        json_schema_extra={"x-sincpro-streamed": list(MEDIA_TYPES.values())}
     )
 
     media_type: str

@@ -97,7 +97,7 @@ nothing requires a prefix, and the records have their own name (`account`, `acco
 | `GetMany[T, R]` | `ids`, `criteria` | `R(ResponseRecords)`: a list in the order of `ids`, each as `DEFAULT_READING` brings it | the absent ids in `missing` |
 | `LiteralSearch[T, R]` | `text`, `criteria` | `R(ResponsePaginatedQuery)`: `DEFAULT_LITERAL_SEARCH` filled, a page of 8, identity and display | an empty page |
 | `Search[T, R]` | `criteria`, `format` | `R(ResponsePaginatedQuery)`: the page asked, as `DEFAULT_READING` brings it, in `DEFAULT_ORDER` — as JSON, or as Parquet (`format`, or `auto` past `parquet_above` records for a caller that reads it; [data analysis](../data_analysis/README.md#a-large-page-as-parquet)) | an empty page |
-| `Export[T, Streamed]` | `criteria`, `format` | `Streamed`: every record the criteria matches, as Parquet, an Arrow stream or JSON Lines, read a page at a time from one snapshot ([data analysis](../data_analysis/README.md#everything-as-a-file)) | an empty file |
+| `Export[T, Streamed]` | `criteria`, `format` | `Streamed`: every record the criteria matches, as Parquet, an Arrow stream or JSON Lines ([data analysis](../data_analysis/README.md#everything-as-a-file)), or as the CSV or Excel sheet an import reads back ([importing](importing.md#the-way-back-export-edit-import-again)), read a page at a time from one snapshot | an empty file |
 | `DomainEvents[T, R]` | `id`, `names`, `criteria` | `R(ResponsePaginatedQuery)`: the record's events, oldest first, from the event class `R` holds | an empty page; `AggregateNotFound` when a key other than the identity finds no record |
 
 ### What the caller sends wins, part by part

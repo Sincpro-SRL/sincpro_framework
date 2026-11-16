@@ -124,21 +124,26 @@ def build_routes(
     return routes
 
 
-def is_plain(schema: Mapping[str, Any]) -> bool:
+def is_plain(schema: Mapping[str, Any], definitions: Mapping[str, Any] | None = None) -> bool:
     """A field the query string carries as itself: a string, a number, a boolean, an enum of
     them, or an optional one. Anything else travels as JSON.
 
         is_plain({"type": "integer"})                                     ->  True
         is_plain({"anyOf": [{"type": "string"}, {"type": "null"}]})       ->  True
+        is_plain({"$ref": "#/$defs/ExportFormat"}, <$defs>)              ->  True   a StrEnum
         is_plain({"type": "array", "items": {"type": "string"}})          ->  False
 
-    A union is plain only when every member is — `null` aside.
+    A union is plain only when every member is — `null` aside. A field pointing at a definition
+    is what the definition is, read from `definitions` (the schema's `$defs`).
     """
+    reference = schema.get("$ref")
+    if isinstance(reference, str) and definitions:
+        schema = definitions.get(reference.rsplit("/", 1)[-1], schema)
     if schema.get("type") in PLAIN_TYPES or "enum" in schema or "const" in schema:
         return True
     options = schema.get("anyOf") or schema.get("oneOf")
     if options:
-        return all(one.get("type") == "null" or is_plain(one) for one in options)
+        return all(one.get("type") == "null" or is_plain(one, definitions) for one in options)
     return False
 
 
@@ -162,7 +167,7 @@ def payload_from_query(query: Mapping[str, str], schema: Mapping[str, Any]) -> S
     payload: dict[str, Any] = {}
     for name, value in query.items():
         field_schema = properties.get(name)
-        if field_schema is None or is_plain(field_schema):
+        if field_schema is None or is_plain(field_schema, schema.get("$defs")):
             payload[name] = value
             continue
         try:
