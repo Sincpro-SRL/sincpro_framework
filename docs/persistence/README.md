@@ -24,6 +24,7 @@ Read in this order:
 | [Rules and computations](rules.md) | `@check` and `@compute` on the entity: written once, warned while a form is edited, refused on save; editable proposals, lines, imports that skip the rules, why not on assignment, the cost |
 | [Preview](preview.md) | What a record becomes before it is saved: computed fields, `apply_values`, `PreviewEntity` on `EntityReads`, and the guard that makes a preview unable to write |
 | [Edits](edits.md) | The life of a form in one command: `Edit` saves the caller's draft, saves the record or discards the draft; `Get(draft=True)` / `Search(drafts=True)` find it after the client lost its state; creating and updating, two tabs, someone who saved meanwhile |
+| [Importing](importing.md) | Records of one entity from CSV, JSON or an Excel sheet, saved as a save saves them: references by natural key, external key (`@key`, kept in `ExternalKey`) or identity; children from the rows below; one unit of work, every invalid cell named; a dry run |
 | [Drafts](../core/drafts.md) | What a form holds between requests — stored by the context, by user or session, where it stores everything (memory or Redis); optimistic versions, a TTL, `refuse_stale` before activating |
 | [Relations](relations.md) | The paper: the model, the precedence, the resolution algorithm per kind, cost, and how to add a new way to resolve |
 | [Transactions](transactions.md) | The unit of work and its options, locks, what the engine refuses and `retrying`, `after_commit`, `upsert` and writes by criteria — runnable |

@@ -90,6 +90,7 @@ from sincpro_framework.ddd.exceptions import (
     CurrencyMismatch,
     DomainError,
     DuplicateAggregate,
+    ImportRefused,
     InvalidCriteria,
     RelationNotResolved,
     StaleAggregate,
@@ -97,6 +98,14 @@ from sincpro_framework.ddd.exceptions import (
     TransactionConflict,
 )
 from sincpro_framework.ddd.exchange_rates import ExchangeRates, InMemoryExchangeRates
+from sincpro_framework.ddd.importing import (
+    EntityImports,
+    ExternalKey,
+    Import,
+    ImportFormat,
+    ImportMode,
+    ResponseImport,
+)
 from sincpro_framework.ddd.money import Currency, ExchangeRate, Money
 from sincpro_framework.ddd.multi_currency import MultiCurrency
 from sincpro_framework.ddd.multi_language import MultiLanguage
@@ -175,12 +184,14 @@ __all__ = [
     "EntityID",
     "EntityKey",
     "EntityEdits",
+    "EntityImports",
     "EntityReads",
     "Export",
     "EntityUpdated",
     "EventSourcedMixin",
     "ExchangeRate",
     "ExchangeRates",
+    "ExternalKey",
     "FieldMeta",
     "FieldState",
     "FieldType",
@@ -193,6 +204,10 @@ __all__ = [
     "Hooks",
     "INumbering",
     "IRepository",
+    "Import",
+    "ImportFormat",
+    "ImportMode",
+    "ImportRefused",
     "InMemoryExchangeRates",
     "InvalidCriteria",
     "LiteralSearch",
@@ -222,6 +237,7 @@ __all__ = [
     "RelationKind",
     "Resolver",
     "ResponseEdit",
+    "ResponseImport",
     "ResponsePaginatedQuery",
     "Streamed",
     "ResponsePreviewEntity",

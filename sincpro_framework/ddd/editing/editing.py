@@ -25,7 +25,11 @@ from sincpro_framework.ddd.editing.preview import (
     warn_form_at,
     warnings_at,
 )
-from sincpro_framework.ddd.entity.entity_collection import EntityCollection, identity_name
+from sincpro_framework.ddd.entity.entity_collection import (
+    EntityCollection,
+    identity_name,
+    identity_of,
+)
 from sincpro_framework.ddd.entity.entity_meta import (
     Check,
     Computation,
@@ -72,7 +76,9 @@ def apply_values(record: Any, values: Mapping[str, Any]) -> tuple[str, ...]:
     2. A field the framework writes (`id`, `version`, `created_at`, a mixin's) is refused: a
        user's values never set an identity or the version a save is checked against.
     3. Each value is read through the field's annotation: `"50"` into a `Decimal`, `"card"`
-       into its enum, a list of mappings into the line records.
+       into its enum, a list of mappings into the line records. A collection is compared by its
+       records, a many-to-many by which records it names, so the same records sent again — in
+       any order, for a many-to-many — are no change.
        3.1 A mapping carrying an identity is the record the field already holds with it,
            edited in place, so its row is updated; an identity the field does not hold is a new
            record built under it: a form mints the identity of a line it creates (UUID v7), and
@@ -107,7 +113,14 @@ def apply_values(record: Any, values: Mapping[str, Any]) -> tuple[str, ...]:
     changed: list[str] = []
     for name, value in values.items():
         read = _read(record, name, annotations[name], value)
-        if _current(record, name) != read:
+        current = _current(record, name)
+        held = list(current) if isinstance(current, EntityCollection) else current
+        sent = list(read) if isinstance(read, EntityCollection) else read
+        attribute = relation_attribute(owner, name) if isinstance(sent, list) else None
+        if attribute is not None and attribute.named_by_id():
+            held = {identity_of(one) for one in held or ()} if held is not UNREAD else held
+            sent = {identity_of(one) for one in sent}
+        if held != sent:
             changed.append(name)
         setattr(record, name, read)
     return tuple(changed)
