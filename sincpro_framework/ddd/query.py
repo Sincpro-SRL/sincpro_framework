@@ -52,6 +52,7 @@ from sincpro_framework.ddd.entity.entity_meta import (
     collection_class,
     records_class,
 )
+from sincpro_framework.ddd.events.domain_event import NAME, DomainEvent
 from sincpro_framework.ddd.metamodel import model_of
 from sincpro_framework.sincpro_abstractions import DataTransferObject
 
@@ -178,10 +179,12 @@ def _cut(
              "lines": {"items": [{"id": …, "qty": 2}], "count": {…}, "cursor": None}}
 
     1. The whole record dumped, its relation attributes taken out — they are written below
-       from what was resolved, never from the attribute.
+       from what was resolved, never from the attribute. A domain event carries its `name`
+       first: which event it is, what a reader tells one from another by.
     2. No mask: that is the answer, every scalar.
     3. A mask selects the identity and what it names — through the model's definition when
-       there is one, else the names as given, or the entity's display when none.
+       there is one, else the names as given, or the entity's display when none —, and an
+       event's `name`, always.
     4. Each named field the model knows:
     4.1 an embedded value is cut to its own node (`_shaped`);
     4.2 a to-many relation is written as a page — items, count, cursor — of what the reading
@@ -189,7 +192,10 @@ def _cut(
     4.3 a to-one relation is its record, or `None`.
     Final: each related record written the same way, recursively (`_record`).
     """
+    event = isinstance(record, DomainEvent)
     written = _adapter(type(record)).dump_python(record, mode=mode)
+    if event:
+        written = {NAME: record.name, **written}
     relations = set(meta.relations) if meta is not None else set()
     for name in relations:
         written.pop(name, None)
@@ -202,6 +208,8 @@ def _cut(
         display = model_of(type(record)).presented.display
         named = specification.named or ([display] if display else [])
         selected = {identity_name(type(record)), *named}
+    if event:
+        selected.add(NAME)
     written = {name: value for name, value in written.items() if name in selected}
     for name, node in specification.root.items():
         if meta is None or name not in meta.fields:

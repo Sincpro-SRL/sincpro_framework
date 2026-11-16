@@ -184,6 +184,15 @@ project(QueryIssueEvents(id=issue_id, criteria=Criteria(
 - **Several records at once** — an issue with its runs — is `history_of(issue, *runs)`: the
   criteria a `Search` on the context's event class reads them with, each by its type and
   identity.
+- **A screen reads it with no code of its own.** Each event answers its `name` first — which
+  event it is —, and the contract of the context's event class labels every field a log shows:
+  the envelope's (`Evento`, `Cuándo`, `Tipo de registro`, `ID del registro`, …) and each event's
+  own as its class labels it (`reason` → `Motivo`). A grouping offers what means something to a
+  person — the event, the moment, the record — and never the trace ids or the versions.
+- **Who the record was** travels on its lifecycle facts (`EntityUpdated`, `EntityDeleted`,
+  `EntityArchived`, `EntityRestored`) as `entity_display`: its `DEFAULT_DISPLAY` — the field called
+  `name` by default — when it happened, so «Se eliminó Ana Pérez» still reads after the row is
+  gone. Empty when the entity shows nothing beside its identity: a screen shows the id then.
 
 ## The caller's drafts
 

@@ -184,7 +184,8 @@ class Entity:
     """
 
     id: str = field(
-        default_factory=new_entity_id, metadata={"label": {"default": "ID", "es": "ID"}}
+        default_factory=new_entity_id,
+        metadata={"label": {"default": "ID", "es": "ID"}, "groupable": False},
     )
     created_at: datetime = field(
         default_factory=utc_now,
@@ -197,7 +198,8 @@ class Entity:
     adapter stamps it on every flush that changed something, so nobody remembers to — and
     "untouched since" is this one column."""
     version: int = field(
-        default=0, metadata={"label": {"default": "Version", "es": "Versión"}}
+        default=0,
+        metadata={"label": {"default": "Version", "es": "Versión"}, "groupable": False},
     )
     """How many times it has been written. Zero means never — the adapter raises it, and a
     save carrying a number older than the row's is refused as `StaleAggregate`."""

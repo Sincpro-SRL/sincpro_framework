@@ -576,8 +576,9 @@ class MemoryRepository(
             repository.add(MoveDelivery(id=7, route="R1"))
             repository.definition(Move).fields["route"].owner   ->  "MoveDelivery"
 
-        An added field is described as nullable whatever its type says; a field two held
-        subclasses add is described by the shallowest one. A field holding another entity is a
+        An added field is described as nullable whatever its type says, with the label and
+        help its own class gives it; a field two held subclasses add is described by the
+        shallowest one. A field holding another entity is a
         relation a filter may cross (`Through`): this store holds the records themselves.
         """
         inherited = set(model_of(aggregate).annotations)
@@ -592,7 +593,13 @@ class MemoryRepository(
                         field.choices,
                         field.exact,
                         choice_labels=field.choice_labels,
-                    ).model_copy(update={"owner": kind.__name__})
+                    ).model_copy(
+                        update={
+                            "owner": kind.__name__,
+                            "label": field.label,
+                            "help": field.help,
+                        }
+                    )
         held = {
             name: (kind, many)
             for name, annotation in model_of(aggregate).annotations.items()

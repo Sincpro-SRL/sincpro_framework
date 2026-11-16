@@ -109,6 +109,13 @@ class EntityUpdated(DomainEvent):
     changes: dict[str, tuple[Any, Any]]
     """`{field: (before, after)}`, one entry per field that actually differs."""
 
+    entity_display: str = dataclasses.field(
+        default="", metadata={"label": {"default": "Record", "es": "Registro"}}
+    )
+    """The record as a person names it when this happened — its `DEFAULT_DISPLAY`, the field
+    called `name` by default —, carried so the history still says who after it changed or is
+    gone. Empty when the entity shows nothing beside its identity."""
+
     field_labels: dict[str, dict[str, str]] = dataclasses.field(default_factory=dict)
     """How a screen names each field that changed, as it was named *then* —
     `{"total": {"default": "Total", "es": "Importe"}}`, read off the aggregate's
@@ -134,6 +141,13 @@ class EntityDeleted(DomainEvent):
         default_factory=lambda: {"default": "Deleted", "es": "Se eliminó"}
     )
 
+    entity_display: str = dataclasses.field(
+        default="", metadata={"label": {"default": "Record", "es": "Registro"}}
+    )
+    """The record as a person names it when this happened — its `DEFAULT_DISPLAY`, the field
+    called `name` by default —, carried so the history still says who after it changed or is
+    gone. Empty when the entity shows nothing beside its identity."""
+
 
 @dataclasses.dataclass(kw_only=True)
 class EntityArchived(DomainEvent):
@@ -146,6 +160,13 @@ class EntityArchived(DomainEvent):
         default_factory=lambda: {"default": "Archived", "es": "Se archivó"}
     )
 
+    entity_display: str = dataclasses.field(
+        default="", metadata={"label": {"default": "Record", "es": "Registro"}}
+    )
+    """The record as a person names it when this happened — its `DEFAULT_DISPLAY`, the field
+    called `name` by default —, carried so the history still says who after it changed or is
+    gone. Empty when the entity shows nothing beside its identity."""
+
 
 @dataclasses.dataclass(kw_only=True)
 class EntityRestored(DomainEvent):
@@ -157,6 +178,13 @@ class EntityRestored(DomainEvent):
     label: dict[str, str] = dataclasses.field(
         default_factory=lambda: {"default": "Restored", "es": "Se restauró"}
     )
+
+    entity_display: str = dataclasses.field(
+        default="", metadata={"label": {"default": "Record", "es": "Registro"}}
+    )
+    """The record as a person names it when this happened — its `DEFAULT_DISPLAY`, the field
+    called `name` by default —, carried so the history still says who after it changed or is
+    gone. Empty when the entity shows nothing beside its identity."""
 
 
 class ChangeTrackingMixin:
@@ -214,11 +242,25 @@ class ChangeTrackingMixin:
             and not _is_another_aggregate(annotations.get(field.name))
         )
 
+    def _displayed(self, event: type[DomainEvent]) -> dict[str, Any]:
+        """The record as a person names it now — the value of its `DEFAULT_DISPLAY` —, for an
+        `event` that carries `entity_display`; nothing for one that does not.
+
+            # Member(name="Ana Pérez"), DEFAULT_DISPLAY "name"
+            _displayed(EntityDeleted)    ->  {"entity_display": "Ana Pérez"}
+            _displayed(NoteChanged)      ->  {}      # declares no entity_display
+        """
+        if "entity_display" not in {one.name for one in dataclasses.fields(cast(Any, event))}:
+            return {}
+        display = type(self).DEFAULT_DISPLAY()  # type: ignore[attr-defined]
+        shown = getattr(self, display, None) if display else None
+        return {"entity_display": "" if shown is None else str(shown)}
+
     def _said_about(self, changed: dict[str, tuple[Any, Any]]) -> dict[str, Any]:
         """What the event is built from: the diff, plus the label of each field that moved —
-        only those, never the whole model. A `change_event` without `field_labels` gets the
-        diff alone."""
-        said: dict[str, Any] = {"changes": changed}
+        only those, never the whole model — and the record as a person names it. A
+        `change_event` without `field_labels` gets the diff alone."""
+        said: dict[str, Any] = {"changes": changed, **self._displayed(self.change_event)}
         fields = dataclasses.fields(cast(Any, self.change_event))
         known = {one.name for one in fields}
         if "field_labels" in known:
@@ -242,7 +284,7 @@ class ChangeTrackingMixin:
     def record_deletion(self) -> DomainEvent:
         """The `delete_event`, recorded as the store removes this aggregate — stored with the
         removal, so its history holds it after the row is gone."""
-        return self.record(self.delete_event())  # type: ignore[attr-defined]
+        return self.record(self.delete_event(**self._displayed(self.delete_event)))  # type: ignore[attr-defined]
 
     def record_archiving(self, before: Any, after: Any) -> "DomainEvent | None":
         """The `archive_event` when `archived_at` went from nothing to a moment, the
@@ -253,10 +295,12 @@ class ChangeTrackingMixin:
             record_archiving(None, None)                     ->  None, nothing moved
         """
         if before is None and after is not None:
-            return self.record(self.archive_event())  # type: ignore[attr-defined]
-        if before is not None and after is None:
-            return self.record(self.restore_event())  # type: ignore[attr-defined]
-        return None
+            event = self.archive_event
+        elif before is not None and after is None:
+            event = self.restore_event
+        else:
+            return None
+        return self.record(event(**self._displayed(event)))  # type: ignore[attr-defined]
 
     def _snapshot(self, force: bool = False) -> None:
         """Sets the baseline `changes()` compares against, and the `archived_at` an archiving

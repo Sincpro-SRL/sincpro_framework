@@ -115,6 +115,8 @@ def test_a_removed_record_leaves_its_deletion_in_the_history(store):
 
     assert repository.get(Product, product.id) is None
     assert history(repository, product) == ["ShopDeleted"]
+    [deleted] = repository.search(ShopEvent, history_of(product)).items
+    assert deleted.entity_display == "mug"  # who it was, read back from the event table
 
 
 def archived(identity: str) -> Criteria:

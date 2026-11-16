@@ -19,7 +19,6 @@
               },
               "readonly": true,
               "sortable": true,
-              "groupable": true,
               "aggregates": [
                 "min",
                 "max",
@@ -118,7 +117,6 @@
               },
               "readonly": true,
               "sortable": true,
-              "groupable": true,
               "aggregates": [
                 "sum",
                 "avg",
@@ -360,7 +358,7 @@
           "title": {
             "default": "Order"
           },
-          "version": "180b08527cc5e0207a8aba98de44c0ccd92ea8ef31aa3922657baef68306141d"
+          "version": "ab551477174110f2a3fa01f5aa27d629f1e42d030a73be9028b13508a90996f3"
         },
         "$defs": {
           "Buyer": {
@@ -379,7 +377,6 @@
                   },
                   "readonly": true,
                   "sortable": true,
-                  "groupable": true,
                   "aggregates": [
                     "min",
                     "max",
@@ -478,7 +475,6 @@
                   },
                   "readonly": true,
                   "sortable": true,
-                  "groupable": true,
                   "aggregates": [
                     "sum",
                     "avg",
@@ -546,7 +542,7 @@
               "title": {
                 "default": "Buyer"
               },
-              "version": "3d65720c26351cc0d17878916903e97e6960c9b9062d9df06b5025df4e54586e"
+              "version": "5326ef5e086ee81cee57304c73b1ff81c844b752aa93a8d3c133d7ae3bc297d8"
             }
           },
           "OrderLine": {
@@ -637,7 +633,6 @@
             },
             "readonly": true,
             "sortable": true,
-            "groupable": true,
             "aggregates": [
               "min",
               "max",
@@ -721,7 +716,6 @@
             },
             "readonly": true,
             "sortable": true,
-            "groupable": true,
             "aggregates": [
               "sum",
               "avg",
@@ -1022,7 +1016,6 @@
               },
               "readonly": true,
               "sortable": true,
-              "groupable": true,
               "aggregates": [
                 "min",
                 "max",
@@ -1121,7 +1114,6 @@
               },
               "readonly": true,
               "sortable": true,
-              "groupable": true,
               "aggregates": [
                 "sum",
                 "avg",
@@ -1189,7 +1181,7 @@
           "title": {
             "default": "Buyer"
           },
-          "version": "3d65720c26351cc0d17878916903e97e6960c9b9062d9df06b5025df4e54586e"
+          "version": "5326ef5e086ee81cee57304c73b1ff81c844b752aa93a8d3c133d7ae3bc297d8"
         }
       },
       "expected": {
@@ -1205,7 +1197,6 @@
             },
             "readonly": true,
             "sortable": true,
-            "groupable": true,
             "aggregates": [
               "min",
               "max",
@@ -1289,7 +1280,6 @@
             },
             "readonly": true,
             "sortable": true,
-            "groupable": true,
             "aggregates": [
               "sum",
               "avg",
@@ -1373,7 +1363,6 @@
               },
               "readonly": true,
               "sortable": true,
-              "groupable": true,
               "aggregates": [
                 "min",
                 "max",
@@ -1472,7 +1461,6 @@
               },
               "readonly": true,
               "sortable": true,
-              "groupable": true,
               "aggregates": [
                 "sum",
                 "avg",
@@ -1658,7 +1646,7 @@
           "title": {
             "default": "Delivery"
           },
-          "version": "18b966ae98cb8d794fa94e6954d2af20fb9e90e170ec74532761e37e3f96e561"
+          "version": "882df2e4240a9e89ef350c631a7a297a2c4a90d4be516830ab6a85dd577660d0"
         }
       },
       "expected": {
@@ -1674,7 +1662,6 @@
             },
             "readonly": true,
             "sortable": true,
-            "groupable": true,
             "aggregates": [
               "min",
               "max",
@@ -1758,7 +1745,6 @@
             },
             "readonly": true,
             "sortable": true,
-            "groupable": true,
             "aggregates": [
               "sum",
               "avg",

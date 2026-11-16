@@ -69,6 +69,13 @@ def declaration_of(declared: type) -> Declaration:
         helps={
             name: dict(text) for name, text in field_translations(declared, "help").items()
         },
+        ungroupable=frozenset(
+            one.name
+            for one in (
+                dataclasses.fields(declared) if dataclasses.is_dataclass(declared) else ()
+            )
+            if one.metadata.get("groupable") is False
+        ),
         overlays=overlays,
     )
 
@@ -190,6 +197,7 @@ def _fingerprint(declaration: Declaration) -> str:
         "defaults": declaration.defaults,
         "labels": declaration.labels,
         "helps": declaration.helps,
+        "ungroupable": sorted(declaration.ungroupable),
         "overlays": declaration.overlays,
         "formulas": _formulas(declaration),
     }
@@ -224,6 +232,7 @@ def compiled(declaration: Declaration) -> Model:
         defaults=declaration.defaults,
         labels=declaration.labels,
         helps=declaration.helps,
+        ungroupable=declaration.ungroupable,
         overlays=declaration.overlays,
         owned=_owned(declaration),
         formulas=_formulas(declaration),

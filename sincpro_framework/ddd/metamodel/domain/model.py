@@ -31,7 +31,8 @@ class Model:
     - `computations` in the order they run, `checks` in the order they were declared, `computed`
       the fields a database answers, `presented` its `DEFAULT_*` answers and form hints,
       `defaults` what a new record starts with, `labels` and `helps` how a screen words each
-      field, `overlays` what the modules that extend it changed about how a field is shown.
+      field, `ungroupable` the fields a grouping never splits by, `overlays` what the modules
+      that extend it changed about how a field is shown.
 
     What follows from it, worked out by the compiler:
 
@@ -57,6 +58,7 @@ class Model:
     defaults: Mapping[str, Any]
     labels: Mapping[str, Mapping[str, str]]
     helps: Mapping[str, Mapping[str, str]]
+    ungroupable: frozenset[str]
     overlays: Mapping[str, Mapping[str, Any]]
     owned: tuple[str, ...]
     formulas: Mapping[str, Any]
