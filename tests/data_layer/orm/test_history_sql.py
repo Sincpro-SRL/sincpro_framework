@@ -1,5 +1,6 @@
 """A record's history on a database: the context's one event table, read by `DomainEvents` on the
-record's own `EntityReads`, and by `history_of` for several records at once.
+record's own `EntityReads`, and by `history_of` for several records at once — a deleted record's
+included, its deletion the last fact of it.
 """
 
 from dataclasses import dataclass
@@ -20,9 +21,11 @@ from sincpro_framework.data_layer.orm.sqlalchemy.entrypoint.template_table impor
 from sincpro_framework.ddd import (
     Condition,
     Criteria,
+    Delete,
     DomainEvent,
     DomainEvents,
     Entity,
+    EntityEdits,
     EntityReads,
     ResponsePaginatedQuery,
     history_of,
@@ -49,6 +52,11 @@ class SiteReserved(SiteEvent):
 @dataclass(kw_only=True)
 class SiteReleased(SiteEvent):
     name = "tests.history.sandbox.v1.released"
+
+
+@dataclass(kw_only=True)
+class SiteDeleted(SiteEvent):
+    name = "tests.history.sandbox.v1.deleted"
 
 
 @dataclass(kw_only=True)
@@ -96,6 +104,10 @@ class QuerySiteEvents(DomainEvents[Site, ResponseSiteEvents]):
 
 
 class QueryFolderEvents(DomainEvents[Folder, ResponseSiteEvents]):
+    pass
+
+
+class CommandDeleteSite(Delete[Site]):
     pass
 
 
@@ -249,3 +261,26 @@ def test_the_context_log_filters_by_wire_name_on_sql(repository):
 
     assert [type(one).__name__ for one in page.items] == ["SiteReserved", "FolderCreated"]
     assert page.dropped == ()
+
+
+def test_a_deleted_records_history_ends_with_the_fact_its_deletion_recorded(repository):
+    """The removal stores what the record recorded in the same transaction, and what waited for
+    the commit runs once the row is gone."""
+    a_site_and_a_folder_sharing_an_id(repository)
+    bus = site_reads(repository)
+    committed: list[str] = []
+
+    @bus.feature(CommandDeleteSite)
+    class SiteDeletion(EntityEdits[Site]):
+        def deleting(self, site: Site, dto: CommandDeleteSite, /) -> None:
+            site.record(SiteDeleted())
+            self.repository.after_commit(lambda: committed.append(site.id))
+
+    read = repository.get(Site, "dev-1")
+    assert read is not None
+    assert bus(CommandDeleteSite(id="dev-1", origin_version=read.version)) is None
+
+    history = bus(QuerySiteEvents(id="dev-1"), ResponseSiteEvents)
+    assert repository.get(Site, "dev-1") is None
+    assert names(history) == ["SiteReserved", "SiteReleased", "SiteDeleted"]
+    assert committed == ["dev-1"]

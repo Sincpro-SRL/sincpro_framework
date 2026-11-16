@@ -3,11 +3,12 @@
 A form creates a record or changes one over several requests, and is not always saved: the user
 continues tomorrow, from another device, or drops it. `Edit` is that whole life in one command —
 save the caller's draft, save the record, discard the draft — and `Get` / `Search` find a draft again after the
-client lost its state. Nothing is stored until the form says save.
+client lost its state. Nothing is stored until the form says save. `Delete` removes the record.
 
 ```python
 from sincpro_framework.ddd import (
-    Edit, EditAction, EntityEdits, Get, ResponseEdit, ResponsePaginatedQuery, ResponseRecord, Search,
+    Delete, Edit, EditAction, EntityEdits, Get, ResponseEdit, ResponsePaginatedQuery,
+    ResponseRecord, Search,
 )
 
 
@@ -26,9 +27,10 @@ class ResponseInvoices(ResponsePaginatedQuery):
 class QueryGetInvoice(Get[Invoice, ResponseInvoice]): ...
 class QueryListInvoices(Search[Invoice, ResponseInvoices]): ...
 class CommandEditInvoice(Edit[Invoice, ResponseEditInvoice]): ...
+class CommandDeleteInvoice(Delete[Invoice]): ...
 
 
-@billing.feature([QueryGetInvoice, QueryListInvoices, CommandEditInvoice])
+@billing.feature([QueryGetInvoice, QueryListInvoices, CommandEditInvoice, CommandDeleteInvoice])
 class InvoiceForms(EntityEdits[Invoice]):
     pass
 
@@ -56,6 +58,12 @@ ids of the records it references (`{"labels": ["0192…"]}`), read before they a
 record and stored as the pairs of the table in between ([relations](relations.md#8-an-aggregate-is-saved-whole)).
 `changed` names what moved, so only the computations it reaches run; none runs them all.
 
+**What the framework writes comes back as the form read it.** The record's `id`, `version` and
+stamps — a line's too — are the record's echo: left out of the values, never assigned and never
+refused (`assignable`). The record's `version` among them is the version the edit started from, so
+a form that sends the record it read gets the optimistic check without naming `origin_version`.
+Only an `id` other than the record's is refused: it would put one record's values on another.
+
 **The lines may come back as they were read.** A reading answers a to-many as a page —
 `{"items": […], "count": {"value": 3, "exact": true}, "cursor": null}` — and a form may send that
 same collection back: whole, it is written as its items. A page of it is refused with an
@@ -69,7 +77,8 @@ created in a draft retains the id it got through every draft save, and is stored
 
 **A save without a draft** is an edit too: `action=EditAction.SAVE` on a record nobody drafted
 stores the values at once. It is refused with `StaleAggregate` when `origin_version` — the version
-the client read — is no longer the stored one.
+the client read, or the record's own `version` sent back in the values — is no longer the stored
+one.
 
 ## Whose draft
 
@@ -89,8 +98,8 @@ class InvoiceForms(EntityEdits[Invoice]):
 
 ## What the form sent wrong
 
-A field the record does not have, a value its type cannot read, a field the framework writes, a
-line named by an id the record does not hold: the request is wrong, and `apply_values` refuses it with
+A field the record does not have, a value its type cannot read, another record's `id`, a line
+named by an id the record does not hold: the request is wrong, and it is refused with
 `InvalidValue` — a `ClientError` — naming the field, 422 on every wire, its message told to the
 caller. It carries where the value is, a line's cell included — the line by its identity —, so the
 `Problem` points at it and a screen marks that cell:
@@ -105,7 +114,8 @@ caller. It carries where the value is, a line's cell included — the line by it
 Every edit names the draft version it read. A tab still on an old version loses with
 `DraftConflict` (409) and reads again — nothing is overwritten in silence. A draft over a record
 somebody saved since is `stale` on every answer, and its save is refused with `StaleAggregate`:
-the stored record is never overwritten with what the draft started from.
+the stored record is never overwritten with what the draft started from. A draft over a record
+deleted since is stale too: saving it never brings the record back.
 
 ## When the client lost its state
 
@@ -140,7 +150,25 @@ class AddInvoiceLine(EntityEdits[Invoice]):
 ```
 
 Each step is a method to override and call `super()` in: `save_draft`, `save`, `discard`, `change`,
-`drafts`.
+`assignable`, `drafts`.
+
+## What a form must not write
+
+A field the form shows but only a command of its own writes — a picture's key, set by its upload —
+is left out where the form's values are read, `assignable`. The preview and every save leave it out
+alike, and the stored value stays:
+
+```python
+class BannerForms(EntityEdits[Banner]):
+    def assignable(self, entity: type, key: str | None, values: dict) -> dict:
+        return {
+            name: value
+            for name, value in super().assignable(entity, key, values).items()
+            if name != "picture"
+        }
+```
+
+Shown read-only, it is a hint in `presentation` (`readonly`): the form draws it so, nothing refuses it.
 
 ## A transition: confirm, post, approve
 
@@ -161,6 +189,37 @@ class PostInvoice(EntityEdits[Invoice]):
 ```
 
 Who may post is the bus's access control on `CommandPostInvoice`, as for any command.
+
+## Deleting
+
+`Delete` removes a record by its key, and answers nothing — a `204` over REST, `null` in the
+contract, the `delete` role beside the entity. It is a `DryRunnable`: `dry_run=True` finds and checks
+the record as the deletion would, deletes nothing, and answers a `Preview` — what a confirmation
+shows, and over REST a `200` with it.
+
+| The client sends | What happens | The answer |
+|---|---|---|
+| `CommandDeleteInvoice(id=…)` | the stored record removed — the parts it owns with it — and the caller's draft of it dropped | nothing |
+| `…, origin_version=N` | refused with `StaleAggregate` when the record moved past `N` | — |
+| `…, dry_run=True` | nothing deleted | `Preview(text="Would delete Invoice … «…»", data={"id", "version"})` |
+| a key with no record | `AggregateNotFound` | — |
+
+`deleting(record, dto)` is what the deletion does with the record before it goes: nothing by
+default. Override it to refuse when the domain says the record cannot go, to record the fact it
+leaves — stored with the removal, so its history (`DomainEvents`) holds it after the row is gone —
+and to wait for the commit for what lives outside the store:
+
+```python
+@billing.feature(CommandDeleteBanner)
+class BannerDeletion(EntityEdits[Banner]):
+    def deleting(self, banner: Banner, dto: CommandDeleteBanner, /) -> None:
+        banner.record(BannerDeleted())
+        self.repository.after_commit(lambda: self.files.delete(banner.picture))
+```
+
+The deletion runs in one unit of work when the store transacts, so what `deleting` waits for runs
+once it committed, and none of it when it is undone. A dry run never runs `deleting`. A deletion
+always deletes; a record put away without losing it is `repository.archive`.
 
 ## What it is built on
 

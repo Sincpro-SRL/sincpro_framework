@@ -38,7 +38,13 @@ from sincpro_framework.ddd.criteria import (
     expression_of,
 )
 from sincpro_framework.ddd.editing.editing import apply_values, recompute
-from sincpro_framework.ddd.editing.edits import Edit, EditAction, EntityEdits, ResponseEdit
+from sincpro_framework.ddd.editing.edits import (
+    Delete,
+    Edit,
+    EditAction,
+    EntityEdits,
+    ResponseEdit,
+)
 from sincpro_framework.ddd.editing.preview import FormWarning, read_only, warn_form
 from sincpro_framework.ddd.entity import (
     ArchivableMixin,
@@ -172,6 +178,7 @@ __all__ = [
     "Currency",
     "CurrencyMismatch",
     "Cursor",
+    "Delete",
     "DeliverableEventMixin",
     "DomainError",
     "DomainEvent",

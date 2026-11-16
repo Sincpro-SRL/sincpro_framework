@@ -28,7 +28,7 @@ from typing import Annotated, Any
 from anyio import CapacityLimiter
 from fastapi import APIRouter, Body, Depends, FastAPI, Request, Response
 from fastapi.exceptions import RequestValidationError
-from fastapi.responses import StreamingResponse
+from fastapi.responses import JSONResponse, StreamingResponse
 from fastapi.routing import APIRoute
 from pydantic import BaseModel, ValidationError
 
@@ -74,7 +74,7 @@ from sincpro_framework.entrypoints.domain.surface import (
 )
 from sincpro_framework.introspection.entity_tags import role_of
 from sincpro_framework.observability.metrics import metrics
-from sincpro_framework.sincpro_abstractions import DryRunnable
+from sincpro_framework.sincpro_abstractions import DryRunnable, Preview
 from sincpro_framework.use_bus import UseFramework
 
 TEMPLATE_FIELD = re.compile(r"\{([^{}]+)\}")
@@ -473,7 +473,8 @@ class FastApiWire(Wire[RestBinding]):
         1. The path (derived when the binding has none), its `{fields}`, the status — 204 when
            the use case answers nothing — and the `operationId`.
         2. What every method shares: response model, problem responses, tags, summary (the
-           description's first line), deprecation.
+           description's first line), deprecation — and, for a 204 its Command may run dry,
+           the `Preview` a dry run answers with 200.
         3. Per method:
            3.1 `GET` / `DELETE` read the DTO from the URL, every field a query parameter; any
                other reads the body, without the fields the path carries.
@@ -509,6 +510,11 @@ class FastApiWire(Wire[RestBinding]):
         }
         if status == NO_CONTENT:
             common["response_class"] = Response
+            if issubclass(command, DryRunnable):
+                common["responses"] = {
+                    **common["responses"],
+                    200: {"model": Preview, "description": "What a dry run would do"},
+                }
         if _streams(operation.response, command):
             # Bytes as they are produced, never a JSON body: what it answers is said by the
             # media types an export is written in.
@@ -643,13 +649,16 @@ def _endpoint(
         """Run the DTO — an empty one when an all-optional body was not sent — and answer.
 
         1. `call(dto)`: the bus, through `bus_call`.
-        2. A 204 answers no body, whatever the bus returned.
+        2. A 204 answers no body, whatever the bus returned — but a dry run's `Preview`, which
+           is what was asked, answered with 200.
         3. A `Streamed` answer — an export — is written as it is produced, never held.
         Final: the answer, with a `Location` header filled from it when the binding declares
         one.
         """
         answer = await call(dto if dto is not None else command())
         if status == NO_CONTENT:
+            if isinstance(answer, Preview):
+                return JSONResponse(answer.model_dump(mode="json"))
             return Response(status_code=NO_CONTENT)
         if isinstance(answer, Streamed):
             # Each chunk is produced as the client reads it, in a worker thread — the export

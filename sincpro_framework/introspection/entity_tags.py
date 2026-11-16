@@ -32,7 +32,7 @@ from enum import StrEnum
 from weakref import WeakKeyDictionary
 
 from sincpro_framework import exceptions
-from sincpro_framework.ddd.editing.edits import Edit
+from sincpro_framework.ddd.editing.edits import Delete, Edit
 from sincpro_framework.ddd.entity.entity import Entity
 from sincpro_framework.ddd.entity.entity_id import key_of
 from sincpro_framework.ddd.query import Query
@@ -54,8 +54,8 @@ _declared: WeakKeyDictionary[type, tuple[type, ...]] = WeakKeyDictionary()
 class Role(StrEnum):
     """What an operation is for the entity it belongs to — what a client builds a screen from
     without being told a route: the list is its `search`, the record its `get`, the form its
-    `edit` and `preview`, the history its `events`, the download of all of it its `export`, the
-    buttons its `command`s."""
+    `edit` and `preview`, the button that removes it its `delete`, the history its `events`, the
+    download of all of it its `export`, the other buttons its `command`s."""
 
     GET = "get"
     GET_MANY = "get_many"
@@ -64,6 +64,7 @@ class Role(StrEnum):
     EVENTS = "events"
     PREVIEW = "preview"
     EDIT = "edit"
+    DELETE = "delete"
     EXPORT = "export"
     COMMAND = "command"
 
@@ -76,6 +77,7 @@ _ROLES: tuple[tuple[type, Role], ...] = (
     (DomainEvents, Role.EVENTS),
     (PreviewEntity, Role.PREVIEW),
     (Edit, Role.EDIT),
+    (Delete, Role.DELETE),
     (Export, Role.EXPORT),
 )
 """Each framework DTO of one entity and the role it gives — none of them descends from
@@ -88,6 +90,7 @@ def role_of(dto: type) -> Role:
         role_of(QueryGetIssue)          ->  Role.GET        # class QueryGetIssue(Get[Issue, R])
         role_of(QueryListProjects)      ->  Role.SEARCH     # TenantSearch(Search[T, R]) subclass
         role_of(CommandEditGroup)       ->  Role.EDIT       # Edit[Group, R]
+        role_of(CommandDeleteGroup)     ->  Role.DELETE     # Delete[Group]
         role_of(CommandMoveIssue)       ->  Role.COMMAND    # tagged or not: a command
 
     1. The framework DTO it descends from (`issubclass`), so a project's own base over one —
@@ -108,12 +111,14 @@ def only_reads(dto: type) -> bool:
         only_reads(QueryGetIssue)       ->  True    # Get[Issue, …]: no `Query`, still a read
         only_reads(QueryPreviewIssue)   ->  True    # PreviewEntity: computes a form, stores nothing
         only_reads(CommandEditIssue)    ->  False   # Edit: stores a draft, or the record
+        only_reads(CommandDeleteIssue)  ->  False   # Delete: removes the record
         only_reads(CommandMoveIssue)    ->  False   # a command of the context's own
 
     Context: what every wire publishes as a read and the metamodel's `query` say — one rule.
     """
     return (isinstance(dto, type) and issubclass(dto, Query)) or role_of(dto) not in (
         Role.EDIT,
+        Role.DELETE,
         Role.COMMAND,
     )
 

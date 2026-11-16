@@ -30,6 +30,7 @@ from sincpro_framework.ddd import (
 from sincpro_framework.ddd import exceptions as ddd_exceptions
 from sincpro_framework.ddd import read_only, recompute, warn_form
 from sincpro_framework.ddd.criteria import Operator
+from sincpro_framework.ddd.editing.editing import adapter_of
 from sincpro_framework.ddd.editing.preview import warnings_at
 from sincpro_framework.ddd.entity import Entity
 from sincpro_framework.ddd.reads.reads import copied, states_of
@@ -338,6 +339,23 @@ def test_editing_a_stored_invoice_answers_what_moved_and_leaves_the_stored_one_a
     kept = repository.get(Invoice, stored.id)
     assert kept is not None
     assert (kept.discount, kept.total) == (Decimal("0"), Decimal("133.00"))
+
+
+def test_a_stored_invoice_sent_back_whole_previews_what_the_form_changed():
+    """A form sends the record it read whole: what the framework writes comes back as it was
+    read — its identity, its version, its stamps — and is the record's, not the form's."""
+    stored = a_stored_invoice()
+    bus, _ = billing(stored)
+    held = adapter_of(Invoice).dump_python(stored, mode="json")
+
+    answer = bus(
+        QueryPreviewInvoice(
+            id=stored.id, values={**held, "discount": "50"}, changed=["discount"]
+        ),
+        ResponsePreviewInvoice,
+    )
+
+    assert answer.values == {"total": "83.00"}
 
 
 def test_paying_by_card_shows_and_asks_for_the_card_reference():

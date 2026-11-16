@@ -1417,8 +1417,10 @@ class MemoryRepository(
             repository.remove([invoice_1, invoice_2])   ->  None; neither held any more
             repository.get(Invoice, invoice_1.id)       ->  None
 
-        No cascade here: the children a root owns stay held unless removed with it. Inside
-        `context()` a raise puts the removed back.
+        No cascade here: the children a root owns stay held unless removed with it. What the
+        removed recorded — the fact of their deletion — is stored beside them, as the database
+        stores it, so their history holds it after they are gone. Inside `context()` a raise
+        puts the removed back.
         """
         refuse_writing_in_preview("remove")
         self._refuse_reentrant_write()
@@ -1427,6 +1429,7 @@ class MemoryRepository(
             self._before_remove(one)
         for one in records:
             self._forget(one)
+        self._store_recorded(records)
         for one in records:
             self._after_remove(one)
 
