@@ -74,7 +74,12 @@ from sincpro_framework.ddd.criteria import (
     Sort,
     Specification,
 )
-from sincpro_framework.ddd.editing.editing import adapter_of, apply_values, recompute
+from sincpro_framework.ddd.editing.editing import (
+    adapter_of,
+    apply_values,
+    form_values,
+    recompute,
+)
 from sincpro_framework.ddd.editing.preview import FormWarning, read_only
 from sincpro_framework.ddd.entity.entity_collection import (
     Count,
@@ -291,18 +296,27 @@ def named_in_type(dto: type) -> tuple[type, type] | None:
         named_in_type(QueryGetAccount)       ->  (Account, ResponseAccount)
         # class QueryGetAccount(Get[Account, ResponseAccount])
         named_in_type(CommandEditInvoice)    ->  (Invoice, ResponseEditInvoice)
+        named_in_type(CommandDeleteInvoice)  ->  (Invoice, NoneType)
+        # class CommandDeleteInvoice(Delete[Invoice]): it answers nothing
         named_in_type(QueryHealth)           ->  None
 
-    Context: the first base in the MRO parametrized with two classes is the one read, so a
+    Context: the first base in the MRO parametrized with classes is the one read, so a
     subclass of a declared DTO answers what its parent named — every framework DTO of one
     entity (`Get`, `Search`, `Edit`, …) is written so, and whoever groups use cases by entity
-    reads it here rather than keeping a list of them.
+    reads it here rather than keeping a list of them. A framework DTO that names its entity
+    alone (`Delete`) answers nothing; a base of the project's own parametrized with one class
+    names no entity.
     """
     for base in dto.__mro__:
-        generic = getattr(base, "__pydantic_generic_metadata__", None)
-        arguments = generic.get("args", ()) if generic else ()
-        if len(arguments) == 2 and all(isinstance(one, type) for one in arguments):
+        generic = getattr(base, "__pydantic_generic_metadata__", None) or {}
+        arguments = generic.get("args", ())
+        if not arguments or not all(isinstance(one, type) for one in arguments):
+            continue
+        if len(arguments) == 2:
             return arguments[0], arguments[1]
+        origin = generic.get("origin")
+        if len(arguments) == 1 and origin.__module__.startswith("sincpro_framework."):
+            return arguments[0], type(None)
     return None
 
 
@@ -310,6 +324,7 @@ def declared_by(dto: type) -> tuple[type, type]:
     """The entity and the response a DTO named in its base — refused when it names none.
 
     declared_by(QueryGetAccount)       ->  (Account, ResponseAccount)
+    declared_by(CommandDeleteInvoice)  ->  (Invoice, NoneType)
     declared_by(QueryHealth)
         ->  raises ProgrammingError("QueryHealth does not name its entity and …")
     """
@@ -562,6 +577,38 @@ class EntityReads[T](Feature):
                 raise error.within(name) from error
         return resolved
 
+    def assignable(
+        self, entity: type, key: str | None, values: dict[str, Any]
+    ) -> dict[str, Any]:
+        """The values a form sent that its record may be assigned: what the framework writes
+        left out at every level, a nested record keeping the identity it is named by.
+
+            assignable(Invoice, "0192…", {"id": "0192…", "version": 3, "discount": "5",
+                                          "lines": [{"id": "l1", "version": 2, "qty": 1}]})
+                ->  {"discount": "5", "lines": [{"id": "l1", "qty": 1}]}
+            assignable(Invoice, "0192…", {"id": "0193…", "discount": "5"})
+                ->  raises InvalidValue at values/id
+
+        Context: a form reads a record whole and sends it back whole, so what the framework
+        writes comes back as the form read it — the record's echo, never assigned and never
+        refused. Only an identity other than the record's is: it would put one record's values
+        on another. Override it to leave out what else a form must not write — a file's key
+        that only its upload sets —, and the form's preview and its save both leave it out.
+        """
+        identity = identity_name(entity)
+        echoed = values.get(identity)
+        if (
+            key is not None
+            and key_of(entity) == identity
+            and echoed is not None
+            and str(echoed) != key
+        ):
+            raise exceptions.InvalidValue(
+                f"{entity.__name__} {key} was sent the values of {entity.__name__} {echoed}",
+                (identity,),
+            )
+        return form_values(entity, values)
+
     def previewed(self, entity: type, identity: str | None) -> Any:
         """The record a preview starts from: a copy of the stored one found by its key, read as
         its `DEFAULT_READING` brings it and with the relations its computations read, or a new
@@ -606,7 +653,8 @@ class EntityReads[T](Feature):
                         draft=DraftState(version=2, origin_version=3, stale=True))
             # only drafted, never stored  ->  a blank Invoice keyed "F-7" with the values
 
-        A draft of a record never stored is never stale: there is nothing to move on.
+        A draft of a record never stored is never stale: there is nothing to move on. One whose
+        record was deleted since it started is.
         """
         stored = self.stored(entity, key)
         record = stored if stored is not None else keyed(blank(entity), entity, key)
@@ -616,8 +664,7 @@ class EntityReads[T](Feature):
             version=draft.version,
             origin_version=draft.origin_version,
             kept_at=draft.kept_at,
-            stale=stored is not None
-            and getattr(stored, "version", 0) != draft.origin_version,
+            stale=getattr(stored, "version", 0) != draft.origin_version,
         )
         return answer
 
@@ -824,23 +871,24 @@ class EntityReads[T](Feature):
         2. Start from a copy of the stored record, read as its `DEFAULT_READING` brings it and
            with every relation its computations read (`AggregateNotFound` when the id has none), or from a
            new one with the class defaults.
-        3. `apply_values` the form's values, read as each field's type; `recompute` what `changed`
-           reaches, the records it owns first, as a save does — every computation when nothing
-           changed yet.
+        3. `apply_values` the form's values (`assignable`: the record's echo left out), read as
+           each field's type; `recompute` what `changed` reaches, the records it owns first, as a
+           save does — every computation when nothing changed yet.
         4. Events the domain recorded are dropped: nothing happened.
         Final: the values that differ from what the form sent, compared as values (`0` and
-        `0.00` are one amount) — never a field the framework writes, which a form must not
-        send back —, each field's state, the warnings. A list of records is compared as it is
-        written once the form's values are in, so its lines come back when a computation moved
-        one of them — each with its identity, which the warnings name it by. A new record with
-        nothing changed answers every value.
+        `0.00` are one amount) — never a field the framework writes —, each field's state, the
+        warnings. A list of records is compared as it is written once the form's values are
+        in, so its lines come back when a computation moved one of them — each with its
+        identity, which the warnings name it by. A new record with nothing changed answers
+        every value.
         """
         entity, response = declared_by(type(dto))
+        values = self.assignable(entity, dto.id, dto.values)
         with read_only() as warnings:
             record = self.previewed(entity, dto.id)
             sent = held(record)
-            apply_values(record, self.referenced(type(record), dto.values))
-            sent.update({name: getattr(record, name) for name in dto.values})
+            apply_values(record, self.referenced(type(record), values))
+            sent.update({name: getattr(record, name) for name in values})
             lists = {
                 name: one
                 for name, one in dumped(record).items()

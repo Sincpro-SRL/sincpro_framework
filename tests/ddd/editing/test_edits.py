@@ -1,5 +1,6 @@
 """The life of a form, one command: `Edit` keeps the caller's draft of a record, saves it or
-discards it; `Get(draft=True)` and `Search(drafts=True)` find it again after the client lost it.
+discards it; `Get(draft=True)` and `Search(drafts=True)` find it again after the client lost it;
+`Delete` removes it.
 
 The cases are an invoicing screen used by two cashiers of one shop and one of another: lines of
 quantity × price make a subtotal, a discount makes the total. Every case runs with the context
@@ -18,6 +19,8 @@ from sincpro_framework.data_layer.repositories import MemoryNumbering, MemoryRep
 from sincpro_framework.data_layer.store import InMemoryKeyValue
 from sincpro_framework.ddd import (
     Criteria,
+    Delete,
+    DomainEvents,
     DraftState,
     Edit,
     EditAction,
@@ -37,6 +40,7 @@ from sincpro_framework.ddd.criteria import (
 from sincpro_framework.ddd.entity import Entity
 from sincpro_framework.ddd.events import DomainEvent
 from sincpro_framework.ddd.metamodel import model_of
+from sincpro_framework.sincpro_abstractions import Preview
 
 
 @dataclass
@@ -50,6 +54,11 @@ class InvoiceLine:
 class LineAdded(DomainEvent):
     name = "billing.invoice.v1.line_added"
     product: str = ""
+
+
+@dataclass(kw_only=True)
+class InvoiceVoided(DomainEvent):
+    name = "billing.invoice.v1.voided"
 
 
 @dataclass
@@ -118,6 +127,22 @@ class CommandAddInvoiceLine(Edit[Invoice, ResponseEditInvoice]):
     price: Decimal
 
 
+class CommandDeleteInvoice(Delete[Invoice]):
+    pass
+
+
+class CommandVoidInvoice(Delete[Invoice]):
+    """A deletion with the domain's say: a posted invoice stays, a voided one leaves its fact."""
+
+
+class ResponseInvoiceEvents(ResponsePaginatedQuery):
+    events: list[DomainEvent]
+
+
+class QueryInvoiceEvents(DomainEvents[Invoice, ResponseInvoiceEvents]):
+    pass
+
+
 ANA = {"tenant_id": "shop-1", "user_id": "ana"}
 BOB = {"tenant_id": "shop-1", "user_id": "bob"}
 ANA_ELSEWHERE = {"tenant_id": "shop-2", "user_id": "ana"}
@@ -141,6 +166,7 @@ def context_store(request) -> ContextStore:
 class Shop:
     bus: UseFramework
     repository: MemoryRepository
+    committed: list[str] = field(default_factory=list)
 
     def edit(self, who: dict, **asked) -> ResponseEditInvoice:
         with self.bus.context(who):
@@ -157,6 +183,20 @@ class Shop:
     def get(self, who: dict, **asked) -> ResponseInvoice:
         with self.bus.context(who):
             return self.bus(QueryGetInvoice(**asked), ResponseInvoice)
+
+    def delete(self, who: dict, **asked) -> object:
+        """`None` once deleted; a dry run's `Preview`."""
+        with self.bus.context(who):
+            return self.bus(CommandDeleteInvoice(**asked))
+
+    def void(self, who: dict, **asked) -> None:
+        with self.bus.context(who):
+            self.bus(CommandVoidInvoice(**asked))
+
+    def events(self, key: str) -> list[str]:
+        with self.bus.context(ANA):
+            page = self.bus(QueryInvoiceEvents(id=key), ResponseInvoiceEvents)
+        return [one.name for one in page.events]
 
     def stored(self, key: str) -> Invoice:
         found = self.repository.get(Invoice, key)
@@ -181,9 +221,27 @@ def shop(context_store: ContextStore) -> Shop:
     bus.add_dependency("repository", repository)
     bus.store_context_in(context_store)
 
-    @bus.feature([QueryGetInvoice, QueryListInvoices, CommandEditInvoice])
+    @bus.feature(
+        [
+            QueryGetInvoice,
+            QueryListInvoices,
+            QueryInvoiceEvents,
+            CommandEditInvoice,
+            CommandDeleteInvoice,
+        ]
+    )
     class InvoiceForms(EntityEdits[Invoice]):
         pass
+
+    shop = Shop(bus, repository)
+
+    @bus.feature(CommandVoidInvoice)
+    class VoidInvoice(EntityEdits[Invoice]):
+        def deleting(self, invoice: Invoice, dto: CommandVoidInvoice, /) -> None:
+            if invoice.state == "posted":
+                raise ddd_exceptions.DomainError(f"invoice {invoice.number} is posted")
+            invoice.record(InvoiceVoided(entity_id=invoice.id))
+            self.repository.after_commit(lambda: shop.committed.append(invoice.id))
 
     numbering = MemoryNumbering()
 
@@ -198,7 +256,7 @@ def shop(context_store: ContextStore) -> Shop:
         def change(self, invoice: Invoice, dto: CommandAddInvoiceLine) -> None:
             invoice.add_line(dto.product, dto.qty, dto.price)
 
-    return Shop(bus, repository)
+    return shop
 
 
 def a_stored_invoice(shop: Shop) -> Invoice:
@@ -468,15 +526,15 @@ def test_two_bounded_contexts_sharing_one_store_never_read_each_others_drafts(
 
 
 def test_a_value_the_form_cannot_send_is_the_callers_to_fix(shop: Shop):
-    """A field the record does not have, a value its type cannot read, a field the framework
-    writes: the request is wrong — a `ClientError`, answered as one by every wire."""
+    """A field the record does not have, a value its type cannot read, another record's
+    identity: the request is wrong — a `ClientError`, answered as one by every wire."""
     for values in (
         {"partner_id": "p1", "colour": "red"},
         {"partner_id": "p1", "discount": "a lot"},
-        {"partner_id": "p1", "version": 7},
+        {"partner_id": "p1", "id": "0192ffff"},
     ):
         with pytest.raises(exceptions.ClientError):
-            shop.edit(ANA, values=values)
+            shop.edit(ANA, id="0192eeee", values=values)
 
 
 def test_posting_a_drafted_invoice_saves_the_draft_and_numbers_it_in_one_write(shop: Shop):
@@ -532,3 +590,128 @@ def test_an_edit_answers_the_record_whole_with_the_models_version(shop: Shop):
 
     assert answered["invoice"]["lines"][0]["product"] == "cuaderno"
     assert answered["model_version"] == VERSION
+
+
+# ---------------------------------------------------------------------------------------------
+# Sending the record back whole: what the framework writes is the record's echo
+# ---------------------------------------------------------------------------------------------
+
+
+def a_form_holding(shop: Shop, key: str) -> dict:
+    """The record as a form holds it: read, then sent over the wire as JSON."""
+    return shop.get(ANA, id=key).model_dump(mode="json")["invoice"]
+
+
+def test_a_stored_record_sent_back_whole_saves_what_the_form_changed(shop: Shop):
+    invoice = a_stored_invoice(shop)
+    held = a_form_holding(shop, invoice.id)
+
+    shop.edit(
+        ANA,
+        id=invoice.id,
+        values={**held, "discount": "3"},
+        changed=["discount"],
+        action=EditAction.SAVE,
+    )
+
+    stored = shop.stored(invoice.id)
+    assert (stored.discount, stored.total) == (Decimal("3"), Decimal("5"))
+    assert stored.version == held["version"] + 1
+
+
+def test_the_version_a_form_sends_back_refuses_a_save_over_a_record_that_moved(shop: Shop):
+    invoice = a_stored_invoice(shop)
+    held = a_form_holding(shop, invoice.id)
+    shop.edit(BOB, id=invoice.id, values={"partner_id": "p7"}, action=EditAction.SAVE)
+
+    with pytest.raises(ddd_exceptions.StaleAggregate, match="changed since the edit started"):
+        shop.edit(
+            ANA, id=invoice.id, values={**held, "discount": "3"}, action=EditAction.SAVE
+        )
+    assert shop.stored(invoice.id).partner_id == "p7"
+
+
+def test_a_draft_of_a_record_sent_back_whole_starts_from_the_version_the_form_read(
+    shop: Shop,
+):
+    invoice = a_stored_invoice(shop)
+    held = a_form_holding(shop, invoice.id)
+    shop.edit(BOB, id=invoice.id, values={"partner_id": "p7"}, action=EditAction.SAVE)
+
+    kept = shop.edit(ANA, id=invoice.id, values={**held, "discount": "1"})
+
+    assert drafted(kept).origin_version == held["version"]
+    assert drafted(kept).stale
+
+
+# ---------------------------------------------------------------------------------------------
+# Deleting: one DTO, nothing answered, its fact kept after the row is gone
+# ---------------------------------------------------------------------------------------------
+
+
+def test_a_record_is_deleted_by_its_key_and_the_deletion_answers_nothing(shop: Shop):
+    invoice = a_stored_invoice(shop)
+
+    assert shop.delete(ANA, id=invoice.id) is None
+    assert shop.repository.get(Invoice, invoice.id) is None
+
+
+def test_a_dry_run_says_what_would_go_and_deletes_nothing(shop: Shop):
+    invoice = a_stored_invoice(shop)
+
+    preview = shop.delete(ANA, id=invoice.id, dry_run=True)
+
+    assert isinstance(preview, Preview)
+    assert preview.text.startswith(f"Would delete Invoice {invoice.id}")
+    assert preview.data == {"id": invoice.id, "version": 1}
+    assert shop.repository.get(Invoice, invoice.id) is not None
+
+
+def test_a_deletion_is_refused_for_a_record_that_moved_since_it_was_read_or_is_not_there(
+    shop: Shop,
+):
+    invoice = a_stored_invoice(shop)
+    shop.edit(BOB, id=invoice.id, values={"partner_id": "p7"}, action=EditAction.SAVE)
+
+    with pytest.raises(ddd_exceptions.StaleAggregate, match="changed since it was read"):
+        shop.delete(ANA, id=invoice.id, origin_version=1)
+    with pytest.raises(ddd_exceptions.AggregateNotFound):
+        shop.delete(ANA, id="0192ffff")
+    assert shop.repository.get(Invoice, invoice.id) is not None
+
+
+def test_the_fact_a_deletion_records_outlives_the_record_and_waits_for_the_commit(shop: Shop):
+    invoice = a_stored_invoice(shop)
+
+    shop.void(ANA, id=invoice.id)
+
+    assert shop.repository.get(Invoice, invoice.id) is None
+    assert shop.events(invoice.id) == ["billing.invoice.v1.voided"]
+    assert shop.committed == [invoice.id]
+
+
+def test_a_deletion_the_domain_refuses_leaves_the_record_and_runs_nothing_after(shop: Shop):
+    posted = Invoice(partner_id="p1", state="posted", number="F-0001")
+    shop.repository.save(posted)
+
+    with pytest.raises(ddd_exceptions.DomainError, match="is posted"):
+        shop.void(ANA, id=posted.id)
+
+    assert shop.repository.get(Invoice, posted.id) is not None
+    assert (shop.events(posted.id), shop.committed) == ([], [])
+
+
+def test_a_deletion_drops_the_callers_draft_and_nobody_elses_brings_the_record_back(
+    shop: Shop,
+):
+    invoice = a_stored_invoice(shop)
+    shop.edit(ANA, id=invoice.id, values={"partner_id": "p1", "discount": "1"})
+    kept = shop.edit(BOB, id=invoice.id, values={"partner_id": "p1", "discount": "2"})
+
+    shop.delete(ANA, id=invoice.id)
+
+    assert shop.drafts(ANA).invoices == []
+    assert drafted(shop.get(BOB, id=invoice.id, draft=True)).stale
+    with pytest.raises(ddd_exceptions.StaleAggregate, match="deleted since"):
+        shop.edit(BOB, id=invoice.id, version=drafted(kept).version, action=EditAction.SAVE)
+    assert shop.repository.get(Invoice, invoice.id) is None

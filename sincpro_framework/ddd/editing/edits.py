@@ -1,6 +1,6 @@
 """The edit of one aggregate, written once: `Edit` saves the caller's draft of a record,
 stores it or discards it, and answers what the record is now — the whole life of a form in one
-command.
+command —, and `Delete` deletes it.
 
     class ResponseEditInvoice(ResponseEdit):
         invoice: Invoice
@@ -8,7 +8,10 @@ command.
     class CommandEditInvoice(Edit[Invoice, ResponseEditInvoice]):
         pass
 
-    @billing.feature([QueryGetInvoice, QueryListInvoices, CommandEditInvoice])
+    class CommandDeleteInvoice(Delete[Invoice]):
+        pass
+
+    @billing.feature([QueryGetInvoice, CommandEditInvoice, CommandDeleteInvoice])
     class InvoiceForms(EntityEdits[Invoice]):
         pass
 
@@ -17,6 +20,8 @@ command.
     CommandEditInvoice(id="0192…", version=N, action=EditAction.SAVE)        stored
     CommandEditInvoice(id="0192…", version=N, action=EditAction.DISCARD)     dropped
     QueryGetInvoice(id="0192…", draft=True)                                  where it was left
+    CommandDeleteInvoice(id="0192…", dry_run=True)                           what would go
+    CommandDeleteInvoice(id="0192…")                                         deleted
 
 A command of the project's own edits the same way: its DTO is an `Edit` with fields of its own,
 its Feature an `EntityEdits` that changes the record with the domain's methods (`change`) — and
@@ -36,10 +41,12 @@ stored until `SAVE`: an edit saved as a draft is computed over a copy inside `re
 so a domain method that writes is refused there, as in a preview. Each edit names the draft
 version it read; another tab that saved its draft first makes it lose with `DraftConflict`. A
 save with no draft is an edit too: the values go straight to the store, refused when the
-record moved past `origin_version`.
+record moved past `origin_version`. A deletion drops the caller's draft of the record; anyone
+else's is stale from then on, and saving it is refused.
 """
 
 import dataclasses
+from contextlib import nullcontext
 from enum import StrEnum
 from typing import Any
 
@@ -65,8 +72,12 @@ from sincpro_framework.ddd.reads.reads import (
     states_of,
     with_computed_relations,
 )
-from sincpro_framework.ddd.repositories.capabilities import Extends
-from sincpro_framework.sincpro_abstractions import DataTransferObject
+from sincpro_framework.ddd.repositories.capabilities import Extends, Transacts
+from sincpro_framework.sincpro_abstractions import (
+    DataTransferObject,
+    DryRunnable,
+    Preview,
+)
 
 
 class EditAction(StrEnum):
@@ -101,20 +112,37 @@ class Edit[T, R: ResponseEdit](DataTransferObject):
     """The record's key (`DEFAULT_GET_ID`): a stored record's, or the one a new record is created
     under — named by the caller (a UUID v7 a client mints), or minted here when it names none."""
     values: dict[str, Any] = {}
-    """The record as the form holds it, whole, as JSON: each field read as its type."""
+    """The record as the form holds it, whole, as JSON: each field read as its type. What the
+    framework writes comes back as the form read it and is left out (`assignable`)."""
     changed: list[str] = []
     """The fields the form changed, so only the computations they reach run; none runs them all."""
     version: int = 0
     """The draft version the caller read; `0` when it holds no draft."""
     origin_version: int | None = None
     """The stored record's version the caller read, for a save with no draft: refused when the
-    record moved past it. A draft remembers its own."""
+    record moved past it, or was deleted. The record's own `version`, sent back in `values`,
+    says it when this does not. A draft remembers its own."""
     action: EditAction = EditAction.SAVE_DRAFT
 
 
+class Delete[T](DryRunnable):
+    """A record deleted by its key — `dry_run=True` says what would go, and deletes nothing.
+
+        class CommandDeleteInvoice(Delete[Invoice]):
+            pass
+
+    It answers nothing, and every wire says so: a `204` over REST, `null` in the contract.
+    """
+
+    id: str
+    """The record's key (`DEFAULT_GET_ID`)."""
+    origin_version: int | None = None
+    """The stored record's version the caller read: refused when the record moved past it."""
+
+
 class EntityEdits[T](EntityReads[T]):
-    """The Feature that answers `Edit` for one entity — and every read `EntityReads` answers, so
-    one Feature can serve a form whole.
+    """The Feature that answers `Edit` and `Delete` for one entity — and every read
+    `EntityReads` answers, so one Feature can serve a form whole.
 
     @billing.feature([QueryGetInvoice, CommandEditInvoice])
     class InvoiceForms(EntityEdits[Invoice]):
@@ -215,7 +243,7 @@ class EntityEdits[T](EntityReads[T]):
             pull = getattr(record, "pull_events", None)
             if callable(pull):
                 pull()
-        current = getattr(stored, "version", 0) if stored is not None else 0
+        current = getattr(stored, "version", 0)
         if existing is not None:
             origin = existing.origin_version
         elif dto.origin_version is not None:
@@ -223,19 +251,12 @@ class EntityEdits[T](EntityReads[T]):
         else:
             origin = current
         draft = drafts.save(subject, form_values(entity, dumped(record)), origin, dto.version)
-        return self.answered(
-            entity,
-            response,
-            record,
-            draft,
-            stored is not None and current != origin,
-            warnings,
-        )
+        return self.answered(entity, response, record, draft, current != origin, warnings)
 
     def writable(self, entity: type, key: str) -> Any:
-        """The stored record of `key` as the store holds it — the instance a save writes, read as
-        a preview reads it, with the relations its computations read — or `None` when there is
-        none yet."""
+        """The stored record of `key` as the store holds it — the instance a save or a deletion
+        writes, read as a preview reads it, with the relations its computations read — or
+        `None` when there is none yet."""
         criteria = self.by_identity(
             entity, Condition(field=key_of(entity), value=key), 1, Criteria()
         )
@@ -248,8 +269,8 @@ class EntityEdits[T](EntityReads[T]):
         1. The version the caller read is the draft's — `0` when there is none — or the save loses
            with `DraftConflict`: another tab saved a draft, stored or discarded first.
         2. The stored record is read as the store holds it — or a new one is made under `id` — and
-           refused (`StaleAggregate`) when it moved past the version the edit started from: the
-           draft's, else `origin_version` when the caller gave one.
+           refused (`StaleAggregate`) when it moved past the version the edit started from, or
+           was deleted since: the draft's, else `origin_version` when the caller gave one.
            2.1 A stored record whose values need an extension's class it does not have yet is
                given that extension's rows (`Extends`), then read again.
         3. The draft's values, then this edit's change, on the record itself — the domain's
@@ -266,11 +287,12 @@ class EntityEdits[T](EntityReads[T]):
             )
         record = self.writable(entity, dto.id)
         origin = existing.origin_version if existing is not None else dto.origin_version
-        current = getattr(record, "version", 0) if record is not None else 0
-        if record is not None and origin is not None and current != origin:
+        current = getattr(record, "version", 0)
+        if origin is not None and current != origin:
+            now = f"now {current}" if record is not None else "deleted since"
             raise exceptions.StaleAggregate(
                 f"{entity.__name__} {dto.id} changed since the edit started (version {origin}, "
-                f"now {current}): read it again"
+                f"{now}): read it again"
             )
         wanted = extensions.class_for(
             entity, set().union(existing.values if existing is not None else {}, dto.values)
@@ -392,18 +414,33 @@ class EntityEdits[T](EntityReads[T]):
                 ->  save's answer — stored, draft=None
             edit(CommandEditMove(values={"delivery": {"route": "R7"}}, changed=["delivery"]))
                 ->  save_draft of values={"route": "R7"}, changed=["route", "carrier"]
+            edit(CommandEditInvoice(id="0192…", values={"id": "0192…", "version": 3, …},
+                                    action=EditAction.SAVE))
+                ->  save's answer, refused when the stored invoice moved past version 3
 
         1. The values and the changed names flattened: whichever shape the form read the
            record in — extensions nested under their key or flat — they arrive as one record's
            fields.
+        2. The record's echo left out of the values (`assignable`); the `version` it carried
+           is the stored version the edit started from, when the caller named none.
         Final: `SAVE` stores, `DISCARD` drops, anything else saves the draft.
         """
         entity, _ = declared_by(type(dto))
-        flat = self.flattened(entity, dto.values)
-        if flat != dto.values or self.nested_names(entity, dto.changed):
-            dto = dto.model_copy(
-                update={"values": flat, "changed": self.nested_names(entity, dto.changed)}
-            )
+        values = self.flattened(entity, dto.values)
+        echoed = (
+            values.get("version") if "version" in model_of(entity).framework_fields else None
+        )
+        dto = dto.model_copy(
+            update={
+                "values": self.assignable(entity, dto.id, values),
+                "changed": self.nested_names(entity, dto.changed),
+                "origin_version": (
+                    echoed
+                    if dto.origin_version is None and isinstance(echoed, int)
+                    else dto.origin_version
+                ),
+            }
+        )
         match dto.action:
             case EditAction.SAVE:
                 return self.save(dto)
@@ -411,8 +448,89 @@ class EntityEdits[T](EntityReads[T]):
                 return self.discard(dto)
         return self.save_draft(dto)
 
+    def deleting(self, record: Any, dto: Any, /) -> None:
+        """What the deletion does with the record before it goes: nothing, by default. Override
+        it to refuse when the domain says the record cannot go, to record the fact it leaves —
+        stored with the removal, so the record's history holds it after the row is gone — and
+        to wait for the commit for what lives outside the store:
+
+            def deleting(self, banner: Banner, dto: CommandDeleteBanner, /) -> None:
+                banner.record(BannerDeleted())
+                self.repository.after_commit(lambda: self.files.delete(banner.picture))
+
+        Context: it runs only when the record is deleted, never in a dry run — what it waits
+        for needs a commit, and a dry run has none.
+        """
+
+    def deletable(self, entity: type, dto: Any) -> Any:
+        """The stored record a `Delete` names, as the store holds it — the instance it removes.
+
+        1. `AggregateNotFound` when there is none.
+        2. `StaleAggregate` when it moved past the version the caller read.
+        Final: the record.
+        """
+        record = self.writable(entity, dto.id)
+        if record is None:
+            raise exceptions.AggregateNotFound(f"{entity.__name__} {dto.id} does not exist")
+        current = getattr(record, "version", 0)
+        if dto.origin_version is not None and current != dto.origin_version:
+            raise exceptions.StaleAggregate(
+                f"{entity.__name__} {dto.id} changed since it was read (version "
+                f"{dto.origin_version}, now {current}): read it again"
+            )
+        return record
+
+    def delete(self, dto: Any) -> None:
+        """The record deleted, and the caller's draft of it dropped.
+
+            delete(CommandDeleteBanner(id="0192…"))                     ->  None; the banner gone
+            delete(CommandDeleteBanner(id="0192…", origin_version=2))   # stored at version 3
+                ->  raises StaleAggregate
+            delete(CommandDeleteBanner(id="0193…"))     ->  raises AggregateNotFound
+
+        1. In one unit of work when the store transacts, so what `deleting` waits for runs once
+           the deletion committed, and none of it when it is undone.
+        2. The stored record (`deletable`), `deleting`, then the record removed: what it
+           recorded is stored with the removal, and the parts it owns go with it.
+        Final: the caller's draft of it dropped, once the deletion is stored.
+        """
+        entity, _ = declared_by(type(dto))
+        repository = self.reads_from()
+        with repository.context() if isinstance(repository, Transacts) else nullcontext():
+            record = self.deletable(entity, dto)
+            self.deleting(record, dto)
+            repository.remove(record)
+        self.drafts().discard(self.draft_subject(entity, dto.id))
+
+    def preview(self, dto: Any) -> Any:
+        """A dry run of a `Delete`: the record found and checked as the deletion checks it,
+        nothing deleted and `deleting` not run. Any other DTO is the `PreviewEntity`
+        `EntityReads` answers.
+
+            preview(CommandDeleteBanner(id="0192…", dry_run=True))
+                ->  Preview(text="Would delete Banner 0192… «Summer sale»",
+                            data={"id": "0192…", "version": 3})
+
+        The version in `data` is the one a confirmed deletion names as `origin_version`, so it
+        deletes the record the person was shown.
+        """
+        if not isinstance(dto, Delete):
+            return super().preview(dto)
+        entity, _ = declared_by(type(dto))
+        record = self.deletable(entity, dto)
+        display = model_of(entity).presented.display
+        shown = f" «{getattr(record, display)}»" if display else ""
+        return Preview(
+            text=f"Would delete {entity.__name__} {dto.id}{shown}",
+            data={"id": dto.id, "version": getattr(record, "version", 0)},
+        )
+
     def execute(self, dto: Any) -> Any:
-        """An `Edit` is edited; every other DTO is a read `EntityReads` answers."""
-        if isinstance(dto, Edit):
-            return self.edit(dto)
+        """An `Edit` is edited and a `Delete` deleted; every other DTO is a read `EntityReads`
+        answers."""
+        match dto:
+            case Edit():
+                return self.edit(dto)
+            case Delete():
+                return self.delete(dto)
         return super().execute(dto)

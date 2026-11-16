@@ -16,6 +16,7 @@ from typing import Any, get_args, get_origin, get_type_hints
 from sincpro_framework.bus import FrameworkBus
 from sincpro_framework.bus_pipeline.interceptors.interceptor import InterceptorCall
 from sincpro_framework.common.ordering import name_of
+from sincpro_framework.ddd.reads.reads import named_in_type
 from sincpro_framework.introspection.entity_tags import entities_of
 from sincpro_framework.sincpro_abstractions import (
     ApplicationService,
@@ -114,19 +115,24 @@ def _resolve_description(feature_or_app_type: type, dto_type: type, dto_name: Dt
     )
 
 
-def _resolve_response(feature_or_app_type: type) -> Any | None:
-    """What this Feature/ApplicationService says it answers.
+def _resolve_response(feature_or_app_type: type, dto_type: type) -> Any | None:
+    """What this Feature/ApplicationService says it answers to `dto_type`.
 
     The bus never stores it — `execute(dto, return_type)`'s `return_type` is a
     typing hint for the caller, discarded at runtime — so it is read off the
-    declaration.
+    declarations.
 
-    1. Prefer the execute method's own return annotation.
-    2. Else the second parameter of `Feature[Dto, Response, Ctx]`, for a class
+    1. Nothing, when the DTO says so in its type: a framework DTO that names its
+       entity alone (`Delete[Banner]`) answers nothing, whichever Feature answers it.
+    2. Else the execute method's own return annotation.
+    3. Else the second parameter of `Feature[Dto, Response, Ctx]`, for a class
        that types the generic but not the method.
-    3. Final: None. An undeclared response publishes no result schema, instead of
+    4. Final: None. An undeclared response publishes no result schema, instead of
        a wrong one.
     """
+    named = named_in_type(dto_type)
+    if named is not None and named[1] is type(None):
+        return type(None)
     execute = feature_or_app_type.__dict__.get("execute")
     if execute is not None:
         try:
@@ -162,7 +168,7 @@ def _describe_all(
             instance=instance,
             dto=dto_type,
             description=_resolve_description(feature_or_app_type, dto_type, name),
-            response=_resolve_response(feature_or_app_type),
+            response=_resolve_response(feature_or_app_type, dto_type),
             interceptors=tuple(name_of(one) for one in interceptors.get(dto_type, ())),
             replaces=replacements.get(dto_type, ()),
             entities=entities_of(feature_or_app_type, dto_type),

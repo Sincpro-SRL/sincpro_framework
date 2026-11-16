@@ -397,8 +397,10 @@ repository.save(invoice)
 - A copy made with `dataclasses.replace` is saved as an update of the stored row it copies,
   never an insert — and refused as `StaleAggregate` when the row moved on since the copy's
   version was read.
-- A list given to the field — `Invoice(lines=[l1, l2])`, an assignment, a form's values — is held
-  as the whole collection it is.
+- A new set of records is `EntityCollection.whole([l1, l2])`: `Invoice(lines=EntityCollection.whole(
+  [l1, l2]))`. That is what the type says, so a type checker (pyright) accepts it. A list given
+  anyway — untyped code, an assignment, a form's values — is held as the whole collection it is:
+  the runtime is permissive, the annotation is not.
 - `list[InvoiceLine]` keeps working, read and saved the same: the framework is permissive about
   the annotation; `EntityCollection` is the one it recommends, because it carries the count and
   the cursor a list throws away.
