@@ -115,9 +115,9 @@ F-2,p-2,SKU-7,5
   its parent because `p-1` comes first; the other way round, `p-2` is refused with
   `no Partner has @key 'p-1', stored or earlier in the file`. It is what lets the import read the
   file once.
-- **A header that names no field refuses the whole file** before any record is read, naming it.
-  `columns={"Razón social": "name", "Notas": None}` renames a header the file cannot change, or
-  drops it on purpose.
+- **A column that names no field is left out, not refused**, and the answer names it in
+  `ignored` — a nested one by its path, `lines/colour`. `columns={"Razón social": "name",
+  "Notas": None}` renames a header the file cannot change, or drops one on purpose.
 - **A cell is made what its field reads.** A number in a text field is its text (Excel keeps a tax
   id as a number); a date Excel keeps is a date; a CSV's text is read by the field's type, dates as
   ISO 8601; with `decimal=","` a comma is the decimal separator and a point the thousands'.
@@ -125,8 +125,11 @@ F-2,p-2,SKU-7,5
   as stored; a blank cell clears it — an empty text, or `None`.
 - **A CSV's delimiter is read off its header** — `,`, `;`, a tab or `|` —, and its encoding is
   `encoding` (`utf-8-sig` unless the import says `cp1252`).
-- **A key repeated in the file is refused** when both records are in one batch, naming the first;
-  in later batches the first is stored already, and the second updates it.
+- **A key repeated in the file updates the record above it**, as Odoo does, whether the two rows
+  fall in one batch or in two. A dry run counts a key repeated in two batches as two records:
+  nothing it read was stored for the second batch to find.
+- **An `id` is a UUID v7**, read in any spelling (dashes, capitals); anything else is refused at
+  its cell.
 
 ## Naming a record from outside
 
@@ -137,7 +140,9 @@ F-2,p-2,SKU-7,5
 | external key (`@key`) | the record has no key of its business, or it comes from another system that names it its own way — Odoo's `res_partner_42`, a row of the old spreadsheet | an `ExternalKey`, beside the record |
 
 A record of the file is found by the first of its keys a stored record holds — its `@key`, then
-its `id`, then its natural key —, and is new when none does.
+its `id`, then its natural key —, and is new when none does. Two of its keys naming two different
+stored records are refused: the file contradicts itself, and either guess would write a record over
+another. A key is read as its field reads it — the cell `007` finds the code `7`.
 
 **The identity is never derived from an outside key.** A UUID computed from the outside name
 (`uuid5("odoo:res_partner_42")`) would need no table, and it is refused for three reasons: an
@@ -201,6 +206,8 @@ one to change it; call `super()` to keep it and add.
   refuse, `build` refuses first, so a refusal names the cell and nothing half-written waits.
 - **A failure points at its cell**: the place in the file, then the field — a child by its
   position in the record, not by an identity the file never had.
+- **A record that names a record left out is left out too**, and the keys of a record left out
+  are forgotten: nothing written points at a record that never was.
 
 ## The transaction
 
@@ -228,6 +235,7 @@ class ResponseImport(DataTransferObject):
     updated: int
     unchanged: int
     skipped: list[FieldError]       # the records left out under skip_invalid=True
+    ignored: list[str]              # the columns that name no field, left out
 ```
 
 A failure is a `FieldError`, the shape a request that does not validate has on every wire: its
@@ -238,7 +246,7 @@ refused the value when one did.
 FieldError(pointer="#/content/12/country_id", detail="no Country has code 'BX'")
 FieldError(pointer="#/content/3/lines/1/quantity", detail="a line sells at least one unit",
            rule="InvoiceLine.sells_something")
-FieldError(pointer="#/content/header/colour", detail="Partner has no field colour")
+FieldError(pointer="#/content/3/parent_id", detail="the Partner @key 'p-1' names is left out")
 ```
 
 - **A refused file** is `ImportRefused` (`invalid`, 422) with every failure in the problem's
@@ -316,13 +324,17 @@ batches of 500, one transaction.
 | reading JSON (`json`) | 2,350,000 |
 | reading an Excel sheet (this reader, standard library) | 121,000 |
 | reading an Excel sheet (`openpyxl`, read-only), for comparison | 28,000 |
-| `save` of the same records in batches, nothing else | 22,000 |
-| **the whole import of a CSV**, references by natural key | **14,600** |
-| the whole import of an Excel sheet | 13,100 |
-| the whole import of a CSV with an `@key` per record (its keys stored too) | 9,500 |
+| `save` of the same records in batches, nothing else | 21,200 |
+| **the whole import of a CSV**, references by natural key | **12,400** |
+| the whole import of an Excel sheet | 12,000 |
+| the whole import of a CSV with an `@key` per record (its keys stored too) | 8,600 |
+
+The write rows were measured in one run, back to back; on a laptop a run moves them ±15%, together.
+What holds is the ratio: the whole import runs at about 60% of a bare `save`.
 
 - **The write is most of it.** The import adds reading the cells, looking keys up and judging the
-  rules to a `save` that would run anyway; a million partners import in a little over a minute.
+  rules to a `save` that would run anyway; a million partners import in about a minute and a
+  half.
 - **An external key per record costs a second write** — its `ExternalKey` row — and the lookup of
   each record's key; a file that names its records by a natural key does without both.
 - **A write past the aggregate** — an insert through SQLAlchemy Core measured 149,000 rows per

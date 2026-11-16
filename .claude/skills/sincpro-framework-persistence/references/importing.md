@@ -54,6 +54,9 @@ the identity from the outside key** (no `uuid5`): `EntityID` is a UUID v7 and a 
   written.
 - `dry_run=True` judges the whole file and answers a `Preview` (or refuses the same way).
 - `mode=ImportMode.CREATE` / `UPDATE` refuses what exists / what does not.
+- Not restrictive by default: a column that names no field is left out and listed in `ignored`; a
+  key repeated in the file updates the record above (Odoo's rule); a record naming one left out is
+  left out too, so nothing dangles.
 
 ## 5. Extending
 

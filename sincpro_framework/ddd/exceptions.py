@@ -137,7 +137,8 @@ class ChecksFailed(InvalidValue):
 
 class ImportRefused(InvalidValue):
     """A file an import does not take: every record it could not read, find or judge, each
-    pointing at its cell, so the file is fixed in one round. Nothing of it was written.
+    pointing at its cell, so the file is fixed in one round. A store that transacts wrote
+    nothing of it; one that does not kept the batches before the first failure.
 
         ImportRefused((InvalidValue("no Country has code 'BX'", (12, "country_id"), "content"),
                        InvalidValue("must be > 0", (14, "lines", 0, "quantity"), "content")))
@@ -153,8 +154,8 @@ class ImportRefused(InvalidValue):
         the first."""
         first = failures[0]
         super().__init__(
-            f"{len(failures)} problem{'s' if len(failures) > 1 else ''} in the file, nothing "
-            f"imported; the first: {first}",
+            f"{len(failures)} problem{'s' if len(failures) > 1 else ''} in the file; the "
+            f"first: {first}",
             first.path,
             first.field,
             first.rule,

@@ -97,10 +97,17 @@ def _sheet(archive: zipfile.ZipFile, name: str) -> tuple[str, str, datetime]:
         )
     links = fromstring(archive.read("xl/_rels/workbook.xml.rels"))
     target = next(
-        one.get("Target", "")
-        for one in links.iter(f"{RELATIONSHIPS}Relationship")
-        if one.get("Id") == chosen[1]
+        (
+            one.get("Target", "")
+            for one in links.iter(f"{RELATIONSHIPS}Relationship")
+            if one.get("Id") == chosen[1]
+        ),
+        "",
     )
+    if not target:
+        raise exceptions.InvalidValue(
+            f"the workbook names sheet {chosen[0]!r} but holds no part for it", (), "sheet"
+        )
     part = target.lstrip("/") if target.startswith("/") else f"xl/{target}"
     properties = workbook.find(f"{MAIN}workbookPr")
     old_mac = properties is not None and properties.get("date1904") in ("1", "true")

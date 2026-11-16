@@ -56,6 +56,8 @@ class Slot:
 
     holds: Holds
     annotation: Any
+    base: Any = None
+    """The annotation without its `| None`: what a cell is made into."""
     target: type | None = None
     """The entity a key, a record or the records name."""
     by_id: bool = False
@@ -91,15 +93,17 @@ def slots_of(entity: type) -> dict[str, Slot]:
         key = entity_id.key_of(annotation)
         kind, many = records_class(annotation)
         if key is not None and key.entity is not None:
-            slots[name] = Slot(Holds.KEYS if key.many else Holds.KEY, annotation, key.entity)
+            slots[name] = Slot(
+                Holds.KEYS if key.many else Holds.KEY, annotation, target=key.entity
+            )
         elif isinstance(kind, type) and issubclass(kind, Entity):
             attribute = relation_attribute(entity, name)
             by_id = attribute is not None and attribute.named_by_id()
             slots[name] = Slot(
-                Holds.RECORDS if many else Holds.RECORD, annotation, kind, by_id
+                Holds.RECORDS if many else Holds.RECORD, annotation, target=kind, by_id=by_id
             )
         else:
-            slots[name] = Slot(Holds.VALUE, annotation)
+            slots[name] = Slot(Holds.VALUE, annotation, base=without_optional(annotation))
     return slots
 
 
@@ -124,27 +128,25 @@ def lookups_in(value: Any) -> Iterator[Lookup]:
             yield from lookups_in(one)
 
 
-def unknown_names(entity: type, values: Mapping[str, Any], path: str = "") -> list[str]:
-    """The names a row holds that `entity` has no field for, as the header writes them.
+def unknown_names(entity: type, values: Mapping[str, Any], path: str = "") -> set[str]:
+    """The names a record holds that `entity` has no field for, as a header writes them — what
+    `shaped` leaves out.
 
-    unknown_names(Partner, {"name": …, "colour": …})               ->  ["colour"]
-    unknown_names(Invoice, {"lines": {"quantity": …, "colour": …}})   ->  ["lines/colour"]
+    unknown_names(Partner, {"name": …, "colour": …})                 ->  {"colour"}
+    unknown_names(Invoice, {"lines": [{"quantity": …, "colour": …}]})   ->  {"lines/colour"}
     """
     slots = slots_of(entity)
-    unknown: list[str] = []
+    unknown: set[str] = set()
     for name, value in values.items():
+        slot = slots.get(name)
         if name == KEY and not path:
             continue
-        slot = slots.get(name)
         if slot is None:
-            unknown.append(f"{path}{name}")
-        elif (
-            slot.holds == Holds.RECORDS
-            and slot.target is not None
-            and isinstance(value, Mapping)
-            and set(value) != {KEY}
-        ):
-            unknown.extend(unknown_names(slot.target, value, f"{path}{name}/"))
+            unknown.add(f"{path}{name}")
+        elif slot.holds == Holds.RECORDS and slot.target is not None and not slot.by_id:
+            for item in value if isinstance(value, list) else [value]:
+                if isinstance(item, Mapping) and set(item) != {KEY}:
+                    unknown |= unknown_names(slot.target, item, f"{path}{name}/")
     return unknown
 
 
@@ -190,7 +192,7 @@ def _lookups(
     return [one for one in found if one is not None]
 
 
-def _scalar(annotation: Any, value: Any, decimal: str) -> Any:
+def _scalar(slot: Slot, value: Any, decimal: str) -> Any:
     """A cell made what its field reads, the rest left for the field's type to read.
 
     1. A blank cell clears the field: an empty text for a text, `None` for anything else.
@@ -199,8 +201,8 @@ def _scalar(annotation: Any, value: Any, decimal: str) -> Any:
     4. A decimal comma is read as a point, the point as the thousands' separator.
     """
     if is_blank(value):
-        return "" if annotation is str else None
-    base = without_optional(annotation)
+        return "" if slot.annotation is str else None
+    base = slot.base
     if base is str and isinstance(value, (int, float)) and not isinstance(value, bool):
         return str(int(value)) if float(value).is_integer() else str(value)
     if base is date and isinstance(value, datetime):
@@ -225,7 +227,7 @@ def shaped(
         shaped(Ticket, {"labels": "vip,retail"})
             ->  {"labels": [Lookup(Label, "name", "vip"), Lookup(Label, "name", "retail")]}
 
-    1. A name that is not a field of `entity` is refused, pointing at it.
+    1. A name that is not a field of `entity` is left out (`unknown_names` says which).
     2. A key to another entity (`EntityID[Country]`, `list[EntityID[Label]]`) is looked up.
     3. Records of another entity are looked up when the store names them by id (a many-to-many)
        or the cell names one by a key alone; otherwise each is a child the record owns, read as
@@ -239,7 +241,7 @@ def shaped(
         here = (*path, name)
         slot = slots.get(name)
         if slot is None:
-            raise exceptions.InvalidValue(f"{entity.__name__} has no field {name}", here)
+            continue
         target: type = slot.target or entity
         match slot.holds:
             case Holds.KEY:
@@ -263,5 +265,5 @@ def shaped(
                     here,
                 )
             case Holds.VALUE:
-                out[name] = _scalar(slot.annotation, value, decimal)
+                out[name] = _scalar(slot, value, decimal)
     return out

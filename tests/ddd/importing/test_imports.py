@@ -6,6 +6,7 @@ import on SQLite.
 """
 
 import io
+import uuid
 import zipfile
 from dataclasses import dataclass, field
 from datetime import date
@@ -263,19 +264,32 @@ Andes Ltda,XX
     assert [one.name for one in stored(repository, Partner)] == ["ACME SRL"]
 
 
-def test_a_header_that_names_no_field_refuses_the_whole_file_before_any_row():
+def test_a_column_that_names_no_field_is_left_out_and_answered_not_refused():
+    repository = MemoryRepository()
     content = csv("""
 name,colour
 ACME SRL,red
+Andes Ltda,blue
 """)
 
-    with pytest.raises(ddd_exceptions.ImportRefused) as refused:
-        bus_with(MemoryRepository())(
-            CommandImportPartners(content=content, format=ImportFormat.CSV)
-        )
+    done = bus_with(repository)(
+        CommandImportPartners(content=content, format=ImportFormat.CSV), ResponseImport
+    )
 
-    assert [str(one) for one in refused.value.failures] == ["Partner has no field colour"]
-    assert problem_of(refused.value).errors[0].pointer == "#/content/header/colour"
+    assert (done.created, done.ignored) == (2, ["colour"])
+    assert [one.name for one in stored(repository, Partner)] == ["ACME SRL", "Andes Ltda"]
+
+
+def test_a_json_name_that_is_no_field_is_left_out_at_any_depth():
+    repository = MemoryRepository().add(Product(code="SKU-7"))
+    content = b"""[{"number": "F-1", "note": "x",
+                    "lines": [{"product_id": "SKU-7", "quantity": 2, "colour": "red"}]}]"""
+
+    done = bus_with(repository)(
+        CommandImportInvoices(content=content, format=ImportFormat.JSON), ResponseImport
+    )
+
+    assert (done.created, done.ignored) == (1, ["lines/colour", "note"])
 
 
 def test_columns_rename_a_header_the_file_cannot_change_or_drop_it():
@@ -494,19 +508,84 @@ p-1,ACME SRL
         )
 
 
-def test_a_key_repeated_in_the_file_is_refused_naming_the_first_record_holding_it():
+@pytest.mark.parametrize("batch_size", [500, 1])
+def test_a_key_repeated_in_the_file_updates_the_record_above_whatever_the_batches(batch_size):
+    repository = MemoryRepository()
     content = csv("""
 @key,name
 p-1,ACME SRL
-p-1,ACME again
+p-1,ACME S.R.L.
 """)
 
-    with pytest.raises(
-        ddd_exceptions.ImportRefused, match="repeated: the record at 2 has it too"
-    ):
-        bus_with(MemoryRepository())(
-            CommandImportPartners(content=content, format=ImportFormat.CSV)
+    done = bus_with(repository)(
+        CommandImportPartners(
+            content=content, format=ImportFormat.CSV, batch_size=batch_size
+        ),
+        ResponseImport,
+    )
+
+    assert (done.created, done.updated) == (1, 1)
+    assert [one.name for one in stored(repository, Partner)] == ["ACME S.R.L."]
+    assert len(list(repository.fetch_all(ExternalKey))) == 1
+
+
+def test_a_record_naming_one_left_out_is_left_out_too_and_nothing_points_at_it():
+    repository = MemoryRepository()
+    content = csv("""
+@key,name,credit,parent_id/@key
+p-1,ACME SRL,-5,
+p-2,ACME Santa Cruz,0,p-1
+p-3,Andes Ltda,0,
+""")
+
+    done = bus_with(repository)(
+        CommandImportPartners(content=content, format=ImportFormat.CSV, skip_invalid=True),
+        ResponseImport,
+    )
+
+    assert done.created == 1
+    assert [one.pointer for one in done.skipped] == [
+        "#/content/2/credit",
+        "#/content/3/parent_id",
+    ]
+    assert "names is left out" in done.skipped[1].detail
+    assert [one.name for one in stored(repository, Partner)] == ["Andes Ltda"]
+
+
+def test_a_key_is_read_as_its_field_reads_it_an_identity_in_any_spelling():
+    repository = MemoryRepository().add(BOLIVIA)
+    spelled = str(uuid.UUID(BOLIVIA.id)).upper()
+    content = f'[{{"name": "ACME SRL", "country_id": {{"id": "{spelled}"}}}}]'.encode()
+
+    bus_with(repository)(CommandImportPartners(content=content, format=ImportFormat.JSON))
+
+    assert stored(repository, Partner)[0].country_id == BOLIVIA.id
+
+
+def test_two_keys_of_one_row_naming_two_records_are_refused():
+    repository = MemoryRepository()
+    bus = bus_with(repository)
+    bus(CommandImportPartners(content=b"@key,name\np-1,ACME SRL\n", format=ImportFormat.CSV))
+    other = Partner(name="Andes Ltda")
+    repository.add(other)
+
+    with pytest.raises(ddd_exceptions.ImportRefused, match="names one Partner, and id"):
+        bus(
+            CommandImportPartners(
+                content=f"@key,id,name\np-1,{other.id},ACME SRL\n".encode(),
+                format=ImportFormat.CSV,
+            )
         )
+
+
+def test_an_id_that_is_no_identity_is_refused_at_its_cell():
+    with pytest.raises(ddd_exceptions.ImportRefused) as refused:
+        bus_with(MemoryRepository())(
+            CommandImportPartners(content=b"id,name\n42,ACME SRL\n", format=ImportFormat.CSV)
+        )
+
+    assert problem_of(refused.value).errors[0].pointer == "#/content/2/id"
+    assert "is not an identity: a UUID v7" in problem_of(refused.value).errors[0].detail
 
 
 def test_each_reference_is_looked_up_once_per_import_whatever_the_number_of_batches():

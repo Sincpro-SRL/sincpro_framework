@@ -16,7 +16,7 @@ import pytest
 from sqlalchemy import Column, ForeignKey, Integer, MetaData, Table, Text
 from sqlalchemy.orm import registry
 
-from sincpro_framework import UseFramework
+from sincpro_framework import UseFramework, exceptions
 from sincpro_framework.data_layer.orm import TableRelation, map_aggregates
 from sincpro_framework.data_layer.orm.sqlalchemy.entrypoint.repository import Repository
 from sincpro_framework.data_layer.orm.sqlalchemy.entrypoint.template_table import (
@@ -234,3 +234,16 @@ def test_a_failure_in_a_later_batch_undoes_the_batches_written_before_it(bus, st
 
     assert len(store.fetch_all(Partner)) == 0
     assert len(store.fetch_all(SalesExternalKey)) == 0
+
+
+def test_external_keys_a_repository_does_not_store_are_refused_saying_what_to_map(store):
+    framework = UseFramework("imports-sql-unmapped", log_after_execution=False)
+    framework.add_dependency("repository", store)
+
+    @framework.feature(CommandImportPartners)
+    class PartnerImports(EntityImports[Partner]):
+        pass
+
+    with pytest.raises(exceptions.ProgrammingError, match="external_key_table"):
+        framework(CommandImportPartners(content=PARTNERS, format=ImportFormat.CSV))
+    assert len(store.fetch_all(Partner)) == 0

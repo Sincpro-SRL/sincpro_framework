@@ -25,7 +25,7 @@ from collections.abc import Iterable, Iterator
 from contextlib import nullcontext
 from dataclasses import dataclass, field
 from enum import StrEnum
-from itertools import batched
+from itertools import batched, chain
 from typing import Any, ClassVar
 
 from pydantic import ConfigDict, Field
@@ -44,7 +44,7 @@ from sincpro_framework.ddd.criteria import (
 )
 from sincpro_framework.ddd.editing.editing import adapter_of, apply_values, recompute_whole
 from sincpro_framework.ddd.editing.preview import read_only
-from sincpro_framework.ddd.entity import extensions
+from sincpro_framework.ddd.entity import EntityID, extensions
 from sincpro_framework.ddd.entity.entity_collection import (
     EntityCollection,
     identity_name,
@@ -99,13 +99,17 @@ class ImportOutcome(StrEnum):
 
 
 class ResponseImport(DataTransferObject):
-    """What an import did: how many records it created, updated and left as they were, and the
-    records it left out under `skip_invalid=True`, each pointing at its cell."""
+    """What an import did: how many records it created, updated and left as they were, the
+    records it left out under `skip_invalid=True`, each pointing at its cell, and the columns it
+    left out because they name no field."""
 
     created: int = 0
     updated: int = 0
     unchanged: int = 0
     skipped: list[FieldError] = []
+    ignored: list[str] = []
+    """The columns — a nested one by its path, `lines/colour` — that name no field of the entity:
+    left out, not refused. `columns={"Notas": None}` drops one on purpose."""
 
 
 class Import[T, R: ResponseImport](DryRunnable):
@@ -153,8 +157,15 @@ class ImportRecord:
     """It has an external key the store does not hold yet: written with it."""
     stored: Any = None
     """The stored record it updates; `None` for a new one."""
+    repeats: "ImportRecord | None" = None
+    """The record above it in the batch the file names by the same key: this one updates it,
+    as it would update it stored."""
     record: Any = None
     """The aggregate to save, once built."""
+    lookups: list[Lookup] = field(default_factory=list)
+    """Every record it names, its children's included."""
+    ignored: set[str] = field(default_factory=set)
+    """The names it holds that the entity has no field for: left out."""
     outcome: ImportOutcome | None = None
     failure: exceptions.InvalidValue | None = None
 
@@ -168,9 +179,7 @@ def whole_records(
         ->  ((2,), {"number": "F-1", "lines": [{"product_id": "SKU-7", "quantity": "2"},
                                                 {"product_id": "SKU-9", "quantity": "1"}]})
 
-    1. The names of the first row are checked against the entity: a header that names no field
-       refuses the whole file, before any record is read.
-    2. A flat row whose own cells are all blank continues the record above it: the children it
+    1. A flat row whose own cells are all blank continues the record above it: the children it
        holds are added to that record's.
     Final: a JSON record comes as it is, nested already.
     """
@@ -179,23 +188,12 @@ def whole_records(
             yield row.at, row.cells
         return
     children = [
-        name for name, slot in slots_of(entity).items() if slot.holds == Holds.RECORDS
+        name
+        for name, slot in slots_of(entity).items()
+        if slot.holds == Holds.RECORDS and not slot.by_id
     ]
     held: tuple[tuple[str | int, ...], dict[str, Any]] | None = None
     for row in rows:
-        if held is None:
-            unknown = unknown_names(entity, row.cells)
-            if unknown:
-                raise exceptions.ImportRefused(
-                    tuple(
-                        exceptions.InvalidValue(
-                            f"{entity.__name__} has no field {name}",
-                            ("header", name),
-                            "content",
-                        )
-                        for name in unknown
-                    )
-                )
         values = dict(row.cells)
         owned = {
             name: values.pop(name)
@@ -255,6 +253,42 @@ def located(
     ]
 
 
+def leave_out_dependents(
+    batch: list[ImportRecord], keys: dict[tuple[type, str, str], list[str]]
+) -> None:
+    """A record that names a record of this import left out is left out too, and the keys of
+    every new record left out are forgotten — no record, in this batch or a later one, points at
+    a record that is never written.
+
+    1. The new records of the batch that failed.
+    2. Each record that names one of them fails, naming it; a new one joins them, so a chain
+       (C → B → A) is followed to its end.
+    Final: their keys dropped from the import's.
+    """
+    gone = {
+        one.identity
+        for one in batch
+        if one.failure is not None and one.outcome == ImportOutcome.CREATED
+    }
+    reached = set(gone)
+    while reached:
+        reached = set()
+        for one in batch:
+            lookup = next((named for named in one.lookups if named.identity in gone), None)
+            if one.failure is not None or lookup is None:
+                continue
+            one.failure = exceptions.InvalidValue(
+                f"the {lookup.entity.__name__} {lookup.by} {lookup.key!r} names is left out",
+                lookup.path,
+            )
+            if one.outcome == ImportOutcome.CREATED:
+                reached.add(one.identity)
+        gone |= reached
+    if gone:
+        for named in [named for named, ids in keys.items() if ids and ids[0] in gone]:
+            del keys[named]
+
+
 def applied(value: Any, records: dict[type, dict[str, Any]]) -> Any:
     """The values with each record they name resolved: the identity a key field holds, the record
     a relation holds."""
@@ -288,18 +322,37 @@ class EntityImports[T](EntityReads[T]):
         return rows_of(dto.content, dto.format, dto.sheet, dto.columns, dto.encoding)
 
     def records(self, dto: Any, rows: Iterable[ImportRow]) -> Iterator[ImportRecord]:
-        """Each record of the file, read as a record of the entity: its values checked and
-        marked (`shaped`), and the keys the file names it by — a record that does not read
-        carries why."""
+        """Each record of the file, read as a record of the entity: its values made what their
+        fields read and the records they name marked (`shaped`), the keys the file names it by,
+        and the names it holds that the entity has no field for — the header's, once, for a
+        flat file. A record that does not read carries why."""
         entity, _ = declared_by(type(dto))
         natural, identity = key_of(entity), identity_name(entity)
-        for at, values in whole_records(entity, rows, dto.format in FLAT):
-            one = ImportRecord(at)
+        flat = dto.format in FLAT
+        rows = iter(rows)
+        first = next(rows, None)
+        if first is None:
+            return
+        header = unknown_names(entity, first.cells) if flat else set()
+        for at, values in whole_records(entity, chain([first], rows), flat):
+            one = ImportRecord(at, ignored=header if at == first.at else set())
+            if not flat:
+                one.ignored = unknown_names(entity, values)
             try:
                 own = {name: values.pop(name, None) for name in (KEY, identity)}
+                if not is_blank(own[identity]):
+                    try:
+                        own[identity] = adapter_of(EntityID).validate_python(own[identity])
+                    except ValueError as error:
+                        raise exceptions.InvalidValue(
+                            f"{identity} {own[identity]!r} is not an identity: a UUID v7",
+                            (identity,),
+                        ) from error
                 one.values = shaped(entity, values, dto.decimal)
-                own[natural] = one.values.get(natural) if natural != identity else None
+                if natural != identity:
+                    own[natural] = one.values.get(natural)
                 one.keys = [(by, str(key)) for by, key in own.items() if not is_blank(key)]
+                one.lookups = list(lookups_in(one.values))
             except exceptions.InvalidValue as error:
                 one.failure = error
             yield one
@@ -308,8 +361,9 @@ class EntityImports[T](EntityReads[T]):
         self, dto: Any, kind: type, by: str, keys: list[str]
     ) -> dict[tuple[type, str, str], list[str]]:
         """The identities of the records of `kind` each key names, in one search: by the
-        external key in the import's origin, or by the field `by`. A key no record holds names
-        none; one two records hold names both.
+        external key in the import's origin, or by the field `by` — each key read as the field
+        reads it (`"007"` is the code `7`), answered under the text the file wrote. A key no
+        record holds names none; one two records hold names both.
 
             identities(dto, Country, "code", ["BO", "XX"])
                 ->  {(Country, "code", "BO"): ["0192…"], (Country, "code", "XX"): []}
@@ -329,27 +383,40 @@ class EntityImports[T](EntityReads[T]):
                 pagination=page,
                 count=CountMode.NONE,
             )
-            for named in repository.fetch_all(self.external_keys, criteria):
+            try:
+                stored = repository.fetch_all(self.external_keys, criteria)
+            except exceptions.ProgrammingError as error:
+                name = self.external_keys.__name__
+                raise exceptions.ProgrammingError(
+                    f"the file names records by {KEY}, and {type(repository).__name__} stores no "
+                    f"{name}: map one table for them — map_aggregates(registry, {{{name}: "
+                    f'external_key_table("<context>_external_keys", metadata)}})'
+                ) from error
+            for named in stored:
                 found[(kind, by, named.key)].append(named.entity_id)
             return found
-        reader = adapter_of(model_of(kind).annotations[by])
-        typed = []
+        reader = adapter_of(
+            EntityID if by == identity_name(kind) else model_of(kind).annotations[by]
+        )
+        typed: dict[str, Any] = {}
+        written: dict[str, list[str]] = {}
         for one in keys:
             try:
-                typed.append(reader.validate_python(one))
+                value = reader.validate_python(one)
             except ValueError:
                 continue
+            typed[str(value)] = value
+            written.setdefault(str(value), []).append(one)
         if not typed:
             return found
         criteria = Criteria(
-            selection=Condition(field=by, operator=Operator.IN, value=typed),
+            selection=Condition(field=by, operator=Operator.IN, value=list(typed.values())),
             pagination=page,
             count=CountMode.NONE,
         )
         for record in repository.fetch_all(kind, criteria):
-            found.setdefault((kind, by, str(getattr(record, by))), []).append(
-                str(identity_of(record))
-            )
+            for one in written.get(str(getattr(record, by)), []):
+                found[(kind, by, one)].append(str(identity_of(record)))
         return found
 
     def resolve(
@@ -364,8 +431,9 @@ class EntityImports[T](EntityReads[T]):
         1. The keys not known yet are searched, one search per entity and kind of key: the
            records' own for this batch alone, the references kept in `keys` for the whole import.
         2. Each record, in the file's order:
-           2.1 found by the first of its keys a stored record holds — two records holding it is
-               refused —; a key repeated earlier in the batch is refused;
+           2.1 found by the record above it in the batch with one of its keys — it updates that
+               one —, else by the first of its keys a stored record holds; two records holding a
+               key, or two keys naming different records, is refused;
            2.2 `mode` refuses one that exists, or one that does not;
            2.3 a new one takes the identity the file gives, or a new one; when the entity
                references itself, its keys are kept so a record below finds it;
@@ -382,7 +450,7 @@ class EntityImports[T](EntityReads[T]):
         for one in alive:
             for by, key in one.keys:
                 named.setdefault(by, set()).add(key)
-            for lookup in lookups_in(one.values):
+            for lookup in one.lookups:
                 if (lookup.entity, lookup.by, lookup.key) not in keys:
                     asked.setdefault((lookup.entity, lookup.by), set()).add(lookup.key)
         own: dict[tuple[type, str, str], list[str]] = {}
@@ -390,28 +458,27 @@ class EntityImports[T](EntityReads[T]):
             own.update(self.identities(dto, entity, by, sorted(wanted)))
         for (kind, by), wanted in asked.items():
             keys.update(self.identities(dto, kind, by, sorted(wanted)))
-        remembers = any(
-            lookup.entity is entity for one in alive for lookup in lookups_in(one.values)
-        )
-        seen: dict[tuple[str, str], tuple[str | int, ...]] = {}
+        remembers = any(lookup.entity is entity for one in alive for lookup in one.lookups)
+        seen: dict[tuple[str, str], ImportRecord] = {}
         for one in alive:
             try:
-                matched = ""
-                for by, key in one.keys:
-                    if (by, key) in seen:
-                        raise exceptions.InvalidValue(
-                            f"{by} {key!r} is repeated: the record at "
-                            f"{'/'.join(map(str, seen[(by, key)]))} has it too",
-                            (by,),
-                        )
+                one.repeats = next((seen[named] for named in one.keys if named in seen), None)
+                matched = one.repeats.identity if one.repeats is not None else ""
+                for by, key in [] if one.repeats is not None else one.keys:
                     found = own.get((entity, by, key), [])
                     if len(found) > 1:
                         raise exceptions.InvalidValue(
                             f"{len(found)} {entity.__name__} have {by} {key!r}", (by,)
                         )
+                    if found and matched and found[0] != matched:
+                        raise exceptions.InvalidValue(
+                            f"{one.keys[0][0]} {one.keys[0][1]!r} names one {entity.__name__}, "
+                            f"and {by} {key!r} another",
+                            (by,),
+                        )
                     matched = matched or (found[0] if found else "")
-                    seen[(by, key)] = one.at
-                one.new_key = any(
+                seen.update({named: one for named in one.keys})
+                one.new_key = one.repeats is None and any(
                     by == KEY and not own.get((entity, KEY, key)) for by, key in one.keys
                 )
                 naming = f"{one.keys[0][0]} {one.keys[0][1]!r}" if one.keys else "no key"
@@ -428,7 +495,7 @@ class EntityImports[T](EntityReads[T]):
                 if remembers and not matched:
                     for by, key in [*one.keys, (identity, one.identity)]:
                         keys[(entity, by, key)] = [one.identity]
-                for lookup in lookups_in(one.values):
+                for lookup in one.lookups:
                     found = keys.get((lookup.entity, lookup.by, lookup.key), [])
                     if len(found) != 1:
                         where = (
@@ -447,7 +514,9 @@ class EntityImports[T](EntityReads[T]):
         updated = [
             one
             for one in alive
-            if one.failure is None and one.outcome == ImportOutcome.UPDATED
+            if one.failure is None
+            and one.outcome == ImportOutcome.UPDATED
+            and one.repeats is None
         ]
         if not updated:
             return
@@ -499,7 +568,7 @@ class EntityImports[T](EntityReads[T]):
         alive = [one for one in batch if one.failure is None]
         wanted: dict[type, set[str]] = {}
         for one in alive:
-            for lookup in lookups_in(one.values):
+            for lookup in one.lookups:
                 if lookup.record:
                     wanted.setdefault(lookup.entity, set()).add(lookup.identity)
         records: dict[type, dict[str, Any]] = {}
@@ -517,14 +586,35 @@ class EntityImports[T](EntityReads[T]):
             }
         for one in alive:
             try:
-                record = one.stored
+                missing = next(
+                    (
+                        lookup
+                        for lookup in one.lookups
+                        if lookup.record
+                        and lookup.identity not in records.get(lookup.entity, {})
+                    ),
+                    None,
+                )
+                if missing is not None:
+                    raise exceptions.InvalidValue(
+                        f"the {missing.entity.__name__} {missing.by} {missing.key!r} names is not "
+                        "stored yet: a many-to-many names records stored before the import",
+                        missing.path,
+                    )
+                if one.repeats is not None and one.repeats.failure is not None:
+                    raise exceptions.InvalidValue(
+                        f"it repeats the record at {'/'.join(map(str, one.repeats.at))}, "
+                        "which is left out",
+                        (one.keys[0][0],),
+                    )
+                record = one.repeats.record if one.repeats is not None else one.stored
                 if record is None:
                     record = blank(extensions.class_for(entity, set(one.values)))
                     setattr(record, identity_name(entity), one.identity)
                 one.record = record
                 changed = apply_values(record, applied(one.values, records))
                 recompute_whole(record)
-                if one.stored is not None and not changed:
+                if one.outcome == ImportOutcome.UPDATED and not changed:
                     one.outcome = ImportOutcome.UNCHANGED
             except exceptions.InvalidValue as error:
                 one.failure = error
@@ -536,11 +626,13 @@ class EntityImports[T](EntityReads[T]):
         entity, _ = declared_by(type(dto))
         repository = self.reads_from()
         alive = [one for one in batch if one.failure is None]
-        changed = [
-            one.record
-            for one in alive
-            if one.outcome in (ImportOutcome.CREATED, ImportOutcome.UPDATED)
-        ]
+        changed = list(
+            {
+                id(one.record): one.record
+                for one in alive
+                if one.outcome in (ImportOutcome.CREATED, ImportOutcome.UPDATED)
+            }.values()
+        )
         if changed:
             repository.save(changed)
         named = [
@@ -575,6 +667,7 @@ class EntityImports[T](EntityReads[T]):
                 "writes batch by batch, and a failure leaves the batches before it written"
             )
         failures: list[exceptions.InvalidValue] = []
+        ignored: set[str] = set()
         done: Counter[ImportOutcome] = Counter()
         writing = not dto.dry_run
         keys: dict[tuple[type, str, str], list[str]] = {}
@@ -587,8 +680,10 @@ class EntityImports[T](EntityReads[T]):
                 batch = list(chunk)
                 self.resolve(dto, batch, keys)
                 self.build(dto, batch)
+                leave_out_dependents(batch, keys)
                 invalid = False
                 for one in batch:
+                    ignored |= one.ignored
                     if one.failure is not None:
                         invalid = True
                         failures.extend(located(one.failure, one.at, one.record))
@@ -610,6 +705,7 @@ class EntityImports[T](EntityReads[T]):
                 )
                 for one in failures
             ],
+            ignored=sorted(ignored),
         )
 
     def preview(self, dto: Any) -> Any:
@@ -620,10 +716,11 @@ class EntityImports[T](EntityReads[T]):
             return super().preview(dto)
         answer = self.import_records(dto)
         skipped = f", skip {len(answer.skipped)}" if answer.skipped else ""
+        ignored = f"; columns left out: {', '.join(answer.ignored)}" if answer.ignored else ""
         return Preview(
             text=(
                 f"Would create {answer.created}, update {answer.updated} and leave "
-                f"{answer.unchanged} unchanged{skipped}"
+                f"{answer.unchanged} unchanged{skipped}{ignored}"
             ),
             data=answer.model_dump(mode="json"),
         )
