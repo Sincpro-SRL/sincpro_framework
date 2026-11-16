@@ -606,13 +606,15 @@ default, and nothing is stored until the context gives its events a table (§10)
 ## 10. Change tracking, and the context's event table
 
 `ChangeTrackingMixin` records **one** `EntityUpdated` event per save, with every field that
-changed as `(before, after)`. A field set and set back is no change. `change_event` names the
-class it records — here one of the context's own, so it is stored with the rest:
+changed as `(before, after)`, and `EntityDeleted` when the record is removed — archived and
+restored too (`EntityArchived`, `EntityRestored`). A field set and set back is no change.
+`change_event` and `delete_event` name the classes it records — here the context's own, so they
+are stored with the rest:
 
 ```python
 from typing import ClassVar
 
-from sincpro_framework.ddd import ChangeTrackingMixin, EntityUpdated
+from sincpro_framework.ddd import ChangeTrackingMixin, EntityDeleted, EntityUpdated
 
 
 @dataclass(kw_only=True)
@@ -620,9 +622,15 @@ class PaymentUpdated(EntityUpdated, BillingEvent):
     name = "billing.payment.v1.updated"
 
 
+@dataclass(kw_only=True)
+class PaymentDeleted(EntityDeleted, BillingEvent):
+    name = "billing.payment.v1.deleted"
+
+
 @dataclass
 class Payment(ChangeTrackingMixin, Entity):
     change_event: ClassVar[type[DomainEvent]] = PaymentUpdated
+    delete_event: ClassVar[type[DomainEvent]] = PaymentDeleted
     amount: int = 0
     method: str = "cash"
     receipt_cache: str = field(default="", metadata={"tracked": False})
@@ -699,6 +707,18 @@ What this gives, with nothing else to learn:
   `entity_type` and `entity_id` empty.
 - **Queried like any entity.** `fetch_all(PaymentUpdated, criteria)` answers that class;
   `fetch_all(BillingEvent, criteria)` the whole context, each row as its class.
+- **A deleted record's history stays.** Its removal stores its `delete_event` in the same
+  transaction, so what happened to it is still answered after the row is gone — an audit:
+
+```python
+repository.remove(repository.get(Payment, payment.id))
+
+assert repository.get(Payment, payment.id) is None
+assert [type(one) for one in repository.fetch_all(BillingEvent, about_the_payment).items] == [
+    PaymentUpdated,
+    PaymentDeleted,
+]
+```
 
 A project with no table for its events loses nothing: they are recorded, pulled and published
 as in §9. More in [change-tracking.md](../events/change-tracking.md).

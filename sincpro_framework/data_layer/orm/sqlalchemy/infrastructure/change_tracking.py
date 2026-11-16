@@ -1,5 +1,5 @@
 """One consolidated `Updated` event per aggregate per flush, taken from the engine's own record
-of what it is about to write.
+of what it is about to write — and the facts of its life: removed, archived, brought back.
 
     class Invoice(ChangeTrackingMixin, Entity):
         total: int = 0
@@ -76,8 +76,28 @@ def changed_columns(record: ChangeTrackingMixin) -> dict[str, tuple[Any, Any]]:
     return changes
 
 
+def archived_moved(record: ChangeTrackingMixin) -> tuple[Any, Any]:
+    """`archived_at` before and after this flush — `(None, None)` when the record has no such
+    column or this flush does not move it.
+
+        an invoice archived:      archived_moved(invoice)  ->  (None, datetime(…))
+        one brought back:         archived_moved(invoice)  ->  (datetime(…), None)
+    """
+    state = inspect(record)
+    if state is None or "archived_at" not in state.mapper.column_attrs.keys():
+        return None, None
+    history = attributes.get_history(record, "archived_at")
+    if not history.has_changes():
+        return None, None
+    return (
+        history.deleted[0] if history.deleted else None,
+        history.added[0] if history.added else None,
+    )
+
+
 def _tracking(session: Session) -> None:
-    """Records one event per aggregate that is actually changing.
+    """Records one event per aggregate that is actually changing, and the facts of the ones
+    this flush archives, brings back or removes.
 
     `session.dirty` is anything SQLAlchemy is *considering*: an attribute set to the value it
     already held puts the object here without changing a column. `changed_columns` answers
@@ -91,3 +111,7 @@ def _tracking(session: Session) -> None:
         if not isinstance(record, ChangeTrackingMixin) or not goes_out(session, record):
             continue
         record.record_change(changed_columns(record))
+        record.record_archiving(*archived_moved(record))
+    for record in session.deleted:
+        if isinstance(record, ChangeTrackingMixin) and goes_out(session, record):
+            record.record_deletion()

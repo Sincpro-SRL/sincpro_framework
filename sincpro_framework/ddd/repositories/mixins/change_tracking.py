@@ -24,8 +24,9 @@ from sincpro_framework.ddd.events import ChangeTrackingMixin
 
 
 class ChangeTrackingRepositoryMixin:
-    """Two of `Repository`'s hooks, overridden: the baseline on the way out, the consolidated
-    event on the way in. Both are no-ops for any record that is not `ChangeTrackingMixin`.
+    """Three of `Repository`'s hooks, overridden: the baseline on the way out, the consolidated
+    event — and an archiving or a restoring — on the way in, the deletion on the way out of the
+    store. Each is a no-op for any record that is not `ChangeTrackingMixin`.
 
     **Mixed in before `Repository` in the bases**, so these run instead of the empty ones; each
     calls `super()` so a third mixin further along the chain still gets its turn.
@@ -43,3 +44,9 @@ class ChangeTrackingRepositoryMixin:
         if isinstance(record, ChangeTrackingMixin):
             record.record_changes()
         super().before_save(record)  # type: ignore[misc]
+
+    def before_remove(self, record: Any) -> None:
+        """Records the deletion, stored with the removal as the database stores it."""
+        if isinstance(record, ChangeTrackingMixin):
+            record.record_deletion()
+        super().before_remove(record)  # type: ignore[misc]

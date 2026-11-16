@@ -3,7 +3,8 @@
 A form creates a record or changes one over several requests, and is not always saved: the user
 continues tomorrow, from another device, or drops it. `Edit` is that whole life in one command —
 save the caller's draft, save the record, discard the draft — and `Get` / `Search` find a draft again after the
-client lost its state. Nothing is stored until the form says save. `Delete` removes the record.
+client lost its state. Nothing is stored until the form says save. `Delete` removes the record;
+`Archive`, `Restore` and `Purge` give it a trash.
 
 ```python
 from sincpro_framework.ddd import (
@@ -150,7 +151,8 @@ class AddInvoiceLine(EntityEdits[Invoice]):
 ```
 
 Each step is a method to override and call `super()` in: `save_draft`, `save`, `discard`, `change`,
-`assignable`, `drafts`.
+`assignable`, `drafts` — and `delete`, `archive`, `restore`, `purge` with their hooks `deleting`,
+`archiving`, `restoring`.
 
 ## What a form must not write
 
@@ -204,22 +206,85 @@ shows, and over REST a `200` with it.
 | `…, dry_run=True` | nothing deleted | `Preview(text="Would delete Invoice … «…»", data={"id", "version"})` |
 | a key with no record | `AggregateNotFound` | — |
 
+**Its history keeps it.** An entity with `ChangeTrackingMixin` records `EntityDeleted` when the
+store removes it — whichever way: this `Delete`, a `repository.remove`, a `Purge` — stored with
+the removal in its context's event table, so `DomainEvents` still answers it after the row is
+gone ([the context's facts](guide.md#10-change-tracking-and-the-contexts-event-table)).
+
 `deleting(record, dto)` is what the deletion does with the record before it goes: nothing by
-default. Override it to refuse when the domain says the record cannot go, to record the fact it
-leaves — stored with the removal, so its history (`DomainEvents`) holds it after the row is gone —
-and to wait for the commit for what lives outside the store:
+default. Override it to refuse when the domain says the record cannot go, to record a fact of the
+domain's own, and to wait for the commit for what lives outside the store:
 
 ```python
 @billing.feature(CommandDeleteBanner)
 class BannerDeletion(EntityEdits[Banner]):
     def deleting(self, banner: Banner, dto: CommandDeleteBanner, /) -> None:
-        banner.record(BannerDeleted())
+        if banner.pinned:
+            raise exceptions.DomainError("a pinned banner stays")
         self.repository.after_commit(lambda: self.files.delete(banner.picture))
 ```
 
 The deletion runs in one unit of work when the store transacts, so what `deleting` waits for runs
-once it committed, and none of it when it is undone. A dry run never runs `deleting`. A deletion
-always deletes; a record put away without losing it is `repository.archive`.
+once it committed, and none of it when it is undone. A dry run never runs `deleting`.
+
+## A trash: archive, restore, purge
+
+A record that goes to a trash before it is deleted is `ArchivableMixin`. Three more built-ins,
+each a `DryRunnable` that answers nothing, give it the trash — and only when the project declares
+them:
+
+```python
+@dataclass
+class Banner(ArchivableMixin, SiteEntity):      # SiteEntity: the context's ChangeTrackingMixin base
+    title: str = ""
+
+class CommandTrashBanner(Archive[Banner]): ...      # out of every reading, kept
+class CommandRestoreBanner(Restore[Banner]): ...    # back into every reading
+class CommandPurgeBanners(Purge[Banner]): ...       # the long archived, deleted for good
+```
+
+| The client sends | What happens | Its fact |
+|---|---|---|
+| `CommandTrashBanner(id=…)` | `archived_at` stamped: every reading leaves it out, nothing is lost; the caller's draft dropped | `EntityArchived` |
+| `CommandRestoreBanner(id=…)` | `archived_at` cleared: read again | `EntityRestored` |
+| `CommandPurgeBanners(older_than=timedelta(days=30))` | every record archived more than 30 days ago removed, `batch_size` (500) per unit of work, `deleting` run for each | `EntityDeleted` each |
+| any of them, `dry_run=True` | nothing written, no hook run | `Preview` — a `Purge`'s says how many (`data={"count": …}`) |
+
+`archiving(record, dto)` and `restoring(record, dto)` are the hooks of the other two, as
+`deleting` is of a deletion — a purge runs `deleting` too, so a picture is deleted with its banner
+whichever way the banner goes. `purgeable(entity, dto)` is what a purge reads; override it to keep
+some longer. The trash itself is a `Search` that names `archived_at`, which every other reading
+leaves out:
+
+```python
+QueryListBanners(criteria=Criteria(
+    selection=Condition(field="archived_at", operator=Operator.IS_NULL, value=False)
+))
+```
+
+**The framework never purges on its own.** A purge runs when a cron of the project runs it:
+
+```python
+@cron_site.cron("0 3 * * *", timezone="America/La_Paz", overlap=Overlap.SKIP)
+class EmptyTheTrash(Cron):
+    def run(self, tick: Tick) -> None:
+        self.site(CommandPurgeBanners(older_than=timedelta(days=30)))
+```
+
+A purge that meets a record the domain refuses stops there; the batches before it stay deleted,
+and the next run starts again from what is left.
+
+## Which one, when
+
+| What the business wants | What the project declares |
+|---|---|
+| **Delete, and an audit of it** — the usual case | `Delete[T]` on an entity of a `ChangeTrackingMixin` base that names its `delete_event`: the record goes, the fact stays in the context's history |
+| Delete, and clean up what lives outside the store (a file, a cache entry) | the same, with `deleting` waiting for the commit (`after_commit`) |
+| Delete only what the domain allows (a posted invoice stays) | `deleting` raising a `DomainError` |
+| **A trash**: put away, bring back within a time, then gone for good | `ArchivableMixin`, `Archive[T]` + `Restore[T]`, and a `Purge[T]` a cron of the project runs |
+| Put away for ever — what invoices still point at | `ArchivableMixin` and `Archive[T]`, no `Purge` |
+| React elsewhere — notify, reindex, purge something else | a subscriber of `EntityDeleted` / `EntityArchived` / `EntityRestored` (or the context's own subclasses), published on commit like any fact |
+| Confirm before any of them | the same command with `dry_run=True` first: its `Preview`, then the command with the `version` the preview answered as `origin_version` |
 
 ## What it is built on
 

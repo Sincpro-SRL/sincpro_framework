@@ -38,6 +38,7 @@ broker is down.
 | `DomainEvent.caused_by(cause)` | A copy with `causation_id`/`correlation_id` threaded from the incoming event | function | (method) |
 | `ChangeTrackingMixin` | Aggregate mixin: one `EntityUpdated` recorded per update, with every field that changed | dataclass mixin | `sincpro_framework.ddd` |
 | `EntityUpdated` | The event `ChangeTrackingMixin` records (`changes`, `field_labels`); subclass it for your own name | dataclass (`DomainEvent`) | `sincpro_framework.ddd` |
+| `EntityDeleted` / `EntityArchived` / `EntityRestored` | A tracked record's life, recorded by the store on remove / archive / restore, stored with the write so the history outlives the row; a context names its own once on its entities' base (`delete_event`, `archive_event`, `restore_event`) | dataclass (`DomainEvent`) | `sincpro_framework.ddd` |
 | `DeliverableEventMixin` | Marks a contract other contexts hear (warned without a versioned `name`) — the default filter of `publish_on_commit`; `delivered_at`, `delivery` are stored but excluded from its wire JSON | dataclass mixin | `sincpro_framework.ddd` |
 | `EventSourcedMixin` | No aggregate row: `happened` records/applies/numbers a fact; `get` rebuilds and `save` appends | mixin | `sincpro_framework.ddd` |
 | `Publisher` / `AsyncPublisher` | What a Feature holds: `publish(message)` or `publish(event, Response)`, into a `Queue`; `forwarding=` holds and forwards | class | `sincpro_framework.event_driven` |

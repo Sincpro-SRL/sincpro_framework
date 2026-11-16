@@ -23,14 +23,18 @@ value it is saved with, never each assignment along the way.
 **Opt-in on the aggregate.** One that does not inherit `ChangeTrackingMixin` pays nothing and
 never knows this exists.
 
+**Its life too**: removed, it records `EntityDeleted`; archived, `EntityArchived`; brought back,
+`EntityRestored` — [a record's life](#a-records-life-deleted-archived-restored).
+
 ## The pieces
 
 | Piece | Module | What it is |
 |---|---|---|
-| `ChangeTrackingMixin` | `ddd/entity/mixins/tracking.py` | What counts as a change, and what event to emit |
-| `EntityUpdated` | `ddd/entity/mixins/tracking.py` | The generic event: `changes: {field: (before, after)}`, plus `label` and `field_labels` — the words a person reads |
-| `_tracking` | `orm/sqlalchemy/infrastructure/change_tracking.py` | On SQLAlchemy: the diff the engine is about to write, at `before_flush` |
-| `ChangeTrackingRepositoryMixin` | `ddd/repositories/change_tracking.py` | On a store with no flush: a baseline on the way out, the diff on `save()` |
+| `ChangeTrackingMixin` | `ddd/events/mixins/change_tracking.py` | What counts as a change, and what event to emit for each |
+| `EntityUpdated` | `ddd/events/mixins/change_tracking.py` | The generic event: `changes: {field: (before, after)}`, plus `label` and `field_labels` — the words a person reads |
+| `EntityDeleted` / `EntityArchived` / `EntityRestored` | `ddd/events/mixins/change_tracking.py` | A record's life: removed, put away, brought back |
+| `_tracking` | `orm/sqlalchemy/infrastructure/change_tracking.py` | On SQLAlchemy: the diff the engine is about to write, and the rows it archives, restores or deletes, at `before_flush` |
+| `ChangeTrackingRepositoryMixin` | `ddd/repositories/mixins/change_tracking.py` | On a store with no flush: a baseline on the way out, the diff on `save()`, the deletion on `remove()` |
 | `event_table` / `map_events` | `orm/sqlalchemy/entrypoint/template_table/events.py` | The context's one event table, where the event is persisted in the transaction of the change |
 
 ## Where the diff comes from, and why it is not the same in both stores
@@ -92,6 +96,49 @@ size: Shape = field(default_factory=Shape)
 
 The domain layer tells the two apart by what the annotation inherits — an `Entity` is another
 aggregate, a plain dataclass is a value — never by whether an ORM happens to map it.
+
+## A record's life: deleted, archived, restored
+
+The store records three more facts on a tracked aggregate, whichever way it was written — a
+`Delete`, `Archive`, `Restore` or `Purge` of `EntityEdits`, a `repository.remove`, a
+`repository.archive`, a `record.restore()` saved:
+
+| The store sees | The aggregate records |
+|---|---|
+| the row removed | `delete_event` — `EntityDeleted` by default |
+| `archived_at` going from nothing to a moment (`ArchivableMixin`) | `archive_event` — `EntityArchived` |
+| `archived_at` going back to nothing | `restore_event` — `EntityRestored` |
+
+Each is stored with the write, in the context's event table, so a deleted record's history still
+answers after its row is gone. A bounded context names its own once, on the base its entities
+inherit — the same way `change_event` names its update:
+
+```python
+@dataclass(kw_only=True)
+class BillingDeleted(EntityDeleted, BillingEvent):
+    name = "billing.v1.deleted"
+
+
+@dataclass(kw_only=True)
+class BillingArchived(EntityArchived, BillingEvent):
+    name = "billing.v1.archived"
+
+
+@dataclass(kw_only=True)
+class BillingRestored(EntityRestored, BillingEvent):
+    name = "billing.v1.restored"
+
+
+class BillingEntity(ChangeTrackingMixin, Entity):
+    change_event = BillingUpdated
+    delete_event = BillingDeleted
+    archive_event = BillingArchived
+    restore_event = BillingRestored
+```
+
+A creation records nothing here: what a record was made for is a fact of the domain's own. A
+bulk write past the aggregate (`remove_all`, `update_all`) records nothing either — it never holds
+the aggregates.
 
 ## The two modes
 
@@ -308,10 +355,12 @@ When it went out and how — `delivered_at`, `delivery` — is stamped on its ro
 - **Never map the framework's generic `EntityUpdated`.** Mapping a class makes every subclass
   of it part of that mapper's hierarchy, so another event class declared anywhere in the
   process gets dragged into your table. Map your own subclass.
-- **Archiving emits nothing.** `archived_at` belongs to `ArchivableMixin`, so it is not a
-  tracked field: `repository.archive(record)` changes the row without producing an `Updated`
-  event. Record that fact by hand if a screen needs it. (`repository.remove(record)` deletes the
-  row; there is nothing left to have changed.)
+- **Archiving is its own fact, never an `Updated`.** `archived_at` belongs to `ArchivableMixin`,
+  so it is not a tracked field: archiving records `archive_event`, and an `Updated` only when
+  something else changed in the same write.
+- **Never map the framework's `EntityDeleted`, `EntityArchived` or `EntityRestored`** either, for
+  the same reason: name your context's own with `delete_event`, `archive_event` and
+  `restore_event`. Unmapped, the framework's are recorded and pulled but stored by no table.
 - **The event is recorded before the commit lands.** It is taken at the flush, or at `save()`
   on a store with no flush, not after the transaction commits. A rolled-back transaction
   leaves the aggregate believing it is unchanged; read it again rather than retrying with the

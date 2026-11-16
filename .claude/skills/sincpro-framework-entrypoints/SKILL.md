@@ -153,6 +153,9 @@ app = api.app()                          # routes, OpenAPI (each entity's contra
   (`docs/entrypoints/readiness.md`).
 - **Calling `execute` from a route.** That skips auth, idempotency, the span and Sentry. Call the
   bus (`bus_call`, or `bus(dto)` in-process).
+- **Sending a `DELETE`'s fields in its body, or a `POST`'s in its query string.** A field travels
+  where its method reads it — the URL on `GET`/`DELETE`, the body otherwise; elsewhere it is a
+  `422` naming it (`DELETE /issues/{id}?dry_run=true`, never `{"dry_run": true}` as a body).
 
 ## When the route cannot be generated: a hand-written route + `bus_call`
 

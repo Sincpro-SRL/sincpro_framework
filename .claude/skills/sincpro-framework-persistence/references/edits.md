@@ -70,12 +70,31 @@ class BannerForms(EntityEdits[Banner]):
         kept = super().assignable(entity, key, values)
         return {name: value for name, value in kept.items() if name != "picture"}
 
-    def deleting(self, banner: Banner, dto: CommandDeleteBanner, /) -> None:
-        banner.record(BannerDeleted())                 # stored with the removal: the history keeps it
+    def deleting(self, banner: Banner, dto, /) -> None:   # a Delete, and each record a Purge takes
+        if banner.pinned:
+            raise exceptions.DomainError("a pinned banner stays")
         self.repository.after_commit(lambda: self.files.delete(banner.picture))
 ```
 
-`deleting` may also raise a `DomainError` when the record cannot go. It never runs in a dry run.
+The audit is not written here: an entity of a `ChangeTrackingMixin` base records `EntityDeleted`
+by itself, stored with the removal. `deleting` never runs in a dry run.
+
+## 5. A trash (soft delete) — only when the business asks for one
+
+```python
+@dataclass
+class Banner(ArchivableMixin, SiteEntity): ...         # SiteEntity names delete/archive/restore_event
+
+class CommandTrashBanner(Archive[Banner]): ...          # out of every reading, kept
+class CommandRestoreBanner(Restore[Banner]): ...        # back
+class CommandPurgeBanners(Purge[Banner]): ...           # archived longer than older_than: gone
+
+# the project's own cron, nightly — the framework never schedules it
+self.site(CommandPurgeBanners(older_than=timedelta(days=30)))
+```
+
+The usual case is a direct `Delete` with its audit; a trash is for a business that wants to bring
+records back. The trash list is a `Search` naming `archived_at`.
 
 ## Mistakes to avoid
 
@@ -91,8 +110,10 @@ class BannerForms(EntityEdits[Banner]):
   that is a stored record with a state.
 - **Stripping `id`, `version` or the stamps on the client, or subclassing to drop them.** The edit
   leaves them out itself; the `version` sent back is what refuses a save over a record that moved.
-- **A deletion Command and Feature written by hand.** `Delete[T]` + `deleting` records the fact,
-  refuses by the domain and waits for the commit; `remove` on a store stores what the record
-  recorded.
+- **A deletion Command and Feature written by hand, or its fact recorded by hand.** `Delete[T]`
+  removes it, `deleting` refuses by the domain and waits for the commit, and `ChangeTrackingMixin`
+  records `EntityDeleted` by itself.
+- **A soft delete built by hand** (an `is_deleted` flag, a cron of your own that deletes): it is
+  `ArchivableMixin` with `Archive` / `Restore` / `Purge`.
 - **Answering something from a deletion.** It answers nothing; a `DELETE` route that answers a
   body is refused when the gateway starts.

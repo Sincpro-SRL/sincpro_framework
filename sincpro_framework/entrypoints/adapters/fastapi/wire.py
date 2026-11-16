@@ -63,7 +63,11 @@ from sincpro_framework.entrypoints.adapters.rest.openapi import (
     operation_security,
     security_schemes,
 )
-from sincpro_framework.entrypoints.adapters.rest.routing import is_plain, payload_from_query
+from sincpro_framework.entrypoints.adapters.rest.routing import (
+    is_plain,
+    out_of_place,
+    payload_from_query,
+)
 from sincpro_framework.entrypoints.domain.bindings import RestBinding
 from sincpro_framework.entrypoints.domain.surface import (
     Group,
@@ -645,16 +649,34 @@ def _endpoint(
     """The route's function — its signature built for FastAPI: the DTO from the body (or from
     the URL), the bus call as a dependency."""
 
+    fields = set(getattr(command, "model_fields", {}))
+    sent_in, read_in = ("body", "query string") if from_url else ("query", "body")
+
     async def endpoint(request: Request, response: Response, dto: Any, call: Any) -> Any:
         """Run the DTO — an empty one when an all-optional body was not sent — and answer.
 
-        1. `call(dto)`: the bus, through `bus_call`.
-        2. A 204 answers no body, whatever the bus returned — but a dry run's `Preview`, which
+        1. A field of the DTO sent where this route does not read it — in the body of a route
+           that reads the URL, in the query string of one that reads the body — is a 422
+           naming it, before anything runs: dropped, a `dry_run` would run the real write.
+        2. `call(dto)`: the bus, through `bus_call`.
+        3. A 204 answers no body, whatever the bus returned — but a dry run's `Preview`, which
            is what was asked, answered with 200.
-        3. A `Streamed` answer — an export — is written as it is produced, never held.
+        4. A `Streamed` answer — an export — is written as it is produced, never held.
         Final: the answer, with a `Location` header filled from it when the binding declares
         one.
         """
+        misplaced = out_of_place(fields, from_url, request.query_params, await request.body())
+        if misplaced:
+            raise RequestValidationError(
+                [
+                    {
+                        "loc": (sent_in, name),
+                        "msg": f"{request.method} reads {name} from the {read_in}: send it there",
+                        "type": "out_of_place",
+                    }
+                    for name in misplaced
+                ]
+            )
         answer = await call(dto if dto is not None else command())
         if status == NO_CONTENT:
             if isinstance(answer, Preview):
