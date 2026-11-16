@@ -110,7 +110,8 @@ The store records three more facts on a tracked aggregate, whichever way it was 
 | `archived_at` going back to nothing | `restore_event` — `EntityRestored` |
 
 Each is stored with the write, in the context's event table, so a deleted record's history still
-answers after its row is gone. A bounded context names its own once, on the base its entities
+answers after its row is gone — and carries `entity_display`, the record as a person named it then
+(its `DEFAULT_DISPLAY`), as `EntityUpdated` does: «Se eliminó Ana Pérez», not an id. A bounded context names its own once, on the base its entities
 inherit — the same way `change_event` names its update:
 
 ```python

@@ -38,6 +38,9 @@ class Declaration:
     defaults: Mapping[str, Any]
     labels: Mapping[str, Mapping[str, str]] = field(default_factory=dict)
     helps: Mapping[str, Mapping[str, str]] = field(default_factory=dict)
+    ungroupable: frozenset[str] = frozenset()
+    """The fields a grouping never splits by — `field(metadata={"groupable": False})`: an
+    identity, a version, a trace id, each value its own group."""
     overlays: Mapping[str, Mapping[str, Any]] = field(default_factory=dict)
     """What the modules that extend the entity changed about how each field is shown — a label,
     a hint —, merged from the base class down, so the deepest extension wins."""

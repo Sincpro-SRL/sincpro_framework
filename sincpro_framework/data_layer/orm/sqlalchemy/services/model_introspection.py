@@ -235,7 +235,11 @@ class ModelIntrospection:
                     else own
                 )
                 extended[name] = absent.model_copy(
-                    update={"owner": extension.entity.__name__}
+                    update={
+                        "owner": extension.entity.__name__,
+                        "label": own.label,
+                        "help": own.help,
+                    }
                 )
 
         def pointed_at(name: str) -> Meta | None:

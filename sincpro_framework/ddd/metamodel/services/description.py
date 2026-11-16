@@ -178,7 +178,8 @@ def _widget_of(meta: FieldMeta) -> str:
 
 def _hinted(fields: dict[str, FieldMeta], model: Model) -> dict[str, FieldMeta]:
     """Each field with what the model says of it for a screen: its label and help, computed or
-    not, read-only, required, its default, the three conditions, its total, its widget — the
+    not, read-only, required, whether a grouping splits by it, its default, the three
+    conditions, its total, its widget — the
     one `presentation` names, else its type's (`_widget_of`) —, what a change of it reaches
     (`affects`, `judged_by`) and, for a computed one the language writes down, its formula
     (`computes`).
@@ -210,6 +211,7 @@ def _hinted(fields: dict[str, FieldMeta], model: Model) -> dict[str, FieldMeta]:
                 "computed": computed,
                 "readonly": name in presented.readonly,
                 "required": name in presented.required,
+                "groupable": meta.groupable and name not in model.ungroupable,
                 "default": None if computed else model.defaults.get(name),
                 "readonly_when": presented.readonly_when.get(name),
                 "required_when": presented.required_when.get(name),
@@ -246,7 +248,8 @@ def described(model: Model, facts: StoreFacts) -> Meta:
             ->  Meta(aggregate="Sale", identity="id", fields={…}, default_order="-id", …)
 
     1. The fields the model and the store hold (`_fields`); a domain event also answers its
-       `name`, a class attribute every row keeps.
+       `name`, a class attribute every row keeps — which event it is, the field a log is
+       grouped by.
     2. The store's relations and the fields its extensions add, beside them.
     3. The words and hints of the model (`_hinted`), then what extensions overlay (`_overlaid`).
     Final: the description, with how the entity is read — its key, its order, its display, its
@@ -257,7 +260,12 @@ def described(model: Model, facts: StoreFacts) -> Meta:
     if EVENT_ENVELOPE <= set(model.annotations) and isinstance(
         getattr(model.entity, "name", None), str
     ):
-        fields.setdefault("name", FieldMeta.for_column(FieldType.TEXT, False, [], False))
+        fields.setdefault(
+            "name",
+            FieldMeta.for_column(FieldType.TEXT, False, [], False).model_copy(
+                update={"label": MultiLanguage({"default": "Event", "es": "Evento"})}
+            ),
+        )
     for name, relation in facts.relations.items():
         fields.setdefault(name, relation)
     for name, added in facts.extended.items():

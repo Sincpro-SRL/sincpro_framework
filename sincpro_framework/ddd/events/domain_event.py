@@ -75,8 +75,14 @@ class DomainEvent(Entity):
     """Set on every subclass by `__init_subclass__` below — declared here only so a type
     checker knows every `DomainEvent` has one."""
 
-    id: str = field(default_factory=new_entity_id)
-    label: dict[str, str] = field(default_factory=dict)
+    id: str = field(
+        default_factory=new_entity_id,
+        metadata={"label": {"default": "ID", "es": "ID"}, "groupable": False},
+    )
+    label: dict[str, str] = field(
+        default_factory=dict,
+        metadata={"label": {"default": "What happened", "es": "Qué pasó"}},
+    )
     """What a person reads when this occurrence is opened — `{"default": "Run advanced",
     "es": "Ejecución avanzada"}`. A subclass that means one fixed thing sets its own default,
     the way `EntityUpdated` does.
@@ -85,12 +91,34 @@ class DomainEvent(Entity):
     has no class there to ask, and **an audit says what a person saw at the time** — rename the
     wording next year and the old records have to preserve the old words.
     """
-    created_at: datetime = field(default_factory=utc_now)
-    entity_type: str = ""
-    entity_id: str = ""
-    correlation_id: str | None = None
-    causation_id: str | None = None
-    entity_version: int | None = None
+    created_at: datetime = field(
+        default_factory=utc_now,
+        metadata={"label": {"default": "When", "es": "Cuándo"}},
+    )
+    entity_type: str = field(
+        default="", metadata={"label": {"default": "Record type", "es": "Tipo de registro"}}
+    )
+    entity_id: str = field(
+        default="", metadata={"label": {"default": "Record ID", "es": "ID del registro"}}
+    )
+    correlation_id: str | None = field(
+        default=None,
+        metadata={
+            "label": {"default": "Correlation", "es": "Correlación"},
+            "groupable": False,
+        },
+    )
+    causation_id: str | None = field(
+        default=None,
+        metadata={"label": {"default": "Caused by", "es": "Causado por"}, "groupable": False},
+    )
+    entity_version: int | None = field(
+        default=None,
+        metadata={
+            "label": {"default": "Record version", "es": "Versión del registro"},
+            "groupable": False,
+        },
+    )
     """Its place in the history of the entity it is about — 1, 2, 3 — set when the entity's
     state is its events (`EventSourcedMixin`), so two writers of one entity cannot both append
     the same place. `None` for an event about an entity whose state is a row of its own."""

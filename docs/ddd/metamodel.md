@@ -29,6 +29,7 @@ Nothing new is registered anywhere: the model is read off what the class already
 | `@check(lambda s: [s.state, s.lines])` | `judged_by` on each field it watches |
 | `presentation = Presentation["Sale"](readonly_when=lambda s: When(s.state != State.DRAFT, s.note), widgets=…)` | the hints and their conditions as expressions; `widget`, the kind's own unless the presentation names another |
 | `field(metadata={"label": {...}})`, an enum's translations | `title`, `x-sincpro.label`, `choice_labels` |
+| `field(metadata={"groupable": False})` — the framework's own on an identity, a version, a trace id | no `groupable`: a grouping never splits by it, each value being its own group |
 | a relation the store keeps | `relation`, `many`, `navigable`, its keys, a `$ref` to the related entity's contract |
 
 What the store knows that the class does not — a column's nullability, how a relation is kept, the
