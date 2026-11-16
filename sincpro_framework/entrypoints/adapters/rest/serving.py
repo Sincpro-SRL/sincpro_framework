@@ -23,6 +23,7 @@ from sincpro_framework.entrypoints.adapters.rest.routing import (
     RestRoute,
     call_route,
     failure_answer,
+    out_of_place,
     payload_from_query,
 )
 from sincpro_framework.entrypoints.infrastructure.http import (
@@ -48,14 +49,28 @@ async def payload_of(request: Any, route: RestRoute) -> dict[str, Any]:
         ->  {"status": "open", "invoice_id": "F-9"}
         POST /billing/command-issue-invoice  {"total": 10}  ->  {"total": 10}
 
-    1. `GET`: the query string, each non-plain field decoded from JSON.
-    2. Any other method: the body, a JSON object — or `InvalidRequest` (400).
+    1. A field of the DTO sent where the method does not read it — in a `GET`'s body, in any
+       other method's query string — is `InvalidRequest` (400), naming it: never dropped.
+    2. `GET`: the query string, each non-plain field decoded from JSON.
+    3. Any other method: the body, a JSON object — or `InvalidRequest` (400).
     Final: the path's fields over either.
     """
-    if request.method == "GET":
+    from_url = request.method == "GET"
+    raw = await request.body()
+    misplaced = out_of_place(
+        (route.operation.json_schema.get("properties") or {}).keys(),
+        from_url,
+        request.query_params,
+        raw,
+    )
+    if misplaced:
+        where = "the URL" if from_url else "the body"
+        raise exceptions.InvalidRequest(
+            f"{request.method} reads {', '.join(misplaced)} from {where}: send it there"
+        )
+    if from_url:
         payload = payload_from_query(dict(request.query_params), route.operation.json_schema)
     else:
-        raw = await request.body()
         try:
             payload = json.loads(raw.decode("utf-8")) if raw else {}
         except (UnicodeDecodeError, json.JSONDecodeError) as error:

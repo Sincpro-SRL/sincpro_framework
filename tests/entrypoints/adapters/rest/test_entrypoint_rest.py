@@ -223,6 +223,24 @@ def test_each_failure_answers_its_status_and_never_the_inside(
     assert "hunter2" not in answered.text
 
 
+def test_a_field_sent_where_the_method_does_not_read_it_is_a_400_never_dropped(
+    client: TestClient,
+) -> None:
+    in_the_query = client.post(
+        "/api/v1/sincpro-billing/command-issue-invoice?total=9", json={"total": 5}
+    )
+    in_a_get_body = client.request(
+        "GET", "/api/v1/sincpro-billing/query-invoices", json={"customer": "c-9"}
+    )
+    elsewhere = client.post(
+        "/api/v1/sincpro-billing/command-issue-invoice?utm_source=mail", json={"total": 5}
+    )
+
+    assert (in_the_query.status_code, in_a_get_body.status_code) == (400, 400)
+    assert "total" in in_the_query.text and "customer" in in_a_get_body.text
+    assert elsewhere.status_code == 200  # no field of the DTO: nothing is lost
+
+
 def test_a_body_that_is_not_json_is_a_400(client: TestClient) -> None:
     answered = client.post(
         "/api/v1/sincpro-billing/command-issue-invoice",

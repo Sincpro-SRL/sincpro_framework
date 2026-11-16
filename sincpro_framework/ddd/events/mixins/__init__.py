@@ -2,8 +2,18 @@
 
 from sincpro_framework.ddd.events.mixins.change_tracking import (
     ChangeTrackingMixin,
+    EntityArchived,
+    EntityDeleted,
+    EntityRestored,
     EntityUpdated,
 )
 from sincpro_framework.ddd.events.mixins.deliverable import DeliverableEventMixin
 
-__all__ = ["ChangeTrackingMixin", "DeliverableEventMixin", "EntityUpdated"]
+__all__ = [
+    "ChangeTrackingMixin",
+    "DeliverableEventMixin",
+    "EntityArchived",
+    "EntityDeleted",
+    "EntityRestored",
+    "EntityUpdated",
+]

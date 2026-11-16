@@ -4,7 +4,8 @@
     mixins/deliverable.py         DeliverableEventMixin — a contract other bounded contexts may hear,
                                   and when it went out
     mixins/change_tracking.py     ChangeTrackingMixin — an aggregate records what changed as one
-                                  `EntityUpdated`
+                                  `EntityUpdated`, and its life: `EntityDeleted`,
+                                  `EntityArchived`, `EntityRestored`
 
 The vocabulary only. An event is an entity: the repository stores it like any other, in the
 bounded context's event table; what publishes it once a write committed is the repository's
@@ -15,6 +16,9 @@ bounded context's event table; what publishes it once a write committed is the r
 from sincpro_framework.ddd.events.domain_event import NAME, DomainEvent
 from sincpro_framework.ddd.events.mixins.change_tracking import (
     ChangeTrackingMixin,
+    EntityArchived,
+    EntityDeleted,
+    EntityRestored,
     EntityUpdated,
 )
 from sincpro_framework.ddd.events.mixins.deliverable import DeliverableEventMixin
@@ -24,5 +28,8 @@ __all__ = [
     "ChangeTrackingMixin",
     "DeliverableEventMixin",
     "DomainEvent",
+    "EntityArchived",
+    "EntityDeleted",
+    "EntityRestored",
     "EntityUpdated",
 ]

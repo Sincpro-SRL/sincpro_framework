@@ -39,11 +39,14 @@ from sincpro_framework.ddd.criteria import (
 )
 from sincpro_framework.ddd.editing.editing import apply_values, recompute
 from sincpro_framework.ddd.editing.edits import (
+    Archive,
     Delete,
     Edit,
     EditAction,
     EntityEdits,
+    Purge,
     ResponseEdit,
+    Restore,
 )
 from sincpro_framework.ddd.editing.preview import FormWarning, read_only, warn_form
 from sincpro_framework.ddd.entity import (
@@ -88,6 +91,9 @@ from sincpro_framework.ddd.events import (
     ChangeTrackingMixin,
     DeliverableEventMixin,
     DomainEvent,
+    EntityArchived,
+    EntityDeleted,
+    EntityRestored,
     EntityUpdated,
 )
 from sincpro_framework.ddd.exceptions import (
@@ -164,6 +170,7 @@ __all__ = [
     "Analyzes",
     "Any",
     "ArchivableMixin",
+    "Archive",
     "AuditedMixin",
     "Bucket",
     "BusResolver",
@@ -197,6 +204,9 @@ __all__ = [
     "EntityReads",
     "Export",
     "ExportFormat",
+    "EntityArchived",
+    "EntityDeleted",
+    "EntityRestored",
     "EntityUpdated",
     "EventSourcedMixin",
     "ExchangeRate",
@@ -239,6 +249,7 @@ __all__ = [
     "PivotCell",
     "Presentation",
     "PreviewEntity",
+    "Purge",
     "Query",
     "ReadsAggregates",
     "Reference",
@@ -254,6 +265,7 @@ __all__ = [
     "ResponsePreviewEntity",
     "ResponseRecord",
     "ResponseRecords",
+    "Restore",
     "Search",
     "Sort",
     "Specification",

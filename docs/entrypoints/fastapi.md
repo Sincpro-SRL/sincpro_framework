@@ -186,6 +186,14 @@ assert (removed.status_code, removed.content) == (204, b"")
   with a non-plain field such as `criteria` as JSON, and validated once. The document points
   that JSON parameter at its definition, written once under `components/schemas`, and
   `/openapi.json` answers its `ETag` — `304` to a client that holds it.
+- **A field travels in one place**, the one its method reads: the URL on `GET` and `DELETE`, the
+  body on every other method. A field of the DTO sent in the other place is a `422` naming it
+  (`DELETE reads dry_run from the query string: send it there`) — never dropped in silence,
+  since a `dry_run` dropped would run the very write it was meant to rehearse. A query parameter
+  that is no field of the DTO, and a body that carries none, are left alone. `RestGateway`
+  applies the same rule (a `400`), where only `GET` reads the URL.
+- A dry run on a route that answers `204` — a `DELETE`, an `Archive` — answers its `Preview`
+  with `200`, and the document says so.
 - Each context's client contract is served at `GET /client-contract/<alias>.json` — the alias the
   gateway publishes it under —
   (`app(contract_path=None)` serves none), out of the document.

@@ -10,11 +10,16 @@ Feature that becomes an ApplicationService is still served at the same URL. A fi
 `Criteria`, a list, a nested object — travels in the query string as JSON, the form
 `@sincpro/criteria`'s `pack()` writes. A route of the project's own (`GET
 /billing/invoices/{invoice_id}`) takes the path's fields from the path.
+
+A field of the DTO travels in one place, the one its method reads: a `GET` (and, on FastAPI, a
+`DELETE`) reads the URL, every other method the body. One sent in the other place is refused,
+naming it (`out_of_place`) — never dropped in silence, since a `dry_run` dropped so runs the very
+write it was meant to rehearse.
 """
 
 import json
 import re
-from collections.abc import Iterable, Mapping
+from collections.abc import Collection, Iterable, Mapping
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -175,6 +180,29 @@ def payload_from_query(query: Mapping[str, str], schema: Mapping[str, Any]) -> S
         except json.JSONDecodeError as error:
             raise exceptions.InvalidRequest(f"{name} is not JSON: {error.msg}") from error
     return payload
+
+
+def out_of_place(
+    fields: Collection[str], from_url: bool, query: Mapping[str, str], body: bytes
+) -> list[str]:
+    """The DTO's fields a request sent where its route does not read them — in the body of a
+    route that reads the URL, in the query string of one that reads the body.
+
+        out_of_place({"id", "dry_run"}, True, {}, b'{"dry_run": true}')        ->  ["dry_run"]
+        out_of_place({"id", "dry_run"}, False, {"dry_run": "true"}, b"{}")     ->  ["dry_run"]
+        out_of_place({"id", "dry_run"}, True, {"dry_run": "true"}, b"")        ->  []
+        out_of_place({"total"}, False, {"utm_source": "mail"}, b"{}")          ->  []
+
+    Context: only a field of the DTO counts. A body that is no JSON object carries no field, and
+    a query parameter of another name is no field of it, so neither is refused.
+    """
+    if not from_url:
+        return sorted(name for name in query if name in fields)
+    try:
+        sent = json.loads(body) if body.strip() else {}
+    except (UnicodeDecodeError, json.JSONDecodeError):
+        return []
+    return sorted(name for name in sent if name in fields) if isinstance(sent, dict) else []
 
 
 def failure_answer(error: Exception) -> tuple[int, dict[str, Any]]:

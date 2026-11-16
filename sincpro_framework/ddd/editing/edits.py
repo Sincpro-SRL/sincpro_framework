@@ -23,6 +23,9 @@ command —, and `Delete` deletes it.
     CommandDeleteInvoice(id="0192…", dry_run=True)                           what would go
     CommandDeleteInvoice(id="0192…")                                         deleted
 
+A record that goes to a trash first is `ArchivableMixin`: `Archive` puts it away, `Restore`
+brings it back, and a `Purge` a cron of the project runs deletes what was archived long enough.
+
 A command of the project's own edits the same way: its DTO is an `Edit` with fields of its own,
 its Feature an `EntityEdits` that changes the record with the domain's methods (`change`) — and
 saves drafts, stores, discards and answers as the generic one does.
@@ -47,6 +50,7 @@ else's is stale from then on, and saving it is refused.
 
 import dataclasses
 from contextlib import nullcontext
+from datetime import timedelta
 from enum import StrEnum
 from typing import Any
 
@@ -55,10 +59,20 @@ from pydantic import Field
 from sincpro_framework.common.ids import new_entity_id
 from sincpro_framework.context import Draft
 from sincpro_framework.ddd import exceptions
-from sincpro_framework.ddd.criteria import Condition, Criteria
+from sincpro_framework.ddd.criteria import (
+    All,
+    Condition,
+    CountMode,
+    Criteria,
+    Operator,
+    Pagination,
+    Sort,
+)
 from sincpro_framework.ddd.editing.editing import apply_values, form_values, recompute
 from sincpro_framework.ddd.editing.preview import FormWarning, read_only
 from sincpro_framework.ddd.entity import extensions
+from sincpro_framework.ddd.entity.entity import utc_now
+from sincpro_framework.ddd.entity.mixins.archivable import ArchivableMixin
 from sincpro_framework.ddd.metamodel import model_of
 from sincpro_framework.ddd.query import DraftState, ResponseRecord
 from sincpro_framework.ddd.reads.reads import (
@@ -78,6 +92,7 @@ from sincpro_framework.sincpro_abstractions import (
     DryRunnable,
     Preview,
 )
+from sincpro_framework.sincpro_logger import logger
 
 
 class EditAction(StrEnum):
@@ -140,9 +155,66 @@ class Delete[T](DryRunnable):
     """The stored record's version the caller read: refused when the record moved past it."""
 
 
+class Archive[T](DryRunnable):
+    """A record put away by its key — out of every reading, never lost: a trash a `Restore`
+    brings it back from and a `Purge` empties. `dry_run=True` says what would be archived.
+
+        class CommandTrashBanner(Archive[Banner]):      # Banner(ArchivableMixin, Entity)
+            pass
+
+    It answers nothing, as `Delete` does.
+    """
+
+    id: str
+    """The record's key (`DEFAULT_GET_ID`)."""
+    origin_version: int | None = None
+    """The stored record's version the caller read: refused when the record moved past it."""
+
+
+class Restore[T](DryRunnable):
+    """An archived record brought back by its key, into every reading again. `dry_run=True` says
+    what would be restored.
+
+        class CommandRestoreBanner(Restore[Banner]):
+            pass
+    """
+
+    id: str
+    """The archived record's key (`DEFAULT_GET_ID`)."""
+    origin_version: int | None = None
+    """The archived record's version the caller read: refused when it moved past it."""
+
+
+class Purge[T](DryRunnable):
+    """The records archived longer ago than `older_than`, deleted for good — what a cron of the
+    project runs when it wants its trash emptied; the framework never schedules it.
+
+        class CommandPurgeBanners(Purge[Banner]):
+            pass
+
+        CommandPurgeBanners(older_than=timedelta(days=30))                 deleted, batch by batch
+        CommandPurgeBanners(older_than=timedelta(days=30), dry_run=True)   how many would go
+    """
+
+    older_than: timedelta = Field(ge=timedelta(0))
+    """How long a record stays archived before it is deleted for good."""
+    batch_size: int = Field(default=500, gt=0)
+    """How many records each unit of work deletes."""
+
+
+def _archivable(entity: type, dto: Any) -> None:
+    """Refuses an `Archive`, a `Restore` or a `Purge` of an entity that has nowhere to say it
+    was archived."""
+    if not issubclass(entity, ArchivableMixin):
+        raise exceptions.ProgrammingError(
+            f"{type(dto).__name__} archives {entity.__name__}, which is not archivable: "
+            f"class {entity.__name__}(ArchivableMixin, Entity)"
+        )
+
+
 class EntityEdits[T](EntityReads[T]):
-    """The Feature that answers `Edit` and `Delete` for one entity — and every read
-    `EntityReads` answers, so one Feature can serve a form whole.
+    """The Feature that answers `Edit`, `Delete`, `Archive`, `Restore` and `Purge` for one
+    entity — and every read `EntityReads` answers, so one Feature can serve a form whole.
 
     @billing.feature([QueryGetInvoice, CommandEditInvoice])
     class InvoiceForms(EntityEdits[Invoice]):
@@ -253,13 +325,20 @@ class EntityEdits[T](EntityReads[T]):
         draft = drafts.save(subject, form_values(entity, dumped(record)), origin, dto.version)
         return self.answered(entity, response, record, draft, current != origin, warnings)
 
-    def writable(self, entity: type, key: str) -> Any:
+    def writable(self, entity: type, key: str, archived: bool = False) -> Any:
         """The stored record of `key` as the store holds it — the instance a save or a deletion
         writes, read as a preview reads it, with the relations its computations read — or
-        `None` when there is none yet."""
-        criteria = self.by_identity(
-            entity, Condition(field=key_of(entity), value=key), 1, Criteria()
-        )
+        `None` when there is none yet. `archived` reads an archived one, which no other
+        reading answers."""
+        where: Any = Condition(field=key_of(entity), value=key)
+        if archived:
+            where = All(
+                all=[
+                    where,
+                    Condition(field="archived_at", operator=Operator.IS_NULL, value=False),
+                ]
+            )
+        criteria = self.by_identity(entity, where, 1, Criteria())
         page = self.reads_from().search(entity, with_computed_relations(entity, criteria))
         return page.items[0] if page.items else None
 
@@ -289,7 +368,7 @@ class EntityEdits[T](EntityReads[T]):
         origin = existing.origin_version if existing is not None else dto.origin_version
         current = getattr(record, "version", 0)
         if origin is not None and current != origin:
-            now = f"now {current}" if record is not None else "deleted since"
+            now = f"now {current}" if record is not None else "deleted or archived since"
             raise exceptions.StaleAggregate(
                 f"{entity.__name__} {dto.id} changed since the edit started (version {origin}, "
                 f"{now}): read it again"
@@ -462,16 +541,27 @@ class EntityEdits[T](EntityReads[T]):
         for needs a commit, and a dry run has none.
         """
 
-    def deletable(self, entity: type, dto: Any) -> Any:
-        """The stored record a `Delete` names, as the store holds it — the instance it removes.
+    def archiving(self, record: Any, dto: Any, /) -> None:
+        """What archiving does with the record before it is put away: nothing, by default.
+        Override it to refuse when the domain says the record cannot go to the trash."""
+
+    def restoring(self, record: Any, dto: Any, /) -> None:
+        """What restoring does with the record before it comes back: nothing, by default.
+        Override it to refuse when it cannot come back — a code another record took
+        meanwhile."""
+
+    def targeted(self, entity: type, dto: Any, archived: bool = False) -> Any:
+        """The stored record a `Delete`, an `Archive` or a `Restore` names, as the store holds
+        it — the instance it writes; an archived one for a `Restore`.
 
         1. `AggregateNotFound` when there is none.
         2. `StaleAggregate` when it moved past the version the caller read.
         Final: the record.
         """
-        record = self.writable(entity, dto.id)
+        record = self.writable(entity, dto.id, archived)
         if record is None:
-            raise exceptions.AggregateNotFound(f"{entity.__name__} {dto.id} does not exist")
+            missing = "is not archived" if archived else "does not exist"
+            raise exceptions.AggregateNotFound(f"{entity.__name__} {dto.id} {missing}")
         current = getattr(record, "version", 0)
         if dto.origin_version is not None and current != dto.origin_version:
             raise exceptions.StaleAggregate(
@@ -479,6 +569,18 @@ class EntityEdits[T](EntityReads[T]):
                 f"{dto.origin_version}, now {current}): read it again"
             )
         return record
+
+    def purgeable(self, entity: type, dto: Any) -> Criteria:
+        """What a `Purge` deletes, a batch at a time: the records archived before `older_than`
+        ago, oldest identity first. Override it to keep some longer."""
+        return Criteria(
+            selection=Condition(
+                field="archived_at", operator=Operator.LT, value=utc_now() - dto.older_than
+            ),
+            order=Sort.parse("id"),
+            pagination=Pagination(limit=dto.batch_size),
+            count=CountMode.NONE,
+        )
 
     def delete(self, dto: Any) -> None:
         """The record deleted, and the caller's draft of it dropped.
@@ -490,47 +592,148 @@ class EntityEdits[T](EntityReads[T]):
 
         1. In one unit of work when the store transacts, so what `deleting` waits for runs once
            the deletion committed, and none of it when it is undone.
-        2. The stored record (`deletable`), `deleting`, then the record removed: what it
+        2. The stored record (`targeted`), `deleting`, then the record removed: what it
            recorded is stored with the removal, and the parts it owns go with it.
         Final: the caller's draft of it dropped, once the deletion is stored.
         """
         entity, _ = declared_by(type(dto))
         repository = self.reads_from()
         with repository.context() if isinstance(repository, Transacts) else nullcontext():
-            record = self.deletable(entity, dto)
+            record = self.targeted(entity, dto)
             self.deleting(record, dto)
             repository.remove(record)
         self.drafts().discard(self.draft_subject(entity, dto.id))
 
-    def preview(self, dto: Any) -> Any:
-        """A dry run of a `Delete`: the record found and checked as the deletion checks it,
-        nothing deleted and `deleting` not run. Any other DTO is the `PreviewEntity`
-        `EntityReads` answers.
+    def archive(self, dto: Any) -> None:
+        """The record put away — out of every reading, kept for a `Restore` — and the caller's
+        draft of it dropped.
 
-            preview(CommandDeleteBanner(id="0192…", dry_run=True))
+            archive(CommandTrashBanner(id="0192…"))     ->  None; restorable until purged
+
+        1. Only an archivable entity.
+        2. In one unit of work when the store transacts, as a deletion is.
+        3. The stored record (`targeted`), `archiving`, then the record archived.
+        Final: the caller's draft of it dropped.
+        """
+        entity, _ = declared_by(type(dto))
+        _archivable(entity, dto)
+        repository = self.reads_from()
+        with repository.context() if isinstance(repository, Transacts) else nullcontext():
+            record = self.targeted(entity, dto)
+            self.archiving(record, dto)
+            repository.archive(record)
+        self.drafts().discard(self.draft_subject(entity, dto.id))
+
+    def restore(self, dto: Any) -> None:
+        """An archived record brought back into every reading.
+
+            restore(CommandRestoreBanner(id="0192…"))   ->  None; the banner read again
+            restore(CommandRestoreBanner(id="0193…"))   ->  raises AggregateNotFound, none archived
+
+        1. Only an archivable entity.
+        2. In one unit of work when the store transacts.
+        Final: the archived record (`targeted`), `restoring`, then the record restored and saved.
+        """
+        entity, _ = declared_by(type(dto))
+        _archivable(entity, dto)
+        repository = self.reads_from()
+        with repository.context() if isinstance(repository, Transacts) else nullcontext():
+            record = self.targeted(entity, dto, archived=True)
+            self.restoring(record, dto)
+            record.restore()
+            repository.save(record)
+
+    def purge(self, dto: Any) -> None:
+        """Every record archived longer ago than `older_than`, deleted for good.
+
+            purge(CommandPurgeBanners(older_than=timedelta(days=30)))   ->  None; logged: how many
+
+        1. Only an archivable entity.
+        2. A batch at a time (`purgeable`), each one unit of work when the store transacts:
+           `deleting` for each record, then the batch removed — their facts stored with them.
+        3. Until a batch finds none. A refusal stops the purge; the batches before it stay
+           deleted.
+        Final: how many went, logged once.
+        """
+        entity, _ = declared_by(type(dto))
+        _archivable(entity, dto)
+        repository = self.reads_from()
+        purged = 0
+        while True:
+            with repository.context() if isinstance(repository, Transacts) else nullcontext():
+                batch = list(repository.search(entity, self.purgeable(entity, dto)).items)
+                for one in batch:
+                    self.deleting(one, dto)
+                repository.remove(batch)
+            if not batch:
+                break
+            purged += len(batch)
+        logger.info(
+            f"purged {purged} {entity.__name__} archived more than {dto.older_than} ago"
+        )
+
+    def would(self, dto: Any, verb: str, archived: bool = False) -> Preview:
+        """What a dry run of an action on one record answers: the record found and checked as
+        the action checks it (`targeted`), named as a person reads it.
+
+            would(CommandDeleteBanner(id="0192…", dry_run=True), "delete")
                 ->  Preview(text="Would delete Banner 0192… «Summer sale»",
                             data={"id": "0192…", "version": 3})
 
-        The version in `data` is the one a confirmed deletion names as `origin_version`, so it
-        deletes the record the person was shown.
+        The version in `data` is the one a confirmed action names as `origin_version`, so it
+        writes the record the person was shown.
         """
-        if not isinstance(dto, Delete):
-            return super().preview(dto)
         entity, _ = declared_by(type(dto))
-        record = self.deletable(entity, dto)
+        record = self.targeted(entity, dto, archived)
         display = model_of(entity).presented.display
         shown = f" «{getattr(record, display)}»" if display else ""
         return Preview(
-            text=f"Would delete {entity.__name__} {dto.id}{shown}",
+            text=f"Would {verb} {entity.__name__} {dto.id}{shown}",
             data={"id": dto.id, "version": getattr(record, "version", 0)},
         )
 
+    def preview(self, dto: Any) -> Any:
+        """A dry run of a `Delete`, an `Archive`, a `Restore` or a `Purge`: checked as it would
+        be, nothing written and no hook run. Any other DTO is the `PreviewEntity`
+        `EntityReads` answers.
+
+            preview(CommandPurgeBanners(older_than=timedelta(days=30), dry_run=True))
+                ->  Preview(text="Would purge 12 Banner archived more than 30 days, 0:00:00 ago",
+                            data={"count": 12})
+        """
+        match dto:
+            case Delete():
+                return self.would(dto, "delete")
+            case Archive():
+                _archivable(declared_by(type(dto))[0], dto)
+                return self.would(dto, "archive")
+            case Restore():
+                _archivable(declared_by(type(dto))[0], dto)
+                return self.would(dto, "restore", archived=True)
+            case Purge():
+                entity, _ = declared_by(type(dto))
+                _archivable(entity, dto)
+                selection = self.purgeable(entity, dto).selection
+                count = self.reads_from().count(entity, Criteria(selection=selection)).value
+                return Preview(
+                    text=f"Would purge {count} {entity.__name__} archived more than "
+                    f"{dto.older_than} ago",
+                    data={"count": count},
+                )
+        return super().preview(dto)
+
     def execute(self, dto: Any) -> Any:
-        """An `Edit` is edited and a `Delete` deleted; every other DTO is a read `EntityReads`
-        answers."""
+        """An `Edit` is edited, a `Delete` deleted, an `Archive` archived, a `Restore` restored
+        and a `Purge` purged; every other DTO is a read `EntityReads` answers."""
         match dto:
             case Edit():
                 return self.edit(dto)
             case Delete():
                 return self.delete(dto)
+            case Archive():
+                return self.archive(dto)
+            case Restore():
+                return self.restore(dto)
+            case Purge():
+                return self.purge(dto)
         return super().execute(dto)

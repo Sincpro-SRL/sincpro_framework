@@ -28,6 +28,21 @@ field twice and landing back
 on the original value nets to no change — the point of comparing snapshots rather than watching
 every `=`.
 
+**A record's life is tracked too**: removed, it records `EntityDeleted`; archived,
+`EntityArchived`; brought back, `EntityRestored` — whichever way it was written (a `Delete`, a
+`repository.remove`, a `Purge`), so an audit holds every one and a subscriber can act on it. A
+bounded context stores them in its event table by declaring its own once, on its entities' base:
+
+    @dataclass(kw_only=True)
+    class BillingDeleted(EntityDeleted, BillingEvent):
+        name = "billing.v1.deleted"
+
+    class BillingEntity(ChangeTrackingMixin, Entity):
+        change_event = BillingUpdated
+        delete_event = BillingDeleted
+
+A creation records nothing here: what a record was made for is the domain's own fact.
+
 **Nothing here depends on a database, a queue or an outbox.** `record()` is still the same
 in-memory list it always was (`entity.py`); if nobody calls `pull_events()`, nothing happens
 beyond this call.
@@ -49,6 +64,10 @@ from sincpro_framework.ddd.events.domain_event import DomainEvent
 SNAPSHOT = "_change_snapshot"
 """Where a record holds the field values it is compared against, by name. Lives in `__dict__`,
 like `RECORDED` in `entity.py` — bookkeeping, never a dataclass field."""
+
+ARCHIVED = "_archived_baseline"
+"""Where a record holds the `archived_at` it was read with, so a store with no flush tells an
+archiving or a restoring on `save()`. Bookkeeping in `__dict__`, as `SNAPSHOT`."""
 
 _RESERVED = frozenset(
     field.name
@@ -104,6 +123,42 @@ class EntityUpdated(DomainEvent):
     """
 
 
+@dataclasses.dataclass(kw_only=True)
+class EntityDeleted(DomainEvent):
+    """What a `ChangeTrackingMixin` aggregate records when it is removed — kept in its
+    context's history after the row is gone. A context names its own with `delete_event`."""
+
+    name = "ddd.entity.v1.deleted"
+
+    label: dict[str, str] = dataclasses.field(
+        default_factory=lambda: {"default": "Deleted", "es": "Se eliminó"}
+    )
+
+
+@dataclasses.dataclass(kw_only=True)
+class EntityArchived(DomainEvent):
+    """What a `ChangeTrackingMixin` aggregate records when it is archived — put away, out of
+    every reading, not lost. A context names its own with `archive_event`."""
+
+    name = "ddd.entity.v1.archived"
+
+    label: dict[str, str] = dataclasses.field(
+        default_factory=lambda: {"default": "Archived", "es": "Se archivó"}
+    )
+
+
+@dataclasses.dataclass(kw_only=True)
+class EntityRestored(DomainEvent):
+    """What a `ChangeTrackingMixin` aggregate records when it is brought back from the archive.
+    A context names its own with `restore_event`."""
+
+    name = "ddd.entity.v1.restored"
+
+    label: dict[str, str] = dataclasses.field(
+        default_factory=lambda: {"default": "Restored", "es": "Se restauró"}
+    )
+
+
 class ChangeTrackingMixin:
     """Opt-in, no fields of its own — a subclass declares nothing beyond what it already has.
 
@@ -116,6 +171,9 @@ class ChangeTrackingMixin:
     """
 
     change_event: ClassVar[type[DomainEvent]] = EntityUpdated
+    delete_event: ClassVar[type[DomainEvent]] = EntityDeleted
+    archive_event: ClassVar[type[DomainEvent]] = EntityArchived
+    restore_event: ClassVar[type[DomainEvent]] = EntityRestored
 
     def __post_init__(self) -> None:
         """A freshly built aggregate starts compared against its own constructor values.
@@ -181,14 +239,35 @@ class ChangeTrackingMixin:
             return None
         return self.record(self.change_event(**self._said_about(changed)))  # type: ignore[attr-defined]
 
+    def record_deletion(self) -> DomainEvent:
+        """The `delete_event`, recorded as the store removes this aggregate — stored with the
+        removal, so its history holds it after the row is gone."""
+        return self.record(self.delete_event())  # type: ignore[attr-defined]
+
+    def record_archiving(self, before: Any, after: Any) -> "DomainEvent | None":
+        """The `archive_event` when `archived_at` went from nothing to a moment, the
+        `restore_event` when it went back to nothing — what the store saw of it.
+
+            record_archiving(None, datetime(2026, 11, 16))   ->  EntityArchived
+            record_archiving(datetime(2026, 11, 16), None)   ->  EntityRestored
+            record_archiving(None, None)                     ->  None, nothing moved
+        """
+        if before is None and after is not None:
+            return self.record(self.archive_event())  # type: ignore[attr-defined]
+        if before is not None and after is None:
+            return self.record(self.restore_event())  # type: ignore[attr-defined]
+        return None
+
     def _snapshot(self, force: bool = False) -> None:
-        """Sets the baseline `changes()` compares against. `force=False` (a plain read) never
-        overwrites one already there — the same object handed back twice inside one unit of
-        work must not lose the values it was first read with."""
+        """Sets the baseline `changes()` compares against, and the `archived_at` an archiving
+        is told by. `force=False` (a plain read) never overwrites one already there — the same
+        object handed back twice inside one unit of work must not lose the values it was first
+        read with."""
         if force or SNAPSHOT not in self.__dict__:
             self.__dict__[SNAPSHOT] = {
                 name: getattr(self, name) for name in self.tracked_fields()
             }
+            self.__dict__[ARCHIVED] = getattr(self, "archived_at", None)
 
     def changes(self) -> dict[str, tuple[Any, Any]]:
         """`{field: (before, after)}` for every tracked field that actually differs from the
@@ -216,6 +295,9 @@ class ChangeTrackingMixin:
         one: publish one or the other, never both. Whatever it answers, the baseline moves to
         the current state, so the next cycle compares from here.
 
+        An archiving or a restoring since the baseline is recorded beside it
+        (`record_archiving`).
+
         This is the baseline half, which a store with no flush calls on every `save()`. A store
         that can ask its engine what changed calls `record_change` with that answer instead;
         calling either by hand is the explicit mode, and all of them end in the same place.
@@ -223,5 +305,6 @@ class ChangeTrackingMixin:
         if self.is_new:  # type: ignore[attr-defined]
             return None
         recorded = self.record_change(self.changes())
+        self.record_archiving(self.__dict__.get(ARCHIVED), getattr(self, "archived_at", None))
         self._snapshot(force=True)
         return recorded

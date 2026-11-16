@@ -712,6 +712,6 @@ def test_a_deletion_drops_the_callers_draft_and_nobody_elses_brings_the_record_b
 
     assert shop.drafts(ANA).invoices == []
     assert drafted(shop.get(BOB, id=invoice.id, draft=True)).stale
-    with pytest.raises(ddd_exceptions.StaleAggregate, match="deleted since"):
+    with pytest.raises(ddd_exceptions.StaleAggregate, match="deleted or archived since"):
         shop.edit(BOB, id=invoice.id, version=drafted(kept).version, action=EditAction.SAVE)
     assert shop.repository.get(Invoice, invoice.id) is None
