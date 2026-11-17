@@ -587,3 +587,55 @@ def test_a_literal_fills_text_inside_a_list_too():
     found = bus(QueryFindCoded(text="7"), ResponseCoded)
 
     assert sorted(one.code for one in found.coded) == ["0", "7"]
+
+
+def test_a_grouped_search_answers_its_groups_counted_over_every_record():
+    """The criteria's `grouping` is answered: each group with its value, how many records it
+    holds — all of them, not the page's —, and the criteria that opens it."""
+    bus = bus_with(CAJA, BANCO, CHICA)
+    by_city = Criteria.model_validate({"grouping": {"group_by": [{"field": "city"}]}})
+
+    answer = bus(QueryListAccounts(criteria=by_city), ResponseListAccounts)
+
+    assert answer.groups is not None
+    assert {one.value: one.count for one in answer.groups} == {"La Paz": 2, "Santa Cruz": 1}
+    la_paz = next(one for one in answer.groups if one.value == "La Paz")
+    opened = bus(QueryListAccounts(criteria=la_paz.criteria), ResponseListAccounts)
+    assert sorted(one.name for one in opened.accounts) == ["Caja", "Caja chica"]
+
+
+def test_a_grouped_search_nests_as_many_levels_as_it_names():
+    bus = bus_with(CAJA, BANCO, CHICA)
+    by_city_and_name = Criteria.model_validate(
+        {"grouping": {"group_by": [{"field": "city"}, {"field": "name"}]}}
+    )
+
+    answer = bus(QueryListAccounts(criteria=by_city_and_name), ResponseListAccounts)
+
+    assert answer.groups is not None
+    la_paz = next(one for one in answer.groups if one.value == "La Paz")
+    assert {one.value: one.count for one in la_paz.groups} == {"Caja": 1, "Caja chica": 1}
+
+
+def test_a_grouped_page_pages_each_group():
+    """With a page asked, every group carries the ids of its first page and the cursor to go on
+    inside it."""
+    bus = bus_with(CAJA, BANCO, CHICA)
+    one_per_city = Criteria.model_validate(
+        {"grouping": {"group_by": [{"field": "city"}]}, "pagination": {"limit": 1}}
+    )
+
+    answer = bus(QueryListAccounts(criteria=one_per_city), ResponseListAccounts)
+
+    assert answer.groups is not None
+    by_city = {one.value: one for one in answer.groups}
+    assert (len(by_city["La Paz"].ids), by_city["La Paz"].cursor is not None) == (1, True)
+    assert (len(by_city["Santa Cruz"].ids), by_city["Santa Cruz"].cursor) == (1, None)
+
+
+def test_a_search_that_groups_nothing_answers_no_groups_and_writes_none():
+    """An answer that grouped nothing is what it always was, on the wire too."""
+    answer = bus_with(CAJA, BANCO)(QueryListAccounts(), ResponseListAccounts)
+
+    assert answer.groups is None
+    assert "groups" not in answer.model_dump(mode="json")

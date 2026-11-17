@@ -174,8 +174,10 @@ class Criteria(Strict):
     exactly what it existed to prevent."""
 
     grouping: Grouping = Field(default_factory=lambda: Grouping())
-    """How to split the result set, when it is being counted rather than listed. Ignored by a
-    plain search: a page of records has no buckets."""
+    """How to split the result set into groups, as many levels deep as it names. A search
+    answers them in `groups`, beside its records: each group's value, how many records it holds
+    over the whole set, its measures, the criteria that opens it and, with a page asked, the ids
+    of its first page and the cursor to go on inside it."""
 
     count: CountMode = CountMode.CAPPED
 

@@ -113,9 +113,11 @@ class TestWhatTheOpenApiPublishes:
             "count",
             "cursor",
             "dropped",
+            "groups",
             "model_version",
             "things",
         ]
+        assert "groups" not in published["required"]  # written only when the criteria grouped
         assert published["properties"]["things"]["items"]["$ref"].endswith("Thing")
         assert "Count" in str(published["properties"]["count"])
         assert published["properties"]["model_version"]["type"] == "string"
@@ -146,7 +148,8 @@ class TestWhatTheOpenApiPublishes:
         assert "specification" in published["description"]
 
     def test_what_it_publishes_is_what_it_writes(self):
-        """The claim under the schema: these are the keys a real answer carries."""
+        """The claim under the schema: these are the keys a real answer carries — `groups` only
+        when its criteria grouped."""
 
         class ResponseListThings(ResponsePaginatedQuery):
             things: list[Thing] = []
@@ -158,4 +161,5 @@ class TestWhatTheOpenApiPublishes:
         written = answer.model_dump(mode="json")
         published = ResponseListThings.model_json_schema(mode="serialization")
 
-        assert sorted(written) == sorted(published["properties"])
+        assert sorted(written) == sorted(published["required"])
+        assert sorted(published["properties"]) == sorted([*written, "groups"])

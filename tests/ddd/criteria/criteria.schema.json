@@ -154,7 +154,7 @@
         },
         "grouping": {
           "$ref": "#/$defs/Grouping",
-          "description": "How to split the result set, when it is being counted rather than listed. Ignored by a\nplain search: a page of records has no buckets."
+          "description": "How to split the result set into groups, as many levels deep as it names. A search\nanswers them in `groups`, beside its records: each group's value, how many records it holds\nover the whole set, its measures, the criteria that opens it and, with a page asked, the ids\nof its first page and the cursor to go on inside it."
         },
         "count": {
           "$ref": "#/$defs/CountMode",

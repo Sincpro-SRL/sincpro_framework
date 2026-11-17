@@ -108,6 +108,7 @@ from sincpro_framework.ddd.query import (
     writing_out,
 )
 from sincpro_framework.ddd.reads.defaults import detail_of, matching
+from sincpro_framework.ddd.repositories.capabilities import Analyzes
 from sincpro_framework.ddd.repositories.repository import IRepository
 from sincpro_framework.sincpro_abstractions import DataTransferObject, Feature
 
@@ -189,6 +190,9 @@ class Search[T, R: ResponsePaginatedQuery](Query):
 
     QueryListInvoices(criteria=…)                   the stored records
     QueryListInvoices(criteria=…, drafts=True)      the caller's drafts of them, by the same criteria
+    QueryListInvoices(criteria={"grouping": {"group_by": [{"field": "state"}]}})
+        its groups too, in `groups`: each one's value, count, measures and the criteria that
+        opens it, as many levels deep as `group_by` names
     """
 
     drafts: bool = False
@@ -784,14 +788,31 @@ class EntityReads[T](Feature):
                 ->  ResponseInvoices(invoices=[…], cursor=…, count=…)
             QuerySearchInvoices(criteria=…, drafts=True)
                 ->  the caller's drafts of invoices instead (`drafted_page`)
+            by_state = Criteria(grouping={"group_by": [{"field": "state"}]})
+            QuerySearchInvoices(criteria=by_state)
+                ->  ResponseInvoices(groups=[Bucket(value="paid", count=187, …), …],
+                                     invoices=[…])
 
         The entity's `DEFAULT_READING` is the starting point; the caller's criteria replaces
-        it part by part.
+        it part by part. A criteria that groups is answered with its groups
+        (`group_by_levels`), as many levels deep as it named, beside the records the store
+        answers for it — with a page asked, the first of every group, which a relation resolved
+        through the bus reads. A store that cannot group (`Analyzes`) refuses it.
         """
         entity, response = declared_by(type(dto))
         criteria = (detail_of(entity) or Criteria()).replaced_by(dto.criteria)
         if dto.drafts:
             return response.of(self.drafted_page(entity, criteria), criteria)
+        repository = self.reads_from()
+        if criteria.grouping.asked:
+            if not isinstance(repository, Analyzes):
+                raise exceptions.ProgrammingError(
+                    f"{type(repository).__name__} cannot group: a store that answers a "
+                    f"criteria's grouping claims Analyzes ({type(dto).__name__})"
+                )
+            answer = response.of(repository.search(entity, criteria), criteria)
+            answer.groups = repository.group_by_levels(entity, criteria)
+            return answer
         if encoding_of(dto, criteria) == PageFormat.PARQUET:
             from sincpro_framework.data_layer.data_analysis.export import searched_as_parquet
 
