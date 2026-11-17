@@ -32,7 +32,7 @@ broker is down.
 
 | Term | What it is | Kind | Import |
 |---|---|---|---|
-| `DomainEvent` | A past-tense fact: an `Entity` with `id` (UUID v7), timestamps, `entity_type`, `entity_id`, `entity_display` (who the record was), `actor` (who did it: the context's `user_id`), `entity_version`, correlation/causation ids, `label`, and a wire `name`; `record()` stamps them | dataclass | `sincpro_framework.ddd` |
+| `DomainEvent` | A past-tense fact: an `Entity` with `id` (UUID v7), timestamps, `entity_type`, `entity_id`, `entity_display` (who the record was), `actor` (who did it: the context's `user_id` — on a bus guarded by `AccessControl`, the identity let in when nothing said one), `entity_version`, correlation/causation ids, `label`, and a wire `name`; `record()` stamps them | dataclass | `sincpro_framework.ddd` |
 | `name` | The wire identity of an event class (`"billing.invoice.v1.posted"`), a plain class attribute; defaults to the class name. Routing, storage and brokers match on it | setting | (class attribute) |
 | `Entity.record` / `pull_events` / `recorded_events` | Store a copy stamped with aggregate type/id / drain the in-memory events / inspect without draining | method | `sincpro_framework.ddd` (on `Entity`) |
 | `DomainEvent.caused_by(cause)` | A copy with `causation_id`/`correlation_id` threaded from the incoming event | function | (method) |

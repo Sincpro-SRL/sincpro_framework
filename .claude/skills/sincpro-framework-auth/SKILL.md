@@ -213,6 +213,11 @@ with security.as_system("cron: close cash registers"):
 Who acts follows the execution into every bus it calls and into `thread_context()`; it does not
 cross to another service by itself — `ServiceTokenProvider.credentials_for` does that.
 
+On a guarded bus, the identity let in (unless anonymous) is the execution's `user_id` when
+nothing said one. That is what `Entity.record()` stamps as `actor`, and what an `AuditedMixin` record stamps as
+`created_by`. Don't write a `context_provider` that copies `security.identity.subject` into
+`user_id`. Write one only when `user_id` is something else: a profile id, say. Yours wins.
+
 ## Hooks
 
 ```python

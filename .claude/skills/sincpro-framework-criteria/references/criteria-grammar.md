@@ -21,7 +21,7 @@
 | `order` | a list of `{"field", "descending"}` | the identity is appended as tiebreaker; nullable fields are refused |
 | `pagination` | `limit` (default 50) and `strategy` | `{"token": …}` is a `Cursor` (default), `{"rows": n}` an `Offset` |
 | `specification` | field → criteria, recursive | what to bring back; relations named here are resolved |
-| `grouping` | `group_by`, `measures`, `where_measures`, `order`, `pagination` | used by `group_by_levels`, and by `search` for "a page per group" |
+| `grouping` | `group_by`, `measures`, `where_measures`, `order`, `pagination` | used by `group_by_levels`, by `search` for "a page per group", and answered by the generic `Search` as `groups` |
 | `count` | `none`, `capped` (default), `exact` | |
 
 Unknown keys are refused: `op`, `desc`, a top-level `limit` or `grouping.by` raise a

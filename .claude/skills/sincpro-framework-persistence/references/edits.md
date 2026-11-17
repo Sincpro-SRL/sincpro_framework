@@ -37,9 +37,14 @@ CommandEditInvoice(id=new_id, version=v, action=EditAction.SAVE)                
 CommandEditInvoice(id=new_id, action=EditAction.DISCARD)                            # drop the draft
 QueryGetInvoice(id=new_id, draft=True)                                              # after the browser closed
 QueryListInvoices(criteria=Criteria(), drafts=True)                                 # what was I editing?
-CommandDeleteInvoice(id=new_id, dry_run=True)                                       # Preview for the confirmation
+CommandDeleteInvoice(id=new_id, dry_run=True)                                       # Preview: «Se eliminará Factura «F-0042»», data {id, version, display}
 CommandDeleteInvoice(id=new_id, origin_version=v)                                   # deleted; refused if it moved
 ```
+
+A dry run of `Delete`/`Archive`/`Restore`/`Purge` says what it would do in the call's
+`ContextKey.LANG`. It names the entity by its title (`translations()`) and the record by its
+display (`DEFAULT_DISPLAY`, else its id), and `data.display` lets a screen word it itself. Set `lang`
+in the context (a `context_provider`) instead of rewriting `would`.
 
 Each answer is the record with its computed fields, `draft` (version, `stale`), `states` and
 `warnings`. `DraftConflict` (409) when another tab saved its draft first; `StaleAggregate` when somebody saved

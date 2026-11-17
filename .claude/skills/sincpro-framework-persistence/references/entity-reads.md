@@ -92,6 +92,7 @@ class InvoiceReads(EntityReads[Invoice]):
 | `bus(QueryGetManyInvoices(ids=["F-1", "F-2"]), ResponseInvoices)` | `invoices` in the order of `ids`, `missing` for absent keys |
 | `bus(QueryFindInvoices(text="F-001"), ResponseListInvoices)` | the template filled, 8 records, identity + display; blank text → first 8 in order |
 | `bus(QueryListInvoices(), ResponseListInvoices)` | a page, each as `DEFAULT_READING` brings it, in `DEFAULT_ORDER` |
+| `bus(QueryListInvoices(criteria=<with grouping>), ResponseListInvoices)` | the same page plus `groups`: each group's `value`, `count` over the whole set, `measures`, the `criteria` that opens it and, with a page asked, its first `ids` and `cursor` |
 
 ## 4. The caller's criteria wins, part by part
 

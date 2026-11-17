@@ -55,6 +55,18 @@ for bucket in repository.group_by_levels(Invoice, criteria):
   a `cursor` to continue inside that group.
 - `search` with both `grouping` and `pagination` answers "the first `limit` rows of every group" in
   one statement — what the other side of a relation resolved through a bus receives.
+- **The generic `Search` answers the groups.** A `Search[T, R]` answered by `EntityReads`, sent a
+  criteria with `grouping`, answers `groups` (`list[Bucket]`, every level `group_by` names) beside
+  its records. It is the same DTO, the same route and the same criteria, over REST, JSON-RPC and MCP alike.
+  `groups` is written first and only when the criteria groups. A screen or an agent groups a list
+  by sending `grouping` to the list it already reads: never write a Feature, a route or a second
+  DTO for groups.
+
+```python
+answer = bus(QueryListInvoices(criteria=criteria), ResponseListInvoices)
+answer.groups      # [Bucket(value="paid", count=187, measures={…}, criteria=…, ids=[…], cursor="…"), …]
+answer.invoices    # the records the store answers for the same criteria
+```
 
 ## Export and explain
 
