@@ -38,7 +38,7 @@ from pydantic.json_schema import SkipJsonSchema
 from pydantic_core import to_jsonable_python
 
 from sincpro_framework.ddd import exceptions
-from sincpro_framework.ddd.criteria import Criteria, Specification
+from sincpro_framework.ddd.criteria import Bucket, Criteria, Specification
 from sincpro_framework.ddd.entity import extensions
 from sincpro_framework.ddd.entity.entity_collection import (
     Count,
@@ -410,6 +410,12 @@ class ResponsePaginatedQuery(DataTransferObject):
     take. Reported rather than raised: a shared link outlives the schema it was written
     against, and a dropped filter always widens the result."""
 
+    groups: list[Bucket] | None = None
+    """The groups the criteria asked for (`grouping`), as many levels deep as it named: each with
+    its value, how many records it holds — all of them, not the page's —, its measures, the
+    criteria that opens it and, when a page was asked, the ids of its first page and the cursor
+    to go on inside it. `None`, and not written, when the criteria grouped nothing."""
+
     _specification: Specification | None = PrivateAttr(default=None)
     _meta: Meta | None = PrivateAttr(default=None)
 
@@ -448,8 +454,16 @@ class ResponsePaginatedQuery(DataTransferObject):
         """
         mode: Literal["json", "python"] = "json" if info.mode == "json" else "python"
         records = self.records_field()
+        # The groups go first: a client that reads the one array beside the envelope
+        # (`@sincpro/criteria`'s `recordsOf`) reads the groups of a grouped answer.
+        grouped = (
+            {"groups": [one.model_dump(mode=mode) for one in self.groups]}
+            if self.groups is not None
+            else {}
+        )
         with writing_out():
             written = {
+                **grouped,
                 records: [
                     _record(item, self._specification, self._meta, mode)
                     for item in getattr(self, records)
@@ -460,7 +474,7 @@ class ResponsePaginatedQuery(DataTransferObject):
                 "dropped": [one.model_dump(mode=mode) for one in self.dropped],
             }
         for name in type(self).model_fields:
-            if name not in written:
+            if name not in written and name != "groups":
                 value = getattr(self, name)
                 written[name] = to_jsonable_python(value) if mode == "json" else value
         return written
@@ -500,7 +514,7 @@ class ResponsePaginatedQuery(DataTransferObject):
                 "identity, and nothing else."
             ),
             "properties": _properties(cls, fields, handler, cls.records_field()),
-            "required": sorted(fields),
+            "required": sorted(name for name in fields if name != "groups"),
         }
 
     @classmethod
@@ -522,7 +536,7 @@ class ResponsePaginatedQuery(DataTransferObject):
         declared = cls.model_fields[records].annotation
         # A field declared as a collection holds the page itself — its count and cursor with it;
         # one declared as a list holds its records.
-        held = page if collection_class(declared) is not None else list(page.items)
+        held: Any = page if collection_class(declared) is not None else list(page.items)
         response = cls(
             **{records: held},
             cursor=page.cursor,

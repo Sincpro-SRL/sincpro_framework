@@ -138,6 +138,24 @@ class ListAccounts(EntityReads[Account]):
 - **`Search` is the list.** Each record comes as `DEFAULT_READING` brings it, in
   `DEFAULT_ORDER`, unless the criteria names its own. An entity whose reading is deep makes
   deep lists: a caller that wants a light one names a specification.
+- **A `Search` whose criteria groups answers its groups too.** The same DTO, the same route,
+  the same criteria with `grouping`: the answer gains `groups`, as many levels deep as
+  `group_by` names — each group's `value`, its `count` over the whole set, its `measures`, the
+  `criteria` that opens it and, with a page asked, the `ids` of its first page and the `cursor`
+  inside it. The records beside them are what the store answers for that criteria (on SQL, the
+  first of every group). `groups` goes first on the wire, and is not written when nothing was
+  grouped, so a client that reads the one array beside the envelope reads the groups. A store
+  that cannot group (`Analyzes`) refuses the criteria.
+
+```python
+by_state = Criteria.model_validate({
+    "grouping": {"group_by": [{"field": "state"}],
+                 "measures": {"total": {"function": "sum", "field": "amount"}}},
+    "pagination": {"limit": 20},
+})
+answer = bus(QueryListInvoices(criteria=by_state), ResponseListInvoices)
+answer.groups   # [Bucket(value="paid", count=187, measures={"total": …}, ids=[…20], cursor="…"), …]
+```
 
 `Get` and `GetMany` read as a page filtered by the key, not through `repository.get`. That
 way the model's version (`model_version`) and the relations come back the same from every store,
