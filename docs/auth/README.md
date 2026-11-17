@@ -294,6 +294,11 @@ assert auth.authenticate(Credentials(transport="http")).is_anonymous
 - Who acts is a `ContextVar` of its own, never a key of `bus.context(...)` — the context is a
   dict anyone writes, so an identity stored there could be forged by writing it. It follows the
   execution into every bus it calls and into `thread_context()`.
+- On a guarded bus, the identity let in — unless anonymous — is the execution's `user_id` when
+  nothing said one, so every fact a use case records names it as `actor` (and an
+  `AuditedMixin` record as `created_by`). A provider of the project's that gives `user_id`
+  (`bus.context_provider(gives=["user_id"])`) or a scope that names it wins: the identity is
+  only what fills it when nothing else did.
 
 ## Skipping, strict, disabled, the system
 

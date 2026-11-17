@@ -145,6 +145,7 @@ def test_a_dry_run_of_each_step_says_what_it_would_do_and_does_nothing(site: Sit
 
     assert isinstance(trash, Preview) and trash.text == f"Would archive Banner {live.id}"
     assert isinstance(purge, Preview) and purge.data == {"count": 1}
+    assert purge.text == "Would purge 1 Banner archived more than 30 days ago"
     assert site.repository.get(Banner, live.id) is not None
     assert site.archived() == ["old"]
 
@@ -190,3 +191,62 @@ def test_a_direct_deletion_is_kept_in_the_history_too(site: Site):
 def test_only_an_archivable_entity_has_a_trash(site: Site):
     with pytest.raises(exceptions.ProgrammingError, match="Note, which is not archivable"):
         site(CommandTrashNote(id="0192ffff"))
+
+
+@dataclass
+class Poster(ArchivableMixin, Entity):
+    """Titled in two languages and shown by its caption: what a dry run names it by."""
+
+    caption: str = ""
+
+    @classmethod
+    def translations(cls) -> dict[str, str]:
+        return {"default": "Poster", "es": "Afiche"}
+
+    @classmethod
+    def DEFAULT_DISPLAY(cls) -> str:
+        return "caption"
+
+
+class CommandDeletePoster(Delete[Poster]):
+    pass
+
+
+class CommandTrashPoster(Archive[Poster]):
+    pass
+
+
+class CommandPurgePosters(Purge[Poster]):
+    pass
+
+
+def test_a_dry_run_names_the_entity_by_its_title_and_the_record_by_its_display_in_its_language():
+    """A person reads «Se eliminará Afiche «Feria»», not a class name and an id; a screen that
+    words it itself has the display in `data`."""
+    bus = UseFramework("posters", log_after_execution=False)
+    repository = MemoryRepository()
+    bus.add_dependency("repository", repository)
+    poster = Poster(caption="Feria")
+    old = Poster(caption="Viejo", archived_at=utc_now() - timedelta(days=45))
+    repository.save([poster, old])
+
+    @bus.feature([CommandDeletePoster, CommandTrashPoster, CommandPurgePosters])
+    class PosterForms(EntityEdits[Poster]):
+        pass
+
+    def rehearsed(dto) -> Preview:
+        preview = bus(dto)
+        assert isinstance(preview, Preview)
+        return preview
+
+    in_english = rehearsed(CommandDeletePoster(id=poster.id, dry_run=True))
+    with bus.context({"lang": "es"}):
+        deleted = rehearsed(CommandDeletePoster(id=poster.id, dry_run=True))
+        trashed = rehearsed(CommandTrashPoster(id=poster.id, dry_run=True))
+        purged = rehearsed(CommandPurgePosters(older_than=timedelta(days=30), dry_run=True))
+
+    assert in_english.text == "Would delete Poster «Feria»"
+    assert deleted.text == "Se eliminará Afiche «Feria»"
+    assert trashed.text == "Se archivará Afiche «Feria»"
+    assert purged.text == "Se purgarán 1 Afiche archivados hace más de 30 días"
+    assert deleted.data == {"id": poster.id, "version": 1, "display": "Feria"}

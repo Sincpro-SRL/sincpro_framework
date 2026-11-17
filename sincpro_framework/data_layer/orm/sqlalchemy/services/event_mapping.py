@@ -98,15 +98,21 @@ def unpacked(target: Any, _context: Any) -> None:
         unpacked(event, context)   ->  None; event.invoice_id == "F-1",
                                        event.amount == Decimal("10.50") as the class declares
 
-    The envelope the row already set is preserved; only the fields missing from the event are
-    taken from the event rebuilt out of envelope and payload.
+    The envelope the row already set is preserved; the fields missing from the event, and those
+    the row holds empty, are taken from the event rebuilt out of envelope and payload. An empty
+    column is one a migration added to rows already stored: such a row carried the field in its
+    payload while the table had no column for it, or was written before the field existed and
+    reads its default.
+
+        row: entity_display NULL, payload {"entity_display": "mug"}   ->  event.entity_display == "mug"
+        row: entity_display NULL, payload {}                          ->  event.entity_display == ""
     """
     known = target.__dict__
-    whole = {name: known[name] for name in ENVELOPE if name in known}
+    whole = {name: known[name] for name in ENVELOPE if known.get(name) is not None}
     whole.update(known.get("payload_of_class") or {})
     rebuilt = cast(Any, type(target)).from_json(whole)
     for one in dataclasses.fields(type(target)):
-        if one.name not in known:
+        if known.get(one.name) is None:
             known[one.name] = getattr(rebuilt, one.name)
 
 

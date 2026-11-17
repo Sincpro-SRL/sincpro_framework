@@ -203,8 +203,14 @@ shows, and over REST a `200` with it.
 |---|---|---|
 | `CommandDeleteInvoice(id=…)` | the stored record removed — the parts it owns with it — and the caller's draft of it dropped | nothing |
 | `…, origin_version=N` | refused with `StaleAggregate` when the record moved past `N` | — |
-| `…, dry_run=True` | nothing deleted | `Preview(text="Would delete Invoice … «…»", data={"id", "version"})` |
+| `…, dry_run=True` | nothing deleted | `Preview(text="Would delete Invoice «F-0042»", data={"id", "version", "display"})` |
 | a key with no record | `AggregateNotFound` | — |
+
+**A dry run speaks the call's language.** Its text names the entity by its title
+(`translations()`, else its class) and the record by its display (`DEFAULT_DISPLAY`, else its
+id), in the call's `ContextKey.LANG` — `"es"`: `Se eliminará Factura «F-0042»`; the same for
+`Archive`, `Restore` and `Purge`. `data` carries the display, so a screen that words it itself
+has it.
 
 **Its history keeps it.** An entity with `ChangeTrackingMixin` records `EntityDeleted` when the
 store removes it — whichever way: this `Delete`, a `repository.remove`, a `Purge` — stored with

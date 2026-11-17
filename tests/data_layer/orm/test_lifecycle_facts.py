@@ -9,7 +9,7 @@ from dataclasses import dataclass
 from datetime import timedelta
 
 import pytest
-from sqlalchemy import Column, MetaData, Table, Text
+from sqlalchemy import Column, MetaData, Table, Text, select
 from sqlalchemy.orm import registry
 
 from sincpro_framework import UseFramework
@@ -230,3 +230,33 @@ def test_an_event_table_made_before_its_envelope_grew_still_keeps_every_field(en
 
     [deleted] = repository.search(OlderEvent, history_of(product)).items
     assert (deleted.entity_display, deleted.actor) == ("mug", "ana")
+
+
+def test_a_row_its_column_was_added_to_reads_its_payload_or_the_default(engine_url):
+    """The migration that adds `entity_display` leaves it NULL on the rows already stored: one
+    written while the table had no column for it reads what its payload carried, one written
+    before the field existed reads the field's default — never a history that fails to load.
+    """
+    database = fresh(engine_url, facts.metadata)
+    repository = Repository(database)
+    carried, bare = Product(name="mug"), Product(name="cup")
+    repository.save([carried, bare])
+    repository.remove(repository.get(Product, carried.id))
+    repository.remove(repository.get(Product, bare.id))
+    with database.engine.begin() as connection:
+        for product, display in ((carried, "mug"), (bare, None)):
+            row = shop_events.c.entity_id == product.id
+            payload = connection.execute(
+                select(shop_events.c.payload).where(row)
+            ).scalar_one()
+            if display is not None:
+                payload = {**payload, "entity_display": display}
+            connection.execute(
+                shop_events.update().where(row).values(entity_display=None, payload=payload)
+            )
+
+    [from_payload] = repository.search(ShopEvent, history_of(carried)).items
+    [defaulted] = repository.search(ShopEvent, history_of(bare)).items
+
+    assert from_payload.entity_display == "mug"
+    assert defaulted.entity_display == ""

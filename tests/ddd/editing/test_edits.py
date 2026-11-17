@@ -663,7 +663,7 @@ def test_a_dry_run_says_what_would_go_and_deletes_nothing(shop: Shop):
 
     assert isinstance(preview, Preview)
     assert preview.text.startswith(f"Would delete Invoice {invoice.id}")
-    assert preview.data == {"id": invoice.id, "version": 1}
+    assert preview.data == {"id": invoice.id, "version": 1, "display": ""}
     assert shop.repository.get(Invoice, invoice.id) is not None
 
 

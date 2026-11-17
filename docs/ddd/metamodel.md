@@ -148,6 +148,21 @@ export_metamodel(billing, "web/src/metamodel.json", events=True)
   wire name as a required constant `name`, the field its JSON carries (`as_json`). Written in
   place; what it reaches points into the document, an entity at its model — an entity only an
   event reaches becomes a model too.
+- **Each field as the event declares it**, as an entity's: titled by its label's default — a
+  label is a text or a text by language —, and its `x-sincpro` beside what it holds: the label in
+  every language, the type, the choices. A field with no label keeps the title its shape had.
+
+```python
+@dataclass(kw_only=True)
+class PaymentAdjusted(BillingEvent):
+    before: Decimal = field(metadata={"label": {"default": "Before (Bs.)", "es": "Antes (Bs.)"}})
+    reason: str = field(metadata={"label": "Reason"})
+```
+
+```json
+"before": {"type": "string", "title": "Before (Bs.)",
+           "x-sincpro": {"type": "number", "label": {"default": "Before (Bs.)", "es": "Antes (Bs.)"}, …}}
+```
 - **Not asked, nothing moves**: the document and its `version` are byte for byte what they were.
 
 ### A key that says whose it is

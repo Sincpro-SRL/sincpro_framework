@@ -78,7 +78,7 @@ def test_its_dry_run_answers_the_preview_and_deletes_nothing():
     assert answered.status_code == 200, answered.text
     assert answered.json() == {
         "text": f"Would delete Issue {stored.id}",
-        "data": {"id": stored.id, "version": 1},
+        "data": {"id": stored.id, "version": 1, "display": ""},
     }
     assert repository.get(Issue, stored.id) is not None
 
