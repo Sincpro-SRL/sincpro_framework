@@ -10,7 +10,7 @@ again with another fingerprint, said in the log, and the bus's metamodel answers
 """
 
 import json
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any
 
 import pytest
@@ -916,8 +916,8 @@ class TicketClosed(TicketEvent):
     """
 
     name = "desk.ticket.v1.closed"
-    reason: str
-    by: Agent | None = None
+    reason: str = field(metadata={"label": {"default": "Reason", "es": "Motivo"}})
+    by: Agent | None = field(default=None, metadata={"label": "Closed by"})
     customer: Partner | None = None
 
 
@@ -986,6 +986,22 @@ def test_an_event_is_its_whole_shape_its_wire_name_a_required_constant():
         "$ref"
         not in metamodel_of(help_desk(), events=True)["events"]["TicketEvent"]["schema"]
     )
+
+
+def test_an_events_fields_are_titled_by_their_label_and_carry_their_meta():
+    """Each field reads as the event declares it — its label's default as the title, every
+    language and its type beside it — as an entity's do; a label is a text or a text by
+    language, and a field with none is titled by nothing new."""
+    closed = metamodel_of(help_desk(), events=True)["events"]["desk.ticket.v1.closed"]
+    properties = closed["schema"]["properties"]
+
+    assert properties["reason"]["title"] == "Reason"
+    assert properties["reason"]["x-sincpro"]["label"] == {"default": "Reason", "es": "Motivo"}
+    assert properties["reason"]["x-sincpro"]["type"] == "text"
+    assert properties["by"]["title"] == "Closed by"
+    assert properties["by"]["x-sincpro"]["label"] == {"default": "Closed by"}
+    assert properties["customer"]["x-sincpro"]["relation"] == "Partner"
+    assert properties["created_at"]["x-sincpro"]["label"]["es"]
 
 
 def test_an_events_pointers_resolve_in_the_document_and_what_only_it_reaches_is_a_model():

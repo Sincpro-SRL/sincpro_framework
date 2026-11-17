@@ -74,6 +74,7 @@ from sincpro_framework.ddd.entity import extensions
 from sincpro_framework.ddd.entity.entity import utc_now
 from sincpro_framework.ddd.entity.mixins.archivable import ArchivableMixin
 from sincpro_framework.ddd.metamodel import model_of
+from sincpro_framework.ddd.multi_language import MultiLanguage
 from sincpro_framework.ddd.query import DraftState, ResponseRecord
 from sincpro_framework.ddd.reads.reads import (
     EntityReads,
@@ -200,6 +201,29 @@ class Purge[T](DryRunnable):
     """How long a record stays archived before it is deleted for good."""
     batch_size: int = Field(default=500, gt=0)
     """How many records each unit of work deletes."""
+
+
+WOULD = {
+    "delete": {
+        "default": "Would delete {entity} {record}",
+        "es": "Se eliminará {entity} {record}",
+    },
+    "archive": {
+        "default": "Would archive {entity} {record}",
+        "es": "Se archivará {entity} {record}",
+    },
+    "restore": {
+        "default": "Would restore {entity} {record}",
+        "es": "Se restaurará {entity} {record}",
+    },
+    "purge": {
+        "default": "Would purge {count} {entity} archived more than {days} days ago",
+        "es": "Se purgarán {count} {entity} archivados hace más de {days} días",
+    },
+}
+"""What a dry run of each lifecycle action says, by language — read in the call's
+(`ContextKey.LANG`), else the default. The entity is named by its title, the record by its
+display."""
 
 
 def _archivable(entity: type, dto: Any) -> None:
@@ -674,22 +698,32 @@ class EntityEdits[T](EntityReads[T]):
 
     def would(self, dto: Any, verb: str, archived: bool = False) -> Preview:
         """What a dry run of an action on one record answers: the record found and checked as
-        the action checks it (`targeted`), named as a person reads it.
+        the action checks it (`targeted`), named as a person reads it, in the call's language.
 
             would(CommandDeleteBanner(id="0192…", dry_run=True), "delete")
-                ->  Preview(text="Would delete Banner 0192… «Summer sale»",
-                            data={"id": "0192…", "version": 3})
+                ->  Preview(text="Would delete Banner «Summer sale»",
+                            data={"id": "0192…", "version": 3, "display": "Summer sale"})
+            # lang "es", the entity titled {"default": "Banner", "es": "Anuncio"}
+                ->  Preview(text="Se eliminará Anuncio «Summer sale»", data={…})
+            # an entity that shows nothing beside its identity
+                ->  Preview(text="Would delete Banner 0192…", data={…, "display": ""})
 
-        The version in `data` is the one a confirmed action names as `origin_version`, so it
-        writes the record the person was shown.
+        The entity is named by its title (`translations()`, else its class) and the record by its
+        display, else its id. `data` carries the display, so a screen can word it itself, and the
+        version a confirmed action names as `origin_version`, so it writes the record the person
+        was shown.
         """
         entity, _ = declared_by(type(dto))
         record = self.targeted(entity, dto, archived)
-        display = model_of(entity).presented.display
-        shown = f" «{getattr(record, display)}»" if display else ""
+        model = model_of(entity)
+        display = model.presented.display
+        shown = str(getattr(record, display) or "") if display else ""
+        text = str(MultiLanguage(WOULD[verb])).format(
+            entity=MultiLanguage(model.title), record=f"«{shown}»" if shown else dto.id
+        )
         return Preview(
-            text=f"Would {verb} {entity.__name__} {dto.id}{shown}",
-            data={"id": dto.id, "version": getattr(record, "version", 0)},
+            text=text,
+            data={"id": dto.id, "version": getattr(record, "version", 0), "display": shown},
         )
 
     def preview(self, dto: Any) -> Any:
@@ -698,7 +732,7 @@ class EntityEdits[T](EntityReads[T]):
         `EntityReads` answers.
 
             preview(CommandPurgeBanners(older_than=timedelta(days=30), dry_run=True))
-                ->  Preview(text="Would purge 12 Banner archived more than 30 days, 0:00:00 ago",
+                ->  Preview(text="Would purge 12 Banner archived more than 30 days ago",
                             data={"count": 12})
         """
         match dto:
@@ -715,11 +749,12 @@ class EntityEdits[T](EntityReads[T]):
                 _archivable(entity, dto)
                 selection = self.purgeable(entity, dto).selection
                 count = self.reads_from().count(entity, Criteria(selection=selection)).value
-                return Preview(
-                    text=f"Would purge {count} {entity.__name__} archived more than "
-                    f"{dto.older_than} ago",
-                    data={"count": count},
+                text = str(MultiLanguage(WOULD["purge"])).format(
+                    count=count,
+                    entity=MultiLanguage(model_of(entity).title),
+                    days=f"{dto.older_than / timedelta(days=1):g}",
                 )
+                return Preview(text=text, data={"count": count})
         return super().preview(dto)
 
     def execute(self, dto: Any) -> Any:

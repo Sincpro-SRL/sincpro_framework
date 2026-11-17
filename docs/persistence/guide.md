@@ -698,7 +698,8 @@ assert [type(one) for one in repository.fetch_all(BillingEvent, about_the_paymen
 
 **A table made by an older release keeps working.** A field of the envelope it has no column for
 — `entity_display`, `actor` — is stored in `payload` and read back the same; the migration that
-adds the column is only needed to filter or group by it.
+adds the column is only needed to filter or group by it. The rows already stored hold that column
+empty: each reads what its payload carried, else the field's default — `entity_display` `""`.
 | `delivered_at`, `delivery` | when a deliverable event went out, and how its delivery went (§12) |
 
 What this gives, with nothing else to learn:

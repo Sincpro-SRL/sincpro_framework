@@ -3,6 +3,8 @@ instead of one per field it set — proved here against `MemoryRepository`, and 
 SQLAlchemy `Repository` in `tests/data_layer/orm/test_tracking.py`.
 """
 
+import json
+import warnings
 from dataclasses import dataclass, field
 
 from sincpro_framework.data_layer.repositories import MemoryRepository
@@ -376,6 +378,19 @@ def test_the_event_carries_the_label_of_each_field_that_moved():
     assert _updated(total=500).field_labels == {
         "total": {"default": "Total", "es": "Importe"}
     }
+
+
+def test_the_labels_are_plain_text_the_event_serializes_without_a_warning():
+    """What the event carries is data, like its own `label`: serializing it on every save must
+    not warn that a field holds something other than what it declares."""
+    event = _updated(total=500)
+
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        written = json.loads(event.as_json())
+
+    assert type(event.field_labels["total"]) is dict
+    assert written["field_labels"] == {"total": {"default": "Total", "es": "Importe"}}
 
 
 def test_a_field_that_declared_no_label_is_simply_absent():

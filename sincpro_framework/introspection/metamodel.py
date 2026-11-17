@@ -447,14 +447,22 @@ def _event(
 
     1. Its shape, with its wire name as a constant `name` — the field its JSON (`as_json`)
        carries, what a reader tells one event from another by —, required.
+    2. Each field as the event declares it, the way an entity's reads (`contract_of`): titled by
+       its label's default, and its `x-sincpro` — the label in every language, the type, the
+       choices — beside what it holds. A field with no label keeps the title its shape had.
     Final: its class's name, the first paragraph of its description, whether it is one of the
     context's own (`recorded`) and whether the bus handles it (`handled`).
     """
     body: dict[str, Any] = dict(schema or {"type": "object", "title": event.__name__})
-    body["properties"] = {
-        "name": {"const": event.name, "type": "string"},
-        **body.get("properties", {}),
-    }
+    declared = contract_of(event)["properties"]
+    properties: dict[str, Any] = {"name": {"const": event.name, "type": "string"}}
+    for name, held in body.get("properties", {}).items():
+        said = declared.get(name, {})
+        properties[name] = {
+            **held,
+            **{key: said[key] for key in ("title", "x-sincpro") if key in said},
+        }
+    body["properties"] = properties
     body["required"] = ["name", *(one for one in body.get("required", []) if one != "name")]
     return {
         "title": event.__name__,

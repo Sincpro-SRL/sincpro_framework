@@ -19,7 +19,7 @@ from sincpro_framework.auth.domain import exceptions
 from sincpro_framework.auth.domain.identity import Identity, IdentityKind
 from sincpro_framework.auth.domain.permissions import AccessDeclaration, WhenDenied
 from sincpro_framework.auth.infrastructure.security_context import _decided, current_identity
-from sincpro_framework.context import context_scopes
+from sincpro_framework.context import ContextKey, context_scopes, use_context
 from sincpro_framework.sincpro_logger import logger
 
 if TYPE_CHECKING:
@@ -227,15 +227,21 @@ class BusGuard:
     def __call__(self, dto: Any, call_next: Callable[[Any], Any]) -> Any:
         """Decide whether the identity in play may run the use case `dto` enters, and run it.
 
-        1. Disabled: it runs. The system acting: it runs, and the decision is recorded.
-        2. Declared nothing: it runs, unless strict and entered from outside.
+        1. Who acts: the identity in play, unless anonymous, is the execution's `user_id` when
+           nothing said one — not a provider of the project's, not a scope —, so a fact the use
+           case records names its `actor`.
+        2. Disabled: it runs. The system acting: it runs, and the decision is recorded.
+        3. Declared nothing: it runs, unless strict and entered from outside.
         Final: declared something the identity lacks — refused, or skipped (`None`) when it
            said `WhenDenied.SKIP`; else it runs, and a use case it calls inherits the decision.
         """
+        identity = current_identity()
+        context = use_context()
+        if not identity.is_anonymous and context.get(ContextKey.USER_ID) is None:
+            context.set(ContextKey.USER_ID, identity.subject)
         if not self.access.enabled:
             return call_next(dto)
         command = type(dto)
-        identity = current_identity()
         refusal = self.refusal_for(command, identity, dto)
         if refusal is not None:
             declaration = self.declaration_of(command)

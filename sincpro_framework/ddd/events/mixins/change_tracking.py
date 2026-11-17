@@ -216,14 +216,16 @@ class ChangeTrackingMixin:
 
     def _said_about(self, changed: dict[str, tuple[Any, Any]]) -> dict[str, Any]:
         """What the event is built from: the diff, plus the label of each field that moved —
-        only those, never the whole model. A `change_event` without `field_labels` gets the
-        diff alone."""
+        only those, never the whole model, each as plain text by language, the way the event's
+        own `label` is. A `change_event` without `field_labels` gets the diff alone."""
         said: dict[str, Any] = {"changes": changed}
         fields = dataclasses.fields(cast(Any, self.change_event))
         known = {one.name for one in fields}
         if "field_labels" in known:
             labels = field_translations(type(self), "label")
-            said["field_labels"] = {name: labels[name] for name in changed if name in labels}
+            said["field_labels"] = {
+                name: dict(labels[name]) for name in changed if name in labels
+            }
         return said
 
     def record_change(self, changed: dict[str, tuple[Any, Any]]) -> "DomainEvent | None":
