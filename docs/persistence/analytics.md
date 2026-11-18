@@ -55,6 +55,7 @@ What it is, exactly:
 | `sql` | receives the table's columns; a column the table lacks is refused when `map_aggregates` runs, naming the field |
 | `python` | optional. Without it a memory store **refuses** to filter, order or group by the field, instead of guessing a value that quietly differs from SQL |
 | A record not yet read from a store | holds the `default` (and `None` once the class is mapped): the value exists after a read |
+| A record saved | answers the value `sql` computes over the row it wrote, after its unit of work closed too: the session reads it back before the commit, one `SELECT` per thousand records saved |
 | Cost | the expression is part of every `SELECT` of the entity. A subquery over another table is allowed and costs what it costs |
 
 **The two implementations have to agree.** `ComputedFieldsContract`, in
