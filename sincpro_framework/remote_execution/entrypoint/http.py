@@ -5,17 +5,17 @@
 
 Context: `POST /sincpro/contexts/execute` answers what `http://` addresses in a context map send
 (`remote_execution.adapters.http`) — on the same address, port, ingress and TLS as
-the service's REST API, so hosting a context needs no second server. The execution runs on a
-worker thread, as the bus is synchronous — the same one the gRPC host runs
+the service's REST API, so hosting a context needs no second server. The execution runs on the
+bus's async threads, as the bus is synchronous — the same execution the gRPC host runs
 (`services.hosted_execution.execute_hosted`). The body and the answer are each one message
 (`sincpro_framework.remote_execution.domain.payload`).
 """
 
-import asyncio
 import base64
 from collections.abc import Sequence
 from typing import TYPE_CHECKING
 
+from sincpro_framework.aio.async_threads import on_async_thread
 from sincpro_framework.auth import Credentials
 from sincpro_framework.observability import process
 from sincpro_framework.observability.tracing.propagation import TRACE_HEADERS
@@ -54,7 +54,7 @@ def open_host_routes(contexts: "Sequence[UseFramework]") -> list[Route]:
 
     1. The context from its header; the message — the DTO's identity, its values, the request
        context — from the body.
-    2. Executed on a worker thread (`execute_hosted`).
+    2. Executed on the bus's async threads (`execute_hosted`).
     3. Final: 200 with the answer's message; 404 when this service does not host the context;
        500 naming the raised class and its details in headers, its message as the body.
     """
@@ -71,7 +71,8 @@ def open_host_routes(contexts: "Sequence[UseFramework]") -> list[Route]:
         }
         body = await request.body()
         try:
-            answer = await asyncio.to_thread(
+            answer = await on_async_thread(
+                by_name.get(name),
                 execute_hosted,
                 by_name,
                 name,

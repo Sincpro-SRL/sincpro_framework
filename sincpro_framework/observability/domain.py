@@ -322,24 +322,31 @@ def caller_module() -> str:
         caller_module()   ->  "sincpro_siat_soap.bus"
         caller_module()   ->  ""                        # only framework frames on the stack
 
-    1. Walk the stack outward, skipping this function's own frame.
+    Context: each frame names its module in its own globals, so the walk reads no source file
+    and builds no frame record — `inspect.stack()` did both for every frame of a deep import, a
+    tenth of a second per bus at a service's start.
+
+    1. Walk the stack outward from this function's caller.
     2. For each frame:
-       2.1 a frame with no module, or a module with no name, is skipped;
-       2.2 `sincpro_framework` or one of its submodules is skipped.
+       2.1 code with no file of its own (`<frozen importlib._bootstrap>`, `<string>`) is
+           skipped — the import machinery between two modules is nobody's bus;
+       2.2 a frame whose globals name no module is skipped;
+       2.3 `sincpro_framework` or one of its submodules is skipped.
     3. The first other module's name is the answer.
-    Final: `""` when none is found or reading the stack fails.
+    Final: `""` when none is found, or when the interpreter keeps no frames.
     """
-    try:
-        for frame_info in inspect.stack(0)[1:]:
-            module = inspect.getmodule(frame_info.frame)
-            if module is None or not module.__name__:
-                continue
-            name = module.__name__
-            if name == "sincpro_framework" or name.startswith("sincpro_framework."):
-                continue
+    frame = inspect.currentframe()
+    frame = frame.f_back if frame is not None else None
+    while frame is not None:
+        name = frame.f_globals.get("__name__") or ""
+        if (
+            not frame.f_code.co_filename.startswith("<")
+            and name
+            and name != "sincpro_framework"
+            and not name.startswith("sincpro_framework.")
+        ):
             return name
-    except Exception:
-        pass
+        frame = frame.f_back
     return ""
 
 

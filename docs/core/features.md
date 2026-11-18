@@ -83,7 +83,8 @@ assert shop(CommandCheckout(sku="A-1", quantity=3), ResponseCheckout) == Respons
 - **A list registers one handler for several DTOs**: `@bus.feature([CommandA, CommandB])`. An
   event is a DTO, so a Feature registered for an event class is its subscriber.
 - **`execute` is synchronous.** An `async def execute` is refused: the bus never awaits it. An async
-  caller reaches the bus with `bus.get_async_bus()`.
+  caller reaches the bus with `bus.get_async_bus()`, which runs it on the framework's
+  [async threads](async-threads.md).
 - **Its identity is `<bus>.<Class>`** — `shop-handlers.CommandCheckout` — what remote buses, queues
   and outcomes route and say.
 

@@ -112,11 +112,13 @@ class UseFramework(
         package: Optional[str] = None,
         hide_in_logs: Iterable[str] = (),
         metric_labels: Iterable[Any] = (),
+        async_threads: int | None = None,
     ):
         """A bus for the bounded context `bundled_context_name` — not built yet: the first
         call, or `build_root_bus()`, builds it.
 
             UseFramework("billing", hide_in_logs=["TOKEN"], metric_labels=["company"])
+            UseFramework("sandbox", async_threads=8)
 
         Context: the name is the bounded context's identity everywhere — its logger, its
         GlitchTip app, its node of the context, the prefix of its use cases' names.
@@ -130,6 +132,11 @@ class UseFramework(
           service, version and tenant every series carries — a key (`"company"`) or a field
           reference (`field_path(BillingContext).company`). Declared here, before the build,
           because a backend fixes a series' labels when it creates it.
+        - `async_threads` gives the bus threads of its own for the calls its async doors hand
+          over — REST, JSON-RPC, MCP, a queue, `get_async_bus()` —, so a slow context waits on
+          its own threads and never on the others'. Unset, it shares the process's
+          (`SINCPRO_FRAMEWORK_ASYNC_THREADS`, `docs/core/async-threads.md`). Fewer than one
+          thread can run nothing: refused with `ProgrammingError`.
 
         1. The settings stored as given, so `fresh()` builds a bus with the same ones.
         2. Logger, observability, context, incomes and outcomes, each component's own state.
@@ -145,7 +152,17 @@ class UseFramework(
             package,
             tuple(hide_in_logs),
             tuple(metric_labels),
+            async_threads,
         )
+        if async_threads is not None and async_threads < 1:
+            raise exceptions.ProgrammingError(
+                f"UseFramework({bundled_context_name!r}, async_threads={async_threads}): a bus "
+                "with fewer than one thread runs nothing — leave it unset to share the "
+                "process's async threads"
+            )
+        self.async_threads: int | None = async_threads
+        """How many of its own async threads this bus has; `None` when it shares the
+        process's."""
         self._name: str = bundled_context_name
         """The bounded context's name: defined here, once. Everything else — its logger, its
         signals, its node of the context, the identity of its use cases — reads it through `name`."""
@@ -611,13 +628,11 @@ class UseFramework(
             )
 
     def get_async_bus(self) -> AsyncBus:
-        """Return a stateless async facade over this framework's bus.
+        """The async door of this bus: `await billing.get_async_bus()(dto)` from `async def` code.
 
-        Each call runs the bus's own call on a worker thread, so the bus is built on first use
-        (same lazy behavior as ``__call__``) and a reference forwards. Use this from a caller
-        that is itself ``async def`` and wants to fan out several DTOs concurrently, e.g. via
-        ``asyncio.gather``, without blocking its event loop. See ``Bus.get_async_bus`` /
-        ``AsyncBus`` for the propagation and reuse semantics.
+        Each call runs the bus's own call on one of the bus's async threads, so the bus is
+        built on first use (as `__call__` does) and a reference forwards; the event loop stays
+        free. Get it once and await it from as many tasks as wanted — `AsyncBus` holds no state.
         """
         return AsyncBus(self)
 

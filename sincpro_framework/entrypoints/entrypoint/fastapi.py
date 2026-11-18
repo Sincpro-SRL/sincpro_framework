@@ -20,8 +20,6 @@ from collections.abc import Iterable, Mapping
 from functools import partial
 from typing import TYPE_CHECKING, Any
 
-from anyio import CapacityLimiter
-
 from sincpro_framework.entrypoints.adapters.fastapi import exceptions
 from sincpro_framework.entrypoints.adapters.fastapi.wire import (
     FastApiWire,
@@ -66,13 +64,10 @@ class FastApiGateway(Gateway):
         profile: Profile = Profile.RESOURCE,
         exposure: Exposure | None = None,
         unguarded: bool = False,
-        worker_threads: int | None = None,
     ) -> None:
-        """`Profile.RPC` publishes the catalog unless `exposure` says otherwise;
-        `worker_threads` bounds the threads the bus runs on (anyio's default, 40)."""
-        self._wire = FastApiWire(
-            profile, CapacityLimiter(worker_threads) if worker_threads else None
-        )
+        """`Profile.RPC` publishes the catalog unless `exposure` says otherwise. Every route
+        runs on its bus's async threads (`docs/core/async-threads.md`)."""
+        self._wire = FastApiWire(profile)
         mode = exposure or (Exposure.CATALOG if profile == Profile.RPC else Exposure.DECLARED)
         super().__init__(
             instances,

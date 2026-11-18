@@ -286,43 +286,34 @@ class SyncManyFeature(ApplicationService):
 
 #### Async fan-out with `get_async_bus()`
 
-Current limitation: the async facade does not create the same per-call context boundary as
-`UseFramework.__call__`. Handler writes can persist between calls without an explicit scope;
-parallel calls must not share a mutable context mapping. See the current [audit](AUDIT.md).
-
-- `thread_context()` is for **sync** code manually managing a `ThreadPoolExecutor`. If the
-  caller is already `async def` (an async host handler, a script) and wants to fan out
-  several DTOs concurrently instead, use `bus.get_async_bus()` (or the shortcut
-  `framework.get_async_bus()`).
-- Solves the same context-propagation problem as `thread_context()`, via `asyncio.to_thread`
-  itself (stdlib already propagates `contextvars` into the worker thread). Opposite reuse
-  rule: an `AsyncBus` is stateless, so get it **once** and `await`/`asyncio.gather` many calls
-  on it — each call gets its own fresh context snapshot, unlike `thread_context()`'s
-  single-use-per-snapshot restriction.
-- Runs each call via `asyncio.to_thread` (stdlib), so `Feature`/`ApplicationService` stay
-  100% sync — no "async Feature" variant to maintain.
+- `thread_context()` is for **sync** code managing a `ThreadPoolExecutor` of its own. A caller
+  that is already `async def` (an async host handler, a script) fans out with
+  `framework.get_async_bus()`: get it **once** and await it from as many tasks as wanted — each
+  call takes its own copy of the caller's context.
+- Each call runs on one of the bus's async threads — the pool REST, JSON-RPC, MCP, a queue and a
+  hosted context run on too: the process's, `SINCPRO_FRAMEWORK_ASYNC_THREADS` of them (40 by
+  default), or the bus's own with `UseFramework("sandbox", async_threads=8)`.
+  `Feature`/`ApplicationService` stay 100% sync: no "async Feature" variant to maintain.
 
 ```python
 import asyncio
 
 async def handle_request(framework, dto_a, dto_b, dto_c):
     async_bus = framework.get_async_bus()
-    result_a, result_b, result_c = await asyncio.gather(
-        async_bus(dto_a), async_bus(dto_b), async_bus(dto_c),
-    )
-    return result_a, result_b, result_c
+    async with asyncio.TaskGroup() as group:
+        tasks = [group.create_task(async_bus(dto)) for dto in (dto_a, dto_b, dto_c)]
+    return [task.result() for task in tasks]
 ```
 
 **Cancellation and fan-out reliability**
 
-- Cancelling the awaiting coroutine (e.g. a `asyncio.wait_for(...)` timeout) does **not**
-  stop the `Feature`/`ApplicationService` already running in its worker thread — Python
-  cannot forcibly kill a thread. Design for that (idempotency, no assumption that a timeout
-  actually aborted the work) rather than relying on cancellation to stop it.
-- For fan-out with proper partial-failure handling, prefer `asyncio.TaskGroup` (3.11+) over
-  `asyncio.gather`: it cancels sibling tasks on the first failure and raises an
-  `ExceptionGroup`, instead of `gather`'s default of leaving siblings running and swallowing
-  all-but-the-first exception unless `return_exceptions=True` is passed.
+- Cancelling the awaiting coroutine (an `asyncio.timeout`, a failed `TaskGroup` sibling) drops a
+  call still waiting its turn; one already running runs to its end — Python cannot stop a
+  thread — with `self.context.cancelled` set, so a use case that works in steps may stop itself.
+  Design for that: idempotency, and no assumption that a timeout aborted the work.
+- Prefer `asyncio.TaskGroup` (3.11+) over `asyncio.gather`: it cancels its siblings on the first
+  failure and raises an `ExceptionGroup`, where `gather` leaves them running.
+- The whole picture: [docs/core/async-threads.md](docs/core/async-threads.md).
 
 ### ⚠️ Error Handling at Different Levels
 
@@ -1851,7 +1842,8 @@ attempts it.** Everything below was verified hands-on (3.14.7 vs. 3.14.7t), not 
   GIL-build-specific assumption and would legitimately fail if that suite is ever run on a
   free-threaded interpreter.
 - **`asyncio`'s free-threading support only matured in 3.14.** Relevant to `get_async_bus()`
-  / `AsyncBus`, which is built on `asyncio.to_thread`: prefer 3.14+ over 3.13t for that path.
+  and every async door, which hand calls from the event loop to the async threads: prefer 3.14+
+  over 3.13t for that path.
 - Registries built once at startup (`feature_registry`, `app_service_registry`,
   `dynamic_dep_registry`, the interceptor chains) are safe as long as nothing mutates them
   concurrently with in-flight executions — true today, not enforced. See the docstring on

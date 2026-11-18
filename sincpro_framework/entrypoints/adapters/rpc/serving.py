@@ -16,12 +16,15 @@ uvicorn are imported only inside these functions.
 """
 
 import asyncio
+import json
 from collections.abc import Callable, Sequence
 from typing import Any
 
+from sincpro_framework.aio.async_threads import on_async_thread
 from sincpro_framework.auth import Credentials
 from sincpro_framework.entrypoints.adapters.rpc.jrpc import (
     body_too_large,
+    handle_single,
     unsupported_media_type,
 )
 from sincpro_framework.entrypoints.adapters.rpc.wire import (
@@ -30,7 +33,7 @@ from sincpro_framework.entrypoints.adapters.rpc.wire import (
     dispatch,
     http_status,
 )
-from sincpro_framework.entrypoints.infrastructure.http import document_tag
+from sincpro_framework.entrypoints.infrastructure.http import document_tag, merge_http_context
 
 RPC_MISSING = (
     "Starlette/uvicorn is not installed. Install with: pip install sincpro-framework[rpc]"
@@ -134,7 +137,9 @@ def routes(
     2. `POST rpc_path`, per request:
        2.1 a body not sent as JSON is refused (415) before it is read;
        2.2 the body read up to `max_body_bytes` — past it, 413;
-       2.3 `dispatch` in a worker thread, with the request's credentials and headers;
+       2.3 each call `dispatch`ed on the async threads of the bus that answers it — a batch
+           one call after another, each on its own bus's —, with the request's credentials and
+           headers;
        2.4 the reply answered with the status and headers `http_status` gives it.
     3. `GET discover_path`: the OpenRPC document of that surface.
     Final: the `probes` after them.
@@ -162,6 +167,13 @@ def routes(
                 return None
         return bytes(received)
 
+    def bus_of(request: Any) -> Any:
+        """The bus that answers one request of the body — `None` when it names no published
+        method (`rpc.discover`, a typo, not an object): nothing of a bus runs for it."""
+        method = request.get("method") if isinstance(request, dict) else None
+        resolved = surface.methods.get(method) if isinstance(method, str) else None
+        return resolved.operation.bus if resolved is not None else None
+
     def answered(reply: Reply) -> Response:
         """The reply as an HTTP response — `http_status` gives its status and headers; no
         reply is an empty one (204)."""
@@ -174,10 +186,15 @@ def routes(
         """`POST /rpc`: one JSON-RPC body answered.
 
         1. A body not sent as JSON is refused (415) before it is read.
-        2. The body, bounded by `max_body_bytes` — past it, 413.
-        3. `dispatch` in a worker thread, with the request's credentials and headers — the
-           bus authenticates in the thread it runs in.
-        Final: the reply, its status by `http_status`.
+        2. The body, bounded by `max_body_bytes` — past it, 413 —, read as JSON here; one that
+           is not JSON goes to `dispatch` as it came, which answers the parse error.
+        3. A batch within `max_batch_size`: each request `dispatch`ed on the async threads of the
+           bus that answers it, one after another; the replies without the notifications', none
+           when only notifications came.
+        4. Anything else — one request, an empty or oversized batch — `dispatch`ed once, on the
+           async threads of the bus that answers it, the process's when none does.
+        Final: the reply, its status by `http_status` — the bus authenticated each call with the
+        request's credentials in the thread it ran in.
         """
         if not is_json_media_type(request.headers.get("content-type")):
             return answered(unsupported_media_type(sorted(JSON_MEDIA_TYPES)))
@@ -185,8 +202,27 @@ def routes(
         if raw is None:
             return answered(body_too_large(surface.max_body_bytes))
         credentials = Credentials.from_asgi(request.scope)
-        reply = await asyncio.to_thread(
-            dispatch, surface, raw, credentials=credentials, headers=request.headers
+        try:
+            body: Any = json.loads(raw.decode("utf-8"))
+        except (UnicodeDecodeError, json.JSONDecodeError):
+            body = raw
+        if isinstance(body, list) and 0 < len(body) <= surface.max_batch_size:
+            inherited = merge_http_context(request.headers) or None
+            replies = [
+                await on_async_thread(
+                    bus_of(one),
+                    handle_single,
+                    surface.methods,
+                    surface.discover,
+                    one,
+                    inherited,
+                    credentials,
+                )
+                for one in body
+            ]
+            return answered([one for one in replies if one is not None] or None)
+        reply = await on_async_thread(
+            bus_of(body), dispatch, surface, body, credentials, request.headers
         )
         return answered(reply)
 

@@ -14,3 +14,4 @@ otel_metrics_exporter: $ENV:OTEL_METRICS_EXPORTER
 otel_traces_exporter: $ENV:OTEL_TRACES_EXPORTER
 otel_sdk_disabled: $ENV:OTEL_SDK_DISABLED
 context_map_override: $ENV:SINCPRO_CONTEXT_MAP
+async_threads: $ENV:SINCPRO_FRAMEWORK_ASYNC_THREADS

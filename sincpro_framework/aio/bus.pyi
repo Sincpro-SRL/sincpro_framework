@@ -6,13 +6,12 @@ if TYPE_CHECKING:
 
 class AsyncBus:
     """
-    Async facade over a sync `Bus`, for callers that are themselves async.
+    The async door of the bus a project holds — `await billing.get_async_bus()(dto)`.
 
-    Dispatches via `asyncio.to_thread`, which propagates the caller's
-    `contextvars.Context` to the worker thread on its own (stdlib, documented
-    behavior) — no `bus.thread_context()` involved. Stateless and safe to reuse
-    concurrently (e.g. inside `asyncio.gather`): each call gets its own fresh
-    context snapshot from `asyncio.to_thread` itself.
+    Each call runs on one of the bus's async threads — its own (`async_threads=`), or the
+    process's (`SINCPRO_FRAMEWORK_ASYNC_THREADS`) — in a copy of the caller's context. Stateless and safe to reuse concurrently (`asyncio.TaskGroup`,
+    `asyncio.gather`). A caller that stops waiting drops a call still waiting its turn; one
+    already running runs to its end, its `self.context.cancelled` set.
     """
 
     def __init__(self, run: Callable[..., Any]) -> None: ...

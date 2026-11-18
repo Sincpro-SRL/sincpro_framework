@@ -7,6 +7,7 @@ description_of(Sale, StoreFacts(identity="id", …))     as a store that knows m
 contract_of(Sale)                                      what a client is published
 """
 
+import copy
 from typing import Any
 
 from sincpro_framework.ddd.entity.entity import Entity
@@ -54,6 +55,10 @@ def description_of(declared: type, facts: StoreFacts | None = None) -> Meta:
     )
 
 
+_contracts: dict[type, tuple[int, dict[str, Any]]] = {}
+"""Each contract `contract_of` rendered, with the models' revision it was rendered at."""
+
+
 def contract_of(declared: type) -> dict[str, Any]:
     """The published contract of `declared`: its JSON Schema 2020-12 with one `x-sincpro` per
     schema and per property, and the entities its relations point at under `$defs`.
@@ -70,8 +75,16 @@ def contract_of(declared: type) -> dict[str, Any]:
        another entity a relation no filter crosses —, and rendered with the fingerprint of its
        model as its version; each shape a record holds inside written once, by its class's name
        (`shapes`), the entities' names taken from the start.
-    Final: the schema of `declared`; the entities and the shapes beside it under `$defs`.
+    3. Held with the models' revision: rendered again only once a model was let go or a store
+       said something new (`models.revision`) — a gateway asks for the same contract from every
+       route, catalog and document it builds.
+    Final: a copy of the schema of `declared` — the caller may write on it —; the entities and
+    the shapes beside it under `$defs`.
     """
+    revision = models.revision
+    held = _contracts.get(declared)
+    if held is not None and held[0] == revision:
+        return copy.deepcopy(held[1])
     reached: list[type] = [declared]
     for one in reached:
         for annotation in models.of(one).annotations.values():
@@ -99,4 +112,5 @@ def contract_of(declared: type) -> dict[str, Any]:
     beside.pop(declared.__name__)
     if beside:
         contract["$defs"] = beside
-    return contract
+    _contracts[declared] = (revision, contract)
+    return copy.deepcopy(contract)

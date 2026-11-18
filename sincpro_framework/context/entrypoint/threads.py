@@ -3,6 +3,7 @@
     ContextThread(target=work).start()        a thread that starts where its creator stood
     ContextExecutor(max_workers=8)            a pool that hands each task the submitter's context
     executor.submit(in_context(work), …)      one function, for a pool the project owns
+    call_cancelled                            the flag a call handed off by an async door carries
 
 **Why the framework does it, and not the interpreter.** An asyncio task starts from a copy of its
 creator's context (PEP 567). A `threading.Thread` starts from none on the default build, and from a
@@ -19,8 +20,19 @@ copy-on-write: what a task sees is never half written, and what it sets stays in
 import threading
 from collections.abc import Callable
 from concurrent.futures import Future, ThreadPoolExecutor
-from contextvars import Context, copy_context
+from contextvars import Context, ContextVar, copy_context
 from typing import Any
+
+call_cancelled: ContextVar[threading.Event | None] = ContextVar(
+    "sincpro_call_cancelled", default=None
+)
+"""Whether whoever awaits the call in play stopped waiting — what `Context.cancelled` reads.
+
+An async door that hands a call to a worker (`sincpro_framework.aio.async_threads`) sets it in that
+call's own copy of the context, so every thread the call hands work to here reads the same flag.
+A thread cannot be stopped from outside: a call whose caller went away — an agent that cancelled a
+tool call, a queue's time limit that passed — runs on, and the flag is how it can know. `None` for
+a call no event loop awaits: it can never be cancelled."""
 
 
 def in_context[R](function: Callable[..., R]) -> Callable[..., R]:

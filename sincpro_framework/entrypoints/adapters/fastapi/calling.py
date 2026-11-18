@@ -8,22 +8,20 @@ of the project's runs through `Depends(bus_call(bus))` — so neither skips a co
 Context — the contextvar trap. Identity is a `ContextVar`, and FastAPI runs each synchronous
 dependency in a worker thread with a *copy* of the context: an identity set there is gone in the
 next thread. So the credentials are only read here, in an async dependency with no I/O, and
-authentication and `bus(dto)` run together in one worker thread (`anyio.to_thread`). The bus is
-called, never `execute`: the access guard, idempotency, caching, the Feature's span and Sentry
-apply by construction. A FastAPI dependency is never authorization — `AccessControl` inside the
-bus stays the only guard.
+authentication and `bus(dto)` run together on one of the bus's async threads (`on_async_thread`).
+The bus is called, never `execute`: the access guard, idempotency, caching, the Feature's span and
+Sentry apply by construction. A FastAPI dependency is never authorization — `AccessControl` inside
+the bus stays the only guard.
 """
 
 from collections.abc import Awaitable, Callable, Mapping
 from contextlib import ExitStack
-from functools import partial
 from typing import Any
 
-import anyio.to_thread
-from anyio import CapacityLimiter
 from fastapi import Depends, Request
 from pydantic import ConfigDict, Field
 
+from sincpro_framework.aio.async_threads import on_async_thread
 from sincpro_framework.auth import Credentials, security
 from sincpro_framework.context import EntrypointKind, context_executions, context_propagation
 from sincpro_framework.data_layer.caching import (
@@ -194,11 +192,10 @@ def run_on_bus(
             raise
 
 
-def bus_call(
-    bus: UseFramework, limiter: CapacityLimiter | None = None
-) -> Callable[..., Awaitable[BusCall]]:
+def bus_call(bus: UseFramework) -> Callable[..., Awaitable[BusCall]]:
     """A FastAPI dependency answering `call`: `await call(dto)` runs `dto` on `bus` the way
-    every generated route does. `limiter` bounds the worker threads (anyio's default, 40).
+    every generated route does — on the bus's async threads: its own (`async_threads=`), or the
+    process's (`SINCPRO_FRAMEWORK_ASYNC_THREADS`).
 
     Context: a hand-written route that called `bus(dto)` itself would run in the event loop,
     lose the identity to a thread copy and skip the problem's trace id; through `call` it is
@@ -213,7 +210,7 @@ def bus_call(
        2.1 the bus noted on the request state, so a 401 names its challenges;
        2.2 a use case that runs once, with no `Idempotency-Key` and a Command that does not
            identify itself — `IdempotencyKeyMissing`, before the bus;
-       2.3 `run_on_bus` in a worker thread, bounded by `limiter`;
+       2.3 `run_on_bus` on the bus's async threads;
        2.4 on failure, the trace it belongs to stored on the request state.
     Final: `provide` — FastAPI calls it, the route gets `call`.
     """
@@ -232,7 +229,7 @@ def bus_call(
             1. The bus is noted on the request state — a 401 names its challenges.
             2. A use case that runs once, with no `Idempotency-Key` and a Command that does
                not identify itself, is refused before the bus (400).
-            3. `run_on_bus` in a worker thread, bounded by `limiter`.
+            3. `run_on_bus` on the bus's async threads.
             4. Final: on failure, the trace it belongs to is stored on the request state, so the
                problem answered names it.
             """
@@ -244,9 +241,8 @@ def bus_call(
                 )
             seen: dict[str, str | None] = {}
             try:
-                return await anyio.to_thread.run_sync(
-                    partial(run_on_bus, bus, dto, credentials, context, seen),
-                    limiter=limiter,
+                return await on_async_thread(
+                    bus, run_on_bus, bus, dto, credentials, context, seen
                 )
             finally:
                 if seen.get("trace_id"):

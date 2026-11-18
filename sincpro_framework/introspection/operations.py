@@ -17,6 +17,7 @@ from pydantic import BaseModel
 from sincpro_framework.ddd.reads.reads import named_in_type
 from sincpro_framework.introspection.entity_tags import Role, role_of
 from sincpro_framework.introspection.inspector import app_services, features
+from sincpro_framework.introspection.schemas import schema_of
 from sincpro_framework.use_bus import UseFramework
 
 
@@ -88,8 +89,8 @@ class OperationDescription:
             "description": self.description,
             "entities": [one.__name__ for one in self.entities],
             "role": str(self.role),
-            "input": self.input.model_json_schema(),
-            "response": self.response.model_json_schema() if is_model else None,
+            "input": schema_of(self.input),
+            "response": schema_of(self.response) if is_model else None,
         }
 
 

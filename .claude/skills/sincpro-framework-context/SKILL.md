@@ -26,7 +26,7 @@ can be persisted in a store for whoever resumes the flow.
 | Term | What it is | Kind | Import |
 |---|---|---|---|
 | `use_context(level=None)` | The context in play, from anywhere — a `dict` of what its node sees; with a level, that level's node or `None` | function | `from sincpro_framework.context import use_context` |
-| `Context` | That object: `dict` reads, navigation (`.level`, `.parent`, `.root`, `.bus`, `.entrypoint`, `.application`, `.feature`, `.hook`, `.at(level)`, `.own`, `.origin(key)`, `.lineage()`, `.execution`), writes (`[]=` / `.set`), `.scoped(...)`, `.save`, `.loaded`, `.flow()` (what crosses a process), `.to_client()`, `.share` (root only) | DTO | `sincpro_framework.context` |
+| `Context` | That object: `dict` reads, navigation (`.level`, `.parent`, `.root`, `.bus`, `.entrypoint`, `.application`, `.feature`, `.hook`, `.at(level)`, `.own`, `.origin(key)`, `.lineage()`, `.execution`, `.cancelled` — the caller of an async door stopped waiting), writes (`[]=` / `.set`), `.scoped(...)`, `.save`, `.loaded`, `.flow()` (what crosses a process), `.to_client()`, `.share` (root only) | DTO | `sincpro_framework.context` |
 | `ContextLevel` | `ROOT · BUS · ENTRYPOINT · APPLICATION · FEATURE · HOOK · SCOPE` | setting (StrEnum) | `sincpro_framework.context` |
 | `EntrypointKind` | `DIRECT · REST · RPC · GRPC · MCP · QUEUE · CRON · REMOTE` — which entrance opened the flow | setting (StrEnum) | `sincpro_framework.context` |
 | `Origin` | `(level, label, execution_id)` — who said a value | DTO | `sincpro_framework.context` |

@@ -10,6 +10,7 @@ every deployment.
 `package=` exists as an escape hatch and is not used in practice.
 """
 
+import os
 from pathlib import Path
 
 import pytest
@@ -304,3 +305,42 @@ def test_a_distribution_that_really_ships_the_package_is_accepted(monkeypatch):
     monkeypatch.setattr(domain, "installed_version", lambda name: "1.0.0")
 
     assert domain._from_distribution_scan("tests.observability.x") == ("owner", "1.0.0")
+
+
+def test_the_bus_is_named_after_the_module_that_built_it() -> None:
+    from sincpro_framework.observability.domain import caller_module
+
+    def building_a_bus() -> str:
+        return caller_module()
+
+    assert building_a_bus() == __name__
+
+
+def test_code_with_no_file_of_its_own_names_no_bus() -> None:
+    """The import machinery (`<frozen importlib._bootstrap>`) and `exec`'d text stand between a
+    module and the framework; the module above them is the one that built the bus."""
+    from sincpro_framework.observability.domain import caller_module
+
+    scope: dict[str, object] = {"caller_module": caller_module, "__name__": "not_a_module"}
+    exec(compile("found = caller_module()", "<string>", "exec"), scope)
+    assert scope["found"] == __name__
+
+
+def test_importing_the_framework_does_not_load_sentry() -> None:
+    """Sentry costs a service's start tens of milliseconds; only a bus with a DSN loads it."""
+    pytest.importorskip("sentry_sdk")
+    import subprocess
+    import sys
+
+    loaded = subprocess.run(
+        [
+            sys.executable,
+            "-c",
+            "import sys, sincpro_framework; print('sentry_sdk' in sys.modules)",
+        ],
+        capture_output=True,
+        text=True,
+        env={**os.environ, "SENTRY_PYTHON_DSN": ""},
+        check=True,
+    )
+    assert loaded.stdout.strip().splitlines()[-1] == "False"

@@ -35,6 +35,7 @@ from sincpro_framework.context.domain.level import ContextLevel, EntrypointKind,
 from sincpro_framework.context.domain.node import REMOVED, ContextNode
 from sincpro_framework.context.domain.owner import Owner
 from sincpro_framework.context.domain.store import ContextStore
+from sincpro_framework.context.entrypoint.threads import call_cancelled
 from sincpro_framework.context.infrastructure.shared import SharedValues
 from sincpro_framework.context.infrastructure.travel import travelling
 from sincpro_framework.context.infrastructure.tree import ROOT, current, entered
@@ -114,6 +115,22 @@ class Context(dict[Any, Any]):
     def execution(self) -> Execution | None:
         """The execution this node is, or stands in."""
         return next((node.execution for node in self._node.chain() if node.execution), None)
+
+    @property
+    def cancelled(self) -> bool:
+        """Whether whoever awaits this call stopped waiting — an agent cancelled the tool call, a
+        queue's time limit passed. Nothing is stopped for it: a use case that works in steps reads
+        it between two of them and stops itself, or finishes what it started.
+
+            for page in pages:
+                if self.context.cancelled:
+                    break
+                ...
+
+        Always `False` for a call run where no event loop awaits it (`bus(dto)` from sync code).
+        """
+        flag = call_cancelled.get()
+        return flag is not None and flag.is_set()
 
     def _identity_written(self, key: Any, value: Any) -> None:
         """`correlation_id` names the flow from here on: the execution in play takes it. The other

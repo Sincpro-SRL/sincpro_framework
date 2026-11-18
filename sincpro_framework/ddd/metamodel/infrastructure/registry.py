@@ -30,6 +30,16 @@ class Models:
         self._facts: dict[type, StoreFacts] = {}
         self._versions: dict[type, str] = {}
         self._lock = threading.Lock()
+        self._revision = 0
+        """Grows each time a model is let go or a store says something new of a class — what a
+        reader that keeps something rendered from the models (`contract_of`) checks."""
+
+    @property
+    def revision(self) -> int:
+        """How many times what the models say has changed: a model let go, a store's new facts.
+        Equal to what it was when something was rendered from them, that rendering still holds.
+        """
+        return self._revision
 
     def of(self, declared: type) -> Model:
         """The model of `declared`, compiled the first time it is asked for.
@@ -67,11 +77,19 @@ class Models:
                 self._held.clear()
             for one in declared:
                 self._held.pop(one, None)
+            self._revision += 1
 
     def learn(self, declared: type, facts: StoreFacts) -> None:
         """Hold what a store said of `declared` — the last one said wins —, with nothing that
-        reaches back into the store: what the published contract is rendered with."""
-        self._facts[declared] = dataclasses.replace(facts, related=None)
+        reaches back into the store: what the published contract is rendered with. Facts equal to
+        the held ones change nothing: a store that describes a class on every read leaves what was
+        rendered from them standing."""
+        learned = dataclasses.replace(facts, related=None)
+        if self._facts.get(declared) == learned:
+            return
+        with self._lock:
+            self._facts[declared] = learned
+            self._revision += 1
 
     def facts_of(self, declared: type) -> StoreFacts | None:
         """What the last store that described `declared` said of it; `None` when none did."""

@@ -66,17 +66,20 @@ existing_pool.submit(in_context(refresh), arg)
 
 `bus.thread_context().execute` still works (one per task) for existing code.
 
-- **Async fan-out:** `get_async_bus()` (on `UseFramework` and every bus) returns a stateless
-  `AsyncBus` that runs each call via `asyncio.to_thread`, which propagates context itself. Get it
-  **once** and `await`/`gather` many; each call gets its own snapshot.
+- **Async fan-out:** `framework.get_async_bus()` returns a stateless `AsyncBus` that runs each
+  call on the bus's async threads (its own `async_threads=`, else the process's
+  `SINCPRO_FRAMEWORK_ASYNC_THREADS`, 40), in a copy of the
+  caller's context. Get it **once** and await it from many tasks.
 
 ```python
 async_bus = framework.get_async_bus()
-result_a, result_b = await asyncio.gather(async_bus(dto_a), async_bus(dto_b))
+async with asyncio.TaskGroup() as group:
+    tasks = [group.create_task(async_bus(dto)) for dto in (dto_a, dto_b)]
 ```
 
-- Cancelling the awaiting coroutine does **not** stop the Feature already running in its worker
-  thread (Python cannot kill a thread): design for idempotency, not for cancellation stopping work.
+- Cancelling the awaiting coroutine drops a call still waiting its turn; one already running runs
+  to its end (Python cannot kill a thread) with `self.context.cancelled` set — design for
+  idempotency, not for cancellation stopping work.
 - For fan-out with partial-failure handling prefer `asyncio.TaskGroup` over `gather`.
 
 ## A caller that is not a bus

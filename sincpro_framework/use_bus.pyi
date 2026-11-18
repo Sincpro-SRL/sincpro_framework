@@ -59,6 +59,7 @@ class UseFramework(BusContextMixin, Generic[TDeps]):
     log_after_execution: bool
     log_app_services: bool
     log_features: bool
+    async_threads: int | None
 
     dynamic_dep_registry: Dict[str, Any]
     observability: Observability
@@ -79,10 +80,12 @@ class UseFramework(BusContextMixin, Generic[TDeps]):
         package: Optional[str] = None,
         hide_in_logs: Iterable[str] = (),
         metric_labels: Iterable[Any] = (),
+        async_threads: int | None = None,
     ) -> None:
         """A bus for the bounded context `bundled_context_name`, built on its first call.
 
             UseFramework("billing", hide_in_logs=["TOKEN"], metric_labels=["company"])
+            UseFramework("sandbox", async_threads=8)     # threads of its own for its async doors
 
         The name is its logger, its GlitchTip app and the prefix of its use cases' names.
         `log_*` silence execution logs (all, or one kind); `package` is the distribution named
@@ -108,9 +111,9 @@ class UseFramework(BusContextMixin, Generic[TDeps]):
         ...
 
     def get_async_bus(self) -> AsyncBus:
-        """A stateless async facade over this bus — each call runs on a worker thread, so an
-        `async def` caller fans out DTOs with `asyncio.gather` without blocking its loop. The
-        bus is built on first use, as `__call__` builds it."""
+        """The async door of this bus — each call runs on one of the bus's async threads
+        (`settings.async_threads`), so an `async def` caller fans out DTOs with `asyncio.TaskGroup`
+        without blocking its loop. The bus is built on first use, as `__call__` builds it."""
         ...
 
     def build_root_bus(self) -> None:

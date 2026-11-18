@@ -1,12 +1,9 @@
-"""Tests for `Bus.get_async_bus()` / `AsyncBus`.
+"""Tests for `UseFramework.get_async_bus()` / `AsyncBus`.
 
-`AsyncBus` is the async-caller counterpart to `Bus.thread_context()`
-(tests/context/test_thread_context.py): a caller that is itself `async def` and
-wants to fan out DTOs concurrently (e.g. `asyncio.gather`) still needs the
-`contextvars` overlay propagated into the worker thread `asyncio.to_thread`
-spawns. These tests pin down that propagation, plus the opposite reuse rule
-from `thread_context()`: an `AsyncBus` is stateless and safe to share across
-concurrent calls.
+`AsyncBus` is the async door of a bus: a caller that is itself `async def` and wants to fan out
+DTOs concurrently still needs the `contextvars` overlay propagated into the framework's worker the
+call runs on. These tests pin down that propagation, plus the opposite reuse rule from
+`thread_context()`: an `AsyncBus` is stateless and safe to share across concurrent calls.
 """
 
 import asyncio
@@ -64,10 +61,7 @@ def _build_framework(name: str) -> UseFramework:
 class TestAsyncBus:
     def test_get_async_bus_returns_async_bus(self):
         framework = _build_framework("async-bus-type")
-        framework.build_root_bus()
-        assert framework.bus is not None
-        async_bus = framework.bus.feature_bus.get_async_bus()
-        assert isinstance(async_bus, AsyncBus)
+        assert isinstance(framework.get_async_bus(), AsyncBus)
 
     def test_use_framework_get_async_bus_builds_on_the_first_execution(self):
         framework = _build_framework("async-bus-lazy")
@@ -79,7 +73,7 @@ class TestAsyncBus:
         assert framework.was_initialized
 
     def test_await_execute_returns_correct_response(self, feature_bus_instance):
-        async_bus = feature_bus_instance.get_async_bus()
+        async_bus = AsyncBus(feature_bus_instance.execute)
 
         async def main():
             return await async_bus.execute(
@@ -91,7 +85,7 @@ class TestAsyncBus:
         assert result.to_print == "Hello World"
 
     def test_await_call_sugar_returns_correct_response(self, feature_bus_instance):
-        async_bus = feature_bus_instance.get_async_bus()
+        async_bus = AsyncBus(feature_bus_instance.execute)
 
         async def main():
             return await async_bus(CommandFeatureTest1(to_print="Hello World"))
@@ -101,17 +95,13 @@ class TestAsyncBus:
         assert result.to_print == "Hello World"
 
     def test_async_bus_preserves_context_in_worker_thread(self):
-        """The core fix: `await async_bus.execute(...)` sees the same context
-        that was active when it was called, even though execution hops to a
-        worker thread via `asyncio.to_thread`."""
+        """`await async_bus.execute(...)` sees the same context that was active when it was
+        called, even though execution hops to one of the framework's workers."""
         framework = _build_framework("async-bus-context")
-        framework.build_root_bus()
-        assert framework.bus is not None
-        bus = framework.bus
 
         async def main():
             with framework.context({"TOKEN": "abc123"}):
-                async_bus = bus.feature_bus.get_async_bus()
+                async_bus = framework.get_async_bus()
                 return await async_bus.execute(AsyncThreadDTO())
 
         result = cast(AsyncThreadResponseDTO, asyncio.run(main()))
@@ -122,13 +112,10 @@ class TestAsyncBus:
         concurrently many times (e.g. `asyncio.gather`) without raising —
         each call captures its own snapshot instead of reusing one up front."""
         framework = _build_framework("async-bus-concurrent-reuse")
-        framework.build_root_bus()
-        assert framework.bus is not None
-        bus = framework.bus
 
         async def main():
             with framework.context({"TOKEN": "shared"}):
-                async_bus = bus.feature_bus.get_async_bus()
+                async_bus = framework.get_async_bus()
                 return await asyncio.gather(
                     *[async_bus.execute(AsyncThreadDTO(message=str(i))) for i in range(5)]
                 )
@@ -143,9 +130,7 @@ class TestAsyncBus:
         """Two concurrent calls issued from two different `context()` scopes
         must not leak values into each other."""
         framework = _build_framework("async-bus-isolation")
-        framework.build_root_bus()
-        assert framework.bus is not None
-        async_bus = framework.bus.feature_bus.get_async_bus()
+        async_bus = framework.get_async_bus()
 
         async def call_with(token: str):
             with framework.context({"TOKEN": token}):
@@ -162,9 +147,7 @@ class TestAsyncBus:
 
     def test_error_from_feature_propagates_through_async_bus(self):
         framework = _build_framework("async-bus-errors")
-        framework.build_root_bus()
-        assert framework.bus is not None
-        async_bus = framework.bus.feature_bus.get_async_bus()
+        async_bus = framework.get_async_bus()
 
         async def main():
             await async_bus.execute(RaisingDTO())
