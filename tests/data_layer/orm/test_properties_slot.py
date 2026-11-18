@@ -105,6 +105,20 @@ def test_a_key_of_the_slot_is_grouped_and_measured_like_a_column(engine_url):
     }
 
 
+def test_a_key_of_the_slot_is_answered_by_its_record_once_saved(engine_url):
+    """A key of the slot is an expression over the row: the save's flush expires it, and the
+    record still answers it after its unit of work closed (#272)."""
+    Invoice, store = world(engine_url)
+    record = store.search(
+        Invoice, Criteria(selection=Condition(field="number", value="F-1"))
+    )[0]
+    record.number = "F-1b"
+
+    store.save(record)
+
+    assert (getattr(record, "zone"), getattr(record, "weight")) == ("Z1", Decimal("2.5"))
+
+
 def test_a_module_maps_a_key_of_the_slot_of_an_entity_it_does_not_own(engine_url):
     md = MetaData()
     reg = registry(metadata=md)

@@ -32,6 +32,9 @@ from sincpro_framework.data_layer.orm.sqlalchemy.infrastructure.in_place_changes
     watch_in_place,
 )
 from sincpro_framework.data_layer.orm.sqlalchemy.infrastructure.observability import observe
+from sincpro_framework.data_layer.orm.sqlalchemy.infrastructure.read_before_commit import (
+    read_before_commit,
+)
 from sincpro_framework.data_layer.orm.sqlalchemy.infrastructure.read_tracking import (
     note_statement_reads,
 )
@@ -178,6 +181,8 @@ class Database:
         4. Before each flush, in this order: the stamping, the change tracking, the preview
            guard.
         5. On each ORM statement: the preview guard and the note of what it reads.
+        6. Before each commit, the columns a flush left expired on what it wrote read again
+           (`read_before_commit.py`).
         Final: the hooks a transaction runs on commit and rollback attached to the factory.
         """
         self.url = url
@@ -207,6 +212,8 @@ class Database:
         self.before_flush(_refused_in_preview)
         event.listen(self.open_session, "do_orm_execute", _statement_refused_in_preview)
         event.listen(self.open_session, "do_orm_execute", note_statement_reads)
+        # A record answers what a flush expired — a computed field — after its session closed.
+        read_before_commit(self.open_session)
         hooks_per_transaction(self.open_session)
 
     def before_flush(self, run: "Callable[[Session], None]") -> "Database":

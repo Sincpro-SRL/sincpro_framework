@@ -16,7 +16,7 @@ import pytest
 from sqlalchemy import Boolean, Column, DateTime, MetaData, Numeric, Text, select
 from sqlalchemy.orm import registry
 
-from sincpro_framework import exceptions
+from sincpro_framework import UseFramework, exceptions
 from sincpro_framework.data_layer.orm import map_aggregates
 from sincpro_framework.data_layer.orm.sqlalchemy.entrypoint.repository import Repository
 from sincpro_framework.data_layer.orm.sqlalchemy.entrypoint.template_table.entity import (
@@ -26,7 +26,14 @@ from sincpro_framework.data_layer.orm.sqlalchemy.services.model_introspection im
     ModelIntrospection,
 )
 from sincpro_framework.data_layer.repositories import MemoryRepository
-from sincpro_framework.ddd import Entity, computed
+from sincpro_framework.ddd import (
+    Edit,
+    EditAction,
+    Entity,
+    EntityEdits,
+    ResponseEdit,
+    computed,
+)
 from sincpro_framework.ddd import exceptions as ddd_exceptions
 from sincpro_framework.ddd.criteria import (
     All,
@@ -629,6 +636,78 @@ def test_a_record_read_with_its_computed_field_can_be_changed_and_saved_again():
     again = store.search(Bill, Criteria()).first()
 
     assert again is not None and again.balance == Decimal("0")
+
+
+# ── a computed field after its unit of work closed (#272) ─────────────────────
+
+
+def test_a_new_record_answers_its_computed_field_once_its_unit_of_work_closed(engine_url):
+    store = Repository(fresh(engine_url, analytics.metadata))
+    with store.context() as repository:
+        inside = bill(ROWS[0])
+        repository.save(inside)
+    alone = bill(ROWS[4])
+    store.save(alone)
+
+    assert (inside.balance, alone.balance) == (Decimal("60"), Decimal("50"))
+
+
+def test_an_edited_record_answers_its_computed_field_once_saved(engine_url):
+    store = Repository(fresh(engine_url, analytics.metadata))
+    store.save(bill(ROWS[0]))
+    with store.context() as repository:
+        read = repository.search(Bill, Criteria()).first()
+        assert read is not None
+        read.paid = Decimal("90")
+        repository.save(read)
+
+    assert read.balance == Decimal("10")
+
+
+def test_what_waits_for_the_commit_reads_the_computed_field_of_what_was_saved(engine_url):
+    """An `after_commit` callback runs where the session can no longer run a statement."""
+    store = Repository(fresh(engine_url, analytics.metadata))
+    told: list[Decimal] = []
+    with store.context() as repository:
+        new = bill(ROWS[0])
+        repository.save(new)
+        repository.after_commit(lambda: told.append(new.balance))
+
+    assert told == [Decimal("60")]
+
+
+class ResponseEditBill(ResponseEdit):
+    bill: Bill
+
+
+class CommandEditBill(Edit[Bill, ResponseEditBill]):
+    pass
+
+
+def test_an_edit_answers_the_record_it_saved_with_its_computed_field(engine_url):
+    bus = UseFramework("bills-edit", log_after_execution=False)
+    bus.add_dependency("repository", Repository(fresh(engine_url, analytics.metadata)))
+
+    @bus.feature(CommandEditBill)
+    class BillForms(EntityEdits[Bill]):
+        pass
+
+    created = bus(
+        CommandEditBill(values={"total": "100", "paid": "40"}, action=EditAction.SAVE),
+        ResponseEditBill,
+    )
+    edited = bus(
+        CommandEditBill(
+            id=created.bill.id,
+            values={"total": "100", "paid": "70"},
+            changed=["paid"],
+            origin_version=created.bill.version,
+            action=EditAction.SAVE,
+        ),
+        ResponseEditBill,
+    )
+
+    assert (created.bill.balance, edited.bill.balance) == (Decimal("60"), Decimal("30"))
 
 
 # ── a SQLite that predates strftime's ISO formats ─────────────────────────────
