@@ -23,6 +23,7 @@ service usually configures the framework with environment variables alone.
 | `metric_labels` | (file only) | `[]` | context keys on every metric series of the process |
 | `context_map` | (file only) | `[]` | `[{context: billing, at: grpc://…}]`: contexts hosted by another service |
 | `context_map_override` | `SINCPRO_CONTEXT_MAP` | `None` | `billing=grpc://host:port?timeout=5,…`, winning per context |
+| `async_threads` | `SINCPRO_FRAMEWORK_ASYNC_THREADS` | `40` | the threads every async door runs the buses on — `get_async_bus()`, REST, JSON-RPC, MCP, a queue, a hosted context; as many calls at once. A bus with `UseFramework(..., async_threads=N)` has its own instead |
 
 ## Setting them from the project's own document
 

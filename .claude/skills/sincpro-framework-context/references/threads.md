@@ -2,7 +2,7 @@
 
 | Runs work in | Gets the caller's context |
 |---|---|
-| an `asyncio` task, `asyncio.to_thread`, `bus.get_async_bus()` | yes, by itself |
+| an `asyncio` task, `asyncio.to_thread`, `bus.get_async_bus()` (the bus's async threads) | yes, by itself |
 | `ContextExecutor` (a `ThreadPoolExecutor`) | yes — each task a copy of its submitter's |
 | `ContextThread` (a `threading.Thread`) | yes — where its creator stood |
 | `in_context(fn)` submitted to any pool | yes — the context it was wrapped in |

@@ -590,3 +590,26 @@ def test_every_document_publishes_the_entity_a_read_belongs_to():
         schemas = document["components"]["schemas"]
         assert schemas["Order"]["x-sincpro"] == expected["x-sincpro"]
         assert schemas["Buyer"]["x-sincpro"]["entity"] == "Buyer"
+
+
+@dataclass
+class Ledger(Entity):
+    code: str = ""
+    name: str = ""
+
+
+def test_a_contract_handed_out_can_be_written_on_without_changing_the_next() -> None:
+    """A contract is rendered once and held; each caller gets a copy of its own."""
+    first = contract_of(Ledger)
+    first["properties"].clear()
+    first["x-sincpro"]["identity"] = "written over"
+    again = contract_of(Ledger)
+    assert {"code", "name"} <= set(again["properties"])
+    assert again["x-sincpro"]["identity"] == "id"
+
+
+def test_a_held_contract_says_what_the_store_said_last() -> None:
+    description_of(Ledger, StoreFacts(identity="code"))
+    assert contract_of(Ledger)["x-sincpro"]["identity"] == "code"
+    description_of(Ledger, StoreFacts(identity="id"))
+    assert contract_of(Ledger)["x-sincpro"]["identity"] == "id"

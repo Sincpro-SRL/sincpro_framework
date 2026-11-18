@@ -201,9 +201,10 @@ assert (removed.status_code, removed.content) == (204, b"")
   would validate again. That is also why `add(..., wrap=...)` is refused on this gateway: use an
   interceptor.
 - Credentials are read in an async dependency, with no I/O. Authentication and `bus(dto)` then run
-  **together in one worker thread** (`anyio.to_thread`). Identity is a `ContextVar`, and FastAPI
-  runs each synchronous dependency in a copied context, so an identity set in one thread is lost
-  in the next. `worker_threads=` bounds the pool (anyio's default is 40).
+  **together on one of the bus's async threads** — the process's, or the bus's own when it declared
+  `async_threads=` ([async threads](../core/async-threads.md)). Identity is a
+  `ContextVar`, and FastAPI runs each synchronous dependency in a copied context, so an identity
+  set in one thread is lost in the next.
 
 ## Failures are problems
 

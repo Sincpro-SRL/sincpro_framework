@@ -6,6 +6,7 @@ reporting under sincpro's release.
 """
 
 import inspect
+from importlib.util import find_spec
 from typing import Any, Optional
 
 from sincpro_framework.observability.domain import (
@@ -20,12 +21,9 @@ from sincpro_framework.observability.domain import (
 from sincpro_framework.observability.registry import observability_registry
 from sincpro_framework.sincpro_conf import settings
 
-try:
-    import sentry_sdk  # pyright: ignore[reportMissingImports]
-
-    SDK_AVAILABLE = True
-except ImportError:
-    SDK_AVAILABLE = False
+SDK_AVAILABLE = find_spec("sentry_sdk") is not None
+"""Whether the SDK is installed — found, not imported: importing it costs a service's start tens
+of milliseconds, paid only by a bus that reports to a DSN (`error_client`)."""
 
 
 def dsn() -> str:

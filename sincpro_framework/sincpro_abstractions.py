@@ -11,7 +11,6 @@ and `Bus`, what every bus that runs them answers to.
 
     billing(CommandIssueInvoice(amount=10), ResponseIssueInvoice)  ->  ResponseIssueInvoice
     bus.thread_context().execute                                  a thread pool's task
-    await bus.get_async_bus()(dto)                                from async code
 
 A bounded context never subclasses `Feature` or `ApplicationService` straight from here: its
 `framework.py` wraps each once with the dependencies it registers (see the classes).
@@ -25,8 +24,6 @@ from typing import TYPE_CHECKING, Any, Generic, Type
 
 from pydantic import BaseModel, ConfigDict, Field
 from typing_extensions import TypeVar
-
-from .aio import AsyncBus
 
 if TYPE_CHECKING:
     from _typeshed import DataclassInstance
@@ -80,7 +77,8 @@ class Preview(DataTransferObject):
 class Bus(ABC):
     """What every bus is: something that executes a DTO — the `UseFramework`, the
     `FrameworkBus`, a layer bus, the `feature_bus` an ApplicationService holds. It brings the
-    two ways to call it off the calling thread: `thread_context()` and `get_async_bus()`."""
+    way to hand it to a thread pool the project owns: `thread_context()`. Async code reaches the
+    bus a project holds through its `get_async_bus()` (`UseFramework`)."""
 
     log_after_execution: bool = True
 
@@ -113,18 +111,6 @@ class Bus(ABC):
         `RuntimeError`. `ContextExecutor` takes the copy per task on its own.
         """
         return ContextBoundBus(partial(copy_context().run, self.execute))
-
-    def get_async_bus(self) -> "AsyncBus":
-        """Return a stateless async facade bound to this bus.
-
-        Unlike ``thread_context()``, this handle is reusable across concurrent
-        calls: call ``get_async_bus()`` once, then ``await``/``asyncio.gather``
-        many ``.execute()``/``__call__`` calls on it — each call captures its
-        own context snapshot internally. Use this from a caller that is itself
-        ``async def`` and wants to fan out several DTOs concurrently without
-        blocking its event loop.
-        """
-        return AsyncBus(self.execute)
 
 
 class ContextBoundBus(Bus):

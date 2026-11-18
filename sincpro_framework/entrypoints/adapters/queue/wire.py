@@ -9,8 +9,8 @@ Context: the generated subscriber and `QueueGateway.consume` (full control) both
 so a hand-written subscriber can neither skip nor re-implement a stage. Nothing here is a broker's:
 a FastStream broker (Kafka, RabbitMQ, Redis, NATS) and one of another kind (Amazon SQS) are both a
 `Broker`, their messages a `Delivery` (`sincpro_framework.event_driven`). Every subscription
-settles manually from the verdict; the bus runs in a worker thread, inside the producer's trace,
-authenticated in that same thread (identity is a `ContextVar`).
+settles manually from the verdict; the bus runs on one of the bus's async threads, inside
+the producer's trace, authenticated in that same thread (identity is a `ContextVar`).
 """
 
 import asyncio
@@ -22,6 +22,7 @@ from typing import Any, Literal
 from pydantic import BaseModel, ConfigDict, Field
 
 from sincpro_framework import exceptions
+from sincpro_framework.aio.async_threads import on_async_thread
 from sincpro_framework.auth import Credentials, security
 from sincpro_framework.common.failures import failure_reason, refined_failure_kind
 from sincpro_framework.common.naming import registered_name
@@ -465,10 +466,10 @@ class QueueWire(Wire[QueueBinding]):
 
         1. The headers become the queue's credentials, read as lower-case names.
         2. The context the message carried (`queue_context`).
-        3. In a worker thread: authenticated and inside that context, the bus runs the DTO —
-           identity is a `ContextVar`, so it is set in the thread that runs.
+        3. On one of the bus's async threads: authenticated and inside that context, the
+           bus runs the DTO — identity is a `ContextVar`, so it is set in the thread that runs.
         4. Final: inside the producer's trace; past `time_limit` it raises `TimeoutError`, the
-           thread left to finish on its own.
+           call left to finish on its own, its `self.context.cancelled` set.
         """
         bus = resolved.operation.bus
         credentials = Credentials(
@@ -479,7 +480,7 @@ class QueueWire(Wire[QueueBinding]):
         carried = queue_context(envelope, credentials.headers)
 
         def call() -> Any:
-            """The bus run in the worker thread, authenticated and in the carried context."""
+            """The bus run on the worker, authenticated and in the carried context."""
             with (
                 security.authenticated_as(bus, credentials),
                 bus.context(carried, kind=EntrypointKind.QUEUE),
@@ -487,7 +488,7 @@ class QueueWire(Wire[QueueBinding]):
                 return bus(dto)
 
         with within_trace(envelope.carrier()):
-            running = asyncio.to_thread(call)
+            running = on_async_thread(bus, call)
             limit = self.options.time_limit
             if limit is None:
                 await running

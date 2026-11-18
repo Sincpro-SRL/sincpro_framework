@@ -49,7 +49,7 @@ The previous text of this page described version 2.4.1. Its history is in git.
 | `settings/` | One document resolved into typed shapes | [settings](../core/settings.md) |
 | `introspection/` | Reads a built bus's registries; what entrypoints build their catalogs on | [entrypoints](../entrypoints/README.md) |
 | `runtime/` | Use cases loaded as source, the doubles and checks for a project's tests | [runtime use cases](../runtime_use_cases/README.md) |
-| `aio/` | The async facade of a bus (`get_async_bus`) | [core](../core/README.md) |
+| `aio/` | The async door of a bus (`get_async_bus`) and the async threads every async door runs the buses on | [async threads](../core/async-threads.md) |
 
 ## Two kinds of hook on the path
 

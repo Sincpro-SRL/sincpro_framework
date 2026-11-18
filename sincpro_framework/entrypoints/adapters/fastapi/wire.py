@@ -25,7 +25,6 @@ import re
 from collections.abc import Callable, Iterable, Sequence
 from typing import Annotated, Any
 
-from anyio import CapacityLimiter
 from fastapi import APIRouter, Body, Depends, FastAPI, Request, Response
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse, StreamingResponse
@@ -77,6 +76,7 @@ from sincpro_framework.entrypoints.domain.surface import (
     Wire,
 )
 from sincpro_framework.introspection.entity_tags import role_of
+from sincpro_framework.introspection.schemas import schema_of
 from sincpro_framework.observability.metrics import metrics
 from sincpro_framework.sincpro_abstractions import DryRunnable, Preview
 from sincpro_framework.use_bus import UseFramework
@@ -121,7 +121,7 @@ def _url_parameters(
     `components/schemas` (`referenced_document`) — criteria's schema in every parameter of
     every route made a document of tens of megabytes. A path field is plain, written in place.
     """
-    schema = command.model_json_schema() if issubclass(command, BaseModel) else {}
+    schema = schema_of(command) if issubclass(command, BaseModel) else {}
     defs = schema.get("$defs", {})
     properties = schema.get("properties") or {}
     required = set(schema.get("required") or ())
@@ -156,7 +156,7 @@ def _body_without(command: type, path_fields: Sequence[str]) -> dict[str, Any]:
     """The request body's schema: the DTO without the fields the path carries — its nested
     models pointed at the components FastAPI generated for the DTO itself. FastAPI merges
     `openapi_extra` into the schema it wrote, so `problem_document` puts it in place."""
-    schema = command.model_json_schema(ref_template="#/components/schemas/{model}")
+    schema = schema_of(command, "#/components/schemas/{model}")
     schema.pop("$defs", None)
     schema["properties"] = {
         name: value
@@ -300,7 +300,7 @@ class _PathIntoBody(APIRoute):
 
 def _read_from_url(command: type) -> Any:
     """A dependency: the DTO out of the path and the query string, validated once."""
-    schema = command.model_json_schema() if issubclass(command, BaseModel) else {}
+    schema = schema_of(command) if issubclass(command, BaseModel) else {}
 
     async def read(request: Request) -> Any:
         """The DTO from the query string and the path — the path wins — or FastAPI's own
@@ -330,11 +330,9 @@ class FastApiWire(Wire[RestBinding]):
 
     binding = RestBinding
 
-    def __init__(self, profile: Profile, limiter: CapacityLimiter | None = None) -> None:
-        """`profile` decides how a path is derived and whether a `Query` also answers `POST`;
-        `limiter` bounds the worker threads every route's bus call runs on."""
+    def __init__(self, profile: Profile) -> None:
+        """`profile` decides how a path is derived and whether a `Query` also answers `POST`."""
         self.profile: Profile = profile
-        self.limiter = limiter
         self._repeated: set[str] = set()
 
     # Deriving and naming
@@ -537,7 +535,7 @@ class FastApiWire(Wire[RestBinding]):
             answered = dict(common["responses"].get(200, {}))
             answered.setdefault("content", {})[PARQUET] = {}
             common["responses"] = {**common["responses"], 200: answered}
-        call = bus_call(operation.bus, self.limiter)
+        call = bus_call(operation.bus)
         for method in self._methods(resolved):
             from_url = method in READ_FROM_URL
             extra = operation_extra(operation.bus, command)

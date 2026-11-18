@@ -92,6 +92,7 @@ assert check.origin("tenant_id").level is ContextLevel.ENTRYPOINT
 | `context.origin(key)` | `Origin(level, label, execution_id)` — who said it |
 | `context.lineage()` | this node and every one above it |
 | `context.execution` | the identity: `execution_id`, `causation_id`, `correlation_id` |
+| `context.cancelled` | `True` once whoever awaited the call stopped waiting — an async door's caller left; nothing is stopped for it ([async threads](async-threads.md)) |
 
 Every entrance opens the flow with its kind — `REST`, `RPC`, `GRPC`, `MCP`, `QUEUE`, `CRON`, `REMOTE`,
 or `DIRECT` for a call from code. A Feature never needs it; `context.entrypoint.kind` answers when it

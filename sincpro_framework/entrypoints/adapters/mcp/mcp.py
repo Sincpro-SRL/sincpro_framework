@@ -9,6 +9,7 @@ from typing import TYPE_CHECKING, Annotated, Any
 
 from pydantic import BaseModel, Field
 
+from sincpro_framework.aio.async_threads import on_async_thread
 from sincpro_framework.common.failures import Problem, problem_of
 from sincpro_framework.context import EntrypointKind
 from sincpro_framework.entrypoints.adapters.mcp import exceptions
@@ -110,11 +111,13 @@ def tool_function(
         fn = tool_function(CommandIssueInvoice, "issue_invoice", "Issue an invoice.",
                            operation.run, billing)
         inspect.signature(fn)       ->  (*, amount: int, customer_id: str) -> dict[str, Any]
-        fn(amount=10, customer_id="C-1")                   ->  {"invoice_id": "F-1", ...}
+        await fn(amount=10, customer_id="C-1")             ->  {"invoice_id": "F-1", ...}
 
-    1. Forward keyword arguments to `run` — the bus, DTO validation inside — acting as whoever
-       called, authenticated by `bus`'s `AccessControl` when a bus is given; a failure is what
-       `on_failure` makes of it — by default a tool error carrying its `Problem` (`tool_error`).
+    1. Forward keyword arguments to `run` — the bus, DTO validation inside — on the framework's
+       workers, acting as whoever called, authenticated by `bus`'s `AccessControl` when a bus is
+       given; a failure is what `on_failure` makes of it — by default a tool error carrying its
+       `Problem` (`tool_error`). A tool call the agent cancels sets the call's
+       `self.context.cancelled`.
     2. Stamp a keyword-only signature from the Command's fields so FastMCP sees
        Pydantic types (Value Objects, Field descriptions) instead of a nested
        wrapper object.
@@ -126,12 +129,9 @@ def tool_function(
     4. Final: a function for mcp.tool(fn, name=..., description=...).
     """
 
-    def tool_fn(**kwargs: Any) -> dict[str, Any]:
-        """One tool call: the arguments as the payload `run` validates, run as whoever called
-        and — given a bus — inside its context opened as an MCP entrypoint.
-
-            tool_fn(amount=10, customer_id="C-1")  ->  {"invoice_id": "F-1", ...}
-        """
+    def called(kwargs: dict[str, Any]) -> Any:
+        """One tool call on a worker: the arguments as the payload `run` validates, run as
+        whoever called and — given a bus — inside its context opened as an MCP entrypoint."""
         try:
             with acting_for_tool_call(bus):
                 if bus is None:
@@ -140,6 +140,13 @@ def tool_function(
                     return run(kwargs)
         except Exception as error:
             return on_failure(error)
+
+    async def tool_fn(**kwargs: Any) -> dict[str, Any]:
+        """One tool call, off the event loop on the bus's async threads.
+
+        await tool_fn(amount=10, customer_id="C-1")  ->  {"invoice_id": "F-1", ...}
+        """
+        return await on_async_thread(bus, called, kwargs)
 
     parameters: list[inspect.Parameter] = []
     annotations: dict[str, Any] = {"return": dict[str, Any]}

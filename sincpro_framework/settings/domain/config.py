@@ -305,6 +305,11 @@ class FrameworkSettings(SincproConfig):
     """Context keys on every metric series of the process, beside release, service, version and
     tenant — `[company, channel]` (PRD_03 §4.10)."""
 
+    async_threads: Annotated[int, Field(ge=1)] = 40
+    """`$ENV:SINCPRO_FRAMEWORK_ASYNC_THREADS` — the threads every async door runs the buses on:
+    REST, JSON-RPC, MCP, a queue, a hosted context and `get_async_bus()` share them, as many calls
+    at once as there are threads; the next ones wait their turn (`docs/core/async-threads.md`)."""
+
     context_map: list[HostedContext] = []
     """Where bounded contexts are hosted by another service — `[{context: billing, at: grpc://…}]`,
     each address validated when the file is loaded."""

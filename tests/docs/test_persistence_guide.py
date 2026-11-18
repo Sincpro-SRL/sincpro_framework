@@ -31,6 +31,7 @@ LEASES = ROOT / "docs" / "core" / "leases.md"
 SESSIONS = ROOT / "docs" / "core" / "sessions.md"
 DRY_RUN = ROOT / "docs" / "core" / "dry-run.md"
 CIRCUIT_BREAKER = ROOT / "docs" / "core" / "circuit-breaker.md"
+ASYNC_THREADS = ROOT / "docs" / "core" / "async-threads.md"
 CRON = ROOT / "docs" / "cron" / "README.md"
 MIGRATIONS = ROOT / "docs" / "migrations" / "README.md"
 EXTENSIONS = ROOT / "docs" / "persistence" / "extensions.md"
@@ -88,6 +89,7 @@ def _failing_line(error: Exception, path: Path) -> int:
         SESSIONS,
         DRY_RUN,
         CIRCUIT_BREAKER,
+        ASYNC_THREADS,
         CRON,
         MIGRATIONS,
         EXTENSIONS,

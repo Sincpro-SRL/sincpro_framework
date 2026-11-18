@@ -7,6 +7,7 @@ refusal, so a client could not know to read again and retry; every JSON-RPC requ
 every use case's schema.
 """
 
+import asyncio
 from collections.abc import Iterator
 from typing import Any
 
@@ -298,7 +299,7 @@ def test_an_mcp_tool_says_the_same_problem_as_every_other_wire() -> None:
     tool = tool_function(
         CommandFail, "fail", "Fail.", lambda payload: billing(CommandFail(**payload)), billing
     )
-    answered = tool(how="down")
+    answered = asyncio.run(tool(how="down"))
     assert answered.is_error
     assert _said(answered.structured_content) == SAID_WHEN_DOWN
     assert "Next step: retry_later" in answered.content[0].text

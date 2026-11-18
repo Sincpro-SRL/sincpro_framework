@@ -1,82 +1,58 @@
-"""AsyncBus: async facade over a sync `Bus`, for callers that are themselves async.
+"""AsyncBus: the async door of the bus a project holds — `await billing.get_async_bus()(dto)`.
 
-`Bus.execute` is sync end to end. A caller that is already `async def` and wants to fan out
-several independent DTOs concurrently (e.g. `asyncio.gather`) still needs a way to hop off the
-event loop without losing `self.context` (the node in play lives in a `ContextVar`) in the worker
-thread `asyncio.to_thread` spawns.
-
-Unlike `bus.thread_context()` (built for a manually-managed `ThreadPoolExecutor`, which does NOT
-propagate contextvars on its own), `asyncio.to_thread` already captures
-`contextvars.copy_context()` at the call site and runs the target inside it (stdlib
-`asyncio/threads.py`) — that's the documented behavior, not an implementation detail we depend on
-accidentally. So `AsyncBus` calls `self._run` directly, a fresh copy per call.
+A bus is synchronous end to end, so a caller that is itself `async def` hands each call to a
+thread, and keeps its event loop free while the use case runs. The thread is one of the bus's
+async threads (`aio/async_threads.py`) — its own when it declared `async_threads`, the process's
+otherwise —, each call in a copy of its caller's context: `self.context` reads what the caller had
+set, and nothing the call sets leaks back.
 """
 
-import asyncio
 from collections.abc import Callable
 from typing import TYPE_CHECKING, Any, Type
 
+from sincpro_framework.aio.async_threads import on_async_thread
+
 if TYPE_CHECKING:
-    # Out of the runtime import graph on purpose: sincpro_abstractions imports *this*
-    # module (via the aio package) for `Bus.get_async_bus()`, so a real
-    # import back here would be circular.
     from ..sincpro_abstractions import TypeDTO, TypeDTOResponse
 
 
 class AsyncBus:
-    """Async facade over a sync `Bus`.
+    """Async facade over a sync bus.
 
-    Stateless and safe to reuse concurrently (e.g. inside `asyncio.gather`):
-    `asyncio.to_thread` captures a fresh context snapshot on every call, so
-    there is nothing shared to race on between calls.
+    Stateless and safe to reuse concurrently (`asyncio.gather`, a `TaskGroup`): every call takes
+    its own copy of the caller's context, so there is nothing shared to race on between calls.
 
-    Runs on the calling event loop's default executor (`asyncio.to_thread`,
-    stdlib). If the host process also runs an anyio-based server (e.g.
-    FastMCP dispatching sync tools via `anyio.to_thread`), that's a second,
-    independent thread pool — worth knowing when tuning pool sizes, not a
-    correctness concern.
+        async_bus = billing.get_async_bus()
+        async with asyncio.TaskGroup() as group:
+            for dto in dtos:
+                group.create_task(async_bus(dto))
 
-    Cancellation does not stop in-flight work: if the awaiting coroutine is
-    cancelled (e.g. `asyncio.wait_for(async_bus(dto), timeout=...)` expiring),
-    the `Feature`/`ApplicationService` already running in its worker thread
-    runs on to completion — Python cannot forcibly kill a thread. Design
-    for that (idempotency, no assumption that a timeout actually stopped the
-    work) rather than relying on cancellation as an abort mechanism.
+    As many calls run at once as the bus has async threads; the next ones wait their turn. A
+    caller that stops waiting — a `TaskGroup` sibling failed, an `asyncio.timeout` passed — drops
+    a call still waiting its turn; one already running runs to its end, its
+    `self.context.cancelled` set, since a thread cannot be stopped from outside.
+    Design for that: idempotency, and no assumption that a timeout stopped the work.
 
-    For fanning out several calls with proper partial-failure handling,
-    prefer `asyncio.TaskGroup` (3.11+) over `asyncio.gather`: a `TaskGroup`
-    cancels sibling tasks on the first failure and raises an `ExceptionGroup`,
-    instead of `gather`'s default of leaving siblings running and swallowing
-    all-but-the-first exception unless `return_exceptions=True` is passed.
-
-    # PYTHON 3.14 FREE-THREADING: `asyncio` itself only gained "first-class
-    # support for free-threaded Python" as of 3.14 (per its own docs) — so if
-    # this is ever exercised on a free-threaded interpreter, prefer 3.14+ over
-    # 3.13t (still the experimental phase for asyncio there). Verified
-    # end-to-end on both 3.14.7 and 3.14.7t here (full test suite green on
-    # both) — see the note in ioc.py about `dependency_injector` forcing the
-    # GIL back on at import time on the free-threaded build, independent of
-    # this module.
+    Prefer `asyncio.TaskGroup` (3.11+) over `asyncio.gather` to fan out: it cancels its siblings
+    on the first failure and raises an `ExceptionGroup`, where `gather` leaves them running.
     """
 
     def __init__(self, run: Callable[..., Any]) -> None:
         """Wrap whatever runs a DTO synchronously — nothing else is stored, so one instance
         serves any number of concurrent awaits."""
         self._run = run
-        """What runs a DTO on the worker thread: `bus.execute`, or the `UseFramework` itself —
-        which builds on first use, opens the call's scope and forwards a context hosted
-        elsewhere."""
+        """What runs a DTO on an async thread: the `UseFramework` itself — which builds on first
+        use, opens the call's scope and forwards a context hosted elsewhere —, and whose async
+        threads it runs on."""
 
     async def execute(
         self, dto: "TypeDTO", return_type: "Type[TypeDTOResponse] | None" = None
     ) -> "TypeDTOResponse | None":
-        """Run `execute` on a worker thread, preserving the calling context.
+        """Run the DTO on one of the bus's async threads, in a copy of the caller's context.
 
-        `asyncio.to_thread` propagates the caller's `contextvars.Context` to
-        the worker thread on its own — see the module docstring.
+        await billing.get_async_bus().execute(CommandIssue(total=10), Issued)  ->  Issued
         """
-
-        return await asyncio.to_thread(self._run, dto, return_type)
+        return await on_async_thread(self._run, self._run, dto, return_type)
 
     async def __call__(
         self, dto: "TypeDTO", return_type: "Type[TypeDTOResponse] | None" = None
@@ -84,6 +60,6 @@ class AsyncBus:
         """`await async_bus(dto)` — the same as `await async_bus.execute(dto)`, as a sync
         `Bus` is called.
 
-            await bus.get_async_bus()(CreateInvoice(amount=10))   ->  InvoiceCreated(...)
+            await billing.get_async_bus()(CreateInvoice(amount=10))   ->  InvoiceCreated(...)
         """
         return await self.execute(dto, return_type)

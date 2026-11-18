@@ -257,9 +257,9 @@ def test_an_mcp_tool_call_acts_as_whoever_the_request_says(
     billing, _ = _guarded("mcp-billing")
     issue = _mcp_issue(billing)
     _as_mcp_http_call(monkeypatch, _bearer("t-issuer"))
-    assert issue() == {"by": "user:1"}
+    assert asyncio.run(issue()) == {"by": "user:1"}
     _as_mcp_http_call(monkeypatch, _bearer("t-clerk"))
-    refused = issue()
+    refused = asyncio.run(issue())
     assert refused.is_error
     assert refused.structured_content["kind"] == "permission_denied"
     assert refused.structured_content["next_step"] == "ask_for_access"
@@ -287,7 +287,7 @@ def test_an_mcp_tool_call_reads_the_identity_the_verifier_put_in_the_token(
     billing, auth = _guarded("token-billing")
     verified = asyncio.run(mcp_auth.token_verifier(auth).verify_token("t-issuer"))
     monkeypatch.setattr(dependencies, "get_access_token", lambda: verified)
-    assert _mcp_issue(billing)() == {"by": "user:1"}
+    assert asyncio.run(_mcp_issue(billing)()) == {"by": "user:1"}
 
 
 # An ASGI app of the project's — FastAPI, Starlette

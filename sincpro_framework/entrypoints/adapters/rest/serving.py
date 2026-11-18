@@ -17,6 +17,7 @@ import math
 from collections.abc import Callable, Sequence
 from typing import Any
 
+from sincpro_framework.aio.async_threads import on_async_thread
 from sincpro_framework.auth import Credentials
 from sincpro_framework.entrypoints.adapters.rest import exceptions
 from sincpro_framework.entrypoints.adapters.rest.routing import (
@@ -105,7 +106,7 @@ def routes(
     2. One `Route` per REST route, named by its `operationId`, whose endpoint:
        2.1 reads the payload (`payload_of`) — an unreadable one answered 400;
        2.2 merges the context the caller carried (`merge_http_context`);
-       2.3 runs `call_route` in a worker thread, with the request's credentials;
+       2.3 runs `call_route` on the bus's async threads, with the request's credentials;
        2.4 answers its `(status, body)` as JSON — a 401 with the `challenges`.
     3. The OpenAPI `document` at `openapi_path`, built per request.
     4. The Swagger UI page at `docs_path` — only when there is a document to read.
@@ -132,7 +133,7 @@ def routes(
 
             1. The payload out of the request — a 400 when it cannot be read.
             2. The context the caller carried (`merge_http_context`).
-            3. `call_route` in a worker thread, with the request's credentials.
+            3. `call_route` on the bus's async threads, with the request's credentials.
             Final: its `(status, body)` as JSON — a 401 with the buses' challenges in
             `WWW-Authenticate`, a failure that says how long to wait with `Retry-After`.
             """
@@ -142,7 +143,8 @@ def routes(
                 status, body = failure_answer(error)
                 return JSONResponse({"error": body}, status_code=status)
             context = merge_http_context(request.headers) or None
-            status, body = await asyncio.to_thread(
+            status, body = await on_async_thread(
+                route.bus,
                 call_route,
                 route,
                 payload,
