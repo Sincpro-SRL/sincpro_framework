@@ -109,6 +109,7 @@ The framework's own pieces count what they do, declaring nothing either:
 | `sincpro.cache.outcomes` | `sincpro.namespace`, `sincpro.outcome` (`hit`, `stale`, `computed`, `coalesced`, `invalidated`, `fallback`, `bypassed`) | a fail-safe serving through an outage, a store bypassed |
 | `sincpro.idempotency.outcomes` | `sincpro.namespace`, `sincpro.outcome` (`claimed`, `replayed`, `in_progress`, `key_reused`) | the rate of duplicates |
 | `sincpro.queue.deliveries` | `messaging.system`, `messaging.destination.name`, `sincpro.settlement`, `sincpro.failure_kind` | acks, retries and dead letters per channel — the queue alert |
+| `sincpro.rate_limiter.refusals` | `sincpro.limiter`, `sincpro.enforced` | calls past a limit — refused, or let through by a limiter that only watches |
 
 ## Declared: decorate, and it counts, sums or measures
 

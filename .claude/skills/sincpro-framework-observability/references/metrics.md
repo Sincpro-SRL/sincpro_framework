@@ -14,7 +14,7 @@ use case. A failure answered by an error handler is still recorded as its kind â
 answer, the use case did not succeed.
 
 Framework pieces that count themselves: `sincpro.cache.outcomes`, `sincpro.idempotency.outcomes`,
-`sincpro.queue.deliveries`.
+`sincpro.queue.deliveries`, `sincpro.rate_limiter.refusals`.
 
 ## Declared: decorate
 
