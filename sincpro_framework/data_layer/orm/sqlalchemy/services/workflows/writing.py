@@ -55,7 +55,7 @@ from sincpro_framework.ddd.entity.entity_collection import (
     model_and_collection,
 )
 from sincpro_framework.ddd.events import DomainEvent
-from sincpro_framework.ddd.repositories.capabilities import Extends, Upserted
+from sincpro_framework.ddd.repositories.capabilities import Extends, Increment, Upserted
 from sincpro_framework.ddd.repositories.repository import (
     records_of,
     refuse_unarchivable,
@@ -457,8 +457,8 @@ class Writing(RepositoryState, Extends):
            `version`, `updated_at`.
         4. Refused when a value reaches a rule of the entity, or of the aggregate that owns its
            rows (`bulk_rules`), unless the call skips the checks.
-        5. The values, with `version` raised by one and `updated_at` stamped now when the
-           table has them.
+        5. The values — an `Increment` added to the column in the statement itself —, with
+           `version` raised by one and `updated_at` stamped now when the table has them.
         Final: one `UPDATE` in the call's session, and the number of rows it changed.
         """
         refuse_writing_in_preview("update_all")
@@ -488,7 +488,10 @@ class Writing(RepositoryState, Extends):
             ),
             bulk_rules.UPDATE_REMEDY,
         )
-        changes: dict[str, Any] = dict(values)
+        changes: dict[str, Any] = {
+            name: getattr(model, name) + value.by if isinstance(value, Increment) else value
+            for name, value in values.items()
+        }
         if "version" in columns:
             changes["version"] = cast(Any, model).version + 1
         if "updated_at" in columns:

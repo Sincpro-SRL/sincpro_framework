@@ -2,14 +2,17 @@
 later write needs to stay safe, and never run wider than they were asked; and what waits for the
 commit waits for this unit of work's."""
 
+from concurrent.futures import ThreadPoolExecutor
+
 import pytest
 
 from sincpro_framework import exceptions
 from sincpro_framework.data_layer.orm.sqlalchemy.entrypoint.repository import Repository
 from sincpro_framework.data_layer.orm.sqlalchemy.infrastructure import transaction_hooks
 from sincpro_framework.data_layer.repositories import MemoryRepository
+from sincpro_framework.ddd import Increment
 from sincpro_framework.ddd import exceptions as ddd_exceptions
-from sincpro_framework.ddd.criteria import Condition, Criteria, Operator
+from sincpro_framework.ddd.criteria import All, Condition, Criteria, Operator
 from sincpro_framework.ddd.repositories.hooks import Hook, Hooks
 
 from .engines import fresh
@@ -254,6 +257,62 @@ def test_a_write_by_criteria_refuses_a_condition_it_cannot_answer(ledger, ana):
 def test_update_all_refuses_the_fields_the_framework_keeps(ledger, ana):
     with pytest.raises(exceptions.ProgrammingError, match="version"):
         ledger.update_all(Account, Criteria(), {"version": 1})
+
+
+def test_an_increment_adds_to_what_each_row_holds(ledger, ana):
+    ledger.save([Account(owner_id=ana.id, balance=b) for b in (0, 2, 5)])
+    funded = Criteria(selection=Condition(field="balance", operator=Operator.GT, value=0))
+
+    taken = ledger.update_all(Account, funded, {"balance": Increment(-1)})
+
+    assert taken == 2 and balances(ledger) == [0, 1, 4]
+    assert sorted(ledger.pluck(Account, "version")) == [1, 2, 2]
+
+
+def test_an_increment_guarded_by_its_condition_takes_only_what_is_there(ledger, ana):
+    account = Account(owner_id=ana.id, balance=3)
+    ledger.save(account)
+    in_stock = Criteria(selection=Condition(field="balance", operator=Operator.GT, value=0))
+
+    taken = [
+        ledger.update_all(Account, in_stock, {"balance": Increment(-1)}) for _ in range(5)
+    ]
+
+    assert taken == [1, 1, 1, 0, 0]
+    assert ledger.get(Account, account.id).balance == 0
+
+
+def test_buyers_at_once_never_take_more_than_there_is(ledger, ana):
+    if ledger.database.engine.dialect.name != "postgresql":
+        pytest.skip("SQLite serializes writers with a file lock")
+    account = Account(owner_id=ana.id, balance=25)
+    ledger.save(account)
+    in_stock = Criteria(
+        selection=All(
+            all=[
+                Condition(field="id", value=account.id),
+                Condition(field="balance", operator=Operator.GT, value=0),
+            ]
+        )
+    )
+
+    def take(_: int) -> int:
+        return ledger.update_all(Account, in_stock, {"balance": Increment(-1)})
+
+    with ThreadPoolExecutor(max_workers=8) as buyers:
+        taken = list(buyers.map(take, range(40)))
+
+    assert sum(taken) == 25
+    assert ledger.get(Account, account.id).balance == 0
+
+
+def test_the_double_increments_as_the_engine_does(ana):
+    double = MemoryRepository()
+    double.save([Account(owner_id=ana.id, balance=b) for b in (0, 2)])
+    funded = Criteria(selection=Condition(field="balance", operator=Operator.GT, value=0))
+
+    assert double.update_all(Account, funded, {"balance": Increment(-1)}) == 1
+    assert sorted(double.pluck(Account, "balance")) == [0, 1]
 
 
 def test_remove_all_deletes_every_matching_row(ledger, ana):

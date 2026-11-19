@@ -269,8 +269,10 @@ class FrameworkSettings(SincproConfig):
     """`$ENV:APP_RELEASE` — The release version of the application."""
     tenant: str | None = None
     """`$ENV:TENANT` — The tenant identifier for the application."""
-    sincpro_framework_log_level: Literal["INFO", "DEBUG"] = "DEBUG"
-    """`$ENV:SINCPRO_FRAMEWORK_LOG_LEVEL` — The log level for the framework."""
+    sincpro_framework_log_level: Literal["INFO", "DEBUG"] = "INFO"
+    """`$ENV:SINCPRO_FRAMEWORK_LOG_LEVEL` — The log level for the framework: `INFO` written as
+    JSON lines; `DEBUG` written for a console, every SQL statement and every execution — a third
+    of the throughput of a busy write path."""
 
     sincpro_framework_log_backend: Literal["print", "stdlib", "file"] = "print"
     """`$ENV:SINCPRO_FRAMEWORK_LOG_BACKEND` — The log backend for the framework."""

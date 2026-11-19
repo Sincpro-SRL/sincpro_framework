@@ -62,8 +62,10 @@ class GatewayDown(Exception):
     pass
 
 
-def _bus(name: str = "billing", **options) -> UseFramework:  # type: ignore[no-untyped-def]
-    framework = UseFramework(name, log_after_execution=False, **options)
+def _bus(  # type: ignore[no-untyped-def]
+    name: str = "billing", log_after_execution: bool = False, **options
+) -> UseFramework:
+    framework = UseFramework(name, log_after_execution=log_after_execution, **options)
     framework.observability._module_name = "not_a_distribution"
     return framework
 
@@ -183,7 +185,7 @@ def test_no_tenant_anywhere_is_no_tenant_at_all(monkeypatch, recorder, otel_setu
 def test_one_process_two_executions_each_reports_its_own_tenant(
     deployed, sentry, recorder, otel_setup
 ):
-    framework = _bus()
+    framework = _bus(log_after_execution=True)  # the execution that succeeds writes its line
 
     @framework.feature(CommandCharge)
     class Charge(Feature):
