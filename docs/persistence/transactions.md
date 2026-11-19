@@ -584,4 +584,6 @@ assert hold("carla").number == 2
 
 The pieces around it are the ones every write has: the purchase is made once per request with
 [`idempotency.exactly_once`](../caching/README.md#exactly-once-the-answer-in-the-writes-transaction),
-and what it sold is told once it committed with [`publish_on_commit`](../events/README.md#publishing-on-commit).
+what it sold is told once it committed with [`publish_on_commit`](../events/README.md#publishing-on-commit),
+and a buyer who tries too often is refused before the sale runs by a
+[`RateLimiter`](../core/rate-limit.md#refused-at-once-in-front-of-a-use-case) in front of it.
