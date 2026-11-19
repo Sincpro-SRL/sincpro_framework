@@ -54,6 +54,7 @@ from sincpro_framework.ddd.entity.entity_meta import (
 )
 from sincpro_framework.ddd.events.domain_event import NAME, DomainEvent
 from sincpro_framework.ddd.metamodel import model_of
+from sincpro_framework.ddd.stored_file import answer_context
 from sincpro_framework.sincpro_abstractions import DataTransferObject
 
 _SERIALISING: ContextVar[bool] = ContextVar("sincpro_serialising", default=False)
@@ -193,7 +194,7 @@ def _cut(
     Final: each related record written the same way, recursively (`_record`).
     """
     event = isinstance(record, DomainEvent)
-    written = _adapter(type(record)).dump_python(record, mode=mode)
+    written = _adapter(type(record)).dump_python(record, mode=mode, context=answer_context())
     if event:
         written = {NAME: record.name, **written}
     relations = set(meta.relations) if meta is not None else set()

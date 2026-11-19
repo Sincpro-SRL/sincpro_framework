@@ -161,6 +161,7 @@ from sincpro_framework.ddd.repositories import (
     WritesInBulk,
 )
 from sincpro_framework.ddd.repositories.hooks import Hook, Hooks
+from sincpro_framework.ddd.stored_file import Rendition, StoredFile, linking
 from sincpro_framework.ddd.value_object import ValueObject
 
 __all__ = [
@@ -267,10 +268,12 @@ __all__ = [
     "ResponsePreviewEntity",
     "ResponseRecord",
     "ResponseRecords",
+    "Rendition",
     "Restore",
     "Search",
     "Sort",
     "Specification",
+    "StoredFile",
     "Through",
     "StaleAggregate",
     "StoreCapabilities",
@@ -294,6 +297,7 @@ __all__ = [
     "computed",
     "detail_of",
     "history_of",
+    "linking",
     "matching",
     "new_entity_id",
     "presentation_of",

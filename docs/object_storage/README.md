@@ -314,6 +314,100 @@ A redirect needs a client that reaches the storage's host; one in a sandbox that
 service — an MCP client's — is answered the stream. A presigned URL opens as often as it is used
 while it lives: the publication's uses count the id, so `direct` URLs live a minute by default.
 
+## A record that holds a file
+
+A record that keeps a file — an organ's photo, a payment's proof — holds a `StoredFile`: the key of
+its bytes and what a person knows it by, its name as it was sent, its type, its size. It is stored
+inside the row, as JSON (`Column("photo", TypedJson(StoredFile))`), and the model publishes it as a
+file — `Widget.FILE`, or `Widget.IMAGE` when its presentation says so —, so a client draws it by
+itself: the picture, the name, the download.
+
+```python
+from dataclasses import dataclass
+
+from sincpro_framework.ddd import Entity, Presentation, ResponseRecord, StoredFile, Widget, linking
+
+
+@dataclass(kw_only=True)
+class Organ(Entity):
+    name: str = ""
+    photo: StoredFile | None = None
+
+    presentation = Presentation["Organ"](widgets=lambda o: {o.photo: Widget.IMAGE})
+
+
+class ResponseOrgan(ResponseRecord):
+    organ: Organ
+
+
+photo = StoredFile.of(storage.put("photos/01a1e.jpg", b"\xff\xd8", metadata={"filename": "Directorio.jpg"}))
+assert (photo.name, photo.content_type) == ("Directorio.jpg", "image/jpeg")
+```
+
+A picture is shown at a few sizes — a list's line, a record —, never as the 4 MB its camera wrote.
+`put_image` does what the industry does when one is sent: it refuses what is not a picture (not
+one, a format not taken, more pixels than it decodes — a few kilobytes can claim gigapixels, more
+bytes than `max_bytes`) before writing anything; it keeps the original as it came, for whoever
+downloads it, its type by what it IS; and beside it each size of `SIZES` — `thumb`, 320 px a side,
+and `view`, 1280 px — re-encoded as WebP: turned as the camera held it, never larger, its
+transparency and colour profile kept and nothing else the camera wrote (the place, the device).
+What reads and encodes them is a port, `ImageProcessor`: `PillowImages` in-process with the `images`
+extra (`pip install sincpro-framework[images]`), or an adapter of a project's own — imgproxy, a
+cloud's service.
+
+```python
+import io
+
+from PIL import Image
+
+from sincpro_framework.data_layer.object_storage import ImageRefusal, ImageRefused, PillowImages
+
+pictures = ObjectStorage(InMemoryObjectStore(), "the-service-secret", images=PillowImages())
+camera = io.BytesIO()
+Image.new("RGB", (4032, 3024), "navy").save(camera, "JPEG")
+
+put = pictures.put_image("photos/01a1f.jpg", camera.getvalue(), "Tribunal de Honor.jpg")
+tribunal = StoredFile.of(*put)                     # the original, and its renditions
+assert (tribunal.width, tribunal.rendition("thumb").width) == (4032, 320)
+assert tribunal.keys == ["photos/01a1f.jpg", "photos/01a1f@thumb.webp", "photos/01a1f@view.webp"]
+
+try:
+    pictures.put_image("photos/statute.jpg", b"%PDF-1.7", "statute.jpg")
+except ImageRefused as refused:
+    assert refused.reason is ImageRefusal.NOT_AN_IMAGE    # and nothing was stored
+assert not pictures.exists("photos/statute.jpg")
+```
+
+Removing a file removes every key it is stored under: `for key in tribunal.keys: storage.delete(key)`.
+
+A screen shows fifty of them at once, so its link is not a publication — that would save fifty
+entries — but a **link**: the key and its end, signed with the storage's secret, saved nowhere.
+It ends between one and two `expires_in` from now and is the same all that window, so a browser
+caches the picture; it can be neither counted nor revoked.
+
+```python
+token = storage.link(photo.key, timedelta(hours=1))
+assert storage.linked(token).key == "photos/01a1e.jpg"     # PublicationRefused once it ended
+```
+
+The link is the answer's, never the row's: a record answer written inside `linking` carries each
+file's `url`, and each rendition's, so whoever may read the record may see its file. `FastApiGateway.app(files=storage)`
+puts every request inside it and serves `GET /files/{token}` — the bytes with their type and the
+name they were sent with, inline, or as an attachment with `?download`; a redirect when the store
+serves them itself (`direct`); `410` once the link ended, `404` for one not made here.
+
+```python
+answer = ResponseOrgan(organ=Organ(name="Directorio", photo=photo))
+with linking(lambda key: f"/files/{storage.link(key)}"):
+    written = answer.model_dump(mode="json")["organ"]["photo"]
+assert written["name"] == "Directorio.jpg" and written["url"].startswith("/files/")
+assert "url" not in answer.model_dump(mode="json")["organ"]["photo"]     # outside, no link
+
+with linking(lambda key: f"/files/{storage.link(key)}"):
+    shown = ResponseOrgan(organ=Organ(photo=tribunal)).model_dump(mode="json")["organ"]["photo"]
+assert [one["name"] for one in shown["renditions"]] == ["thumb", "view"]   # each with its url
+```
+
 ## The stores
 
 | Store | For |

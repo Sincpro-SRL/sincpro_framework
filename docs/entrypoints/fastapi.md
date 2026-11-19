@@ -197,6 +197,9 @@ assert (removed.status_code, removed.content) == (204, b"")
 - Each context's client contract is served at `GET /client-contract/<alias>.json` — the alias the
   gateway publishes it under —
   (`app(contract_path=None)` serves none), out of the document.
+- `app(files=storage)` serves the files records hold (`StoredFile`): each record answer carries
+  their `url`, and `GET /files/{token}` gives the bytes back with the name they were sent with
+  (`files_path` moves it) — see `docs/object_storage`, «A record that holds a file».
 - The route calls the bus. It never calls `execute`, and never the dictionary-in executor, which
   would validate again. That is also why `add(..., wrap=...)` is refused on this gateway: use an
   interceptor.

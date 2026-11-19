@@ -34,6 +34,7 @@ from sincpro_framework.ddd.metamodel.services.compiler import compiled, declarat
 from sincpro_framework.ddd.money import Money
 from sincpro_framework.ddd.multi_currency import MultiCurrency
 from sincpro_framework.ddd.multi_language import MultiLanguage
+from sincpro_framework.ddd.stored_file import StoredFile
 from sincpro_framework.ddd.value_object import holds_of
 
 EVENT_ENVELOPE = frozenset({"entity_type", "entity_id", "correlation_id", "causation_id"})
@@ -111,6 +112,8 @@ def _fields(model: Model, facts: StoreFacts) -> dict[str, FieldMeta]:
             )
             if issubclass(shape, (Money, MultiCurrency)):
                 fields[name] = fields[name].model_copy(update={"widget": Widget.MONEY})
+            elif issubclass(shape, StoredFile):
+                fields[name] = fields[name].model_copy(update={"widget": Widget.FILE})
         elif (
             kept_by_the_store
             or related_class(held.annotation)[0] is None
