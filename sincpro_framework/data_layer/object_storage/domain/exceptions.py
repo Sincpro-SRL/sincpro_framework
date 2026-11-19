@@ -1,8 +1,10 @@
 """What object storage refuses: an object that is not there, one that already is, a publication that
-does not open, a URL that cannot be fetched, and a storage that failed."""
+does not open, a file that is not taken as a picture, a URL that cannot be fetched, and a storage
+that failed."""
 
 from sincpro_framework.context import EntryConflict
 from sincpro_framework.data_layer.object_storage.domain.fetch import FetchRefusal
+from sincpro_framework.data_layer.object_storage.domain.images import ImageRefusal
 from sincpro_framework.data_layer.object_storage.domain.publication import (
     Publication,
     Refusal,
@@ -49,6 +51,18 @@ class PublicationRefused(ClientError):
             if reason is Refusal.UNKNOWN
             else FailureKind.PERMISSION_DENIED
         )
+
+
+class ImageRefused(ClientError):
+    """A file sent as a picture that is not taken as one, and why (`reason`) — nothing of it is
+    stored."""
+
+    failure_kind = FailureKind.INVALID
+
+    def __init__(self, reason: ImageRefusal, message: str) -> None:
+        """Say why, in the message and as `reason`."""
+        super().__init__(message)
+        self.reason = reason
 
 
 class FetchRefused(ClientError):

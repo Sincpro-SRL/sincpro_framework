@@ -11,7 +11,7 @@ from typing import TYPE_CHECKING, Any
 from urllib.parse import quote
 
 from sincpro_framework.context import context_propagation
-from sincpro_framework.ddd.stored_file import StoredFile, linking
+from sincpro_framework.ddd.stored_file import linking
 
 if TYPE_CHECKING:
     from sincpro_framework.data_layer.object_storage import ObjectStorage
@@ -165,7 +165,7 @@ def files_route(path: str, storage: "ObjectStorage") -> Any:
 
 class FileLinks:
     """An ASGI middleware: inside each HTTP request, every record answer writes each
-    `StoredFile` with its link — `{root_path}{path}/{token}`, the route `files_route` serves.
+    `StoredFile` and `Rendition` with its link — `{root_path}{path}/{token}`, the route `files_route` serves.
 
         app.add_middleware(FileLinks, path="/files", storage=storage)
         GET /v1/organs/7    ->  {"photo": {"name": "directorio.jpg", …, "url": "/files/cGhv…"}}
@@ -187,8 +187,8 @@ class FileLinks:
             return
         base = f"{scope.get('root_path', '')}{self.path}"
 
-        def link(file: StoredFile) -> str:
-            return f"{base}/{self.storage.link(file.key)}"
+        def link(key: str) -> str:
+            return f"{base}/{self.storage.link(key)}"
 
         with linking(link):
             await self.app(scope, receive, send)

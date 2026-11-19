@@ -344,6 +344,42 @@ photo = StoredFile.of(storage.put("photos/01a1e.jpg", b"\xff\xd8", metadata={"fi
 assert (photo.name, photo.content_type) == ("Directorio.jpg", "image/jpeg")
 ```
 
+A picture is shown at a few sizes — a list's line, a record —, never as the 4 MB its camera wrote.
+`put_image` does what the industry does when one is sent: it refuses what is not a picture (not
+one, a format not taken, more pixels than it decodes — a few kilobytes can claim gigapixels, more
+bytes than `max_bytes`) before writing anything; it keeps the original as it came, for whoever
+downloads it, its type by what it IS; and beside it each size of `SIZES` — `thumb`, 320 px a side,
+and `view`, 1280 px — re-encoded as WebP: turned as the camera held it, never larger, its
+transparency and colour profile kept and nothing else the camera wrote (the place, the device).
+What reads and encodes them is a port, `ImageProcessor`: `PillowImages` in-process with the `images`
+extra (`pip install sincpro-framework[images]`), or an adapter of a project's own — imgproxy, a
+cloud's service.
+
+```python
+import io
+
+from PIL import Image
+
+from sincpro_framework.data_layer.object_storage import ImageRefusal, ImageRefused, PillowImages
+
+pictures = ObjectStorage(InMemoryObjectStore(), "the-service-secret", images=PillowImages())
+camera = io.BytesIO()
+Image.new("RGB", (4032, 3024), "navy").save(camera, "JPEG")
+
+put = pictures.put_image("photos/01a1f.jpg", camera.getvalue(), "Tribunal de Honor.jpg")
+tribunal = StoredFile.of(*put)                     # the original, and its renditions
+assert (tribunal.width, tribunal.rendition("thumb").width) == (4032, 320)
+assert tribunal.keys == ["photos/01a1f.jpg", "photos/01a1f@thumb.webp", "photos/01a1f@view.webp"]
+
+try:
+    pictures.put_image("photos/statute.jpg", b"%PDF-1.7", "statute.jpg")
+except ImageRefused as refused:
+    assert refused.reason is ImageRefusal.NOT_AN_IMAGE    # and nothing was stored
+assert not pictures.exists("photos/statute.jpg")
+```
+
+Removing a file removes every key it is stored under: `for key in tribunal.keys: storage.delete(key)`.
+
 A screen shows fifty of them at once, so its link is not a publication — that would save fifty
 entries — but a **link**: the key and its end, signed with the storage's secret, saved nowhere.
 It ends between one and two `expires_in` from now and is the same all that window, so a browser
@@ -355,17 +391,21 @@ assert storage.linked(token).key == "photos/01a1e.jpg"     # PublicationRefused 
 ```
 
 The link is the answer's, never the row's: a record answer written inside `linking` carries each
-file's `url`, so whoever may read the record may see its file. `FastApiGateway.app(files=storage)`
+file's `url`, and each rendition's, so whoever may read the record may see its file. `FastApiGateway.app(files=storage)`
 puts every request inside it and serves `GET /files/{token}` — the bytes with their type and the
 name they were sent with, inline, or as an attachment with `?download`; a redirect when the store
 serves them itself (`direct`); `410` once the link ended, `404` for one not made here.
 
 ```python
 answer = ResponseOrgan(organ=Organ(name="Directorio", photo=photo))
-with linking(lambda file: f"/files/{storage.link(file.key)}"):
+with linking(lambda key: f"/files/{storage.link(key)}"):
     written = answer.model_dump(mode="json")["organ"]["photo"]
 assert written["name"] == "Directorio.jpg" and written["url"].startswith("/files/")
 assert "url" not in answer.model_dump(mode="json")["organ"]["photo"]     # outside, no link
+
+with linking(lambda key: f"/files/{storage.link(key)}"):
+    shown = ResponseOrgan(organ=Organ(photo=tribunal)).model_dump(mode="json")["organ"]["photo"]
+assert [one["name"] for one in shown["renditions"]] == ["thumb", "view"]   # each with its url
 ```
 
 ## The stores

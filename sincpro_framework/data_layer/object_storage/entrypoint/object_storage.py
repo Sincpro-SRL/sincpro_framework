@@ -19,6 +19,11 @@ case.
     self.storage.revoke(id)                     closed before its time
 
     self.storage.link("photos/01a1….jpg")   ->  "cGhvdG9z….1763600400.Zk3…": its key and end, signed
+
+    ObjectStorage(store, secret, images=PillowImages())
+    self.storage.put_image("photos/01a1e.jpg", data, "Directorio.jpg")
+        ->  ImagePut(original, renditions={"thumb": …, "view": …}): the original as it came, and
+            each size re-encoded beside it — ImageRefused, nothing stored, when it is no picture
     self.storage.linked(token)              ->  Linked(key, ends_at), nothing saved nor spent
 
     ticket = self.storage.publish(key, Access.WRITE, timedelta(minutes=5), max_uses=1,
@@ -35,17 +40,24 @@ URL from the id, and asks `redeem` when the id comes back.
     ids            PublicationIds   the id, signed with the secret
     publications   Publications     publish, check, redeem, revoke — in the context's store
     links          ObjectLinks      link, linked — signed with the secret, saved nowhere
+    images         Images           put_image — with the project's `ImageProcessor`, when given
 
 Each is an attribute a project reads or replaces — a subclass of its own, a store of its own —
 and `store` is the `ObjectStore` itself, for what only its technology offers.
 """
 
-from collections.abc import Callable, Collection, Iterator, Mapping
+from collections.abc import Callable, Collection, Iterator, Mapping, Sequence
 from datetime import UTC, datetime, timedelta
 from functools import partial
 from typing import Any, BinaryIO
 
 from sincpro_framework.context import ContextStore
+from sincpro_framework.data_layer.object_storage.domain.images import (
+    SIZES,
+    ImageProcessor,
+    ImagePut,
+    ImageSize,
+)
 from sincpro_framework.data_layer.object_storage.domain.object_store import (
     Access,
     ObjectRef,
@@ -59,6 +71,10 @@ from sincpro_framework.data_layer.object_storage.domain.publication import (
 )
 from sincpro_framework.data_layer.object_storage.services.contents import Contents
 from sincpro_framework.data_layer.object_storage.services.ids import PublicationIds
+from sincpro_framework.data_layer.object_storage.services.images import (
+    MAX_IMAGE_BYTES,
+    Images,
+)
 from sincpro_framework.data_layer.object_storage.services.links import Linked, ObjectLinks
 from sincpro_framework.data_layer.object_storage.services.objects import Objects
 from sincpro_framework.data_layer.object_storage.services.publications import (
@@ -68,6 +84,7 @@ from sincpro_framework.data_layer.object_storage.services.transfers import (
     FETCH_TIMEOUT,
     Transfers,
 )
+from sincpro_framework.exceptions import ProgrammingError
 
 
 class ObjectStorage:
@@ -79,11 +96,13 @@ class ObjectStorage:
         secret: str | bytes | None = None,
         context_store: ContextStore | None = None,
         now: Callable[[], datetime] = partial(datetime.now, UTC),
+        images: ImageProcessor | None = None,
     ) -> None:
-        """`store` holds the bytes; `secret` signs every publication's id — the same on every
-        replica; `context_store` is where publications and claims are saved, else the
-        context's store in play when each call runs; `now` the clock objects and publications
-        expire by."""
+        """`store` holds the bytes; `secret` signs every publication's id and every link — the
+        same on every replica; `context_store` is where publications and claims are saved, else
+        the context's store in play when each call runs; `now` the clock objects and
+        publications expire by; `images` what reads and encodes a picture (`PillowImages`), for
+        `put_image`."""
         self.store = store
         self.objects = Objects(store, now)
         self.contents = Contents(store, context_store, now)
@@ -91,6 +110,7 @@ class ObjectStorage:
         self.ids = PublicationIds(secret)
         self.publications = Publications(self.ids, context_store, now)
         self.links = ObjectLinks(self.ids.secret, now)
+        self.images = None if images is None else Images(self.objects, images)
 
     def put(
         self,
@@ -231,3 +251,22 @@ class ObjectStorage:
         """The key a link names and its end, when this service signed it and it has not ended —
         `PublicationRefused` (`FORGED`, `EXPIRED`) otherwise. Nothing is spent."""
         return self.links.linked(token)
+
+    def put_image(
+        self,
+        key: str,
+        data: bytes | BinaryIO,
+        filename: str,
+        sizes: Sequence[ImageSize] = SIZES,
+        max_bytes: int = MAX_IMAGE_BYTES,
+    ) -> ImagePut:
+        """The picture in `data`, sent as `filename`, under `key` as it came — its type by what
+        it is, its size in pixels in its metadata — and beside it each of `sizes`, re-encoded
+        (oriented, without the camera's metadata, never larger). `ImageRefused`, with nothing
+        stored, when it is not a picture this takes or passes `max_bytes`. A
+        `ProgrammingError` when this storage was given no `images`."""
+        if self.images is None:
+            raise ProgrammingError(
+                "put_image reads pictures: ObjectStorage(store, secret, images=PillowImages())"
+            )
+        return self.images.put(key, data, filename, sizes, max_bytes)
