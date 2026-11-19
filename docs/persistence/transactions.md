@@ -15,6 +15,7 @@ that go past an aggregate on purpose. Every block on this page runs, in order, a
 | Several use cases validated and committed together | [7. Several use cases, one transaction](#7-several-use-cases-one-transaction) |
 | A correlative without gaps — a fiscal invoice's number | [8. Numbers without gaps](#8-numbers-without-gaps) |
 | SQLAlchemy itself | [9. The passthrough](#9-the-passthrough) |
+| Stock that many buyers take at once — seats, tickets, units | [10. Stock under contention](#10-stock-under-contention) |
 
 The rules behind every section are in the [manifesto](manifesto.md).
 
@@ -419,3 +420,168 @@ log says so: a failure before the invoice is saved leaves a gap. Gapless is the 
 | an option on this transaction | `context(engine={…})` | everything |
 | a query a criteria cannot say | `statement()` → `run()` | the envelope, tracing |
 | anything SQLAlchemy has | `unit.session` | the transaction, stamping, tracing — not hooks, `version` or the cascade |
+
+## 10. Stock under contention
+
+A concert with five thousand seats and twenty thousand buyers in its first minute: every buyer
+writes the same few rows. Nothing above lets two of them take one seat — the `version` check, the
+row lock and the table's `CHECK` each refuse it — so the question here is not whether the stock
+stays right but how many buyers a second it serves, and how many are told no only because another
+wrote first.
+
+| Tool | What the Feature writes | Many buyers at once |
+|---|---|---|
+| `save` (the `version` check) | read, change, `save`, `retrying` | correct, and most of them lose the race: the right tool for an aggregate few people write at once |
+| `for_update` | `get(…, for_update=True)`, change, `save` | they wait in line on the row: one sale at a time, however many replicas |
+| `Increment`, guarded by its condition | `update_all(Show, in_stock, {"available": Increment(-1)})` | one statement and no read: the row is held only for the write |
+| A row per unit, `skip_locked` | `first(Seat, free, for_update=True, skip_locked=True)` | no row is shared: each buyer takes a different seat, and replicas add buyers a second |
+
+Measured on Postgres 17 with 5 000 seats and 6 000 buyers on 32 threads: `Increment` sold about
+650 a second per process, a row per seat about 500, `for_update` about 450 — and about 420 with
+four processes, the ceiling of one row —, while `save` with three attempts told 85% of the
+buyers no.
+
+**A counter: `Increment`.** It adds to what the row holds in the `UPDATE` itself, so no read sits
+between two buyers; the condition that there is stock left is part of the same statement, and the
+number of rows it changed says whether this buyer got one. The double applies it the same way.
+
+```python
+from sincpro_framework.ddd import All, Increment
+
+
+@dataclass
+class Show(Entity):
+    title: str = ""
+    available: int = 0
+
+
+box_office = registry()
+show_table = template_table.entity_table(
+    "show",
+    box_office.metadata,
+    Column("title", Text, nullable=False),
+    Column("available", Integer, nullable=False),
+    CheckConstraint("available >= 0", name="show_never_oversold"),
+)
+map_aggregates(box_office, {Show: show_table})
+box_office.metadata.create_all(database.engine)
+```
+
+What is left is read in the same unit of work, after the write: the row is held by it until the
+commit, so the number is exact.
+
+```python
+concert = Show(title="concert", available=2)
+repository.save(concert)
+in_stock = Criteria(
+    selection=All(
+        all=[
+            Condition(field="id", value=concert.id),
+            Condition(field="available", operator=Operator.GT, value=0),
+        ]
+    )
+)
+
+
+def take_a_seat() -> int | None:
+    with repository.context() as unit:
+        if unit.update_all(Show, in_stock, {"available": Increment(-1)}) == 0:
+            return None                                # sold out: nothing was written
+        return unit.get(Show, concert.id).available    # exact: the row is ours until the commit
+
+
+assert [take_a_seat() for _ in range(3)] == [1, 0, None]
+```
+
+**A seat of its own: hold, pay, or let go.** A buyer who picks a seat holds it while paying; a
+hold nobody paid for goes back to the others when it expires. Each seat is its own row, so
+`skip_locked` hands every buyer a different free one instead of a line behind the same row:
+
+```python
+from datetime import datetime, timedelta
+
+from sqlalchemy import Boolean, DateTime
+
+from sincpro_framework.ddd import Now, Sort, utc_now
+
+
+@dataclass
+class Seat(Entity):
+    show_id: str = ""
+    number: int = 0
+    buyer: str | None = None
+    held_until: datetime | None = None
+    sold: bool = False
+
+
+venue = registry()
+seat_table = template_table.entity_table(
+    "seat",
+    venue.metadata,
+    Column("show_id", Text, nullable=False),
+    Column("number", Integer, nullable=False),
+    Column("buyer", Text),
+    Column("held_until", DateTime(timezone=True)),
+    Column("sold", Boolean, nullable=False),
+)
+map_aggregates(venue, {Seat: seat_table})
+venue.metadata.create_all(database.engine)
+repository.save([Seat(show_id=concert.id, number=n) for n in (1, 2)])
+
+free = Criteria(
+    selection=All(
+        all=[
+            Condition(field="show_id", value=concert.id),
+            Condition(field="buyer", operator=Operator.IS_NULL, value=True),
+        ]
+    ),
+    order=(Sort(field="number"),),
+)
+
+
+def hold(buyer: str, minutes: int = 10) -> Seat | None:
+    with repository.context() as unit:
+        seat = unit.first(Seat, free, for_update=True, skip_locked=True)
+        if seat is None:
+            return None
+        seat.buyer = buyer
+        seat.held_until = utc_now() + timedelta(minutes=minutes)
+        unit.save(seat)
+        return seat
+
+
+ana_seat, bob_seat = hold("ana"), hold("bob", minutes=-1)     # bob's hold has already expired
+assert (ana_seat.number, bob_seat.number, hold("carla")) == (1, 2, None)
+
+with repository.context() as unit:                           # ana paid
+    paid = unit.get(Seat, ana_seat.id, for_update=True)
+    paid.sold = True
+    unit.save(paid)
+```
+
+What lets go of the holds nobody paid for is one write by criteria, run every few seconds by a
+`Poll` or a cron ([process](../process/README.md), [cron](../cron/README.md)) — a buyer who closed
+the tab never blocks a seat for longer than the hold:
+
+```python
+expired = Criteria(
+    selection=All(
+        all=[
+            Condition(field="sold", value=False),
+            Condition(field="held_until", operator=Operator.LT, value=Now()),
+        ]
+    )
+)
+
+
+def release_expired_holds() -> int:
+    return repository.update_all(Seat, expired, {"buyer": None, "held_until": None})
+
+
+assert release_expired_holds() == 1
+assert hold("carla").number == 2
+```
+
+The pieces around it are the ones every write has: the purchase is made once per request with
+[`idempotency.exactly_once`](../caching/README.md#exactly-once-the-answer-in-the-writes-transaction),
+and what it sold is told once it committed with [`publish_on_commit`](../events/README.md#publishing-on-commit).

@@ -168,7 +168,7 @@ def test_a_process_host_stops_when_its_parent_dies(tmp_path: Path, hosted_module
         text=True,
     )
     assert parent.stdout is not None
-    said = next(line for line in parent.stdout if line.startswith("{"))
+    said = next(line for line in parent.stdout if line.startswith('{"child"'))
     child = json.loads(said)["child"]
 
     parent.kill()

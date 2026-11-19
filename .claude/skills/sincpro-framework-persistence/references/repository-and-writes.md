@@ -224,6 +224,7 @@ repository.upsert(rates, on=("currency",), update=("per_usd",))  # overwrite onl
 done = repository.upsert(rates, on=("currency",))                # done.written, done.skipped
 count = repository.update_all(Session, Criteria(selection=expired), {"state": "closed"})
 count = repository.remove_all(Session, Criteria(selection=expired))
+taken = repository.update_all(Show, in_stock, {"available": Increment(-1)})   # 1 sold, 0 sold out
 ```
 
 - `upsert`: answers `Upserted(written, skipped)`; the key must be unique in the table; no
@@ -232,6 +233,12 @@ count = repository.remove_all(Session, Criteria(selection=expired))
 - `update_all`/`remove_all`: one statement, the count back; no hooks, no cascade, no change
   tracking; `version` raised and `updated_at` stamped; scope and archived apply as in a read; a
   page or a condition the aggregate cannot answer is **refused** (it would widen the write).
+- `Increment(by)` (`sincpro_framework.ddd`) adds to what each row holds inside the `UPDATE`: the
+  counter many buyers move at once — stock, seats, a quota. Guard it with its condition
+  (`available > 0`) and read the count back: 1 sold, 0 sold out. No read sits between two buyers,
+  so it never loses a race the way read-change-`save` does on one hot row; the double applies it
+  the same way. Seats as rows: `first(Seat, free, for_update=True, skip_locked=True)`. Holds that
+  expire: one `update_all` from a cron or `Poll`. Recipe: `docs/persistence/transactions.md` §10.
 - A child a root owns is written by `save(root)` — never reach for these to rebuild children.
 
 ## Reading

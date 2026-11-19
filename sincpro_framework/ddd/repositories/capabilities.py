@@ -31,6 +31,7 @@ from abc import ABC, abstractmethod
 from collections.abc import Callable, Iterator, Mapping, Sequence
 from contextlib import AbstractContextManager
 from dataclasses import dataclass
+from decimal import Decimal
 from typing import Any, Self, overload
 
 from sincpro_framework.ddd.criteria import Bucket, Criteria
@@ -64,6 +65,20 @@ class StoreCapabilities:
     """A part of a unit of work can be undone on its own."""
     percentiles: bool = False
     """`measures` can compute a percentile."""
+
+
+@dataclass(frozen=True)
+class Increment:
+    """What `update_all` adds to the value each row holds, in the statement that writes it: a
+    counter many writers move at once, with no read between them to race.
+
+        repository.update_all(Show, in_stock, {"available": Increment(-1)})    a seat taken
+        repository.update_all(Page, visited, {"views": Increment(1)})
+
+    A row that holds no value keeps none: `NULL + 1` is `NULL`, in the engine and in memory.
+    """
+
+    by: int | Decimal
 
 
 @dataclass(frozen=True)
@@ -389,6 +404,7 @@ class WritesInBulk(ABC):
         """Sets these values on every record the filter matches; how many is the answer. Past
         the aggregate — no hook, no cascade — but its version is raised. A page, or a condition
         the aggregate cannot answer, is refused: a write never runs wider than it was asked.
+        An `Increment` adds to what each record holds instead of replacing it.
         """
 
     @abstractmethod

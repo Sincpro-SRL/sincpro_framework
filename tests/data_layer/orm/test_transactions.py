@@ -4,7 +4,7 @@ engine refused — so the races it loses are the ones a fresh read can win."""
 from concurrent.futures import ThreadPoolExecutor
 
 import pytest
-from sqlalchemy import delete, insert, text
+from sqlalchemy import delete, event, insert, text
 
 from sincpro_framework import exceptions
 from sincpro_framework.data_layer.orm.sqlalchemy.domain.transaction import Isolation, Writes
@@ -298,6 +298,25 @@ def test_a_statement_past_its_timeout_stops(ledger, opened):
     with pytest.raises(ddd_exceptions.TimedOut):
         with ledger.context(timeout=0.05) as unit:
             unit.session.execute(text("SELECT pg_sleep(1)"))
+
+
+def test_a_held_row_is_held_for_its_read_and_its_write_and_nothing_else(ledger, opened):
+    sent: list[str] = []
+
+    def record(connection, cursor, statement, parameters, context, many) -> None:
+        sent.append(statement.split()[0])
+
+    event.listen(ledger.database.engine, "before_cursor_execute", record)
+    try:
+        with ledger.context() as unit:
+            account = unit.get(Account, opened.id, for_update=True)
+            account.withdraw(10)
+            unit.save(account)
+    finally:
+        event.remove(ledger.database.engine, "before_cursor_execute", record)
+
+    assert sent == ["SELECT", "UPDATE"]
+    assert ledger.get(Account, opened.id).balance == 90
 
 
 def test_the_double_refuses_nowait_as_it_refuses_for_update():

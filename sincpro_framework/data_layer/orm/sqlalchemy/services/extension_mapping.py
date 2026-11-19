@@ -260,13 +260,16 @@ def root_options(entity: type, table: Table, strict: Collection[type]) -> dict[s
 
     Noted on the way: Move is its own root, strict when `strict` names it, and its rows' type
     stored when its table has an `extension_type` column.
+
+    The type never expires on a flush: a record is the class it was loaded as, and reading the
+    type again before the commit would hold every locked row one more round trip.
     """
     options: dict[str, Any] = {
         "polymorphic_on": extension_typing.TYPE_ATTRIBUTE,
         "polymorphic_identity": identity_of(entity),
         "properties": {
             extension_typing.TYPE_ATTRIBUTE: column_property(
-                extension_typing.ExtensionType(entity)
+                extension_typing.ExtensionType(entity), expire_on_flush=False
             )
         },
     }
@@ -336,7 +339,7 @@ def extension_options(
         if root not in strict:
             options["properties"] = {
                 extension_typing.TYPE_ATTRIBUTE: column_property(
-                    extension_typing.ExtensionType(root, within=entity)
+                    extension_typing.ExtensionType(root, within=entity), expire_on_flush=False
                 )
             }
     extension_typing.ROOT_OF[entity] = root

@@ -21,6 +21,7 @@ from sincpro_framework.ddd.repositories.aggregate_repository import AggregateRep
 from sincpro_framework.ddd.repositories.capabilities import (
     Analyzes,
     Extends,
+    Increment,
     ReadsAggregates,
     StoreCapabilities,
     Transacts,
@@ -43,6 +44,7 @@ __all__ = [
     "Hook",
     "Hooks",
     "INumbering",
+    "Increment",
     "PublishOnCommit",
     "ReadsAggregates",
     "IRepository",

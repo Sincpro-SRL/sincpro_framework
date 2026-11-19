@@ -98,6 +98,7 @@ from sincpro_framework.ddd.metamodel.services.description import held_relations
 from sincpro_framework.ddd.repositories.capabilities import (
     Analyzes,
     Extends,
+    Increment,
     StoreCapabilities,
     Transacts,
     Upserted,
@@ -1561,8 +1562,9 @@ class MemoryRepository(
             skips the checks.
         3. The records the filter reaches — refused for a page, or a condition the aggregate
            cannot answer.
-        4. Each one marked touched, its values set, and an entity's version raised and
-           `updated_at` stamped with one moment for all.
+        4. Each one marked touched, its values set — an `Increment` added to what it holds, a
+           value it does not hold left empty as the engine leaves `NULL` —, and an entity's
+           version raised and `updated_at` stamped with one moment for all.
         Final: how many records it changed.
         """
         refuse_writing_in_preview("update_all")
@@ -1594,6 +1596,9 @@ class MemoryRepository(
         for one in rows:
             self._touching(type(one), identity_of(one))
             for name, value in values.items():
+                if isinstance(value, Increment):
+                    held = getattr(one, name)
+                    value = None if held is None else held + value.by
                 setattr(one, name, value)
             if isinstance(one, Entity):
                 one.version += 1
