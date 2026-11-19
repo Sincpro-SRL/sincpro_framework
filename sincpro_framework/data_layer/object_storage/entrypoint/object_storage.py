@@ -18,6 +18,9 @@ case.
     self.storage.redeem(id, Access.READ)    ->  Publication, one use spent — then open(published.key)
     self.storage.revoke(id)                     closed before its time
 
+    self.storage.link("photos/01a1….jpg")   ->  "cGhvdG9z….1763600400.Zk3…": its key and end, signed
+    self.storage.linked(token)              ->  Linked(key, ends_at), nothing saved nor spent
+
     ticket = self.storage.publish(key, Access.WRITE, timedelta(minutes=5), max_uses=1,
                                   then=Grant(access=Access.READ, expires_in=timedelta(hours=1), max_uses=1))
         one id: the client uploads with it once, then a use case claims the object with it once
@@ -31,6 +34,7 @@ URL from the id, and asks `redeem` when the id comes back.
     transfers      Transfers        stream, direct, fetch — the bytes passed on without holding them
     ids            PublicationIds   the id, signed with the secret
     publications   Publications     publish, check, redeem, revoke — in the context's store
+    links          ObjectLinks      link, linked — signed with the secret, saved nowhere
 
 Each is an attribute a project reads or replaces — a subclass of its own, a store of its own —
 and `store` is the `ObjectStore` itself, for what only its technology offers.
@@ -55,6 +59,7 @@ from sincpro_framework.data_layer.object_storage.domain.publication import (
 )
 from sincpro_framework.data_layer.object_storage.services.contents import Contents
 from sincpro_framework.data_layer.object_storage.services.ids import PublicationIds
+from sincpro_framework.data_layer.object_storage.services.links import Linked, ObjectLinks
 from sincpro_framework.data_layer.object_storage.services.objects import Objects
 from sincpro_framework.data_layer.object_storage.services.publications import (
     Publications,
@@ -85,6 +90,7 @@ class ObjectStorage:
         self.transfers = Transfers(store, now, self.objects)
         self.ids = PublicationIds(secret)
         self.publications = Publications(self.ids, context_store, now)
+        self.links = ObjectLinks(self.ids.secret, now)
 
     def put(
         self,
@@ -214,3 +220,14 @@ class ObjectStorage:
     def revoke(self, id: str) -> None:
         """Close the publication `id` names before its time; one already gone is not an error."""
         self.publications.revoke(id)
+
+    def link(self, key: str, expires_in: timedelta = timedelta(hours=1)) -> str:
+        """A link to the object under `key` that saves nothing: its key and its end, signed with
+        the secret — what an answer shows many of, a picture per row. It ends between one and
+        two `expires_in` from now, the same link all that window; it cannot be revoked."""
+        return self.links.link(key, expires_in)
+
+    def linked(self, token: str) -> Linked:
+        """The key a link names and its end, when this service signed it and it has not ended —
+        `PublicationRefused` (`FORGED`, `EXPIRED`) otherwise. Nothing is spent."""
+        return self.links.linked(token)

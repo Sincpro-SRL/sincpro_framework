@@ -32,13 +32,19 @@ from sincpro_framework.entrypoints.adapters.fastapi.wire import (
 from sincpro_framework.entrypoints.domain.bindings import RestBinding
 from sincpro_framework.entrypoints.domain.layers import Wrapper
 from sincpro_framework.entrypoints.domain.surface import Exposure, Profile, Resolved
-from sincpro_framework.entrypoints.infrastructure.http import contract_route
+from sincpro_framework.entrypoints.infrastructure.http import (
+    FileLinks,
+    contract_route,
+    files_route,
+)
 from sincpro_framework.entrypoints.services.client_contract import contract_of
 from sincpro_framework.entrypoints.services.gateway import DEFAULT_LAYERS, Buses, Gateway
 from sincpro_framework.use_bus import UseFramework
 
 if TYPE_CHECKING:
     from fastapi import APIRouter, FastAPI
+
+    from sincpro_framework.data_layer.object_storage import ObjectStorage
 
 
 class FastApiGateway(Gateway):
@@ -168,6 +174,8 @@ class FastApiGateway(Gateway):
         metrics_path: str | None = "/metrics",
         ready_path: str | None = "/readyz",
         contract_path: str | None = "/client-contract",
+        files: "ObjectStorage | None" = None,
+        files_path: str = "/files",
         **fastapi_kwargs: Any,
     ) -> "FastAPI":
         """Every context's router in one FastAPI app, its problem handlers installed, the
@@ -180,8 +188,12 @@ class FastApiGateway(Gateway):
             gateway.app(health_path=None, docs_url=None)
             ->  no health check, no Swagger UI
             GET /client-contract/billing.json ->  what `export_client_contract` writes, its ETag
+            gateway.app(files=storage)        ->  every `StoredFile` answered with its `url`,
+                                                  served at `{files_path}/{token}`
 
-        A `None` path serves nothing there.
+        A `None` path serves nothing there. With `files` — the `ObjectStorage`, with its
+        secret, that the records' files are stored in — each record answer writes a file with
+        a link to it, and `GET {files_path}/{token}` serves it (`files_route`, `FileLinks`).
         """
         app = fastapi_app(
             self._title,
@@ -198,6 +210,9 @@ class FastApiGateway(Gateway):
             app.router.routes.append(
                 contract_route(contract_path, partial(contract_of, self))
             )
+        if files is not None:
+            app.router.routes.append(files_route(files_path, files))
+            app.add_middleware(FileLinks, path=files_path, storage=files)
         return app
 
     def verify(self, app: "FastAPI | None" = None) -> list[str]:

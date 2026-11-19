@@ -12,6 +12,7 @@ entrypoint's, and `ObjectStorage` is injected as any adapter.
     self.storage.fetch(url, "inbox/scan.pdf", max_bytes=50 * MB)   a URL's bytes into the store
     published = self.storage.publish("exports/invoices.csv", Access.READ, timedelta(hours=1), max_uses=1)
     self.storage.redeem(published.id, Access.READ)     the entrypoint, when the id comes back
+    self.storage.link("photos/01a1….jpg")              a link saved nowhere, its end signed
 
     domain/      ObjectStore (the port), ObjectRef, StoredObject, ObjectStream, Access, Publication, Grant, Refusal;
                  ObjectNotFound, ObjectAlreadyExists, PublicationRefused, FetchRefused, FetchFailed,
@@ -48,6 +49,7 @@ from sincpro_framework.data_layer.object_storage.domain.publication import (
 from sincpro_framework.data_layer.object_storage.entrypoint.object_storage import (
     ObjectStorage,
 )
+from sincpro_framework.data_layer.object_storage.services.links import Linked
 
 __all__ = [
     "Access",
@@ -56,6 +58,7 @@ __all__ = [
     "FetchRefused",
     "Grant",
     "InMemoryObjectStore",
+    "Linked",
     "LocalObjectStore",
     "ObjectAlreadyExists",
     "ObjectNotFound",

@@ -59,6 +59,10 @@ class Widget(StrEnum):
     MANY2MANY = "many2many"
     EMBEDDED = "embedded"
     IDENTIFIER = "identifier"
+    FILE = "file"
+    """A `StoredFile`: its name, downloading it."""
+    IMAGE = "image"
+    """A `StoredFile` that is a picture: the picture itself, and its name."""
 
 
 class FieldRef(str):

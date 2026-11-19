@@ -1,12 +1,20 @@
-"""What the HTTP entrypoints read off a request's headers — the context the caller carried —
-and how a discovery document is tagged for a client to revalidate it."""
+"""What the HTTP entrypoints read off a request's headers — the context the caller carried —,
+how a discovery document is tagged for a client to revalidate it, and the files a record holds
+served by their links."""
 
 import hashlib
 import json
+import unicodedata
 from collections.abc import Callable, Mapping
-from typing import Any
+from datetime import UTC, datetime
+from typing import TYPE_CHECKING, Any
+from urllib.parse import quote
 
 from sincpro_framework.context import context_propagation
+from sincpro_framework.ddd.stored_file import StoredFile, linking
+
+if TYPE_CHECKING:
+    from sincpro_framework.data_layer.object_storage import ObjectStorage
 
 
 def merge_http_context(headers: Mapping[str, str]) -> dict[str, Any]:
@@ -42,6 +50,17 @@ def document_tag(document: Mapping[str, Any]) -> str:
     return f'"{hashlib.sha256(written.encode()).hexdigest()}"'
 
 
+def _problem(status: int, title: str, detail: str) -> Any:
+    """An RFC 9457 problem, as every refusal of these routes is answered."""
+    from starlette.responses import JSONResponse
+
+    return JSONResponse(
+        {"type": "about:blank", "title": title, "status": status, "detail": detail},
+        status_code=status,
+        media_type="application/problem+json",
+    )
+
+
 def contract_route(path: str, contract: Callable[[str], tuple[bytes, str] | None]) -> Any:
     """`GET {path}/{alias}.json` as a Starlette route: the client contract of the bounded context
     a gateway publishes as `alias` — the bytes its export writes —, tagged by its version, `304`
@@ -58,7 +77,7 @@ def contract_route(path: str, contract: Callable[[str], tuple[bytes, str] | None
     Final: the bytes, as JSON, with their `ETag`.
     """
     # Imported when asked: an HTTP gateway is an extra; this module is read by every entrypoint.
-    from starlette.responses import JSONResponse, Response
+    from starlette.responses import Response
     from starlette.routing import Route
 
     async def served(request: Any) -> Any:
@@ -66,16 +85,7 @@ def contract_route(path: str, contract: Callable[[str], tuple[bytes, str] | None
         alias = request.path_params["alias"]
         found = contract(alias)
         if found is None:
-            return JSONResponse(
-                {
-                    "type": "about:blank",
-                    "title": "Not Found",
-                    "status": 404,
-                    "detail": f"no client contract for {alias!r}",
-                },
-                status_code=404,
-                media_type="application/problem+json",
-            )
+            return _problem(404, "Not Found", f"no client contract for {alias!r}")
         body, version = found
         tag = f'"{version}"'
         if request.headers.get("if-none-match") == tag:
@@ -83,3 +93,102 @@ def contract_route(path: str, contract: Callable[[str], tuple[bytes, str] | None
         return Response(body, media_type="application/json", headers={"ETag": tag})
 
     return Route(f"{path.rstrip('/')}/{{alias}}.json", served, methods=["GET"])
+
+
+def disposition(kind: str, name: str) -> str:
+    """A `Content-Disposition` that keeps a file's name in any language: in ASCII, its accents
+    dropped, for old clients, and whole in UTF-8 (RFC 6266) for the rest.
+
+        disposition("attachment", "Órgano ñ.jpg")
+        ->  attachment; filename="Organo n.jpg"; filename*=UTF-8''%C3%93rgano%20%C3%B1.jpg
+    """
+    plain = unicodedata.normalize("NFKD", name).encode("ascii", "ignore").decode()
+    plain = plain.replace('"', "").replace("\\", "")
+    return f"{kind}; filename=\"{plain or 'file'}\"; filename*=UTF-8''{quote(name)}"
+
+
+def files_route(path: str, storage: "ObjectStorage") -> Any:
+    """`GET {path}/{token}` as a Starlette route: the object a link names (`ObjectStorage.link`),
+    to see it — or to save it, with `?download`.
+
+        GET /files/cGhvdG9z….1763600400.Zk3…             ->  200, image/jpeg, inline; filename*=…
+        GET /files/cGhvdG9z….1763600400.Zk3…?download    ->  200, attachment; filename*=…
+        GET /files/<a link that ended>                   ->  410, a problem
+        GET /files/<a link not made here>                ->  404, a problem
+
+    1. The link opened (`linked`): ended is a 410, forged a 404 — nothing else is told.
+    2. A store that serves its bytes itself (`direct`) is a redirect to it.
+    3. Else the bytes, a part at a time, with their type, their size, the name they were sent
+       with, and a private cache until the link ends — the same link is the same object.
+    Final: an object gone from the store is a 404.
+    """
+    from starlette.responses import RedirectResponse, StreamingResponse
+    from starlette.routing import Route
+
+    from sincpro_framework.data_layer.object_storage import (
+        ObjectNotFound,
+        PublicationRefused,
+        Refusal,
+    )
+
+    async def served(request: Any) -> Any:
+        """The object the path's link names."""
+        try:
+            linked = storage.linked(request.path_params["token"])
+        except PublicationRefused as refused:
+            if refused.reason is Refusal.EXPIRED:
+                return _problem(410, "Gone", "the link has ended: read the record again")
+            return _problem(404, "Not Found", "no file at this link")
+        url = storage.direct(linked.key)
+        if url:
+            return RedirectResponse(url, status_code=307)
+        try:
+            streamed = storage.stream(linked.key)
+        except ObjectNotFound:
+            return _problem(404, "Not Found", "the file is no longer stored")
+        ref = streamed.ref
+        name = ref.metadata.get("filename") or ref.key.rsplit("/", 1)[-1]
+        kind = "attachment" if "download" in request.query_params else "inline"
+        left = max(0, int((linked.ends_at - datetime.now(UTC)).total_seconds()))
+        return StreamingResponse(
+            streamed.chunks(),
+            media_type=ref.content_type,
+            headers={
+                "Content-Length": str(ref.size),
+                "Content-Disposition": disposition(kind, name),
+                "Cache-Control": f"private, max-age={left}",
+            },
+        )
+
+    return Route(f"{path.rstrip('/')}/{{token}}", served, methods=["GET"])
+
+
+class FileLinks:
+    """An ASGI middleware: inside each HTTP request, every record answer writes each
+    `StoredFile` with its link — `{root_path}{path}/{token}`, the route `files_route` serves.
+
+        app.add_middleware(FileLinks, path="/files", storage=storage)
+        GET /v1/organs/7    ->  {"photo": {"name": "directorio.jpg", …, "url": "/files/cGhv…"}}
+
+    Context: the link is the answer's — whoever may read the record may see its file — and is
+    made while the answer is written, after the use case ran; `linking` carries it there.
+    """
+
+    def __init__(self, app: Any, path: str, storage: "ObjectStorage") -> None:
+        """`app` the ASGI app it wraps; `path` where `files_route` is mounted; `storage` whose
+        secret signs the links."""
+        self.app = app
+        self.path = path.rstrip("/")
+        self.storage = storage
+
+    async def __call__(self, scope: Any, receive: Any, send: Any) -> None:
+        if scope["type"] != "http":
+            await self.app(scope, receive, send)
+            return
+        base = f"{scope.get('root_path', '')}{self.path}"
+
+        def link(file: StoredFile) -> str:
+            return f"{base}/{self.storage.link(file.key)}"
+
+        with linking(link):
+            await self.app(scope, receive, send)
