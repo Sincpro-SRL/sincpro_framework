@@ -57,7 +57,9 @@ class IdentityMiddleware:
         if status == 401:
             headers += [
                 (b"www-authenticate", challenge.encode())
-                for challenge in self.access.challenges()
+                for challenge in self.access.challenges(
+                    error if isinstance(error, exceptions.Unauthenticated) else None
+                )
             ]
         await send({"type": "http.response.start", "status": status, "headers": headers})
         body = json.dumps({"error": error.refusal_body()}).encode()

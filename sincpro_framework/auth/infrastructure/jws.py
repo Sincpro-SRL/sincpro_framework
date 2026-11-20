@@ -25,6 +25,7 @@ from datetime import UTC, datetime
 from typing import Any
 
 from sincpro_framework.auth.domain import exceptions
+from sincpro_framework.auth.domain.keys import VerificationKey
 from sincpro_framework.auth.infrastructure.digests import revealed
 
 MAX_TOKEN_LENGTH = 16_384
@@ -141,7 +142,7 @@ def encode(
 
 
 @dataclass(frozen=True)
-class HmacKey:
+class HmacKey(VerificationKey):
     """A shared secret that signs and verifies one HMAC algorithm — HS256 by default.
 
     HmacKey.of("2026-09", Secret("…"), "HS256")
@@ -167,12 +168,15 @@ class HmacKey:
         """The HMAC of `signing_input`."""
         return hmac.new(self.secret, signing_input, HMAC_DIGESTS[self.algorithm]).digest()
 
+    def verify(self, signing_input: bytes, signature: bytes) -> bool:
+        """Whether `signature` is this key's HMAC of `signing_input` — in constant time."""
+        return hmac.compare_digest(self.sign(signing_input), signature)
+
     def verifies(self, jws: Jws) -> bool:
-        """Whether `jws` names this key's algorithm and its signature is this key's — compared
-        in constant time."""
-        if jws.algorithm != self.algorithm:
-            return False
-        return hmac.compare_digest(self.sign(jws.signing_input), jws.signature)
+        """Whether `jws` names this key's algorithm and its signature is this key's."""
+        return jws.algorithm == self.algorithm and self.verify(
+            jws.signing_input, jws.signature
+        )
 
 
 def numeric_date(claims: Mapping[str, Any], name: str, what: str = "token") -> float | None:

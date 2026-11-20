@@ -182,7 +182,9 @@ def refusal_metadata(
     a credential, as `www-authenticate`."""
     metadata = [("sp-auth-refusal", json.dumps(error.refusal_body()))]
     if isinstance(error, exceptions.Unauthenticated):
-        metadata += [("www-authenticate", one) for one in security.challenges([framework])]
+        metadata += [
+            ("www-authenticate", one) for one in security.challenges([framework], error)
+        ]
     return tuple(metadata)
 
 

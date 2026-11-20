@@ -30,7 +30,7 @@ from pydantic import BaseModel, ConfigDict
 from starlette.requests import Request
 from starlette.responses import JSONResponse
 
-from sincpro_framework.auth import security
+from sincpro_framework.auth import Unauthenticated, security
 from sincpro_framework.common import failures
 from sincpro_framework.context import context_propagation, use_context
 from sincpro_framework.entrypoints.adapters.fastapi import exceptions
@@ -109,11 +109,13 @@ def _trace_id(request: Request) -> str | None:
     )
 
 
-def _challenges(request: Request) -> list[str]:
+def _challenges(request: Request, refusal: Exception | None = None) -> list[str]:
     """The `WWW-Authenticate` challenges of a 401 — those of the buses the request called
-    (noted by `bus_call`), `Bearer` when none says one."""
+    (noted by `bus_call`), for `refusal` when it is the auth one; `Bearer` when none says one.
+    """
     buses = getattr(request.state, BUSES_STATE, None) or ()
-    return security.challenges(buses) or ["Bearer"]
+    said = refusal if isinstance(refusal, Unauthenticated) else None
+    return security.challenges(buses, said) or ["Bearer"]
 
 
 def _body(request: Request, problem: failures.Problem) -> dict[str, Any]:
@@ -217,7 +219,7 @@ def _answered(request: Request, error: Exception) -> JSONResponse:
     if problem.retry_after is not None:
         headers["Retry-After"] = str(math.ceil(problem.retry_after.total_seconds()))
     if problem.status == 401:
-        headers["WWW-Authenticate"] = ", ".join(_challenges(request))
+        headers["WWW-Authenticate"] = ", ".join(_challenges(request, error))
     if problem.kind == exceptions.FailureKind.INTERNAL and not process.was_reported(error):
         logger.exception("REST %s %s failed", request.method, request.url.path)
     return _answer(_body(request, problem), headers)
