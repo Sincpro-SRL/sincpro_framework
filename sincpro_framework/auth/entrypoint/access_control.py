@@ -22,7 +22,9 @@ identity opened by hand — a test, in-process code — answers with its `permis
 """
 
 import functools
-from collections.abc import Mapping, Sequence
+import time
+from collections.abc import Callable, Iterable, Mapping, Sequence
+from datetime import timedelta
 from typing import TYPE_CHECKING, Any, ClassVar
 from weakref import WeakKeyDictionary, WeakSet
 
@@ -31,6 +33,7 @@ from sincpro_framework.auth.domain.identity import Credentials, Identity, Identi
 from sincpro_framework.auth.domain.permissions import (
     AccessDeclaration,
     AnyOf,
+    AssuranceRequirement,
     ByField,
     Permission,
     Requirement,
@@ -93,6 +96,7 @@ class AccessControl[P: Permission]:
         providers: AuthProvider | Sequence[AuthProvider] = (),
         strict: bool = False,
         enabled: bool = True,
+        clock: Callable[[], float] = time.time,
     ) -> None:
         """`providers` are tried in order to authenticate a call; `strict` refuses a use case
         entered from outside that declares nothing; `enabled=False` checks nothing — a local
@@ -109,6 +113,7 @@ class AccessControl[P: Permission]:
         )
         self.strict = strict
         self.enabled = enabled
+        self.clock = clock
         self.declarations = Declarations()
         self._buses: WeakSet["UseFramework"] = WeakSet()
         """Every bus guarded — those given to `on` and the generations made of them."""
@@ -152,7 +157,9 @@ class AccessControl[P: Permission]:
     # Declaring
 
     def requires(
-        self, *requirements: P | AnyOf | ByField, when_denied: WhenDenied = WhenDenied.RAISE
+        self,
+        *requirements: P | AnyOf | ByField | AssuranceRequirement,
+        when_denied: WhenDenied = WhenDenied.RAISE,
     ):
         """Every requirement listed, and every other `requires` stacked on the same class, is
         needed — `any_of` for one among several. On a Feature, an ApplicationService or a Hook.
@@ -186,6 +193,21 @@ class AccessControl[P: Permission]:
         if not permissions:
             raise exceptions.ProgrammingError("by_field() names at least one permission")
         return ByField(field, tuple(permissions.items()))
+
+    def assurance(
+        self,
+        acr: Iterable[str] = (),
+        methods: Iterable[str] = (),
+        max_age: timedelta | None = None,
+    ) -> AssuranceRequirement:
+        """A requirement on how the caller authenticated — for `requires`: a step-up (RFC 9470).
+        Refused with `Unauthenticated(step_up=…, max_age=…)`, never 403: the caller can meet it
+        by authenticating again.
+
+            @auth.requires(BillingPermission.APPROVE_PAYMENT,
+                           auth.assurance(methods={"mfa"}, max_age=timedelta(minutes=5)))
+        """
+        return AssuranceRequirement(tuple(acr), frozenset(methods), max_age)
 
     def any_of(self, *permissions: P) -> AnyOf:
         """A requirement met by one of `permissions` — for `requires`.
@@ -298,6 +320,43 @@ class AccessControl[P: Permission]:
             return denied
         return None if allowed else exceptions.PermissionDenied(identity.subject, permission)
 
+    def _assured(
+        self, identity: Identity, requirement: AssuranceRequirement
+    ) -> exceptions.Unauthenticated | None:
+        """The step-up refusal when `identity` authenticated too weakly or too long ago.
+
+            assurance(methods={"mfa"}), amr ["pwd"]   ->  Unauthenticated("mfa required",
+                                                               step_up="mfa")
+            assurance(max_age=5m), authenticated 1h ago  ->  Unauthenticated("a recent
+                                                               authentication required", …)
+
+        Context: judged on the identity itself — its `assurance` and `authenticated_at`, as
+        the provider read them — with this object's clock; no provider is asked.
+        """
+        reasons = []
+        if requirement.acr and identity.assurance.level not in requirement.acr:
+            reasons.append(f"authentication level {' or '.join(requirement.acr)} required")
+        missing = requirement.methods - identity.assurance.methods
+        if missing:
+            reasons.append(f"{', '.join(sorted(missing))} required")
+        if requirement.max_age is not None and (
+            identity.authenticated_at is None
+            or self.clock() - identity.authenticated_at.timestamp()
+            > requirement.max_age.total_seconds()
+        ):
+            reasons.append("a recent authentication required")
+        if not reasons:
+            return None
+        return exceptions.Unauthenticated(
+            "; ".join(reasons),
+            step_up=requirement.step_up,
+            max_age=(
+                None
+                if requirement.max_age is None
+                else int(requirement.max_age.total_seconds())
+            ),
+        )
+
     def _denial(
         self,
         identity: Identity,
@@ -305,7 +364,7 @@ class AccessControl[P: Permission]:
         resource: Any,
         context: Mapping[str, Any] | None,
         dto: Any = None,
-    ) -> exceptions.PermissionDenied | None:
+    ) -> exceptions.AuthError | None:
         """The refusal of a requirement — one permission, or an `AnyOf` refused only when
         every member is.
 
@@ -317,6 +376,8 @@ class AccessControl[P: Permission]:
         may be remote, but the answer, and the reasons joined, stay complete and in order; a
         provider that words the whole refusal (`refusing_any`) is told it instead.
         """
+        if isinstance(requirement, AssuranceRequirement):
+            return self._assured(identity, requirement)
         if isinstance(requirement, ByField):
             chosen = requirement.every() if dto is None else requirement.chosen(dto)
             if chosen is None:
@@ -533,7 +594,9 @@ class AccessControl[P: Permission]:
             test = billing.fresh()
             auth.using(providers=[StaticProvider(...)]).on(test, replaces=auth)
         """
-        other: AccessControl[P] = AccessControl(providers, self.strict, self.enabled)
+        other: AccessControl[P] = AccessControl(
+            providers, self.strict, self.enabled, self.clock
+        )
         other.declarations = self.declarations
         return other
 

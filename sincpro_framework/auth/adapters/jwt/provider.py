@@ -172,12 +172,19 @@ class JwtProvider(AuthProvider):
 
     def challenge_for(self, refusal: exceptions.Unauthenticated | None) -> str | None:
         """`Bearer realm=…`, with `error="invalid_token"` and its reason for a token that
-        failed, and the resource metadata URL when there is one (RFC 6750 §3, RFC 9728).
+        failed — `insufficient_user_authentication` with `acr_values` and `max_age` for a
+        step-up (RFC 9470) — and the resource metadata URL when there is one (RFC 9728).
 
             Bearer realm="sincpro", error="invalid_token", error_description="token expired"
         """
         parts = [f'Bearer realm="{_quoted(self.realm)}"']
-        if refusal is not None and refusal.step_up is None and refusal.reason:
+        if refusal is not None and refusal.step_up is not None:
+            parts.append('error="insufficient_user_authentication"')
+            parts.append(f'error_description="{_quoted(refusal.reason)}"')
+            parts.append(f'acr_values="{_quoted(refusal.step_up)}"')
+            if refusal.max_age is not None:
+                parts.append(f"max_age={refusal.max_age}")
+        elif refusal is not None and refusal.reason:
             parts.append('error="invalid_token"')
             parts.append(f'error_description="{_quoted(refusal.reason)}"')
         if self.resource is not None:

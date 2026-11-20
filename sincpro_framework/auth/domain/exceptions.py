@@ -66,17 +66,23 @@ class Unauthenticated(AuthError):
     failure_kind = FailureKind.UNAUTHENTICATED
     http_status = 401
 
-    def __init__(self, reason: str, step_up: str | None = None) -> None:
-        """A refusal saying why — `"expired token"` — and, for a step-up, what to bring."""
+    def __init__(
+        self, reason: str, step_up: str | None = None, max_age: int | None = None
+    ) -> None:
+        """A refusal saying why — `"expired token"` — and, for a step-up, what to bring and,
+        in seconds, how recent the authentication must be."""
         super().__init__(reason)
         self.reason = reason
         self.step_up = step_up
+        self.max_age = max_age
 
     def refusal_body(self) -> dict[str, Any]:
-        """The kind and the reason, and `step_up` when one was named."""
+        """The kind and the reason, and `step_up` and `max_age` when named."""
         body = super().refusal_body()
         if self.step_up:
             body["step_up"] = self.step_up
+        if self.max_age is not None:
+            body["max_age"] = self.max_age
         return body
 
 

@@ -201,3 +201,55 @@ A key whose `use` is not `sig` is left out; a JWKS publishing a private part (`d
 an error and the key left out. Keys given by hand — a partner's PEM, a JWK from its
 documentation — are `PublicKeys([...], algorithm="RS256")`. `import sincpro_framework.auth` never
 loads PyJWT: `Jwks`, `PublicKeys`, `PublicKey` and `PrivateKey` are imported when first asked for.
+
+## Step-up: how strongly, how recently — RFC 9470
+
+A use case may require how its caller authenticated — a method (`amr`), a level (`acr`), a recent
+authentication (`auth_time`) — beside its permissions. Missing it is `Unauthenticated` with what
+to come back with (`step_up`, `max_age`), never `PermissionDenied`: the caller can meet it by
+authenticating again, and the challenge says how.
+
+```python
+from sincpro_framework import DataTransferObject, Feature, UseFramework
+from sincpro_framework.auth import AccessControl, Assurance, Identity, security
+
+
+class CommandApprovePayment(DataTransferObject):
+    amount: int
+
+
+class PaymentAnswer(DataTransferObject):
+    approved_by: str
+
+
+payments_auth = AccessControl[BillingPermission](providers=[provider])
+payments = UseFramework("payments-step-up", log_after_execution=False)
+
+
+@payments.feature(CommandApprovePayment)
+@payments_auth.requires(
+    BillingPermission.ISSUE_INVOICE,
+    payments_auth.assurance(methods={"mfa"}, max_age=timedelta(minutes=5)),
+)
+class ApprovePayment(Feature):
+    def execute(self, dto: CommandApprovePayment) -> PaymentAnswer:
+        return PaymentAnswer(approved_by=security.identity.subject)
+
+
+payments_auth.on(payments)
+
+with_password_only = Identity.user("user:4c1d", permissions={BillingPermission.ISSUE_INVOICE}).model_copy(
+    update={"assurance": Assurance(methods=frozenset({"pwd"})), "authenticated_at": datetime.now(UTC)}
+)
+with security.as_identity(with_password_only):
+    try:
+        payments(CommandApprovePayment(amount=900))
+    except exceptions.Unauthenticated as refused:
+        assert (refused.step_up, refused.max_age) == ("mfa", 300)
+        assert 'error="insufficient_user_authentication"' in provider.challenge_for(refused)
+```
+
+`auth.assurance(acr=…, methods=…, max_age=…)` is judged on the identity — the `acr`, `amr` and
+`auth_time` its provider read — with the `AccessControl`'s `clock`. `describe()` says
+`billing.invoice.issue and assurance(mfa, 5m)`; `when_denied=WhenDenied.SKIP` leaves an optional
+step out, as for a permission.

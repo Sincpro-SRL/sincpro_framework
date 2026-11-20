@@ -99,6 +99,7 @@ from sincpro_framework.auth.domain.identity import (
 from sincpro_framework.auth.domain.permissions import (
     AccessDeclaration,
     AnyOf,
+    AssuranceRequirement,
     ByField,
     Permission,
     WhenDenied,
@@ -123,6 +124,7 @@ __all__ = [
     "ApiKeyStore",
     "Assignment",
     "Assurance",
+    "AssuranceRequirement",
     "AuthError",
     "AuthProvider",
     "ByField",
