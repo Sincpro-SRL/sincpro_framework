@@ -44,7 +44,7 @@ def ran() -> list[int]:
 
 
 def test_a_batch_over_the_limit_answers_one_error_and_runs_nothing(ran: list[int]) -> None:
-    gateway = RpcGateway({"svc": _counting(ran)}, unguarded=True)
+    gateway = RpcGateway({"svc": _counting(ran)})
 
     answered = gateway.handle([_call(one) for one in range(51)])
 
@@ -60,7 +60,7 @@ def test_a_batch_over_the_limit_answers_one_error_and_runs_nothing(ran: list[int
 
 
 def test_a_batch_at_the_limit_runs_every_call(ran: list[int]) -> None:
-    gateway = RpcGateway({"svc": _counting(ran)}, unguarded=True)
+    gateway = RpcGateway({"svc": _counting(ran)})
 
     answered = gateway.handle([_call(one) for one in range(50)])
 
@@ -69,7 +69,7 @@ def test_a_batch_at_the_limit_runs_every_call(ran: list[int]) -> None:
 
 
 def test_the_batch_limit_is_the_gateways_to_set(ran: list[int]) -> None:
-    gateway = RpcGateway({"svc": _counting(ran)}, unguarded=True, max_batch_size=2)
+    gateway = RpcGateway({"svc": _counting(ran)}, max_batch_size=2)
 
     assert isinstance(gateway.handle([_call(1), _call(2)]), list)
     refused = gateway.handle([_call(1), _call(2), _call(3)])
@@ -82,16 +82,12 @@ def test_a_limit_that_would_refuse_everything_is_refused_at_build(
     batch: int, body: int
 ) -> None:
     with pytest.raises(ValueError):
-        RpcGateway(
-            {"svc": _counting([])}, unguarded=True, max_batch_size=batch, max_body_bytes=body
-        )
+        RpcGateway({"svc": _counting([])}, max_batch_size=batch, max_body_bytes=body)
 
 
 @pytest.fixture
 def small_client(ran: list[int]) -> Iterator[TestClient]:
-    with TestClient(
-        RpcGateway({"svc": _counting(ran)}, unguarded=True, max_body_bytes=200).app()
-    ) as client:
+    with TestClient(RpcGateway({"svc": _counting(ran)}, max_body_bytes=200).app()) as client:
         yield client
 
 
@@ -125,7 +121,7 @@ def test_a_body_streamed_without_a_length_is_still_bounded(
 
 
 def test_the_default_body_limit_is_one_mebibyte(ran: list[int]) -> None:
-    client = TestClient(RpcGateway({"svc": _counting(ran)}, unguarded=True).app())
+    client = TestClient(RpcGateway({"svc": _counting(ran)}).app())
     padding = "x" * (1024 * 1024)
 
     answered = client.post("/rpc", json={**_call(1), "context": {"padding": padding}})
@@ -138,7 +134,7 @@ def test_the_default_body_limit_is_one_mebibyte(ran: list[int]) -> None:
     ["application/json", "application/json; charset=utf-8", "application/json-rpc"],
 )
 def test_json_content_types_are_accepted(ran: list[int], content_type: str) -> None:
-    client = TestClient(RpcGateway({"svc": _counting(ran)}, unguarded=True).app())
+    client = TestClient(RpcGateway({"svc": _counting(ran)}).app())
 
     answered = client.post(
         "/rpc",
@@ -155,7 +151,7 @@ def test_json_content_types_are_accepted(ran: list[int], content_type: str) -> N
 def test_any_other_content_type_is_415_and_runs_nothing(
     ran: list[int], content_type: str | None
 ) -> None:
-    client = TestClient(RpcGateway({"svc": _counting(ran)}, unguarded=True).app())
+    client = TestClient(RpcGateway({"svc": _counting(ran)}).app())
     headers = {"content-type": content_type} if content_type else {}
 
     answered = client.post(
@@ -171,7 +167,7 @@ def test_any_other_content_type_is_415_and_runs_nothing(
 
 def test_the_document_says_the_limits_it_enforces() -> None:
     document = RpcGateway(
-        {"svc": _counting([])}, max_batch_size=7, max_body_bytes=900, unguarded=True
+        {"svc": _counting([])}, max_batch_size=7, max_body_bytes=900
     ).discover()
 
     assert document["x-sincpro-limits"] == {"maxBatchSize": 7, "maxBodyBytes": 900}
@@ -182,7 +178,7 @@ def test_a_declared_length_over_the_limit_is_refused_before_the_body_is_read(
 ) -> None:
     import asyncio
 
-    app = RpcGateway({"svc": _counting(ran)}, unguarded=True, max_body_bytes=200).app()
+    app = RpcGateway({"svc": _counting(ran)}, max_body_bytes=200).app()
     scope = {
         "type": "http",
         "asgi": {"version": "3.0"},

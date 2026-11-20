@@ -14,6 +14,7 @@ Makefile:
 """
 
 import argparse
+import contextlib
 import importlib
 import sys
 from typing import Any
@@ -35,7 +36,9 @@ def main(argv: list[str] | None = None) -> int:
 
     1. `export-client-contract <module:gateways> <out_dir> [--events]`: each context's contract
        written — with its domain events, when asked.
-    Final: one line per file written, `<context>: <path>`.
+    Final: one line per file written, `<context>: <path>` — the command's own output on
+    stdout; what the framework logs while it runs (a gateway building its surface) goes to
+    stderr, so a script piping the command reads only the paths.
     """
     parser = argparse.ArgumentParser(prog="python -m sincpro_framework.entrypoints")
     commands = parser.add_subparsers(dest="command", required=True)
@@ -51,9 +54,10 @@ def main(argv: list[str] | None = None) -> int:
         help="add each bounded context's domain events (left out by default)",
     )
     arguments = parser.parse_args(argv)
-    written = export_client_contract(
-        _loaded(arguments.gateways), arguments.out_dir, events=arguments.events
-    )
+    with contextlib.redirect_stdout(sys.stderr):
+        written = export_client_contract(
+            _loaded(arguments.gateways), arguments.out_dir, events=arguments.events
+        )
     for context, path in written.items():
         print(f"{context}: {path}")
     return 0

@@ -25,7 +25,7 @@ def test_health_answers_while_a_slow_rpc_call_is_still_running():
         def execute(self, dto: CommandSlow) -> None:
             release.wait(5)
 
-    app = RpcGateway({"svc": bus}, unguarded=True).app()
+    app = RpcGateway({"svc": bus}).app()
 
     async def scenario() -> tuple[int, bool]:
         transport = httpx.ASGITransport(app=app)

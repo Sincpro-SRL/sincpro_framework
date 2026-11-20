@@ -99,7 +99,7 @@ def test_the_internal_host_is_probed_by_the_standard_health_check(internal_host)
 
 def test_a_public_gateway_does_not_open_the_internal_door():
     public = _billing("doors-public", "public")
-    server = GrpcGateway({"doors_public": public}, exposure=Exposure.CATALOG, unguarded=True)
+    server = GrpcGateway({"doors_public": public}, exposure=Exposure.CATALOG)
     server = server.server()
     port = server.add_insecure_port("127.0.0.1:0")
     server.start()
@@ -117,7 +117,7 @@ def test_both_doors_share_one_port_only_when_asked_to():
     from sincpro_framework.remote_execution import open_host
 
     hosted = _billing("doors-shared", "shared")
-    gateway = GrpcGateway({"doors_shared": hosted}, exposure=Exposure.CATALOG, unguarded=True)
+    gateway = GrpcGateway({"doors_shared": hosted}, exposure=Exposure.CATALOG)
     server = gateway.server()
     open_host([hosted]).mount(server)
     port = server.add_insecure_port("127.0.0.1:0")

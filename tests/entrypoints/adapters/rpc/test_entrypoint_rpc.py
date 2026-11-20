@@ -19,7 +19,7 @@ from sincpro_framework.exceptions import FailureKind
 
 
 def catalog_gateway(instances: Buses | None = None, **options: Any) -> RpcGateway:
-    return RpcGateway(instances, exposure=Exposure.CATALOG, unguarded=True, **options)
+    return RpcGateway(instances, exposure=Exposure.CATALOG, **options)
 
 
 def rpc_object(payload: dict[str, Any] | list[Any] | None) -> dict[str, Any]:

@@ -81,7 +81,7 @@ def client(clock: Clock, files_path: str = "/files", picture: bool = False):
     from sincpro_framework.entrypoints import FastApiGateway
 
     bus, storage, organ = site(clock, picture)
-    gateway = FastApiGateway([bus], unguarded=True)
+    gateway = FastApiGateway([bus])
     return TestClient(gateway.app(files=storage, files_path=files_path)), organ
 
 
@@ -150,7 +150,7 @@ def test_without_files_a_record_answer_carries_no_link():
     from sincpro_framework.entrypoints import FastApiGateway
 
     bus, _, organ = site(Clock())
-    http = TestClient(FastApiGateway([bus], unguarded=True).app())
+    http = TestClient(FastApiGateway([bus]).app())
 
     photo = http.get(f"/site/organs/{organ.id}").json()["organ"]["photo"]
 

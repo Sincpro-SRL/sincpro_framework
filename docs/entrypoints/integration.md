@@ -91,7 +91,7 @@ A gateway that **names its wire** resolves a surface:
 | `Exposure.CATALOG` | every use case of every bus, each one logged at build; a binding still shapes it, never adds one |
 
 ```python
-Gateway(buses, exposure=Exposure.DECLARED, unguarded=False, port=None)
+Gateway(buses, exposure=Exposure.DECLARED, port=None)
 ```
 
 A wire's gateway names its wire with a class attribute (`wire = "rest"`), or a project hands a
@@ -145,7 +145,6 @@ wire) validate first and raise `ProgrammingError` with **every** reason at once;
 | `@internal` with a binding | `@internal` + `@rest.post(...)`, or `bind` on an internal Command |
 | an override or bind for a Command no bus of the gateway answers | |
 | an override alone, in DECLARED mode | `override(QueryX, status=200)` with no REST binding |
-| a published use case that declares no access | neither `@auth.requires`, `@auth.public` nor `@auth.authenticated` on a guarded bus; a bus with no `AccessControl` unless the gateway says `unguarded=True` |
 | a path `{field}` not a Command field | `/invoices/{id}` on a Command with `invoice_id` |
 | a `location` `{field}` not a response field | |
 | the method against the Command's kind | `GET` on a Command that is not a `Query`; `DELETE` or `204` with a declared response |

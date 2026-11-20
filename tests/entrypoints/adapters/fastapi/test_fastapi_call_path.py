@@ -136,14 +136,12 @@ def _guarded() -> tuple[UseFramework, AccessControl[Perm]]:
             return Invoice(invoice_id=dto.invoice_id)
 
     @bus.feature(QueryInvoice)
-    @auth.public
     @rest.get("/invoices/{invoice_id}")
     class GetInvoice(Feature):
         def execute(self, dto: QueryInvoice) -> Invoice:
             return Invoice(invoice_id=dto.invoice_id)
 
     @bus.feature(CommandFail)
-    @auth.public
     @rest.post("/failures")
     class Fail(Feature):
         def execute(self, dto: CommandFail) -> None:
@@ -376,7 +374,7 @@ def _payments() -> tuple[UseFramework, list[int]]:
 
 def test_the_idempotency_key_reaches_the_bus_and_is_required_when_nothing_else_keys() -> None:
     bus, runs = _payments()
-    client = TestClient(FastApiGateway([bus], unguarded=True).app())
+    client = TestClient(FastApiGateway([bus]).app())
     missing = client.post("/payments/payments", json={"amount": 5})
     assert missing.status_code == 400
     assert missing.json()["reason"] == "IDEMPOTENCY_KEY_MISSING"
@@ -397,7 +395,7 @@ def test_the_idempotency_key_reaches_the_bus_and_is_required_when_nothing_else_k
 
 def test_a_command_that_keys_itself_needs_no_header_and_concurrent_retries_run_once() -> None:
     bus, runs = _payments()
-    client = TestClient(FastApiGateway([bus], unguarded=True).app())
+    client = TestClient(FastApiGateway([bus]).app())
     answers: list[Any] = []
 
     def post() -> None:

@@ -44,7 +44,7 @@ def _server() -> Any:
     class FeeReads(EntityReads[Fee]):
         pass
 
-    return McpGateway([bus], exposure=Exposure.CATALOG, unguarded=True).server()
+    return McpGateway([bus], exposure=Exposure.CATALOG).server()
 
 
 def _tool(server: Any) -> Any:

@@ -239,7 +239,7 @@ def test_a_run_read_over_rest_answers_the_run():
 
     bus, _ = forge()
     bus(CommandRunIssue(run_id="i-9"))
-    client = TestClient(FastApiGateway([bus], profile=Profile.RPC, unguarded=True).app())
+    client = TestClient(FastApiGateway([bus], profile=Profile.RPC).app())
 
     read = client.post("/forge-pipelines/query-issue-run", json={"run_id": "i-9"})
 
@@ -284,7 +284,7 @@ def test_a_run_read_bound_as_get_answers_the_run_read_from_the_url():
     class NoteRuns(PipelineReads): ...
 
     bus(CommandRunNote(run_id="n-1"))
-    client = TestClient(FastApiGateway([bus], unguarded=True).app())
+    client = TestClient(FastApiGateway([bus]).app())
 
     read = client.get("/notes-pipelines/note-runs/n-1")
 

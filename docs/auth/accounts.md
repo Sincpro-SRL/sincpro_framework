@@ -90,8 +90,7 @@ class SignedIn(DataTransferObject):
 
 
 @members.feature(CommandSignIn)
-@members_auth.public
-class SignIn(Feature):
+class SignIn(Feature):                                              # declares nothing: open
     def execute(self, dto: CommandSignIn) -> SignedIn:
         attempts.refuse_if_locked(dto.username)                     # before any hash
         account = accounts.get(dto.username)

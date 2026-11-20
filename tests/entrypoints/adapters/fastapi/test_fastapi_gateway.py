@@ -77,9 +77,6 @@ def _billing(auth: AccessControl[Perm] | None = None) -> UseFramework:
     def access(cls: type) -> type:
         return auth.requires(Perm.ISSUE)(cls) if auth else cls
 
-    def public(cls: type) -> type:
-        return auth.public(cls) if auth else cls
-
     @bus.feature(CommandIssueInvoice)
     @access
     @rest.post("/invoices", status=201, location="/invoices/{number}")
@@ -90,14 +87,12 @@ def _billing(auth: AccessControl[Perm] | None = None) -> UseFramework:
             return Issued(number=f"F-{dto.total}")
 
     @bus.feature(QueryInvoice)
-    @public
     @rest.get("/invoices/{invoice_id}")
     class GetInvoice(Feature):
         def execute(self, dto: QueryInvoice) -> Invoice:
             return Invoice(invoice_id=dto.invoice_id)
 
     @bus.feature(QueryInvoices)
-    @public
     @rest.get("/invoices")
     class ListInvoices(Feature):
         def execute(self, dto: QueryInvoices) -> Invoices:
@@ -130,7 +125,7 @@ def _billing(auth: AccessControl[Perm] | None = None) -> UseFramework:
 
 @pytest.fixture
 def api() -> FastApiGateway:
-    gateway = FastApiGateway([_billing()], unguarded=True)
+    gateway = FastApiGateway([_billing()])
     gateway.group("billing", version="v1")
     return gateway
 
@@ -173,7 +168,7 @@ def test_the_rpc_profile_is_the_catalog_on_todays_paths() -> None:
         def execute(self, dto: CommandReconcile) -> None:
             return None
 
-    api = FastApiGateway([bus], profile=Profile.RPC, unguarded=True)
+    api = FastApiGateway([bus], profile=Profile.RPC)
     client = TestClient(api.app())
     assert client.post("/billing/command-reconcile").status_code == 204
     issued = client.post("/billing/command-issue-invoice", json={"total": 3})
@@ -189,7 +184,7 @@ def test_the_rpc_profile_is_the_catalog_on_todays_paths() -> None:
 
 
 def test_a_declared_path_wins_over_the_rpc_profiles_derived_one() -> None:
-    api = FastApiGateway([_billing()], profile=Profile.RPC, unguarded=True)
+    api = FastApiGateway([_billing()], profile=Profile.RPC)
     client = TestClient(api.app())
     assert client.post("/billing/invoices", json={"total": 2}).status_code == 201
     assert client.post("/billing/command-reconcile").status_code == 204
@@ -247,7 +242,7 @@ def test_two_operations_on_one_method_and_path_are_refused() -> None:
         def execute(self, dto: QueryInvoiceByNumber) -> Invoice:
             return Invoice(invoice_id=dto.number)
 
-    api = FastApiGateway([bus], unguarded=True)
+    api = FastApiGateway([bus])
     with pytest.raises(
         exceptions.ProgrammingError, match="GET /clash/invoices/.* answers both"
     ):
@@ -262,7 +257,7 @@ def test_one_name_on_two_contexts_is_qualified_by_its_group() -> None:
         def execute(self, dto: CommandIssueInvoice) -> Issued:
             return Issued(number="S-1")
 
-    api = FastApiGateway([_billing(), sales], profile=Profile.RPC, unguarded=True)
+    api = FastApiGateway([_billing(), sales], profile=Profile.RPC)
     ids = _operation_ids(api.app().openapi())
     assert {"billing_CommandIssueInvoice", "sales_CommandIssueInvoice"} <= set(ids)
     assert len(ids) == len(set(ids))
@@ -277,7 +272,7 @@ def test_what_is_served_only_in_phase_2_is_refused_not_ignored() -> None:
         def execute(self, dto: CommandCancelInvoice) -> Invoice:
             return Invoice(invoice_id=dto.invoice_id)
 
-    problems = FastApiGateway([bus], unguarded=True).verify()
+    problems = FastApiGateway([bus]).verify()
     assert any("if-match" in one for one in problems)
 
 
@@ -399,8 +394,8 @@ def test_the_document_says_who_may_call_each_operation() -> None:
         "static": {"type": "http", "scheme": "bearer"}
     }
     assert all("x-sincpro-security-schemes" not in op for op in _operations(document))
-    listed = document["paths"]["/v1/billing/invoices"]["get"]
-    assert listed["security"] == []
+    listed = document["paths"]["/v1/billing/invoices"]["get"]  # declares nothing: open
+    assert (listed["security"], listed["x-sincpro-access"]) == ([], "open")
     assert "401" not in listed["responses"]
 
 
@@ -482,7 +477,7 @@ def _methods_of(app: FastAPI) -> dict[str, set[str]]:
 def test_anything_that_inherits_query_is_derived_get_and_a_command_post():
     from sincpro_framework.entrypoints import Exposure
 
-    api = FastApiGateway([_customers()], exposure=Exposure.CATALOG, unguarded=True)
+    api = FastApiGateway([_customers()], exposure=Exposure.CATALOG)
     client = TestClient(api.app())
 
     assert _methods_of(api.app()) == {
@@ -496,7 +491,7 @@ def test_anything_that_inherits_query_is_derived_get_and_a_command_post():
 
 def test_the_rpc_profile_reads_an_inherited_query_with_get_and_post():
     """POST too, for a criteria too long for a URL — GET is always there."""
-    api = FastApiGateway([_customers()], profile=Profile.RPC, unguarded=True)
+    api = FastApiGateway([_customers()], profile=Profile.RPC)
 
     assert _methods_of(api.app()) == {
         "/crm/list-customers": {"GET", "POST"},

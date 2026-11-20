@@ -165,9 +165,7 @@ def test_catalog_publishes_the_response_schema_for_every_shape():
 
 
 def test_openrpc_result_carries_the_response_schema():
-    document = RpcGateway(
-        {"shapes": _instance()}, exposure=Exposure.CATALOG, unguarded=True
-    ).discover()
+    document = RpcGateway({"shapes": _instance()}, exposure=Exposure.CATALOG).discover()
     methods = {method["name"]: method for method in document["methods"]}
 
     result = methods["shapes.ask_dataclass"]["result"]["schema"]
@@ -176,7 +174,7 @@ def test_openrpc_result_carries_the_response_schema():
 
 
 def test_grpc_describe_and_proto_carry_the_response_shape():
-    gateway = GrpcGateway({"shapes": _instance()}, exposure=Exposure.CATALOG, unguarded=True)
+    gateway = GrpcGateway({"shapes": _instance()}, exposure=Exposure.CATALOG)
     document = gateway.describe()
     methods = {
         method["name"]: method
@@ -256,7 +254,7 @@ def test_dataclass_command_executes_from_a_scalar():
 def test_dataclass_command_rejects_a_bad_payload_as_invalid_params():
     from sincpro_framework.entrypoints.adapters.rpc.errors import INVALID_PARAMS
 
-    gateway = RpcGateway({"shapes": _instance()}, exposure=Exposure.CATALOG, unguarded=True)
+    gateway = RpcGateway({"shapes": _instance()}, exposure=Exposure.CATALOG)
     reply = gateway.handle(
         {
             "jsonrpc": "2.0",
@@ -287,7 +285,7 @@ def test_dataclass_command_becomes_an_mcp_tool_signature():
 def grpc_client():
     from sincpro_framework.entrypoints.adapters.grpc.client import GrpcClient
 
-    gateway = GrpcGateway({"shapes": _instance()}, exposure=Exposure.CATALOG, unguarded=True)
+    gateway = GrpcGateway({"shapes": _instance()}, exposure=Exposure.CATALOG)
     server = gateway.server(max_workers=2)
     port = server.add_insecure_port("127.0.0.1:0")
     server.start()

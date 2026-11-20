@@ -119,8 +119,8 @@ class GrpcGateway(Gateway):
     """gRPC facade over one or more UseFramework instances.
 
     Every method is unary and takes/returns `google.protobuf.Struct` — the DTO fields, by name.
-    `exposure` is `Exposure.DECLARED` by default: only the use cases bound for gRPC; `unguarded`
-    says its buses have no `AccessControl` on purpose; `port` a `GrpcWire` of the project's
+    `exposure` is `Exposure.DECLARED` by default: only the use cases bound for gRPC; `port` a
+    `GrpcWire` of the project's
     that names differently.
 
         gateway = GrpcGateway([billing]).group(billing, version="v2")
@@ -138,7 +138,6 @@ class GrpcGateway(Gateway):
         title: str = "sincpro-grpc",
         version: str = "1.0.0",
         exposure: Exposure = Exposure.DECLARED,
-        unguarded: bool = False,
         port: GrpcWire | None = None,
     ):
         """The gateway's arguments (`Gateway`), with `GrpcWire` as the port when none is given
@@ -150,7 +149,6 @@ class GrpcGateway(Gateway):
             title,
             version,
             exposure=exposure,
-            unguarded=unguarded,
             port=port or GrpcWire(),
         )
 

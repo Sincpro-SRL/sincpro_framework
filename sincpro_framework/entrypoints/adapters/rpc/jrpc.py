@@ -12,7 +12,7 @@ from typing import Any
 
 from pydantic import ValidationError
 
-from sincpro_framework.auth import Credentials
+from sincpro_framework.auth import OPEN, Credentials
 from sincpro_framework.context import EntrypointKind, use_context
 from sincpro_framework.ddd.metamodel import contract_of
 from sincpro_framework.entrypoints.adapters.rpc import exceptions
@@ -395,9 +395,9 @@ def method_object(
     1. Params and result from the DTOs' schemas, nested definitions hoisted to `schemas`.
     2. One tag, the context (the bus's alias) — the document is tagged per context —, and one
        per entity it belongs to; `x-sincpro-role`, what it is for its entity (`role_of`).
-    3. `x-sincpro-requires`: what the use case declared (`public`, `authenticated`, the
-       requirements, `unguarded`); `x-idempotent`: a read (`Operation.reads`), or `@idempotency.once` — a retry
-       is safe.
+    3. `x-sincpro-requires`: what the use case declared (`authenticated`, the requirements) —
+       or `x-sincpro-access: open` when it declared nothing; `x-idempotent`: a read
+       (`Operation.reads`), or `@idempotency.once` — a retry is safe.
     4. Final: `deprecated` and `x-sunset` when its binding is on its way out.
 
     Context: `schemas` is the document's `components.schemas`; without one the hoisted
@@ -430,7 +430,9 @@ def method_object(
         "x-sincpro-role": str(role_of(operation.command)),
         "x-idempotent": operation.idempotent or operation.reads,
     }
-    if operation.access is not None:
+    if operation.access == OPEN:
+        method["x-sincpro-access"] = OPEN
+    else:
         method["x-sincpro-requires"] = operation.access
     deprecation = resolved.binding.deprecated
     if deprecation is not None:

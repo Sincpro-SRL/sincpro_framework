@@ -195,7 +195,7 @@ def test_the_bus_runs_a_tagged_use_case_as_any_other():
 
 
 def test_openrpc_tags_each_method_with_the_entities_it_concerns():
-    document = RpcGateway({"desk": a_desk()}, unguarded=True).discover()
+    document = RpcGateway({"desk": a_desk()}).discover()
     tags = {
         one["name"]: [tag["name"] for tag in one.get("tags", [])]
         for one in document["methods"]
@@ -206,7 +206,7 @@ def test_openrpc_tags_each_method_with_the_entities_it_concerns():
 
 
 def test_openapi_tags_each_operation_with_the_entities_it_concerns():
-    document = FastApiGateway([a_desk()], profile=Profile.RPC, unguarded=True).app().openapi()
+    document = FastApiGateway([a_desk()], profile=Profile.RPC).app().openapi()
     tags = {
         operation["operationId"]: operation["tags"]
         for item in document["paths"].values()
@@ -230,10 +230,10 @@ def test_the_starlette_rest_document_tags_them_too():
 
 
 def test_every_wire_says_what_each_operation_is_for_its_entity():
-    rpc_methods = RpcGateway({"desk": a_desk()}, unguarded=True).discover()["methods"]
-    fastapi = FastApiGateway([a_desk()], profile=Profile.RPC, unguarded=True).app().openapi()
+    rpc_methods = RpcGateway({"desk": a_desk()}).discover()["methods"]
+    fastapi = FastApiGateway([a_desk()], profile=Profile.RPC).app().openapi()
     starlette = RestGateway({"desk": a_desk()}).openapi()
-    described = GrpcGateway({"desk": a_desk()}, unguarded=True).describe()
+    described = GrpcGateway({"desk": a_desk()}).describe()
 
     assert {
         one["x-sincpro-dto"]: one["x-sincpro-role"]

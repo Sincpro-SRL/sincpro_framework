@@ -81,7 +81,7 @@ def _billing() -> UseFramework:
 
 @pytest.fixture(scope="module")
 def gateway() -> RpcGateway:
-    return RpcGateway({"billing": _billing()}, unguarded=True)
+    return RpcGateway({"billing": _billing()})
 
 
 def _error(gateway: RpcGateway, method: str, params: Any = None) -> dict[str, Any]:

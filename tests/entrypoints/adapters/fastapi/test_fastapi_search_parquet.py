@@ -64,7 +64,7 @@ def _criteria(limit: int) -> str:
 
 
 def test_a_large_page_asked_by_a_caller_that_reads_parquet_answers_parquet():
-    client = TestClient(FastApiGateway([_bus()], unguarded=True).app())
+    client = TestClient(FastApiGateway([_bus()]).app())
 
     answer = client.get(
         "/ledger/entries",
@@ -82,7 +82,7 @@ def test_a_large_page_asked_by_a_caller_that_reads_parquet_answers_parquet():
 
 
 def test_a_small_page_or_a_caller_that_reads_only_json_gets_json():
-    client = TestClient(FastApiGateway([_bus()], unguarded=True).app())
+    client = TestClient(FastApiGateway([_bus()]).app())
 
     small = client.get(
         "/ledger/entries", params={"criteria": _criteria(3)}, headers={"Accept": PARQUET}
@@ -101,7 +101,7 @@ def test_a_small_page_or_a_caller_that_reads_only_json_gets_json():
 
 
 def test_parquet_asked_for_is_parquet_whatever_its_size_with_the_cursor_to_go_on():
-    client = TestClient(FastApiGateway([_bus()], unguarded=True).app())
+    client = TestClient(FastApiGateway([_bus()]).app())
 
     answer = client.get(
         "/ledger/entries", params={"criteria": _criteria(2), "format": "parquet"}
@@ -126,7 +126,7 @@ def test_inside_the_process_an_answer_is_objects_however_large():
 def test_the_document_and_the_contract_say_a_search_may_answer_parquet():
     from sincpro_framework.entrypoints.services.client_contract import client_contracts
 
-    gateway = FastApiGateway([_bus()], unguarded=True)
+    gateway = FastApiGateway([_bus()])
     document = TestClient(gateway.app()).get("/openapi.json").json()
     contract = client_contracts([gateway])["ledger"]["operations"]
 
@@ -138,7 +138,7 @@ def test_the_document_and_the_contract_say_a_search_may_answer_parquet():
 
 
 def test_a_caller_that_refuses_parquet_with_q_0_gets_json():
-    client = TestClient(FastApiGateway([_bus()], unguarded=True).app())
+    client = TestClient(FastApiGateway([_bus()]).app())
 
     answer = client.get(
         "/ledger/entries",

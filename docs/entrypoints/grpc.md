@@ -51,8 +51,7 @@ from sincpro_framework.entrypoints.domain.surface import Exposure
 class IssueInvoice(Feature): ...
 
 @billing.feature(QueryInvoice)
-@auth.public
-@grpc(service="InvoiceReadService")                 # a second service in the same package
+@grpc(service="InvoiceReadService")                 # a second service; declares nothing: open
 class GetInvoice(Feature): ...
 
 GrpcGateway([billing])                              # IssueInvoice and Invoice — nothing else
@@ -68,11 +67,12 @@ GrpcGateway([billing], exposure=Exposure.CATALOG)   # every use case, logged one
 Whatever the mode, a use case marked `@internal` is on no wire, and the build refuses (every
 reason at once, `ProgrammingError`) a surface that does not hold:
 
-- a published use case on a bus guarded by `AccessControl` that declares neither
-  `@auth.requires` nor `@auth.public`;
-- a bus with no `AccessControl` at all, unless the gateway says `unguarded=True`;
 - a name that is no proto identifier, or two use cases answering one path (below);
 - a method on one of the framework's own services (`sincpro.Introspection`, health, reflection).
+
+Who may call a method is never a build condition: it is open unless its use case declares
+`@auth.authenticated` or `@auth.requires(...)`, decided by the bus's `AccessControl` on every
+call. The gateway logs each method it publishes open.
 
 `gateway.surface()`, `gateway.manifest()` (per method: its path as `name`, the method, kind,
 access, deprecation — snapshot it in a test) and `gateway.verify()` (the reasons, without raising)
@@ -490,7 +490,7 @@ files of `reflection_extra` (and the files they import), and each reflection ser
 
 | Symbol | Role |
 |---|---|
-| `GrpcGateway(buses, exposure=Exposure.DECLARED, unguarded=False, port=None)` | Composition root. Several contexts, one server. |
+| `GrpcGateway(buses, exposure=Exposure.DECLARED, port=None)` | Composition root. Several contexts, one server. |
 | `.add(alias, framework, include=, exclude=, wrap=)` | Fluent mount. |
 | `.group(bus, package=, version=)` / `.override(Command, service=, method=)` / `.bind(Command, GrpcBinding(...))` | Shape and publish (PRD_14). |
 | `.surface()` / `.manifest()` / `.verify()` | The validated surface, its inventory, the reasons it would be refused. |

@@ -111,12 +111,12 @@ def _call(server: Any, name: str, arguments: Mapping[str, Any]) -> Any:
 
 
 def test_declared_is_the_default_and_publishes_only_what_is_bound_for_mcp() -> None:
-    tools = _tools(McpGateway([_billing()], unguarded=True))
+    tools = _tools(McpGateway([_billing()]))
     assert set(tools) == {"issue_invoice", "invoice"}
 
 
 def test_catalog_publishes_every_use_case_of_every_bus() -> None:
-    gateway = McpGateway([_billing()], exposure=Exposure.CATALOG, unguarded=True)
+    gateway = McpGateway([_billing()], exposure=Exposure.CATALOG)
     assert set(_tools(gateway)) == {"issue_invoice", "invoice", "reconcile"}
     assert {one.name for one in gateway.manifest()} == {
         "issue_invoice",
@@ -125,9 +125,10 @@ def test_catalog_publishes_every_use_case_of_every_bus() -> None:
     }
 
 
-def test_an_unguarded_bus_must_be_said_unguarded() -> None:
-    with pytest.raises(exceptions.ProgrammingError, match="has no AccessControl"):
-        McpGateway([_billing()]).server()
+def test_a_bus_nobody_guards_is_served_open() -> None:
+    gateway = McpGateway([_billing()])
+    assert {one.access for one in gateway.manifest()} == {"open"}
+    assert "issue_invoice" in _tools(gateway)
 
 
 # Names — the DTO's, snake_case, without Command/Query; overridden; prefixed only on a clash
@@ -148,16 +149,14 @@ def test_a_declared_name_and_title_win_and_reach_tools_list() -> None:
         def execute(self, dto: CommandIssueInvoice) -> ResponseIssueInvoice:
             return ResponseIssueInvoice(number="F-1")
 
-    tools = _tools(McpGateway([bus], unguarded=True))
+    tools = _tools(McpGateway([bus]))
     assert set(tools) == {"emitir_factura"}
     assert tools["emitir_factura"].title == "Emitir factura"
     assert tools["emitir_factura"].annotations.title == "Emitir factura"
 
 
 def test_the_composition_overrides_a_tool_name() -> None:
-    gateway = McpGateway([_billing()], unguarded=True).override(
-        CommandIssueInvoice, name="facturar"
-    )
+    gateway = McpGateway([_billing()]).override(CommandIssueInvoice, name="facturar")
     assert set(gateway.tool_names()) == {"facturar", "invoice"}
 
 
@@ -170,7 +169,7 @@ def test_two_contexts_answering_one_name_are_prefixed_by_their_group_only_there(
         def execute(self, dto: CommandIssueInvoice) -> ResponseIssueInvoice:
             return ResponseIssueInvoice(number="V-1")
 
-    gateway = McpGateway([_billing(), sales], unguarded=True).group(sales, prefix="ventas")
+    gateway = McpGateway([_billing(), sales]).group(sales, prefix="ventas")
     names = gateway.tool_names()
     assert sorted(names) == ["billing_issue_invoice", "invoice", "ventas_issue_invoice"]
     assert {one.name for one in gateway.manifest()} == set(names)
@@ -192,16 +191,14 @@ def _declaring(bus_name: str, tool: str) -> UseFramework:
 
 def test_a_declared_name_twice_is_refused_at_build() -> None:
     """A declared name is the author's: never renamed, so a clash on it is refused."""
-    twice = McpGateway(
-        [_declaring("one", "facturar"), _declaring("two", "facturar")], unguarded=True
-    )
+    twice = McpGateway([_declaring("one", "facturar"), _declaring("two", "facturar")])
     with pytest.raises(exceptions.ProgrammingError, match="tool facturar answered by"):
         twice.server()
 
 
 def test_a_derived_name_yields_to_a_declared_one_by_its_prefix() -> None:
     """Only the derived name is prefixed on a clash — the declared one keeps its name."""
-    gateway = McpGateway([_billing(), _declaring("sales", "issue_invoice")], unguarded=True)
+    gateway = McpGateway([_billing(), _declaring("sales", "issue_invoice")])
     assert sorted(gateway.tool_names()) == [
         "billing_issue_invoice",
         "invoice",
@@ -231,24 +228,20 @@ def test_one_context_answering_one_name_twice_is_refused() -> None:
 
 
 def _verify(bus: UseFramework) -> list[str]:
-    return McpGateway([bus], unguarded=True).verify()
+    return McpGateway([bus]).verify()
 
 
 @pytest.mark.parametrize(
     "name", ["x" * 65, "issue invoice", "facturación", "billing.issue", ""]
 )
 def test_a_name_no_mcp_client_accepts_is_refused(name: str) -> None:
-    gateway = McpGateway([_billing()], unguarded=True).override(
-        CommandIssueInvoice, name=name
-    )
+    gateway = McpGateway([_billing()]).override(CommandIssueInvoice, name=name)
     assert any("tool name" in one for one in gateway.verify())
 
 
 def test_a_name_of_64_allowed_characters_is_accepted() -> None:
     name = "a-Z_0" + "x" * 59
-    gateway = McpGateway([_billing()], unguarded=True).override(
-        CommandIssueInvoice, name=name
-    )
+    gateway = McpGateway([_billing()]).override(CommandIssueInvoice, name=name)
     assert gateway.verify() == []
     assert name in gateway.tool_names()
 
@@ -273,7 +266,7 @@ def test_hints_are_derived_from_the_use_case_and_reach_tools_list() -> None:
         def execute(self, dto: CommandPurge) -> None:
             return None
 
-    tools = _tools(McpGateway([bus, writes], unguarded=True))
+    tools = _tools(McpGateway([bus, writes]))
     assert _annotations(tools, "invoice") == {
         "readOnlyHint": True,
         "destructiveHint": False,
@@ -296,7 +289,7 @@ def test_hints_are_derived_from_the_use_case_and_reach_tools_list() -> None:
 
 
 def test_the_manifest_carries_the_resolved_hints() -> None:
-    by_name = {one.name: one for one in McpGateway([_billing()], unguarded=True).manifest()}
+    by_name = {one.name: one for one in McpGateway([_billing()]).manifest()}
     assert by_name["invoice"].binding["read_only"] is True
     assert by_name["issue_invoice"].binding["read_only"] is False
     assert by_name["issue_invoice"].binding["destructive"] is False
@@ -325,7 +318,7 @@ def test_a_deprecated_tool_says_so_first_in_its_description() -> None:
         def execute(self, dto: QueryInvoice) -> ResponseInvoice:
             return ResponseInvoice(number="x")
 
-    description = _tools(McpGateway([bus], unguarded=True))["invoice"].description
+    description = _tools(McpGateway([bus]))["invoice"].description
     assert description.startswith("DEPRECATED")
     assert "2099-01-01" in description and "issue_invoice" in description
     assert "Read one invoice." in description
@@ -336,7 +329,7 @@ def test_a_deprecated_tool_says_so_first_in_its_description() -> None:
 
 def test_a_tool_call_answers_what_the_bus_answers() -> None:
     bus = _billing()
-    server = McpGateway([bus], unguarded=True).server()
+    server = McpGateway([bus]).server()
     through_mcp = _call(server, "issue_invoice", {"customer_id": 7}).structured_content
     through_bus = bus(CommandIssueInvoice(customer_id=7), ResponseIssueInvoice)
     assert through_bus is not None
@@ -396,7 +389,7 @@ def test_a_harmless_hint_never_authorizes_the_bus_still_decides(
     }
 
 
-def test_a_guarded_use_case_bound_for_mcp_must_say_who_may_call_it() -> None:
+def test_a_guarded_use_case_bound_for_mcp_that_declares_nothing_is_open() -> None:
     auth = AccessControl[Perm]()
     bus = UseFramework("mcp-undeclared", log_after_execution=False)
 
@@ -407,7 +400,8 @@ def test_a_guarded_use_case_bound_for_mcp_must_say_who_may_call_it() -> None:
             return ResponseIssueInvoice(number="F-1")
 
     auth.on(bus)
-    assert any("neither @auth.requires nor @auth.public" in one for one in _verify(bus))
+    assert _verify(bus) == []
+    assert [one.access for one in McpGateway([bus]).manifest()] == ["open"]
 
 
 # The conveniences stay the catalog, and a project may bring its own wire
@@ -428,7 +422,7 @@ def test_the_catalog_over_several_buses_is_the_gateway_in_catalog_exposure() -> 
         def execute(self, dto: CommandReconcile) -> None:
             return None
 
-    gateway = McpGateway([_billing(), sales], exposure=Exposure.CATALOG, unguarded=True)
+    gateway = McpGateway([_billing(), sales], exposure=Exposure.CATALOG)
     tools = _tools(gateway.server())
     assert set(tools) == {"issue_invoice", "invoice", "billing_reconcile", "ventas_reconcile"}
 
@@ -439,7 +433,7 @@ def test_a_project_wire_renames_every_tool() -> None:
             derived = super().derive(operation, group)
             return derived.model_copy(update={"name": f"sp_{derived.name}"})
 
-    gateway = McpGateway([_billing()], unguarded=True, port=Prefixed())
+    gateway = McpGateway([_billing()], port=Prefixed())
     assert set(gateway.tool_names()) == {"sp_issue_invoice", "sp_invoice"}
 
 
@@ -455,9 +449,7 @@ def test_a_write_nobody_said_is_harmless_stays_destructive_whatever_the_wire_der
                 name=tool_name_of(operation.command), read_only=operation.is_query
             )
 
-    gateway = McpGateway(
-        [_billing()], exposure=Exposure.CATALOG, unguarded=True, port=Undecided()
-    )
+    gateway = McpGateway([_billing()], exposure=Exposure.CATALOG, port=Undecided())
     hints = {tool.name: tool.annotations for tool in gateway.tools()}
     assert hints["reconcile"]["destructiveHint"] is True
     assert hints["issue_invoice"]["destructiveHint"] is False

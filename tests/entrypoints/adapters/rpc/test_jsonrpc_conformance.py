@@ -237,7 +237,7 @@ def ran() -> list[tuple[str, Any]]:
 
 @pytest.fixture
 def gateway(ran: list[tuple[str, Any]]) -> RpcGateway:
-    return RpcGateway({"spec": _spec_bus(ran)}, unguarded=True)
+    return RpcGateway({"spec": _spec_bus(ran)})
 
 
 @pytest.fixture
@@ -430,7 +430,7 @@ def test_each_invalid_item_of_a_batch_gets_its_own_error(gateway: RpcGateway) ->
 def test_the_rpc_prefix_is_reserved_for_discovery(gateway: RpcGateway) -> None:
     """A bus aliased `rpc` would publish `rpc.subtract` under the protocol's own prefix."""
     with pytest.raises(ValueError, match="rpc"):
-        RpcGateway({"rpc": _spec_bus([])}, unguarded=True)
+        RpcGateway({"rpc": _spec_bus([])})
 
     unknown = gateway.handle({"jsonrpc": "2.0", "method": "rpc.anything", "id": 1})
     assert isinstance(unknown, dict)

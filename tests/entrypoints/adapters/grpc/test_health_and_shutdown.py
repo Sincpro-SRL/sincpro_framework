@@ -48,7 +48,7 @@ def _bus(name: str) -> UseFramework:
 
 
 def _gateway(buses: dict[str, UseFramework]) -> GrpcGateway:
-    return GrpcGateway(buses, exposure=Exposure.CATALOG, unguarded=True)
+    return GrpcGateway(buses, exposure=Exposure.CATALOG)
 
 
 @pytest.fixture

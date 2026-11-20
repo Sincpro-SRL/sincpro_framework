@@ -66,7 +66,7 @@ def _refused(gateway: Gateway) -> str:
 
 
 def test_a_surface_that_holds_builds():
-    gateway = RestSurface([_bus(rest.post("/invoices", status=201))], unguarded=True)
+    gateway = RestSurface([_bus(rest.post("/invoices", status=201))])
 
     assert gateway.verify() == []
     assert len(gateway.surface()) == 1
@@ -78,7 +78,7 @@ def test_a_surface_that_holds_builds():
 def test_internal_with_a_binding_is_refused():
     bus = _bus(lambda cls: internal(rest.post("/invoices")(cls)))
 
-    assert "@internal and bound on rest" in _refused(RestSurface([bus], unguarded=True))
+    assert "@internal and bound on rest" in _refused(RestSurface([bus]))
 
 
 def test_internal_on_the_command_with_a_bind_is_refused():
@@ -87,7 +87,7 @@ def test_internal_on_the_command_with_a_bind_is_refused():
         pass
 
     bus = _bus(lambda cls: cls, command=CommandHidden)
-    gateway = RestSurface([bus], unguarded=True).bind(CommandHidden, RestBinding(path="/x"))
+    gateway = RestSurface([bus]).bind(CommandHidden, RestBinding(path="/x"))
 
     assert "@internal and bound on rest" in _refused(gateway)
 
@@ -96,38 +96,48 @@ def test_an_override_for_a_command_no_bus_answers_is_refused():
     class CommandNobodyAnswers(DataTransferObject):
         pass
 
-    gateway = RestSurface([_bus(rest.post("/invoices"))], unguarded=True)
+    gateway = RestSurface([_bus(rest.post("/invoices"))])
     gateway.override(CommandNobodyAnswers, status=202)
 
     assert "no bus of this gateway answers it" in _refused(gateway)
 
 
-# --- the fallback access rule ---------------------------------------------------------------
+# --- access: open unless the use case restricts it ------------------------------------------
 
 
-def test_a_bound_use_case_on_a_guarded_bus_must_declare_its_access():
+def test_a_bound_use_case_on_a_guarded_bus_that_declares_nothing_is_published_open():
     auth = AccessControl[BillingPermission]()
     bus = _bus(rest.post("/invoices"))
     auth.on(bus)
+    gateway = RestSurface([bus])
 
-    assert "declares neither @auth.requires nor @auth.public" in _refused(RestSurface([bus]))
+    assert gateway.verify() == []
+    assert [one.access for one in gateway.manifest()] == ["open"]
 
 
-@pytest.mark.parametrize("declared", ["requires", "public"])
-def test_a_guarded_use_case_that_declares_its_access_is_published(declared):
+@pytest.mark.parametrize("declared", ["requires", "authenticated"])
+def test_a_guarded_use_case_that_declares_its_access_is_published_with_it(declared):
     auth = AccessControl[BillingPermission]()
-    access = auth.requires(BillingPermission.ISSUE) if declared == "requires" else auth.public
-    bus = _bus(lambda cls: access(rest.post("/invoices")(cls)))
+    restrict = (
+        auth.requires(BillingPermission.ISSUE)
+        if declared == "requires"
+        else auth.authenticated
+    )
+    bus = _bus(lambda cls: restrict(rest.post("/invoices")(cls)))
     auth.on(bus)
 
-    assert len(RestSurface([bus]).surface()) == 1
+    (entry,) = RestSurface([bus]).manifest()
+
+    assert entry.access == (
+        str(BillingPermission.ISSUE) if declared == "requires" else "authenticated"
+    )
 
 
-def test_an_unguarded_bus_is_refused_unless_the_gateway_is_told():
+def test_a_bus_nobody_guards_is_published_open():
     bus = _bus(rest.post("/invoices"))
 
-    assert "has no AccessControl" in _refused(RestSurface([bus]))
-    assert len(RestSurface([bus], unguarded=True).surface()) == 1
+    assert RestSurface([bus]).verify() == []
+    assert [one.access for one in RestSurface([bus]).manifest()] == ["open"]
 
 
 # --- REST facts -----------------------------------------------------------------------------
@@ -136,7 +146,7 @@ def test_an_unguarded_bus_is_refused_unless_the_gateway_is_told():
 def test_a_path_field_that_is_not_a_command_field_is_refused():
     bus = _bus(rest.post("/customers/{id}/invoices"))
 
-    said = _refused(RestSurface([bus], unguarded=True))
+    said = _refused(RestSurface([bus]))
 
     assert "names {id}, which is not a field of CommandIssueInvoice" in said
 
@@ -145,9 +155,9 @@ def test_a_location_field_that_is_not_a_response_field_is_refused():
     fine = _bus(rest.post("/invoices", status=201, location="/invoices/{number}"))
     wrong = _bus(rest.post("/invoices", status=201, location="/invoices/{invoice_id}"))
 
-    assert RestSurface([fine], unguarded=True).verify() == []
+    assert RestSurface([fine]).verify() == []
     assert "location /invoices/{invoice_id} names {invoice_id}" in _refused(
-        RestSurface([wrong], unguarded=True)
+        RestSurface([wrong])
     )
 
 
@@ -157,8 +167,8 @@ def test_get_on_a_command_that_is_not_a_query_is_refused():
         rest.get("/invoices/{invoice_id}"), command=QueryInvoice, answers=ResponseInvoice
     )
 
-    assert "GET on a Command that writes" in _refused(RestSurface([write], unguarded=True))
-    assert RestSurface([read], unguarded=True).verify() == []
+    assert "GET on a Command that writes" in _refused(RestSurface([write]))
+    assert RestSurface([read]).verify() == []
 
 
 def test_delete_or_204_with_a_body_is_refused():
@@ -166,9 +176,9 @@ def test_delete_or_204_with_a_body_is_refused():
     no_content = _bus(rest.post("/invoices", status=204))
     answers_none = _bus(rest.delete("/invoices/{customer_id}"), answers=type(None))
 
-    assert "answers no body" in _refused(RestSurface([deleting], unguarded=True))
-    assert "answers no body" in _refused(RestSurface([no_content], unguarded=True))
-    assert RestSurface([answers_none], unguarded=True).verify() == []
+    assert "answers no body" in _refused(RestSurface([deleting]))
+    assert "answers no body" in _refused(RestSurface([no_content]))
+    assert RestSurface([answers_none]).verify() == []
 
 
 def test_a_patch_with_required_fields_needs_merge_patch():
@@ -181,13 +191,13 @@ def test_a_patch_with_required_fields_needs_merge_patch():
         rest.patch("/invoices/{invoice_id}", body="merge-patch"), command=CommandRename
     )
 
-    assert "declare body='merge-patch'" in _refused(RestSurface([plain], unguarded=True))
-    assert RestSurface([merge], unguarded=True).verify() == []
+    assert "declare body='merge-patch'" in _refused(RestSurface([plain]))
+    assert RestSurface([merge]).verify() == []
 
 
 def test_the_composition_is_validated_too():
     """An override is the last word — and the build checks the word it had."""
-    gateway = RestSurface([_bus(rest.post("/invoices"))], unguarded=True)
+    gateway = RestSurface([_bus(rest.post("/invoices"))])
     gateway.override(CommandIssueInvoice, path="/invoices/{number}")
 
     assert "names {number}, which is not a field of CommandIssueInvoice" in _refused(gateway)
@@ -201,17 +211,15 @@ def test_an_mcp_hint_that_contradicts_the_command_kind_is_refused():
     query_writing = _bus(mcp(read_only=False), command=QueryInvoice, answers=ResponseInvoice)
 
     assert "read_only=True on a Command that writes" in "\n".join(
-        RestSurface([writes_read_only], unguarded=True).verify()
+        RestSurface([writes_read_only]).verify()
     )
-    assert "read_only=False on a read" in "\n".join(
-        RestSurface([query_writing], unguarded=True).verify()
-    )
+    assert "read_only=False on a read" in "\n".join(RestSurface([query_writing]).verify())
 
 
 def test_an_rpc_name_under_the_reserved_prefix_is_refused():
     bus = _bus(rpc("rpc.issue_invoice"))
 
-    assert "the rpc. prefix is reserved" in _refused(RpcSurface([bus], unguarded=True))
+    assert "the rpc. prefix is reserved" in _refused(RpcSurface([bus]))
 
 
 def test_a_deprecation_past_its_sunset_is_refused():
@@ -221,8 +229,8 @@ def test_a_deprecation_past_its_sunset_is_refused():
     gone = _bus(rest.post("/invoices", deprecated=past))
     going = _bus(rest.post("/invoices", deprecated=future))
 
-    assert "is past — remove the binding" in _refused(RestSurface([gone], unguarded=True))
-    assert RestSurface([going], unguarded=True).verify() == []
+    assert "is past — remove the binding" in _refused(RestSurface([gone]))
+    assert RestSurface([going]).verify() == []
 
 
 def test_a_queue_binding_that_contradicts_the_message_kind_is_refused():
@@ -233,12 +241,8 @@ def test_a_queue_binding_that_contradicts_the_message_kind_is_refused():
     consumes_event = _bus(queue.consumes("billing.invoices"), command=InvoiceIssued)
     hears_command = _bus(queue.hears(group="accounting"))
 
-    assert "consumes a DomainEvent" in "\n".join(
-        RestSurface([consumes_event], unguarded=True).verify()
-    )
-    assert "hears a Command" in "\n".join(
-        RestSurface([hears_command], unguarded=True).verify()
-    )
+    assert "consumes a DomainEvent" in "\n".join(RestSurface([consumes_event]).verify())
+    assert "hears a Command" in "\n".join(RestSurface([hears_command]).verify())
 
 
 # --- stages (§10) ---------------------------------------------------------------------------
@@ -254,9 +258,9 @@ def test_idempotency_once_on_a_read_is_refused():
     )
     on_command = _bus(lambda cls: once(rest.post("/invoices")(cls)))
 
-    assert "@idempotency.once on a read" in _refused(RestSurface([on_query], unguarded=True))
-    assert RestSurface([on_command], unguarded=True).verify() == []
-    assert RestSurface([on_command], unguarded=True).surface()[0].operation.idempotent
+    assert "@idempotency.once on a read" in _refused(RestSurface([on_query]))
+    assert RestSurface([on_command]).verify() == []
+    assert RestSurface([on_command]).surface()[0].operation.idempotent
 
 
 # --- fail closed ----------------------------------------------------------------------------
@@ -271,7 +275,6 @@ def test_every_reason_is_said_at_once_and_nothing_is_published():
     assert "names {id}" in said
     assert "GET on a Command that writes" in said
     assert "rpc. prefix is reserved" in said
-    assert "has no AccessControl" in said
     with pytest.raises(exceptions.ProgrammingError):
         gateway.operations()
     with pytest.raises(exceptions.ProgrammingError):
@@ -284,9 +287,7 @@ class CommandUploadDocument(DataTransferObject):
 
 def test_a_binding_on_a_bytes_command_is_refused_not_dropped():
     """A `bytes` Command never travels as JSON: its route would silently not exist."""
-    gateway = RestSurface(
-        [_bus(rest.post("/documents"), CommandUploadDocument)], unguarded=True
-    )
+    gateway = RestSurface([_bus(rest.post("/documents"), CommandUploadDocument)])
 
     assert "CommandUploadDocument (rest): bound, but it has a bytes field" in _refused(
         gateway
@@ -294,8 +295,8 @@ def test_a_binding_on_a_bytes_command_is_refused_not_dropped():
 
 
 def test_a_bytes_command_bound_on_another_wire_or_left_out_builds():
-    on_rpc = RestSurface([_bus(rpc(), CommandUploadDocument)], unguarded=True)
-    left_out = RestSurface(unguarded=True)
+    on_rpc = RestSurface([_bus(rpc(), CommandUploadDocument)])
+    left_out = RestSurface()
     left_out.add(
         _bus(rest.post("/documents"), CommandUploadDocument), exclude=[CommandUploadDocument]
     )

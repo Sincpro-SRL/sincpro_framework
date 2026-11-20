@@ -2,8 +2,8 @@
 
 The cases are a payment that comes back hours later with the ref it was sent with: billing's
 invoices, read by whoever may read invoices; members, read by anyone signed in; a vault whose
-reads declare nothing on a strict bus. Whoever resolves a ref is decided by the record's own
-reads — never lent the permission of the use case that asked.
+reads declare nothing — open. Whoever resolves a ref is decided by the record's own reads — never
+lent the permission of the use case that asked.
 """
 
 from dataclasses import dataclass
@@ -130,13 +130,13 @@ def world() -> World:
 
     members_auth.on(members)
 
-    vault_auth = AccessControl[BillingPermission](strict=True)
+    vault_auth = AccessControl[BillingPermission]()
     vault = UseFramework("vault", log_after_execution=False)
     secrets = MemoryRepository()
     vault.add_dependency("repository", secrets)
 
     @vault.feature(QueryGetSecret)
-    class SecretReads(EntityReads[Secret]):  # declares nothing, on a strict bus
+    class SecretReads(EntityReads[Secret]):  # declares nothing: open
         pass
 
     vault_auth.on(vault)
@@ -208,10 +208,7 @@ def test_resolving_never_lends_a_permission_the_caller_lacks(world: World):
 
     with security.as_identity(SIGNED_IN), pytest.raises(auth_exceptions.PermissionDenied):
         world.platform(QueryResolve(refs=[invoice]))  # the resolution runs; the Get refuses
-    with security.as_identity(READER), pytest.raises(auth_exceptions.PermissionDenied):
-        world.refs.resolve(
-            secret
-        )  # declares nothing on a strict bus: refused as from outside
+    assert world.refs.resolve(secret) is not None  # declares nothing: open, as from outside
 
 
 def test_a_ref_nothing_here_reads_is_not_found_naming_why(world: World):
@@ -267,7 +264,7 @@ def test_resolve_is_a_read_every_wire_publishes():
 
     member = Member(name="Ana Pérez")
     people.save(member)
-    client = TestClient(FastApiGateway([platform], unguarded=True).app())
+    client = TestClient(FastApiGateway([platform]).app())
 
     answered = client.get("/lookup/refs", params={"refs": f'["people.Member:{member.id}"]'})
 

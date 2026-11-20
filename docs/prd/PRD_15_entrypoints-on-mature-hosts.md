@@ -447,6 +447,8 @@ The two kinds carry different risk, and the rules follow it:
 - **A Command is never consumed without a declaration, in either exposure**, and it says who may
   send it (`producers=`, `@auth.*`, or `unguarded=True`) — a Command on a queue is what an outsider
   makes this process do, the queue's version of an unintended public API.
+  *Superseded by #309: who may send is no longer a build condition — open unless the use case
+  declares `@auth.*`; `producers=` stays an optional filter; `unguarded=` is gone.*
 - **Contexts of this process hearing one event in one consumer group are one subscription** that
   runs each of them — two subscriptions on one RabbitMQ queue would compete for the message. Each
   context gets the event as the class *it* declared for the wire name. The message is acked only
