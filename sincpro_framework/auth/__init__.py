@@ -67,12 +67,14 @@ from sincpro_framework.auth.adapters.outbound import (
     ApiKeyHeader,
     BasicCredentials,
     ClientCredentials,
+    RequestSigner,
     StaticToken,
     TokenSources,
 )
 from sincpro_framework.auth.adapters.resolving import Resolving
 from sincpro_framework.auth.adapters.role_permissions import RolePermissions
 from sincpro_framework.auth.adapters.service_token_provider import ServiceTokenProvider
+from sincpro_framework.auth.adapters.signature_provider import SignatureProvider
 from sincpro_framework.auth.adapters.static_provider import StaticProvider
 from sincpro_framework.auth.domain.exceptions import (
     AuthError,
@@ -128,6 +130,11 @@ from sincpro_framework.auth.entrypoint.outbound import (
     requests_auth,
 )
 from sincpro_framework.auth.entrypoint.security import security
+from sincpro_framework.auth.infrastructure.signatures import (
+    HexDigest,
+    SignatureStyle,
+    TimestampedSignature,
+)
 from sincpro_framework.auth.infrastructure.urllib_http import UrllibHttp
 from sincpro_framework.auth.services.grant_administration import GrantAdministration
 from sincpro_framework.auth.services.server_metadata import OidcDiscovery, ServerMetadata
@@ -170,6 +177,7 @@ __all__ = [
     "GrantSource",
     "GrantStore",
     "Held",
+    "HexDigest",
     "HttpAnswer",
     "HttpClient",
     "HttpRequest",
@@ -195,6 +203,7 @@ __all__ = [
     "Privilege",
     "ProtectedResource",
     "PublicClient",
+    "RequestSigner",
     "Resolving",
     "Revocations",
     "RevocationState",
@@ -206,8 +215,11 @@ __all__ = [
     "ServerMetadata",
     "ServiceTokenProvider",
     "SharedSecrets",
+    "SignatureProvider",
+    "SignatureStyle",
     "StaticProvider",
     "StaticToken",
+    "TimestampedSignature",
     "TokenCache",
     "TokenEndpoint",
     "TokenSource",

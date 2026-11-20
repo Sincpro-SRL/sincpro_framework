@@ -281,3 +281,38 @@ assert http.count(introspect) == 1               # the second answer came from t
 
 The endpoint refusing this service's own client (401, 403) is its misconfiguration, never the
 caller's: `EndpointUnavailable` (503), logged as an error.
+
+## Webhooks: a signature over the body
+
+A bank, a payment gateway or GitHub proves it sent a request by signing its body with a secret
+both share. `SignatureProvider` reads the raw body (`needs_body`), so the wires — JSON-RPC, REST,
+FastAPI, `IdentityMiddleware` — hand it over as it came, only when a provider of the bus asks for
+it; the app still reads the whole body after.
+
+```python
+from sincpro_framework.auth import (
+    HexDigest,
+    OutgoingRequest,
+    RequestSigner,
+    SignatureProvider,
+    TimestampedSignature,
+)
+from sincpro_framework.data_layer.store import InMemoryKeyValue
+
+gateway = SignatureProvider(
+    {"2026-09": "the gateway secret"},                     # several: the sender rotates
+    TimestampedSignature("x-gateway-signature"),           # t=…,v1=… — or HexDigest() (GitHub)
+    subject="service:payment-gateway",
+    permissions={BillingPermission.ISSUE_INVOICE},
+    replay=InMemoryKeyValue(),                             # the context's store in production
+)
+body = b'{"invoice": "F-7", "paid": 10}'
+signature = RequestSigner("the gateway secret", TimestampedSignature("x-gateway-signature"))
+signed = signature.headers_for(OutgoingRequest(url="https://billing/notify", body=body))
+sender = gateway.authenticate(Credentials(transport="http", headers=signed, body=body))
+assert sender.subject == "service:payment-gateway"
+```
+
+A timestamped signature older than `tolerance` (five minutes) is refused; with `replay`, one is
+accepted once within it. `RequestSigner` is the same signature on the way out — this service
+delivering its own webhooks ([client side](client.md)).

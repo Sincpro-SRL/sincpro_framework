@@ -150,6 +150,18 @@ class AccessControl[P: Permission]:
         return found
 
     @property
+    def needs_body(self) -> bool:
+        """Whether a provider reads the request's raw body — a webhook signature — so the
+        entrypoints hand it over; no wire reads it otherwise."""
+        return any(one.needs_body for one in self.providers)
+
+    @classmethod
+    def any_needs_body(cls) -> bool:
+        """Whether any `AccessControl` of this process reads bodies — what an entrypoint that
+        does not know its bus yet asks before it reads one."""
+        return any(access.needs_body for access in list(cls._guarding.values()))
+
+    @property
     def identity(self) -> Identity:
         """Who the execution in progress acts as — never `None`."""
         return current_identity()

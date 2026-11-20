@@ -22,7 +22,7 @@ from fastapi import Depends, Request
 from pydantic import ConfigDict, Field
 
 from sincpro_framework.aio.async_threads import on_async_thread
-from sincpro_framework.auth import Credentials, security
+from sincpro_framework.auth import AccessControl, Credentials, security
 from sincpro_framework.context import EntrypointKind, context_executions, context_propagation
 from sincpro_framework.data_layer.caching import (
     IDEMPOTENCY_KEY,
@@ -93,8 +93,11 @@ class RequestContext(DataTransferObject):
 
 async def acting_credentials(request: Request) -> Credentials:
     """Who the request says is calling — read, never checked: the bus's `AccessControl`
-    authenticates them, in the thread that runs the use case. No I/O, so async."""
-    return Credentials.from_asgi(request.scope)
+    authenticates them, in the thread that runs the use case. The body is read only when a
+    provider of this process verifies one (a webhook signature) — Starlette keeps it for the
+    endpoint."""
+    body = await request.body() if AccessControl.any_needs_body() else None
+    return Credentials.from_asgi(request.scope, body=body)
 
 
 def _accepted(header: str) -> tuple[str, ...]:

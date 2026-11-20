@@ -114,7 +114,9 @@ class Credentials(DataTransferObject):
         )
 
     @classmethod
-    def from_asgi(cls, scope: Mapping[str, Any], transport: str = "http") -> "Credentials":
+    def from_asgi(
+        cls, scope: Mapping[str, Any], transport: str = "http", body: bytes | None = None
+    ) -> "Credentials":
         """Credentials out of an ASGI scope — headers, cookies, query, method and target; the
         client certificate when the server hands the TLS extension.
 
@@ -142,6 +144,7 @@ class Credentials(DataTransferObject):
                 "query": _first(parse_qsl(raw_query, keep_blank_values=True)),
                 "method": scope.get("method"),
                 "uri": f"{path}?{raw_query}" if raw_query else path,
+                "body": body,
             }
         )
 

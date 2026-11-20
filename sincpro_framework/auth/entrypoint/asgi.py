@@ -38,11 +38,15 @@ class IdentityMiddleware:
     """ASGI middleware that authenticates each HTTP or WebSocket request and runs the app
     inside `as_identity` of who it turned out to be."""
 
-    def __init__(self, app: ASGIApp, access: "AccessControl[Any]") -> None:
+    def __init__(
+        self, app: ASGIApp, access: "AccessControl[Any]", max_body_bytes: int = 1_048_576
+    ) -> None:
         """Wrap `app`, authenticating with `access` — the same `AccessControl` that guards the
-        buses the app calls, so they agree on who may do what."""
+        buses the app calls, so they agree on who may do what. `max_body_bytes` bounds the body
+        buffered for a provider that verifies it."""
         self.app = app
         self.access = access
+        self.max_body_bytes = max_body_bytes
 
     async def _refused(self, send: Send, error: exceptions.AuthError) -> None:
         """Answer the request with the refusal, as JSON — the body every transport answers.
@@ -64,6 +68,50 @@ class IdentityMiddleware:
         await send({"type": "http.response.start", "status": status, "headers": headers})
         body = json.dumps({"error": error.refusal_body()}).encode()
         await send({"type": "http.response.body", "body": body})
+
+    async def _buffered(self, receive: Receive) -> tuple[bytes | None, Receive]:
+        """The request's body read whole — `None` past `max_body_bytes` — and a `receive` that
+        hands the app the same body again, so the app reads what the provider verified.
+
+        Context: only when a provider reads bodies (a webhook signature); otherwise the app
+        streams the body itself.
+        """
+        chunks: list[bytes] = []
+        size = 0
+        while True:
+            message = await receive()
+            if message["type"] != "http.request":
+                break
+            chunk = message.get("body", b"")
+            size += len(chunk)
+            if size > self.max_body_bytes:
+                return None, receive
+            chunks.append(chunk)
+            if not message.get("more_body", False):
+                break
+        body = b"".join(chunks)
+        handed = False
+
+        async def replayed() -> MutableMapping[str, Any]:
+            nonlocal handed
+            if not handed:
+                handed = True
+                return {"type": "http.request", "body": body, "more_body": False}
+            return await receive()
+
+        return body, replayed
+
+    async def _too_large(self, send: Send) -> None:
+        """Answer 413: a body past `max_body_bytes` is never buffered."""
+        await send(
+            {
+                "type": "http.response.start",
+                "status": 413,
+                "headers": [(b"content-type", b"application/json")],
+            }
+        )
+        body = json.dumps({"error": {"kind": "invalid", "reason": "body too large"}})
+        await send({"type": "http.response.body", "body": body.encode()})
 
     async def _unavailable(self, send: Send, error: ExternalServiceError) -> None:
         """Answer that who calls could not be checked now — 503, to retry after what the error
@@ -113,7 +161,14 @@ class IdentityMiddleware:
             await send(message)
 
         try:
-            credentials = Credentials.from_asgi(scope, "http")
+            if self.access.needs_body and scope["type"] == "http":
+                body, receive = await self._buffered(receive)
+                if body is None:
+                    await self._too_large(send)
+                    return
+                credentials = Credentials.from_asgi(scope, "http", body=body)
+            else:
+                credentials = Credentials.from_asgi(scope, "http")
             try:
                 identity = await asyncio.to_thread(self.access.authenticate, credentials)
             except ExternalServiceError as error:
