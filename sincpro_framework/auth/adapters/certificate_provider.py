@@ -92,7 +92,8 @@ class CertificateProvider(AuthProvider):
 
         1. No certificate: `None`.
         2. Unreadable, outside its validity, or not chained to `trusted_roots`: `Unauthenticated`.
-        3. A SPIFFE ID of another trust domain, or a name `subjects` does not list.
+        3. With a `trust_domain`: no SPIFFE ID, or one of another trust domain — a common name
+           alone never stands in for it. A name `subjects` does not list.
         Final: a SERVICE identity — the subject `subjects` maps it to, else `service:<path or
         common name>` — with the certificate's thumbprint and expiry.
         """
@@ -110,7 +111,11 @@ class CertificateProvider(AuthProvider):
             except VerificationError as error:
                 raise exceptions.Unauthenticated("client certificate not trusted") from error
         named, is_spiffe = self._named(certificate)
-        if is_spiffe and self.trust_domain is not None:
+        if self.trust_domain is not None:
+            if not is_spiffe:
+                raise exceptions.Unauthenticated(
+                    f"no SPIFFE ID: only spiffe://{self.trust_domain}/ is accepted"
+                )
             if not named.startswith(f"spiffe://{self.trust_domain}/"):
                 raise exceptions.Unauthenticated("SPIFFE ID of another trust domain")
         if self.subjects is not None:

@@ -63,7 +63,7 @@ def test_a_service_token_says_its_id_and_expiry_and_ends_on_the_clock_it_is_give
     assert identity is not None and other is not None
     assert identity.token_id and identity.token_id != other.token_id
     assert identity.expires_at == datetime.fromtimestamp(1_900_000_060, UTC)
-    clock.now += 60
+    clock.now += 60 + 5  # past its expiry and the replicas' leeway
     with pytest.raises(exceptions.Unauthenticated, match="service token expired"):
         tokens.authenticate(Credentials(transport="service", headers={HEADER: first}))
 
@@ -88,3 +88,10 @@ def test_an_api_key_carries_its_scopes_and_stops_at_its_expiry() -> None:
     moments[0] = now + timedelta(days=1)
     with pytest.raises(exceptions.Unauthenticated, match="expired api key"):
         provider.authenticate(Credentials(transport="http", headers={"x-api-key": secret}))
+
+
+def test_a_service_token_signed_a_moment_ahead_by_another_replica_is_accepted() -> None:
+    ahead = ServiceTokenProvider("orders", {"k": "shared"}, clock=lambda: 1_900_000_101.1)
+    here = ServiceTokenProvider("orders", {"k": "shared"}, clock=lambda: 1_900_000_100.6)
+    token = ahead.token_for(Identity.user("user:1"))
+    assert here.authenticate(Credentials(transport="service", headers={HEADER: token}))

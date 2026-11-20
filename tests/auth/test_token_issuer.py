@@ -167,14 +167,27 @@ def test_signing_out_everywhere_ends_every_session_and_a_new_sign_in_works() -> 
     clock = Clock()
     sessions = issuer(clock)
     before = sessions.issue(ANA)
-    clock.now += 1
+    clock.now += 1.7  # a fraction into a second, as a real clock is
     sessions.revoke_subject(ANA.subject)
-    with pytest.raises(exceptions.Unauthenticated, match="signed out"):
+    with pytest.raises(exceptions.Unauthenticated, match="session revoked"):
         sessions.provider().authenticate(bearer(before))
-    with pytest.raises(exceptions.Unauthenticated, match="signed out"):
+    with pytest.raises(exceptions.Unauthenticated, match="session revoked"):
         sessions.refresh(refresh_of(before))
-    clock.now += 1
-    assert sessions.provider().authenticate(bearer(sessions.issue(ANA))) is not None
+    again = sessions.issue(ANA)  # the same second: a password changed, then a new sign-in
+    assert sessions.provider().authenticate(bearer(again)) is not None
+
+
+def test_a_token_of_an_identity_provider_signed_out_everywhere_is_refused_by_the_second() -> (
+    None
+):
+    clock = Clock()
+    revocations = InMemoryRevocations(now=lambda: datetime.fromtimestamp(clock.now, UTC))
+    clock.now += 0.6
+    revocations.revoke_subject(ANA.subject, until=datetime.fromtimestamp(clock.now + 60, UTC))
+    same_second = datetime.fromtimestamp(int(clock.now), UTC)
+    second_before = datetime.fromtimestamp(int(clock.now) - 1, UTC)
+    assert revocations.state(ANA.subject).refusal(same_second) is None
+    assert revocations.state(ANA.subject).refusal(second_before) == "signed out"
 
 
 def test_a_session_ends_idle_or_at_most() -> None:
@@ -254,3 +267,38 @@ class TestKeyValueRefreshTokens(RefreshTokensContract):
 class TestRefreshTokensOnRedis(RefreshTokensContract):
     def make_store(self) -> RefreshTokens:
         return KeyValueRefreshTokens(RedisKeyValue(fakeredis.FakeRedis()))
+
+
+class Granted:
+    """A resolver whose grants a test changes — the project's role table."""
+
+    def __init__(self, permissions: set[str]) -> None:
+        self.permissions = permissions
+
+    def resolve(self, identity: Identity) -> Identity:
+        return identity.model_copy(
+            update={"permissions": identity.permissions | frozenset(self.permissions)}
+        )
+
+
+def test_a_refreshed_token_keeps_its_roles_and_resolves_its_permissions_anew() -> None:
+    clock = Clock()
+    granted = Granted({"dues.pay"})
+    sessions = issuer(clock, embed_permissions=True, resolvers=[granted])
+    tokens = sessions.issue(ANA)
+    first = sessions.provider().authenticate(bearer(tokens))
+    assert first is not None
+    assert (first.roles, first.permissions) == ({"colegiado"}, {"dues.pay"})
+    granted.permissions = set()
+    assert sessions.revocations is not None
+    sessions.revocations.bump_permissions(ANA.subject)  # what GrantAdministration does
+    with pytest.raises(exceptions.Unauthenticated, match="permissions changed"):
+        sessions.provider().authenticate(bearer(tokens))
+    refreshed = sessions.provider().authenticate(bearer(sessions.refresh(refresh_of(tokens))))
+    assert refreshed is not None
+    assert (refreshed.roles, refreshed.permissions) == ({"colegiado"}, frozenset())
+
+
+def test_embedding_permissions_with_refresh_tokens_needs_resolvers() -> None:
+    with pytest.raises(exceptions.ProgrammingError, match="needs resolvers="):
+        issuer(embed_permissions=True)

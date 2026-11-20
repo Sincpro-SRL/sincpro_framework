@@ -137,7 +137,7 @@ class HttpAnswer(DataTransferObject):
         said = self.headers.get("retry-after", "").strip()
         if not said:
             return None
-        if said.isdigit():
+        if said.isascii() and said.isdigit():
             return min(timedelta(seconds=int(said)), MAX_RETRY_AFTER)
         try:
             when = parsedate_to_datetime(said)

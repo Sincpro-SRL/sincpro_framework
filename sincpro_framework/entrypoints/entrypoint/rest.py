@@ -20,7 +20,7 @@ import re
 from collections.abc import Iterable, Mapping, Sequence
 from typing import Any
 
-from sincpro_framework.auth import Credentials, security
+from sincpro_framework.auth import Credentials, Unauthenticated, security
 from sincpro_framework.entrypoints.adapters.rest import routing, serving
 from sincpro_framework.entrypoints.adapters.rest.openapi import openapi_document
 from sincpro_framework.entrypoints.adapters.rest.routing import RestRoute, build_routes
@@ -89,10 +89,10 @@ class RestGateway(Gateway):
         `servers` are the base URLs a generated client may call."""
         return openapi_document(self._title, self._version, self.rest_routes(), servers)
 
-    def challenges(self) -> list[str]:
+    def challenges(self, refusal: Unauthenticated | None = None) -> list[str]:
         """The `WWW-Authenticate` challenges a 401 carries — one per provider of the guarded
-        buses."""
-        return security.challenges(self.buses())
+        buses, for `refusal` when it is known: a step-up, an expired token."""
+        return security.challenges(self.buses(), refusal)
 
     def call(
         self,

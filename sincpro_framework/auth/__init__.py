@@ -120,6 +120,7 @@ from sincpro_framework.auth.domain.exceptions import (
     PasswordRejected,
     PermissionDenied,
     Unauthenticated,
+    refusal_from,
 )
 from sincpro_framework.auth.domain.grants import (
     Assignment,
@@ -310,6 +311,7 @@ __all__ = [
     "call_with_credentials",
     "digest_of",
     "httpx_auth",
+    "refusal_from",
     "remembering_versions",
     "requests_auth",
     "security",

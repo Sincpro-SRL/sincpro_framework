@@ -36,6 +36,8 @@ class RefreshRecord(DataTransferObject):
     kind: str = "user"
     tenant: str | None = None
     client: str | None = None
+    roles: frozenset[str] = frozenset()
+    """The roles the identity carried at sign-in — carried again by every refreshed token."""
     scopes: frozenset[str] = frozenset()
     assurance: Assurance = Assurance()
     authenticated_at: datetime

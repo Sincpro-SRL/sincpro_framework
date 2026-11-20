@@ -167,7 +167,15 @@ class JwtProvider(AuthProvider):
         keys = Jwks.discovered(issuer, algorithms=algorithms, http=http, discovery=discovery)
         provider_options = {
             name: options.pop(name)
-            for name in ("resolvers", "revocations", "resource", "realm", "name", "clock")
+            for name in (
+                "resolvers",
+                "revocations",
+                "resource",
+                "realm",
+                "dpop",
+                "name",
+                "clock",
+            )
             if name in options
         }
         return cls(

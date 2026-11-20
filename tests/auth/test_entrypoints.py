@@ -383,7 +383,7 @@ def test_a_service_token_is_refused_tampered_expired_or_for_another_audience() -
     head, claims, signature = token.split(".")
     for bad in (
         f"{head}.{claims}.{signature[:-2]}xx",
-        ServiceTokenProvider("orders", keys, ttl_seconds=-1).token_for(ISSUER),
+        ServiceTokenProvider("orders", keys, ttl_seconds=-10).token_for(ISSUER),
         ServiceTokenProvider("orders", keys, audience="elsewhere").token_for(ISSUER),
         ServiceTokenProvider("orders", {"old": "other"}).token_for(ISSUER),
         "not-a-token",

@@ -11,6 +11,7 @@ import pytest
 from sincpro_framework.auth import (
     ClaimMapping,
     Credentials,
+    DpopProofs,
     EndpointUnavailable,
     Issuer,
     JwtProvider,
@@ -129,6 +130,9 @@ def test_the_issuer_is_discovered_on_the_first_token_never_at_construction() -> 
     assert http.sent == []
     assert jwt.authenticate(bearer(mint(ES))) is not None
     assert [one.target for one in http.sent] == [DISCOVERY, JWKS]
+    proofs = DpopProofs("https://billing.sincpro.com.bo")
+    bound = JwtProvider.from_issuer(ISSUER, audience="billing-api", http=http, dpop=proofs)
+    assert bound.dpop is proofs
 
 
 def test_keys_given_by_hand_verify_what_they_sign() -> None:
