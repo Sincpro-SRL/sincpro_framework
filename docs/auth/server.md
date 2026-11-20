@@ -166,6 +166,25 @@ assert provider.challenge_for(exceptions.Unauthenticated("token expired")) == (
 )
 ```
 
+The body of a 401 says `"anonymous": true` when the caller presented nothing. A wire of the
+project's own that turned the refusal into JSON before answering rebuilds it with `refusal_from`
+— from a REST problem body, a JSON-RPC error's `data` or a `refusal_body()` — so the challenge is
+still the refusal's own:
+
+```python
+from sincpro_framework.auth import refusal_from
+
+nobody = exceptions.Unauthenticated("authenticate to run IssueInvoice", anonymous=True)
+assert nobody.refusal_body() == {
+    "kind": "unauthenticated", "reason": "authenticate to run IssueInvoice", "anonymous": True,
+}
+assert "error=" not in provider.challenge_for(refusal_from(nobody.refusal_body()))
+expired = refusal_from({"kind": "unauthenticated", "reason": "UNAUTHENTICATED",
+                        "detail": "token expired"})                 # a REST problem body
+assert 'error="invalid_token", error_description="token expired"' in provider.challenge_for(expired)
+assert refusal_from({"kind": "permission_denied", "detail": "lacks billing.invoice.issue"}) is None
+```
+
 ## Public keys: an identity provider's, by discovery — `[jwt]`
 
 Keycloak, Entra and Google sign with private keys and publish the public ones as a JWKS.

@@ -100,19 +100,20 @@ class Unauthenticated(AuthError):
 
 def refusal_from(said: Any) -> Unauthenticated | None:
     """The `Unauthenticated` a wire's answer describes — a REST problem body, a JSON-RPC
-    error's `data` — rebuilt where only the answer is left, to choose the challenge; `None` for
-    an answer of any other kind.
+    error's `data`, a `refusal_body()` — rebuilt where only the answer is left, to choose the
+    challenge; `None` for an answer of any other kind.
 
         refusal_from({"kind": "unauthenticated", "detail": "mfa required", "step_up": "mfa"})
             ->  Unauthenticated("mfa required", step_up="mfa")
         refusal_from({"kind": "permission_denied", ...})       ->  None
 
-    Context: the reason is the problem's `detail`, or the JSON-RPC `message`; `step_up`,
-    `max_age` and `anonymous` sit beside it, as `refusal_body` wrote them.
+    Context: the reason is the problem's `detail`, the JSON-RPC `message`, or a
+    `refusal_body`'s own `reason` — in the first two `reason` is a code, never the text;
+    `step_up`, `max_age` and `anonymous` sit beside it, as `refusal_body` wrote them.
     """
     if not isinstance(said, Mapping) or said.get("kind") != FailureKind.UNAUTHENTICATED.value:
         return None
-    reason = said.get("detail", said.get("message", ""))
+    reason = said.get("detail", said.get("message", said.get("reason", "")))
     step_up, max_age = said.get("step_up"), said.get("max_age")
     return Unauthenticated(
         reason if isinstance(reason, str) else "",
