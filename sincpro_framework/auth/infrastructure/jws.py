@@ -278,3 +278,40 @@ def text_set(value: Any) -> frozenset[str]:
     if isinstance(value, Iterable) and not isinstance(value, (bytes, Mapping)):
         return frozenset(one for one in value if isinstance(one, str))
     return frozenset()
+
+
+THUMBPRINT_MEMBERS = {
+    "EC": ("crv", "kty", "x", "y"),
+    "RSA": ("e", "kty", "n"),
+    "OKP": ("crv", "kty", "x"),
+    "oct": ("k", "kty"),
+}
+
+
+def thumbprint(jwk: Mapping[str, Any]) -> str:
+    """The JWK's SHA-256 thumbprint, base64url — RFC 7638: its required members, sorted, as
+    compact JSON. What a DPoP-bound token names as `cnf.jkt`.
+
+    Context: `ProgrammingError` for a key type RFC 7638 names no members for.
+    """
+    members = THUMBPRINT_MEMBERS.get(str(jwk.get("kty")))
+    if members is None:
+        raise exceptions.ProgrammingError(f"no thumbprint for a {jwk.get('kty')!r} key")
+    canonical = json.dumps(
+        {name: jwk[name] for name in members}, separators=(",", ":"), sort_keys=True
+    )
+    return encoded(hashlib.sha256(canonical.encode()).digest())
+
+
+def der_of(certificate: bytes) -> bytes:
+    """A certificate as DER — given as DER, or as PEM (what an ASGI server hands)."""
+    text = certificate.strip()
+    if not text.startswith(b"-----BEGIN"):
+        return certificate
+    body = b"".join(line for line in text.splitlines() if not line.startswith(b"-----"))
+    return base64.b64decode(body)
+
+
+def certificate_thumbprint(certificate: bytes) -> str:
+    """The certificate's SHA-256 thumbprint, base64url — RFC 8705's `x5t#S256`."""
+    return encoded(hashlib.sha256(der_of(certificate)).digest())

@@ -160,7 +160,12 @@ class FakeTokenEndpoint(ScriptedHttp):
         with self._server_lock:
             self._grants.append(grant)
         handlers: dict[str, Callable[[dict[str, str]], HttpAnswer]] = {
-            "client_credentials": lambda _: self.answer(self._issued()),
+            "client_credentials": lambda _: self.answer(
+                {
+                    **self._issued(),
+                    **({"token_type": "DPoP"} if "dpop" in request.headers else {}),
+                }
+            ),
             "refresh_token": self._refreshed,
             TOKEN_EXCHANGE: self._exchanged,
             DEVICE_CODE: self._device_token,

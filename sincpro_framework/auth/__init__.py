@@ -23,8 +23,8 @@ and the middleware for an ASGI app of the project's (`asgi`). JSON-RPC, gRPC, MC
 `remote_execution` authenticate by themselves when the bus is guarded. See `docs/auth/README.md`
 and PRD_34 for the whole catalog.
 
-The `[jwt]` extra's names — `Jwks`, `PublicKeys`, `PublicKey`, `PrivateKey`, `PrivateKeyJwt` — are
-imported when
+The `[jwt]` extra's names — `Jwks`, `PublicKeys`, `PublicKey`, `PrivateKey`, `PrivateKeyJwt`,
+`DpopProofs`, `DpopProver`, `CertificateProvider`, `AesGcmSealer` — are imported when
 first asked for, so `import sincpro_framework.auth` never loads PyJWT.
 """
 
@@ -299,13 +299,21 @@ _LAZY = {
     "PublicKey": "sincpro_framework.auth.infrastructure.jose_keys",
     "PrivateKey": "sincpro_framework.auth.infrastructure.jose_keys",
     "PrivateKeyJwt": "sincpro_framework.auth.adapters.private_key_jwt",
+    "DpopProofs": "sincpro_framework.auth.adapters.jwt.dpop",
+    "DpopProver": "sincpro_framework.auth.adapters.outbound.dpop",
+    "CertificateProvider": "sincpro_framework.auth.adapters.certificate_provider",
+    "AesGcmSealer": "sincpro_framework.auth.infrastructure.sealing",
 }
 """Names of the `[jwt]` extra, by the module that holds them — loaded on first use."""
 
 if TYPE_CHECKING:
+    from sincpro_framework.auth.adapters.certificate_provider import CertificateProvider
+    from sincpro_framework.auth.adapters.jwt.dpop import DpopProofs
     from sincpro_framework.auth.adapters.jwt.jwks import Jwks, PublicKeys
+    from sincpro_framework.auth.adapters.outbound.dpop import DpopProver
     from sincpro_framework.auth.adapters.private_key_jwt import PrivateKeyJwt
     from sincpro_framework.auth.infrastructure.jose_keys import PrivateKey, PublicKey
+    from sincpro_framework.auth.infrastructure.sealing import AesGcmSealer
 
 
 def __getattr__(name: str) -> Any:

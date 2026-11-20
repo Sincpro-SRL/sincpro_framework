@@ -17,7 +17,7 @@ never the secret.
 from collections.abc import Callable, Iterable, Mapping
 from datetime import UTC, datetime, timedelta
 from functools import partial
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from sincpro_framework.auth.adapters.client_auth import ClientSecretBasic
 from sincpro_framework.auth.domain import exceptions
@@ -27,6 +27,9 @@ from sincpro_framework.auth.infrastructure.urllib_http import UrllibHttp
 from sincpro_framework.auth.services.server_metadata import OidcDiscovery
 from sincpro_framework.auth.services.token_cache import TokenCache, bearer_of
 from sincpro_framework.auth.services.token_endpoint import IssuedToken, TokenEndpoint
+
+if TYPE_CHECKING:
+    from sincpro_framework.auth.adapters.outbound.dpop import DpopProver
 
 
 def client_of(
@@ -70,6 +73,7 @@ class ClientCredentials(TokenSource):
         now: Callable[[], datetime] = partial(datetime.now, UTC),
         timeout: timedelta = timedelta(seconds=10),
         name: str = "client-credentials",
+        dpop: "DpopProver | None" = None,
     ) -> None:
         self.client = client_of(client, client_id, client_secret)
         self.http: HttpClient = http or UrllibHttp()
@@ -86,6 +90,7 @@ class ClientCredentials(TokenSource):
         self.resources = tuple(sorted(resources))
         self.cache = cache or TokenCache(now=now)
         self.name = name
+        self.dpop = dpop
 
     def _key(self) -> tuple[Any, ...]:
         """What the token is cached by — the grant's parameters, never the secret."""
@@ -96,6 +101,7 @@ class ClientCredentials(TokenSource):
             self.scope,
             self.audience,
             self.resources,
+            None if self.dpop is None else self.dpop.thumbprint,
         )
 
     def _fetched(self) -> IssuedToken:
@@ -106,15 +112,26 @@ class ClientCredentials(TokenSource):
         if self.audience:
             fields.append(("audience", self.audience))
         fields.extend(("resource", one) for one in self.resources)
-        return self.endpoint.grant(fields)
+        headers = (
+            {} if self.dpop is None else {"dpop": self.dpop.proof("POST", self.endpoint.url)}
+        )
+        return self.endpoint.grant(fields, headers)
 
     def token(self) -> IssuedToken:
         """The current token — cached, fetched when there is none still good."""
         return self.cache.token(self._key(), self._fetched)
 
     def headers_for(self, request: OutgoingRequest) -> dict[str, str]:
+        """`Bearer <token>` — or, for a DPoP-bound token, `DPoP <token>` with this request's
+        proof (RFC 9449)."""
         issued = self.token()
-        return {"authorization": f"Bearer {issued.access_token.get_secret_value()}"}
+        token = issued.access_token.get_secret_value()
+        if self.dpop is not None and issued.token_type.lower() == "dpop":
+            return {
+                "authorization": f"DPoP {token}",
+                "dpop": self.dpop.proof(request.method, request.url, token),
+            }
+        return {"authorization": f"Bearer {token}"}
 
     def invalidate(
         self,
@@ -122,6 +139,8 @@ class ClientCredentials(TokenSource):
         presented: Mapping[str, str],
         answer: Mapping[str, str] | None = None,
     ) -> bool:
+        if self.dpop is not None and answer and self.dpop.learn(request.url, answer):
+            return True
         token = bearer_of(presented)
         return token is not None and self.cache.refused(self._key(), token)
 

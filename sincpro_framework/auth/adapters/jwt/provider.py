@@ -20,10 +20,10 @@ that cannot be fetched are `EndpointUnavailable` (503) — the caller's token di
 """
 
 import time
-from collections.abc import Callable, Iterable, Sequence
+from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import timedelta
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from sincpro_framework.auth.adapters.jwt.mapping import ClaimMapping
 from sincpro_framework.auth.adapters.jwt.resource import ProtectedResource
@@ -34,6 +34,9 @@ from sincpro_framework.auth.domain.provider import AuthProvider
 from sincpro_framework.auth.domain.resolver import IdentityResolver, resolved
 from sincpro_framework.auth.domain.revocations import Revocations
 from sincpro_framework.auth.infrastructure import jws
+
+if TYPE_CHECKING:
+    from sincpro_framework.auth.adapters.jwt.dpop import DpopProofs
 
 HMAC_ALGORITHMS = frozenset(jws.HMAC_DIGESTS)
 """The headers read are `alg` and `kid`. `crit` names an extension that must be understood —
@@ -118,6 +121,7 @@ class JwtProvider(AuthProvider):
         realm: str = "sincpro",
         name: str = "jwt",
         clock: Callable[[], float] = time.time,
+        dpop: "DpopProofs | None" = None,
     ) -> None:
         """`issuers` trusted, by their `iss`; `resolvers` run on every identity; `revocations`
         asked about every token; `resource` named in a 401 (RFC 9728); `clock` in seconds.
@@ -132,6 +136,7 @@ class JwtProvider(AuthProvider):
         self.realm = realm
         self.name = name
         self.clock = clock
+        self.dpop = dpop
 
     @classmethod
     def from_issuer(
@@ -189,6 +194,8 @@ class JwtProvider(AuthProvider):
             parts.append(f'error_description="{_quoted(refusal.reason)}"')
         if self.resource is not None:
             parts.append(f'resource_metadata="{self.resource.metadata_url}"')
+        if self.dpop is not None:
+            parts.append(self.dpop.challenge())
         return ", ".join(parts)
 
     def challenge(self) -> str | None:
@@ -242,8 +249,26 @@ class JwtProvider(AuthProvider):
             raise exceptions.Unauthenticated("permissions changed: refresh the token")
 
     def token_of(self, credentials: Credentials) -> str | None:
-        """The bearer token the credentials carry, if any."""
-        return credentials.bearer
+        """The token of `Authorization: Bearer …` — or `DPoP …` when proofs are checked."""
+        scheme, _, token = credentials.headers.get("authorization", "").partition(" ")
+        accepted = ("bearer", "dpop") if self.dpop is not None else ("bearer",)
+        return token.strip() or None if scheme.lower() in accepted else None
+
+    def _bound(self, credentials: Credentials, token: str, claims: Mapping[str, Any]) -> None:
+        """A token bound to a client certificate (RFC 8705, `cnf.x5t#S256`) is accepted only
+        over that certificate; one bound to a key only with its proof (RFC 9449, `DpopProofs`).
+        """
+        confirmation = claims.get("cnf")
+        pinned = confirmation.get("x5t#S256") if isinstance(confirmation, dict) else None
+        if pinned is not None and (
+            credentials.peer_certificate is None
+            or jws.certificate_thumbprint(credentials.peer_certificate) != pinned
+        ):
+            raise exceptions.Unauthenticated("token is bound to another client certificate")
+        if self.dpop is not None:
+            self.dpop.check(credentials, token, claims)
+        elif isinstance(confirmation, dict) and "jkt" in confirmation:
+            raise exceptions.Unauthenticated("a DPoP-bound token, and no proofs are checked")
 
     def authenticate(self, credentials: Credentials) -> Identity | None:
         """Who the bearer JWT says is calling.
@@ -268,6 +293,7 @@ class JwtProvider(AuthProvider):
         if issuer is None:
             return None
         self._verified(parsed, issuer)
+        self._bound(credentials, token, parsed.claims)
         identity = issuer.mapping.identity(parsed.claims, provider=self.name)
         self._not_revoked(identity, parsed)
         return resolved(identity, self.resolvers)

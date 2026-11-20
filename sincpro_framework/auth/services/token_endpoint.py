@@ -13,7 +13,7 @@ configuration, never the caller's. The expiry is the moment the answer arrived p
 never forever.
 """
 
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from datetime import UTC, datetime, timedelta
 from functools import partial
 
@@ -66,7 +66,9 @@ class TokenEndpoint:
         """The token endpoint's URL."""
         return self._endpoint() if callable(self._endpoint) else self._endpoint
 
-    def grant(self, fields: Sequence[tuple[str, str]]) -> IssuedToken:
+    def grant(
+        self, fields: Sequence[tuple[str, str]], headers: Mapping[str, str] | None = None
+    ) -> IssuedToken:
         """The token the server issues for `fields`.
 
         1. POSTed form-encoded, authenticated as the client.
@@ -77,8 +79,10 @@ class TokenEndpoint:
         """
         url = self.url
         target = HttpRequest(url=url).target
-        sent, headers = self.client.applied(fields, url)
-        answer = self.http.send(HttpRequest.form(url, sent, headers, self.timeout))
+        sent, authenticated = self.client.applied(fields, url)
+        answer = self.http.send(
+            HttpRequest.form(url, sent, {**authenticated, **(headers or {})}, self.timeout)
+        )
         received = self.now()
         said = answer.json_object()
         error = str(said.get("error", ""))

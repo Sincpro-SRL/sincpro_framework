@@ -316,3 +316,38 @@ assert sender.subject == "service:payment-gateway"
 A timestamped signature older than `tolerance` (five minutes) is refused; with `replay`, one is
 accepted once within it. `RequestSigner` is the same signature on the way out — this service
 delivering its own webhooks ([client side](client.md)).
+
+## Tokens bound to a key or a certificate — `[jwt]`
+
+A token that leaks from a log or a proxy is of no use when it is bound: to a key the client proves
+on every request (DPoP, RFC 9449), or to the client certificate of its mTLS connection (RFC 8705).
+
+```python
+from sincpro_framework.auth import DpopProofs, DpopProver
+
+client_key = DpopProver()                                      # the client's — ClientCredentials(dpop=…)
+bound = jws.encode(
+    {"alg": "HS256", "kid": "own"},
+    {"iss": "billing", "aud": "billing", "sub": "ana", "exp": time.time() + 300,
+     "cnf": {"jkt": client_key.thumbprint}},
+    jws.HmacKey.of("own", SECRET).sign,
+)
+api = JwtProvider(own, dpop=DpopProofs("https://billing.sincpro.com.bo"))
+with_proof = Credentials(
+    transport="http", method="GET", uri="/invoices",
+    headers={"authorization": f"DPoP {bound}",
+             "dpop": client_key.proof("GET", "https://billing.sincpro.com.bo/invoices", bound)},
+)
+assert api.authenticate(with_proof).subject == "user:ana"
+try:
+    api.authenticate(Credentials(transport="http", headers={"authorization": f"Bearer {bound}"}))
+except exceptions.Unauthenticated as refused:
+    assert refused.reason == "this token must be sent as DPoP"
+```
+
+The proof names the method and the URL — compared with `public_base_url`, never the Host header —
+when it was made (a minute, `max_age`), the token's hash and, with `replay`, is accepted once. A
+token naming `cnf.x5t#S256` is accepted only over that client certificate.
+`CertificateProvider(trust_domain="sincpro.bo")` authenticates the certificate itself — a SPIFFE
+workload (`spiffe://sincpro.bo/billing` → `service:billing`), PEM or DER, its chain checked against
+`trusted_roots` when the TLS server did not.
