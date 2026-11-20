@@ -109,7 +109,59 @@ members_auth.on(members)
 assert members(CommandSignIn(username="MFAQ0123", password="clave segura 123"), SignedIn).subject == "user:MFAQ0123"
 ```
 
-What it answers — a token, a session — is the [token issuer](#issuing-tokens)'s.
+What it answers — a token, a session — is the [token issuer](#issuing-tokens)'s: `return sessions.issue(...).answer()`.
+
+## Issuing tokens
+
+Once a person signed in, `TokenIssuer` hands out a short access token and an opaque refresh token,
+and takes them back. Its `provider()` is the `JwtProvider` that accepts them — checking
+revocations on every call.
+
+```python
+from sincpro_framework.auth import (
+    AccessControl,
+    Assurance,
+    Credentials,
+    InMemoryRefreshTokens,
+    InMemoryRevocations,
+    SigningKeys,
+    TokenIssuer,
+)
+
+sessions = TokenIssuer(
+    "https://colegio.bo",
+    audience="colegio",
+    keys=SigningKeys.hmac({"2026-09": "a token secret of thirty-two bytes!"}),   # a Secret
+    refresh_tokens=InMemoryRefreshTokens(),   # KeyValueRefreshTokens() / DatabaseRefreshTokens
+    revocations=InMemoryRevocations(),        # KeyValueRevocations()
+)
+tokens = sessions.issue(Identity.user("user:MFAQ0123", tenant="cauor"),
+                        assurance=Assurance(methods=frozenset({"pwd"})))
+answer = tokens.answer()                      # what the sign-in use case returns
+assert set(answer) == {"access_token", "token_type", "expires_in", "refresh_token"}
+
+session_auth = AccessControl[MembersPermission](providers=[sessions.provider()])
+caller = Credentials(transport="http", headers={"authorization": f"Bearer {answer['access_token']}"})
+assert session_auth.authenticate(caller).subject == "user:MFAQ0123"
+
+renewed = sessions.refresh(answer["refresh_token"])          # the old refresh token is spent
+sessions.revoke(renewed.access_token.get_secret_value())      # a logout: at once
+try:
+    session_auth.authenticate(Credentials(transport="http", headers={
+        "authorization": f"Bearer {renewed.access_token.get_secret_value()}"}))
+except Unauthenticated as refused:
+    assert refused.reason == "session revoked"
+```
+
+| | |
+|---|---|
+| the access token | ten minutes; who, which session, when and how they authenticated, the scopes — no permissions: the provider's resolvers give them per call, so a role taken away holds at once (`embed_permissions=True` carries them with a version a change refuses) |
+| the refresh token | random, stored by digest, rotated on every use; used twice past `reuse_grace` (ten seconds — two tabs) it is a replay, and the whole session is revoked |
+| a session | ends `idle_for` (14 days) after the last refresh and `at_most` (30 days) after it began |
+| a logout | `revoke(token)` — an access or a refresh token — ends its session, its access tokens refused at once |
+| "sign out everywhere" | `revoke_subject(subject)`: a password changed, an account disabled |
+| "signed in on…" | `sessions_of(subject)` |
+| other services | `SigningKeys.private({...}, "ES256")` (`[jwt]`): they verify with `jwks()` and `Issuer(..., mapping=TokenIssuer.mapping)`, no secret shared |
 
 ## Links that work once, and a second factor
 

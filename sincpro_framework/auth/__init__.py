@@ -34,6 +34,8 @@ from typing import TYPE_CHECKING, Any
 from sincpro_framework.auth.adapters.accounts import (
     BasicProvider,
     HashedCredentials,
+    InMemoryRefreshTokens,
+    KeyValueRefreshTokens,
     LoginAttempts,
     OneTimeGrant,
     OneTimeTokens,
@@ -64,10 +66,13 @@ from sincpro_framework.auth.adapters.jwt import (
     ClaimMapping,
     ClaimTest,
     IntrospectionProvider,
+    IssuedTokens,
     Issuer,
     JwtProvider,
     ProtectedResource,
     SharedSecrets,
+    SigningKeys,
+    TokenIssuer,
 )
 from sincpro_framework.auth.adapters.key_value_revocations import (
     InMemoryRevocations,
@@ -93,7 +98,11 @@ from sincpro_framework.auth.adapters.role_permissions import RolePermissions
 from sincpro_framework.auth.adapters.service_token_provider import ServiceTokenProvider
 from sincpro_framework.auth.adapters.signature_provider import SignatureProvider
 from sincpro_framework.auth.adapters.static_provider import StaticProvider
-from sincpro_framework.auth.domain.accounts import CredentialVerifier
+from sincpro_framework.auth.domain.accounts import (
+    CredentialVerifier,
+    RefreshRecord,
+    RefreshTokens,
+)
 from sincpro_framework.auth.domain.exceptions import (
     AuthError,
     CredentialsRejected,
@@ -220,14 +229,17 @@ __all__ = [
     "InMemoryApiKeys",
     "InMemoryGrants",
     "InMemoryHeldGrants",
+    "InMemoryRefreshTokens",
     "InMemoryRevocations",
     "IntrospectionProvider",
     "InvalidGrant",
     "IssuedToken",
+    "IssuedTokens",
     "Issuer",
     "JwtProvider",
     "KeyValueGrants",
     "KeyValueHeldGrants",
+    "KeyValueRefreshTokens",
     "KeyValueRevocations",
     "LoginAttempts",
     "NoCredentialsFor",
@@ -244,6 +256,8 @@ __all__ = [
     "ProtectedResource",
     "PublicClient",
     "RefreshingToken",
+    "RefreshRecord",
+    "RefreshTokens",
     "RequestSigner",
     "Resolving",
     "Revocations",
@@ -259,12 +273,14 @@ __all__ = [
     "SharedSecrets",
     "SignatureProvider",
     "SignatureStyle",
+    "SigningKeys",
     "StaticProvider",
     "StaticToken",
     "TimestampedSignature",
     "TokenCache",
     "TokenEndpoint",
     "TokenExchange",
+    "TokenIssuer",
     "TokenSource",
     "TokenSources",
     "Totp",
