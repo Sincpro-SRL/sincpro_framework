@@ -8,6 +8,7 @@ import pytest
 from sincpro_framework import ApplicationService, DataTransferObject, Feature, UseFramework
 from sincpro_framework.context import InMemoryContexts
 from sincpro_framework.ddd import exceptions as ddd_exceptions
+from sincpro_framework.ddd.reads.reads import named_in_type
 from sincpro_framework.exceptions import FailureKind
 from sincpro_framework.pipelines import (
     Await,
@@ -207,6 +208,27 @@ def test_a_run_not_kept_is_not_found():
         bus(QueryIssueRun(run_id="never"))
 
     assert raised.value.failure_kind is FailureKind.NOT_FOUND
+
+
+def test_a_read_of_runs_names_no_entity_and_answers_a_run():
+    assert named_in_type(QueryIssueRun) is None
+    assert named_in_type(QueryIssueRuns) is None
+
+
+def test_a_run_read_over_rest_answers_the_run():
+    pytest.importorskip("fastapi")
+    from fastapi.testclient import TestClient
+
+    from sincpro_framework.entrypoints import FastApiGateway, Profile
+
+    bus, _ = forge()
+    bus(CommandRunIssue(run_id="i-9"))
+    client = TestClient(FastApiGateway([bus], profile=Profile.RPC, unguarded=True).app())
+
+    read = client.post("/forge-pipelines/query-issue-run", json={"run_id": "i-9"})
+
+    assert read.status_code == 200
+    assert (read.json()["run_id"], read.json()["state"]) == ("i-9", "waiting")
 
 
 def test_a_read_that_names_no_pipeline_says_how():

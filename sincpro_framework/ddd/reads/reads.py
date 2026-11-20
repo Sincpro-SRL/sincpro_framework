@@ -309,7 +309,8 @@ def named_in_type(dto: type) -> tuple[type, type] | None:
     entity (`Get`, `Search`, `Edit`, …) is written so, and whoever groups use cases by entity
     reads it here rather than keeping a list of them. A framework DTO that names its entity
     alone (`Delete`) answers nothing; a base of the project's own parametrized with one class
-    names no entity.
+    names no entity, nor does a framework DTO outside the domain's — `GetRun[CommandRunNightly]`
+    names a pipeline, and answers its run.
     """
     for base in dto.__mro__:
         generic = getattr(base, "__pydantic_generic_metadata__", None) or {}
@@ -319,7 +320,7 @@ def named_in_type(dto: type) -> tuple[type, type] | None:
         if len(arguments) == 2:
             return arguments[0], arguments[1]
         origin = generic.get("origin")
-        if len(arguments) == 1 and origin.__module__.startswith("sincpro_framework."):
+        if len(arguments) == 1 and origin.__module__.startswith("sincpro_framework.ddd."):
             return arguments[0], type(None)
     return None
 
