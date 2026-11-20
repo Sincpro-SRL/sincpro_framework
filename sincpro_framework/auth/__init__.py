@@ -22,7 +22,13 @@ the checks), `security` (who acts, and the door every wire hands auth what a cal
 and the middleware for an ASGI app of the project's (`asgi`). JSON-RPC, gRPC, MCP and
 `remote_execution` authenticate by themselves when the bus is guarded. See `docs/auth/README.md`
 and PRD_34 for the whole catalog.
+
+The `[jwt]` extra's names — `Jwks`, `PublicKeys`, `PublicKey`, `PrivateKey` — are imported when
+first asked for, so `import sincpro_framework.auth` never loads PyJWT.
 """
+
+import importlib
+from typing import TYPE_CHECKING, Any
 
 from sincpro_framework.auth.adapters.api_key_provider import (
     ApiKey,
@@ -136,3 +142,23 @@ __all__ = [
     "WhenDenied",
     "security",
 ]
+
+_LAZY = {
+    "Jwks": "sincpro_framework.auth.adapters.jwt.jwks",
+    "PublicKeys": "sincpro_framework.auth.adapters.jwt.jwks",
+    "PublicKey": "sincpro_framework.auth.infrastructure.jose_keys",
+    "PrivateKey": "sincpro_framework.auth.infrastructure.jose_keys",
+}
+"""Names of the `[jwt]` extra, by the module that holds them — loaded on first use."""
+
+if TYPE_CHECKING:
+    from sincpro_framework.auth.adapters.jwt.jwks import Jwks, PublicKeys
+    from sincpro_framework.auth.infrastructure.jose_keys import PrivateKey, PublicKey
+
+
+def __getattr__(name: str) -> Any:
+    """A name of the `[jwt]` extra, imported now — `ImportError` naming the extra when it is
+    not installed."""
+    if name in _LAZY:
+        return getattr(importlib.import_module(_LAZY[name]), name)
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

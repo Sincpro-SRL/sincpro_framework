@@ -235,6 +235,17 @@ with granting():
     else:
         raise AssertionError("a guarded use case ran for an identity that lacks its permission")
 
+try:
+    from sincpro_framework.auth import Jwks
+except ImportError as error:
+    assert "sincpro-framework[jwt]" in str(error), error
+else:
+    raise AssertionError("Jwks imported without PyJWT")
+
+from sincpro_framework.auth import Issuer, JwtProvider, SharedSecrets
+
+JwtProvider(Issuer("core", audience="core", keys=SharedSecrets({"k": "a secret of 32 bytes or more!!"})))
+
 sent: list[dict] = []
 
 

@@ -160,3 +160,44 @@ assert provider.challenge_for(exceptions.Unauthenticated("token expired")) == (
     'resource_metadata="https://billing.sincpro.com.bo/.well-known/oauth-protected-resource/mcp"'
 )
 ```
+
+## Public keys: an identity provider's, by discovery — `[jwt]`
+
+Keycloak, Entra and Google sign with private keys and publish the public ones as a JWKS.
+`JwtProvider.from_issuer` finds the JWKS by OIDC discovery — on the first token, never when the
+service starts — and `Jwks` keeps it cached.
+
+```python
+from sincpro_framework.auth import PrivateKey
+from sincpro_framework.runtime.testing import ScriptedHttp
+
+signing = PrivateKey.generate("ES256", key_id="kc-1")         # Keycloak's, in this example
+http = ScriptedHttp({                                          # what Keycloak would answer
+    f"{KEYCLOAK}/.well-known/openid-configuration": {
+        "issuer": KEYCLOAK, "jwks_uri": f"{KEYCLOAK}/protocol/openid-connect/certs"},
+    f"{KEYCLOAK}/protocol/openid-connect/certs": {"keys": [signing.jwk()]},
+})
+keycloak_provider = JwtProvider.from_issuer(
+    KEYCLOAK, audience="billing-api", mapping=ClaimMapping.keycloak(client="billing-api"), http=http
+)
+assert http.sent == []                                         # nothing fetched yet
+
+signed = jws.encode(
+    {"alg": "ES256", "kid": "kc-1"},
+    {"iss": KEYCLOAK, "aud": "billing-api", "sub": "4c1d", "exp": time.time() + 300},
+    signing.sign,
+)
+assert keycloak_provider.authenticate(bearer(signed)).subject == "user:4c1d"
+```
+
+| `Jwks(...)` | Default | Why |
+|---|---|---|
+| `algorithms` | RS256, PS256, ES256, EdDSA | an algorithm outside them is refused before any key is looked up |
+| `refresh_every` | 10 minutes | how long the set is believed |
+| `unknown_kid_cooldown` | 30 s | a `kid` not in the set refetches it once per cooldown — a key rotated in is found, a forged one never becomes a stream of fetches |
+| `serve_stale_for` | 24 hours | while the issuer is down the last good set stands in; with nothing cached it is `EndpointUnavailable` (503) |
+
+A key whose `use` is not `sig` is left out; a JWKS publishing a private part (`d`) is logged as
+an error and the key left out. Keys given by hand — a partner's PEM, a JWK from its
+documentation — are `PublicKeys([...], algorithm="RS256")`. `import sincpro_framework.auth` never
+loads PyJWT: `Jwks`, `PublicKeys`, `PublicKey` and `PrivateKey` are imported when first asked for.

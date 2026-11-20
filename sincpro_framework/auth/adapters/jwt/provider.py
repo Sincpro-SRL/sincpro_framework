@@ -133,6 +133,39 @@ class JwtProvider(AuthProvider):
         self.name = name
         self.clock = clock
 
+    @classmethod
+    def from_issuer(
+        cls,
+        issuer: str,
+        audience: str | Iterable[str],
+        mapping: ClaimMapping | None = None,
+        algorithms: Iterable[str] = ("RS256", "PS256", "ES256", "EdDSA"),
+        http: Any = None,
+        discovery: Any = None,
+        **options: Any,
+    ) -> "JwtProvider":
+        """A provider for one issuer whose keys are found by OIDC discovery — the `[jwt]` extra.
+
+            JwtProvider.from_issuer("https://auth.sincpro.com.bo/realms/sincpro",
+                                    audience="billing-api",
+                                    mapping=ClaimMapping.keycloak(client="billing-api"))
+
+        Context: nothing is fetched here — the discovery document and the keys are read on the
+        first token, so a service starts while its identity provider is down.
+        """
+        from sincpro_framework.auth.adapters.jwt.jwks import Jwks
+
+        keys = Jwks.discovered(issuer, algorithms=algorithms, http=http, discovery=discovery)
+        provider_options = {
+            name: options.pop(name)
+            for name in ("resolvers", "revocations", "resource", "realm", "name", "clock")
+            if name in options
+        }
+        return cls(
+            Issuer(issuer, audience, keys, mapping or ClaimMapping(), **options),
+            **provider_options,
+        )
+
     def security_scheme(self) -> dict[str, Any] | None:
         """HTTP bearer, a JWT."""
         return {"type": "http", "scheme": "bearer", "bearerFormat": "JWT"}
