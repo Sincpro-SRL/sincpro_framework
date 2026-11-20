@@ -36,6 +36,10 @@ from sincpro_framework.auth.adapters.client_auth import (
     ClientSecretPost,
     PublicClient,
 )
+from sincpro_framework.auth.adapters.key_value_revocations import (
+    InMemoryRevocations,
+    KeyValueRevocations,
+)
 from sincpro_framework.auth.adapters.resolving import Resolving
 from sincpro_framework.auth.adapters.role_permissions import RolePermissions
 from sincpro_framework.auth.adapters.service_token_provider import ServiceTokenProvider
@@ -67,6 +71,7 @@ from sincpro_framework.auth.domain.permissions import (
 )
 from sincpro_framework.auth.domain.provider import AuthProvider
 from sincpro_framework.auth.domain.resolver import IdentityResolver
+from sincpro_framework.auth.domain.revocations import Revocations, RevocationState
 from sincpro_framework.auth.entrypoint.access_control import AccessControl, AccessDescription
 from sincpro_framework.auth.entrypoint.asgi import IdentityMiddleware
 from sincpro_framework.auth.entrypoint.security import security
@@ -99,11 +104,15 @@ __all__ = [
     "IdentityMiddleware",
     "IdentityResolver",
     "InMemoryApiKeys",
+    "InMemoryRevocations",
+    "KeyValueRevocations",
     "OidcDiscovery",
     "Permission",
     "PermissionDenied",
     "PublicClient",
     "Resolving",
+    "RevocationState",
+    "Revocations",
     "RolePermissions",
     "ServerMetadata",
     "ServiceTokenProvider",

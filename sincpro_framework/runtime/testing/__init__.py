@@ -33,6 +33,7 @@ from .contracts.exchange_rates import ExchangeRatesContract
 from .contracts.idempotency_records import IdempotencyRecordsContract
 from .contracts.key_value_store import KeyValueStoreContract
 from .contracts.object_store import ObjectStoreContract
+from .contracts.revocations import RevocationsContract
 from .doubles.auth import RecordingProvider, granting
 from .doubles.clock import ManualClock
 from .doubles.context import fresh_context
@@ -54,6 +55,7 @@ __all__ = [
     "ObjectStoreContract",
     "RecordingProvider",
     "RecordingQueue",
+    "RevocationsContract",
     "ScriptedHttp",
     "SettingsScopeViolation",
     "fresh_context",
