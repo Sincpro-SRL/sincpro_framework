@@ -55,7 +55,7 @@ from sincpro_framework.ddd.entity.entity_meta import (
 from sincpro_framework.ddd.events.domain_event import NAME, DomainEvent
 from sincpro_framework.ddd.metamodel import model_of
 from sincpro_framework.ddd.stored_file import answer_context
-from sincpro_framework.sincpro_abstractions import DataTransferObject
+from sincpro_framework.sincpro_abstractions import DataTransferObject, ReadOnly
 
 _SERIALISING: ContextVar[bool] = ContextVar("sincpro_serialising", default=False)
 
@@ -550,7 +550,7 @@ class ResponsePaginatedQuery(DataTransferObject):
         return response
 
 
-class Query(DataTransferObject):
+class Query(ReadOnly):
     """What any command that reads carries: what is asked (`criteria`), and where the reading
     goes on from (`cursor`).
 

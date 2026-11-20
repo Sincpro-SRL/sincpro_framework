@@ -8,7 +8,7 @@ import json
 from typing import Any
 
 from sincpro_framework import ApplicationService, DataTransferObject, Feature, UseFramework
-from sincpro_framework.common.failures import NEXT_STEP_OF
+from sincpro_framework.common.failures import GUIDANCE_OF
 from sincpro_framework.ddd import ValueObject, exceptions
 from sincpro_framework.entrypoints import Exposure, RpcGateway
 from sincpro_framework.entrypoints.adapters.rpc.errors import INVALID_PARAMS, METHOD_NOT_FOUND
@@ -452,7 +452,7 @@ def test_an_internal_failure_tells_the_caller_nothing_about_the_inside():
         "reason": "INTERNAL_ERROR",
         "retryable": True,
         "next_step": "retry_later",
-        "guidance": NEXT_STEP_OF[FailureKind.INTERNAL][1],
+        "guidance": GUIDANCE_OF[FailureKind.INTERNAL]["default"],
     }
     assert "hunter2" not in str(answered)
     assert "secret-123" not in str(answered)

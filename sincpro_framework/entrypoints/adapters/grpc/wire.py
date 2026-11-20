@@ -34,7 +34,7 @@ from sincpro_framework.common.transport.grpc import (
     health_handler,
     is_past,
 )
-from sincpro_framework.context import EntrypointKind
+from sincpro_framework.context import EntrypointKind, use_context
 from sincpro_framework.entrypoints.adapters.grpc import exceptions, proto
 from sincpro_framework.entrypoints.adapters.grpc.proto import GrpcMethodSpec
 from sincpro_framework.entrypoints.domain.layers import CallFn, Scalar
@@ -286,8 +286,9 @@ def through_the_bus(
     2. A call whose deadline already passed answers DEADLINE_EXCEEDED and never runs: its caller
        gave up, and a write it no longer waits for is a write nobody sees.
     3. `call` on the bus, authenticated in this same thread (identity is a ContextVar).
-    4. A failure is answered as a `google.rpc.Status` (`status_for`); a validation error is the
-       caller's mistake and is not logged as a failure.
+    4. A failure is answered as a `google.rpc.Status` (`status_for`), told inside the context
+       the metadata carried — in its language; a validation error is the caller's mistake and
+       is not logged as a failure.
     5. Final: what `call` answered.
     """
     call_context = context_from_metadata(context.invocation_metadata())
@@ -302,7 +303,9 @@ def through_the_bus(
     except Exception as error:
         if not isinstance(error, ValidationError) and not process.was_reported(error):
             logger.exception("gRPC call [%s] in [%s] failed", subject(), domain)
-        _abort(context, status_for(error, domain, subject(), framework))
+        with use_context().scoped(call_context):
+            status = status_for(error, domain, subject(), framework)
+        _abort(context, status)
 
 
 def method_handler(spec: GrpcMethodSpec) -> Any:

@@ -1,8 +1,8 @@
 # Languages: a text in several, the language of a call, and messages (design, #190, #187)
 
-> Status: **piece 1 built** — `MultiLanguage`, `ContextKey.LANG`, the labels and `TranslatedText` read as
-> one (`tests/ddd/test_multi_language.py`). Pieces 2 and 3 are the design still to build; this page
-> becomes the component's when they are.
+> Status: **pieces 1 and 2 built** — `MultiLanguage`, the labels and `TranslatedText` read as one
+> (`tests/ddd/test_multi_language.py`); the language of a call (`tests/entrypoints/test_call_language.py`).
+> Piece 3 is the design still to build; this page becomes the component's when it is.
 
 Three pieces, built in this order, each on the one before:
 
@@ -18,8 +18,7 @@ Three pieces, built in this order, each on the one before:
 |---|---|---|
 | `TranslatedText` | a column type: `{"default": "Hola", "en": "Hello"}` in a text column, searched with `like` | a `dict[str, str]` in Python — no value, no fallback, no language of the call |
 | `Translated = dict[str, str]` | what an Entity's and an enum's labels are (`presentation`, `translations()`) | the same dict, read by hand |
-| `"lang"` in the context | an example key in the docs | not a key of the framework: nobody negotiates it, nobody answers it |
-| `Problem.detail` | English text | no key a client translates by, no language |
+| `Problem.detail` | the error's own text | no key a client translates by — piece 3 |
 
 ## What mature frameworks do
 
@@ -78,18 +77,39 @@ title.with_(fr="Facture") a new value; the text it was is untouched
 ## 2. The language of a call (#190)
 
 ```
-ContextKey.LANG = "lang"                      a BCP 47 tag, in the context like the tenant
+Accept-Language: es-BO, es;q=0.9, en;q=0.8        what a browser sends
+    ->  preferred_langs = ["es-BO", "es", "en"]   in the context: every entrance that reads headers
+    ->  lang = "es-BO"                            when nothing set it: the first one preferred
 
-REST / FastAPI / JSON-RPC:  ?lang=  →  Accept-Language (q-values)  →  the service's default
-                            each matched against the languages the service offers (RFC 4647)
-                            answered with Content-Language, and Vary: Accept-Language
-MCP, gRPC, a queue, the remote bus: the context as it travels — the caller's language goes along
-a use case:   use_context()[ContextKey.LANG]   or   str(title)   which reads it
+a use case:   use_context().get(ContextKey.LANG)   or   str(title)   which reads it
+a refusal:    its title and the kind's guidance in that language — REST, JSON-RPC, gRPC
 ```
 
-- What a service offers and its default: `UseFramework(..., languages=("es", "en"))`, else
-  everything asked is taken as asked; the default `"default"` — the text every value has.
-- The order of the sources is the gateway's to change (`language_from=(QUERY, HEADER)`).
+**A suggested default; what a project says wins.** The framework's entrances read what the caller
+prefers with nothing declared. The call's `lang` is, the first that says it:
+
+1. the `lang` the call carried — `Baggage: lang=en`, `sincpro-context`, a context handed on;
+2. a provider that gives it — a user's saved language;
+3. a level above that holds it — `bus.context({"lang": "es"})` around the calls;
+4. else the first language the caller prefers (`ContextKey.PREFERRED_LANGS`).
+
+```python
+@billing.context_provider(needs=[ContextKey.USER_ID], gives=[ContextKey.LANG])
+def saved_language(context):
+    return {ContextKey.LANG: users.language_of(context[ContextKey.USER_ID])}
+```
+
+- **No negotiation against what a service offers.** The tag is kept as sent and a `MultiLanguage`
+  falls back from it (`es-BO` → `es` → the default). A project that offers a few languages reads
+  `preferred_langs` in its own provider and gives the `lang` it picks.
+- **Only the header is read.** A `?lang=` or a cookie is the project's: what it reads, it carries
+  as `lang`.
+- **`Content-Language` is not answered.** The language a call ran in may be a provider's, decided
+  inside the execution, where the entrance does not see it; a header that may be wrong is worse
+  than none.
+- **MCP** reads no context off the request — neither this nor `sincpro-context` —, so a tool's
+  call has a language only when the host sets one. A queue and the remote bus carry the context
+  as it travels: the caller's `lang` and `preferred_langs` go along.
 - Nothing else reads it implicitly: a use case that answers in a language reads it, as it reads
   the tenant (`CMD → Response`: the language never changes what the use case does, only which text
   it shows).

@@ -613,6 +613,8 @@ root execution takes what it was handed (`bus.context({...})`, `x-correlation-id
 | `TENANT_ID` | `tenant_id` | the tenant it acts in |
 | `TENANT_IDS` | `tenant_ids` | every tenant it may act across — a list |
 | `CORRELATION_ID`, `CAUSATION_ID`, `EXECUTION_ID` | `correlation_id`, `causation_id`, `execution_id` | the identity |
+| `LANG` | `lang` | the language of the call — what a `MultiLanguage` and a refusal are told in |
+| `PREFERRED_LANGS` | `preferred_langs` | the languages the caller prefers, best first (`Accept-Language`); the first is the call's `lang` when nothing set it ([languages](../ddd/languages.md#2-the-language-of-a-call-190)) |
 
 `ContextKey` is a `StrEnum` (`from sincpro_framework.context import ContextKey`): a member is its
 text, so `context[ContextKey.USER_ID]` and `context["user_id"]` read the same key. The signals use

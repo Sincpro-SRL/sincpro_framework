@@ -48,6 +48,20 @@ class DataTransferObject(BaseModel):
     )
 
 
+class ReadOnly(DataTransferObject):
+    """A Command that only reads: every wire publishes it as a read — REST may bind it as `GET`,
+    MCP marks it read-only, JSON-RPC idempotent, the metamodel a `query` — and no
+    `Idempotency-Key` is asked for it.
+
+        class QueryCashBalance(ReadOnly):        a read of the context's own
+            account_id: str
+
+    A `Query` is one: a read that carries a criteria and a cursor. What it declares is not
+    checked — a `ReadOnly` whose use case writes is the project's to answer for, as a `GET`
+    that writes is.
+    """
+
+
 class DryRunnable(DataTransferObject):
     """A Command that may be run dry: `dry_run=True` answers what it would do, and does nothing.
 

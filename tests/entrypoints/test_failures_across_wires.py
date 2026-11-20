@@ -20,7 +20,7 @@ from grpc_status import rpc_status
 from starlette.testclient import TestClient
 
 from sincpro_framework import DataTransferObject, Feature, UseFramework, exceptions
-from sincpro_framework.common.failures import refined_failure_kind
+from sincpro_framework.common.failures import GUIDANCE_OF, refined_failure_kind
 from sincpro_framework.data_layer.caching.domain import exceptions as caching_exceptions
 from sincpro_framework.ddd import exceptions as ddd_exceptions
 from sincpro_framework.entrypoints import GrpcGateway, RestGateway, RpcGateway
@@ -291,6 +291,51 @@ def test_one_failure_says_the_same_kind_next_step_guidance_and_wait_on_every_wir
         info.metadata["guidance"],
         retry.retry_delay.seconds,
     ) == (*expected[:3], 30)
+
+
+def test_one_refusal_is_told_in_the_language_the_caller_prefers_on_every_wire(
+    grpc_call: Any,
+) -> None:
+    """#270: each wire tells a failure inside the context the request carried — the kind's
+    guidance in the first language of its `Accept-Language` (gRPC: its metadata)."""
+    spanish = GUIDANCE_OF[exceptions.FailureKind.DOMAIN]["es"]
+    prefers = {"Accept-Language": "es"}
+
+    rest = TestClient(RestGateway({"billing": _billing()}).app()).post(
+        "/billing/command-fail", json={"how": "domain"}, headers=prefers
+    )
+    assert rest.json()["error"]["guidance"] == spanish
+
+    app = FastAPI()
+    install_problem_handlers(app)
+
+    @app.post("/fail")
+    def fail() -> None:
+        _billing()(CommandFail(how="domain"))
+
+    assert TestClient(app).post("/fail", headers=prefers).json()["guidance"] == spanish
+
+    rpc = TestClient(_rpc_catalog().app()).post(
+        "/rpc",
+        json={
+            "jsonrpc": "2.0",
+            "id": 1,
+            "method": "billing.fail",
+            "params": {"how": "domain"},
+        },
+        headers=prefers,
+    )
+    assert rpc.json()["error"]["data"]["guidance"] == spanish
+
+    with pytest.raises(grpc.RpcError) as failed:
+        grpc_call(scalar_to_struct({"how": "domain"}), metadata=(("accept-language", "es"),))
+    refused: Any = failed.value
+    status = rpc_status.from_call(refused)
+    assert status is not None
+    info = error_details_pb2.ErrorInfo()
+    for detail in status.details:
+        detail.Unpack(info) if detail.Is(info.DESCRIPTOR) else None
+    assert info.metadata["guidance"] == spanish
 
 
 def test_an_mcp_tool_says_the_same_problem_as_every_other_wire() -> None:

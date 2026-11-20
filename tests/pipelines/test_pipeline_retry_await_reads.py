@@ -247,6 +247,51 @@ def test_a_run_read_over_rest_answers_the_run():
     assert (read.json()["run_id"], read.json()["state"]) == ("i-9", "waiting")
 
 
+class CommandRunNote(DataTransferObject):
+    run_id: str
+
+
+class CommandWriteNote(DataTransferObject):
+    pass
+
+
+class QueryNoteRun(GetRun[CommandRunNote]): ...
+
+
+def test_a_run_read_bound_as_get_answers_the_run_read_from_the_url():
+    """A read of runs is a `ReadOnly`: REST may bind it as `GET`, as any read."""
+    pytest.importorskip("fastapi")
+    from fastapi.testclient import TestClient
+
+    from sincpro_framework.entrypoints import FastApiGateway
+    from sincpro_framework.entrypoints.entrypoint.decorators import rest
+
+    bus = UseFramework("notes-pipelines", log_after_execution=False)
+    bus.store_context_in(InMemoryContexts())
+
+    @bus.feature(CommandWriteNote)
+    class WriteNote(Feature):
+        def execute(self, dto: CommandWriteNote) -> None:
+            return None
+
+    class RunNote(Pipeline, ApplicationService):
+        steps = [CommandWriteNote]
+
+    bus.app_service(CommandRunNote)(RunNote)
+
+    @bus.feature(QueryNoteRun)
+    @rest.get("/note-runs/{run_id}")
+    class NoteRuns(PipelineReads): ...
+
+    bus(CommandRunNote(run_id="n-1"))
+    client = TestClient(FastApiGateway([bus], unguarded=True).app())
+
+    read = client.get("/notes-pipelines/note-runs/n-1")
+
+    assert read.status_code == 200, read.text
+    assert (read.json()["run_id"], read.json()["state"]) == ("n-1", "succeeded")
+
+
 def test_a_read_that_names_no_pipeline_says_how():
     class QueryWrong(GetRun): ...  # type: ignore[type-arg]
 

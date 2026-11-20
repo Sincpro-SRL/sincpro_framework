@@ -106,8 +106,10 @@ from sincpro_framework.entrypoints.entrypoint.decorators import rest
 @rest.post("/invoices", status=201)
 class IssueInvoice(Feature): ...
 
-@billing.feature(QueryInvoice)         # QueryInvoice subclasses sincpro_framework.ddd.Query:
-@rest.get("/invoices/{invoice_id}")      # a GET on any other DTO is refused; {invoice_id} is its field
+@billing.feature(QueryInvoice)         # QueryInvoice subclasses sincpro_framework.ddd.Query, a
+@rest.get("/invoices/{invoice_id}")      # ReadOnly: a GET on a DTO that does not say it only reads
+                                         # is refused — a read with no criteria subclasses
+                                         # sincpro_framework.ReadOnly; {invoice_id} is its field
 class GetInvoice(Feature): ...
 
 # 2. entrypoints/http/app.py — the only new file

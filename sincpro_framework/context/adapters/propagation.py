@@ -5,6 +5,8 @@
 
 What is written, and read back in this order — the later wins:
 
+    accept-language             read, never written: the languages the caller prefers
+                                (`preferred_langs`), best first — what a browser sends
     baggage                     W3C Baggage: the travelling scalars, for OpenTelemetry and any
                                 other stack (text only, ≤ 8192 bytes, ≤ 180 members)
     sincpro-context             the travelling keys as JSON — lists too (`tenant_ids`)
@@ -30,6 +32,7 @@ from sincpro_framework.sincpro_logger import logger
 CONTEXT_HEADER = "sincpro-context"
 BAGGAGE_HEADER = "baggage"
 CONTEXT_NODE_HEADER = "x-context-node"
+ACCEPT_LANGUAGE_HEADER = "accept-language"
 """The header a message carries `CONTEXT_NODE` in — so a receiver needs no other header to read the
 sender's chain."""
 IDENTITY_HEADERS: dict[str, str] = {
@@ -158,16 +161,45 @@ def headers(carried: Mapping[str, Any]) -> dict[str, str]:
     return found
 
 
+def _preferred(header: str) -> list[str]:
+    """The languages an `Accept-Language` header prefers, best first — `*` and what it refuses
+    (`q=0`) left out, the order it gave kept between equals.
+
+        _preferred("es-BO, es;q=0.9, en;q=0.8, *;q=0.1")   ->  ["es-BO", "es", "en"]
+        _preferred("en;q=0, fr")                            ->  ["fr"]
+    """
+    ranked: list[tuple[float, str]] = []
+    for one in header.split(","):
+        tag, *parameters = [part.strip() for part in one.split(";")]
+        weight = 1.0
+        for parameter in parameters:
+            name, _, value = parameter.partition("=")
+            if name.strip() == "q":
+                try:
+                    weight = float(value)
+                except ValueError:
+                    weight = 0.0
+        if tag and tag != "*" and weight > 0:
+            ranked.append((weight, tag))
+    return [tag for _, tag in sorted(ranked, key=lambda one: -one[0])]
+
+
 def extract(headers: Mapping[str, Any]) -> dict[str, Any]:
-    """The context a request or a message carried — `baggage`, then `sincpro-context`, then the
-    identity headers, the later winning. Header names are read in any case.
+    """The context a request or a message carried — the languages it prefers
+    (`Accept-Language`), then `baggage`, then `sincpro-context`, then the identity headers, the
+    later winning. Header names are read in any case.
 
         extract({"Baggage": "lang=es", "sincpro-context": '{"tenant_ids":["a","b"]}',
-                 "X-Correlation-Id": "C"})
-        ->  {"lang": "es", "tenant_ids": ["a", "b"], "correlation_id": "C"}
+                 "X-Correlation-Id": "C", "Accept-Language": "es-BO, es;q=0.9"})
+        ->  {"preferred_langs": ["es-BO", "es"], "lang": "es", "tenant_ids": ["a", "b"],
+             "correlation_id": "C"}
     """
     lowered = {str(name).lower(): value for name, value in headers.items()}
-    found: dict[str, Any] = dict(unbaggaged(lowered.get(BAGGAGE_HEADER)))
+    found: dict[str, Any] = {}
+    preferred = _preferred(str(lowered.get(ACCEPT_LANGUAGE_HEADER) or ""))
+    if preferred:
+        found[ContextKey.PREFERRED_LANGS] = preferred
+    found.update(unbaggaged(lowered.get(BAGGAGE_HEADER)))
     found.update(read(lowered.get(CONTEXT_HEADER)))
     found.update(
         {

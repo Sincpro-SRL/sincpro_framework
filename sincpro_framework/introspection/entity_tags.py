@@ -35,7 +35,6 @@ from sincpro_framework import exceptions
 from sincpro_framework.ddd.editing.edits import Archive, Delete, Edit, Purge, Restore
 from sincpro_framework.ddd.entity.entity import Entity
 from sincpro_framework.ddd.entity.entity_id import key_of
-from sincpro_framework.ddd.query import Query
 from sincpro_framework.ddd.reads.reads import (
     DomainEvents,
     Export,
@@ -46,6 +45,7 @@ from sincpro_framework.ddd.reads.reads import (
     Search,
     named_in_type,
 )
+from sincpro_framework.sincpro_abstractions import ReadOnly
 
 _declared: WeakKeyDictionary[type, tuple[type, ...]] = WeakKeyDictionary()
 """The entities each Feature, ApplicationService or Command declared, by class."""
@@ -113,8 +113,12 @@ def role_of(dto: type) -> Role:
 
 def only_reads(dto: type) -> bool:
     """Whether the operation answering `dto` writes nothing — a retry, a cache, a `GET` and a
-    read-only hint are safe: a `Query`, or a framework read of an entity, its own subclass too.
+    read-only hint are safe: a `ReadOnly` (a `Query` is one), or a framework read of an entity,
+    its own subclass too.
 
+        only_reads(QueryInvoices)       ->  True    # a Query
+        only_reads(QueryCashBalance)    ->  True    # class QueryCashBalance(ReadOnly)
+        only_reads(QueryNightlyRun)     ->  True    # GetRun[…]: a ReadOnly of the pipelines
         only_reads(QueryGetIssue)       ->  True    # Get[Issue, …]: no `Query`, still a read
         only_reads(QueryPreviewIssue)   ->  True    # PreviewEntity: computes a form, stores nothing
         only_reads(CommandEditIssue)    ->  False   # Edit: stores a draft, or the record
@@ -123,7 +127,7 @@ def only_reads(dto: type) -> bool:
 
     Context: what every wire publishes as a read and the metamodel's `query` say — one rule.
     """
-    return (isinstance(dto, type) and issubclass(dto, Query)) or role_of(dto) not in (
+    return (isinstance(dto, type) and issubclass(dto, ReadOnly)) or role_of(dto) not in (
         Role.EDIT,
         Role.DELETE,
         Role.ARCHIVE,

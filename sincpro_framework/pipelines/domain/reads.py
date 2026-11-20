@@ -11,12 +11,12 @@ from typing import Any, ClassVar
 
 from sincpro_framework.pipelines.domain import exceptions
 from sincpro_framework.pipelines.domain.run import PipelineRun, PipelineState
-from sincpro_framework.sincpro_abstractions import DataTransferObject
+from sincpro_framework.sincpro_abstractions import DataTransferObject, ReadOnly
 
 
-class RunsQuery[P](DataTransferObject):
-    """What every read of runs is: a DTO that names its pipeline, `P`, by the pipeline's
-    Command."""
+class RunsQuery[P](ReadOnly):
+    """What every read of runs is: a read (`ReadOnly`) that names its pipeline, `P`, by the
+    pipeline's Command — so every wire publishes it as one, and REST may bind it as `GET`."""
 
     _named: ClassVar[type | None] = None
     """The Command written between the brackets — set on the class when it is parametrized,

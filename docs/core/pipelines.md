@@ -351,7 +351,8 @@ assert reading(QueryApprovedRun(run_id="2026-10-25")).waiting_for == "approval"
 ```
 
 Each read names its pipeline by its Command; one `PipelineReads` answers the reads of every pipeline
-of its bus. Whose runs are read is the context's, as when they were stored — set `owned_by` on the
+of its bus. Both are reads (`ReadOnly`): every wire publishes them as reads, and REST may bind one as
+`GET` — `@rest.get("/runs/{run_id}")` on a Feature that answers `QueryApprovedRun`. Whose runs are read is the context's, as when they were stored — set `owned_by` on the
 Feature as on the pipeline. A run that is not stored is `RunNotFound` (`not_found`, 404 on REST).
 
 ## What is left to the project

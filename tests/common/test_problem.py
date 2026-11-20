@@ -8,8 +8,15 @@ from pydantic import ValidationError
 
 from sincpro_framework import DataTransferObject, UseFramework, exceptions
 from sincpro_framework.auth.domain.exceptions import PermissionDenied, Unauthenticated
-from sincpro_framework.common.failures import NEXT_STEP_OF, NextStep, Problem, problem_of
-from sincpro_framework.context import ContextKey
+from sincpro_framework.common.failures import (
+    GUIDANCE_OF,
+    NEXT_STEP_OF,
+    TITLE_OF,
+    NextStep,
+    Problem,
+    problem_of,
+)
+from sincpro_framework.context import ContextKey, use_context
 from sincpro_framework.ddd import exceptions as ddd_exceptions
 
 
@@ -53,14 +60,27 @@ def test_a_failure_carries_its_kind_and_what_to_do_next():
     )
     assert (problem.next_step, problem.guidance, problem.retryable) == (
         NextStep.DO_NOT_RETRY,
-        NEXT_STEP_OF[exceptions.FailureKind.NOT_FOUND][1],
+        GUIDANCE_OF[exceptions.FailureKind.NOT_FOUND]["default"],
         False,
     )
 
 
-def test_every_kind_has_a_next_step_and_its_guidance():
-    assert set(NEXT_STEP_OF) == set(exceptions.FailureKind)
-    assert all(guidance for _, guidance in NEXT_STEP_OF.values())
+def test_every_kind_has_a_next_step_and_its_guidance_in_every_language():
+    assert set(NEXT_STEP_OF) == set(GUIDANCE_OF) == set(exceptions.FailureKind)
+    assert all(texts["default"] and texts["es"] for texts in GUIDANCE_OF.values())
+
+
+def test_a_problem_is_told_in_the_language_of_the_call():
+    """#270: the kind's guidance, as its title, is read in the call's language — what it set,
+    else the first the caller prefers."""
+    with use_context().scoped({ContextKey.PREFERRED_LANGS: ["es-BO", "en"]}):
+        preferred = Problem.for_kind(exceptions.FailureKind.DOMAIN)
+    with use_context().scoped({ContextKey.LANG: "en", ContextKey.PREFERRED_LANGS: ["es"]}):
+        set_lang = Problem.for_kind(exceptions.FailureKind.DOMAIN)
+
+    assert preferred.guidance == GUIDANCE_OF[exceptions.FailureKind.DOMAIN]["es"]
+    assert preferred.title == TITLE_OF[exceptions.FailureKind.DOMAIN]["es"]
+    assert set_lang.guidance == GUIDANCE_OF[exceptions.FailureKind.DOMAIN]["default"]
 
 
 def test_a_crash_tells_nothing_of_the_inside_and_says_to_try_later():

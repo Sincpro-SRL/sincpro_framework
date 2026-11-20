@@ -60,63 +60,140 @@ class NextStep(StrEnum):
     same idempotency key."""
 
 
-NEXT_STEP_OF: Mapping[exceptions.FailureKind, tuple[NextStep, str]] = {
-    exceptions.FailureKind.INVALID: (
-        NextStep.FIX_REQUEST,
-        "The request does not fit what the use case takes: correct the fields named and send "
-        "it again.",
-    ),
-    exceptions.FailureKind.UNAUTHENTICATED: (
-        NextStep.AUTHENTICATE,
-        "Who is calling is not known: authenticate, or renew the credential, and send it again.",
-    ),
-    exceptions.FailureKind.PERMISSION_DENIED: (
-        NextStep.ASK_FOR_ACCESS,
-        "The caller may not do this: retrying will not help until the access is granted.",
-    ),
-    exceptions.FailureKind.NOT_FOUND: (
-        NextStep.DO_NOT_RETRY,
-        "What the request names does not exist: check the identifier; the same request "
-        "fails the same way.",
-    ),
-    exceptions.FailureKind.CONFLICT: (
-        NextStep.REFRESH_AND_RETRY,
-        "Someone else wrote first: read the current state, then send the request again on it.",
-    ),
-    exceptions.FailureKind.IN_PROGRESS: (
-        NextStep.RETRY_LATER,
-        "The same request is still running: wait `retry_after`, then ask again for its answer.",
-    ),
-    exceptions.FailureKind.KEY_REUSED: (
-        NextStep.FIX_REQUEST,
-        "The idempotency key was used for another request: a new request needs a new key.",
-    ),
-    exceptions.FailureKind.DOMAIN: (
-        NextStep.DO_NOT_RETRY,
-        "A business rule refused the request: show the answer; the same request is refused "
-        "the same way.",
-    ),
-    exceptions.FailureKind.EXHAUSTED: (
-        NextStep.RETRY_LATER,
-        "A limit was reached: wait `retry_after`, then send the same request again.",
-    ),
-    exceptions.FailureKind.UNAVAILABLE: (
-        NextStep.RETRY_LATER,
-        "Something the call needs is down for now: wait `retry_after`, then send the same "
-        "request again.",
-    ),
-    exceptions.FailureKind.UNKNOWN_OUTCOME: (
-        NextStep.VERIFY_THEN_RETRY,
-        "The request was sent and no answer came back — it may have run: check before sending "
-        "it again, or send it with the same idempotency key.",
-    ),
-    exceptions.FailureKind.INTERNAL: (
-        NextStep.RETRY_LATER,
-        "The service failed on its side: try again later, and report it with the trace if it "
-        "keeps failing.",
-    ),
+NEXT_STEP_OF: Mapping[exceptions.FailureKind, NextStep] = {
+    exceptions.FailureKind.INVALID: NextStep.FIX_REQUEST,
+    exceptions.FailureKind.UNAUTHENTICATED: NextStep.AUTHENTICATE,
+    exceptions.FailureKind.PERMISSION_DENIED: NextStep.ASK_FOR_ACCESS,
+    exceptions.FailureKind.NOT_FOUND: NextStep.DO_NOT_RETRY,
+    exceptions.FailureKind.CONFLICT: NextStep.REFRESH_AND_RETRY,
+    exceptions.FailureKind.IN_PROGRESS: NextStep.RETRY_LATER,
+    exceptions.FailureKind.KEY_REUSED: NextStep.FIX_REQUEST,
+    exceptions.FailureKind.DOMAIN: NextStep.DO_NOT_RETRY,
+    exceptions.FailureKind.EXHAUSTED: NextStep.RETRY_LATER,
+    exceptions.FailureKind.UNAVAILABLE: NextStep.RETRY_LATER,
+    exceptions.FailureKind.UNKNOWN_OUTCOME: NextStep.VERIFY_THEN_RETRY,
+    exceptions.FailureKind.INTERNAL: NextStep.RETRY_LATER,
 }
-"""What a caller does after each kind of failure, and why — the default an error may change."""
+"""What a caller does after each kind of failure — the default an error may change."""
+
+GUIDANCE_OF: Mapping[exceptions.FailureKind, Mapping[str, str]] = {
+    exceptions.FailureKind.INVALID: {
+        "default": (
+            "The request does not fit what the use case takes: correct the fields named and "
+            "send it again."
+        ),
+        "es": (
+            "La solicitud no encaja con lo que el caso de uso recibe: corrige los campos "
+            "indicados y envíala de nuevo."
+        ),
+    },
+    exceptions.FailureKind.UNAUTHENTICATED: {
+        "default": (
+            "Who is calling is not known: authenticate, or renew the credential, and send it "
+            "again."
+        ),
+        "es": (
+            "No se sabe quién llama: autentícate, o renueva la credencial, y envíala de nuevo."
+        ),
+    },
+    exceptions.FailureKind.PERMISSION_DENIED: {
+        "default": (
+            "The caller may not do this: retrying will not help until the access is granted."
+        ),
+        "es": (
+            "Quien llama no puede hacer esto: reintentar no servirá hasta que se le dé acceso."
+        ),
+    },
+    exceptions.FailureKind.NOT_FOUND: {
+        "default": (
+            "What the request names does not exist: check the identifier; the same request "
+            "fails the same way."
+        ),
+        "es": (
+            "Lo que la solicitud nombra no existe: revisa el identificador; la misma solicitud"
+            " falla de la misma forma."
+        ),
+    },
+    exceptions.FailureKind.CONFLICT: {
+        "default": (
+            "Someone else wrote first: read the current state, then send the request again on "
+            "it."
+        ),
+        "es": (
+            "Alguien escribió antes: lee el estado actual y envía la solicitud de nuevo sobre "
+            "él."
+        ),
+    },
+    exceptions.FailureKind.IN_PROGRESS: {
+        "default": (
+            "The same request is still running: wait `retry_after`, then ask again for its "
+            "answer."
+        ),
+        "es": (
+            "La misma solicitud todavía se está ejecutando: espera `retry_after` y vuelve a "
+            "pedir su respuesta."
+        ),
+    },
+    exceptions.FailureKind.KEY_REUSED: {
+        "default": (
+            "The idempotency key was used for another request: a new request needs a new key."
+        ),
+        "es": (
+            "La clave de idempotencia se usó para otra solicitud: una solicitud nueva necesita"
+            " una clave nueva."
+        ),
+    },
+    exceptions.FailureKind.DOMAIN: {
+        "default": (
+            "A business rule refused the request: show the answer; the same request is refused"
+            " the same way."
+        ),
+        "es": (
+            "Una regla del negocio rechazó la solicitud: muestra la respuesta; la misma "
+            "solicitud se rechaza de la misma forma."
+        ),
+    },
+    exceptions.FailureKind.EXHAUSTED: {
+        "default": (
+            "A limit was reached: wait `retry_after`, then send the same request again."
+        ),
+        "es": (
+            "Se alcanzó un límite: espera `retry_after` y envía la misma solicitud de nuevo."
+        ),
+    },
+    exceptions.FailureKind.UNAVAILABLE: {
+        "default": (
+            "Something the call needs is down for now: wait `retry_after`, then send the same "
+            "request again."
+        ),
+        "es": (
+            "Algo que la llamada necesita no está disponible por ahora: espera `retry_after` y"
+            " envía la misma solicitud de nuevo."
+        ),
+    },
+    exceptions.FailureKind.UNKNOWN_OUTCOME: {
+        "default": (
+            "The request was sent and no answer came back — it may have run: check before "
+            "sending it again, or send it with the same idempotency key."
+        ),
+        "es": (
+            "La solicitud se envió y no llegó respuesta, puede que se haya ejecutado: verifica"
+            " antes de enviarla de nuevo, o envíala con la misma clave de idempotencia."
+        ),
+    },
+    exceptions.FailureKind.INTERNAL: {
+        "default": (
+            "The service failed on its side: try again later, and report it with the trace if "
+            "it keeps failing."
+        ),
+        "es": (
+            "El servicio falló de su lado: intenta más tarde, y repórtalo con la traza si "
+            "sigue fallando."
+        ),
+    },
+}
+"""Why, in words, by language — read in the call's (`ContextKey.LANG`, else the first
+language the caller prefers), else the default; an error's own `guidance` replaces it."""
 
 TITLE_OF: Mapping[exceptions.FailureKind, Mapping[str, str]] = {
     exceptions.FailureKind.INVALID: {
@@ -252,7 +329,7 @@ class Problem(DataTransferObject):
         # `ddd` imports this module for its errors: the language is read at the call, not at import
         from sincpro_framework.ddd.multi_language import MultiLanguage
 
-        step, guidance = NEXT_STEP_OF[kind]
+        step = NEXT_STEP_OF[kind]
         return cls(
             kind=kind,
             reason=reason or kind.value.upper(),
@@ -260,7 +337,7 @@ class Problem(DataTransferObject):
             status=HTTP_STATUS_OF[kind],
             detail=detail,
             next_step=step,
-            guidance=guidance,
+            guidance=str(MultiLanguage(GUIDANCE_OF[kind])),
             retryable=step in RETRYABLE_STEPS,
             errors=list(errors),
             extensions=extensions,

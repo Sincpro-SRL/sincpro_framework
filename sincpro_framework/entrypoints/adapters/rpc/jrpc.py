@@ -13,7 +13,7 @@ from typing import Any
 from pydantic import ValidationError
 
 from sincpro_framework.auth import Credentials
-from sincpro_framework.context import EntrypointKind
+from sincpro_framework.context import EntrypointKind, use_context
 from sincpro_framework.ddd.metamodel import contract_of
 from sincpro_framework.entrypoints.adapters.rpc import exceptions
 from sincpro_framework.entrypoints.adapters.rpc.errors import (
@@ -252,7 +252,8 @@ def handle_single(
             methods, discover, method, request.get("params"), merged or None, credentials
         )
     except Exception as error:
-        response = jsonrpc_answer(failure_of(method, error), request_id)
+        with use_context().scoped(merged):  # told in the request's language
+            response = jsonrpc_answer(failure_of(method, error), request_id)
         return None if is_notification else response
     if is_notification:
         return None

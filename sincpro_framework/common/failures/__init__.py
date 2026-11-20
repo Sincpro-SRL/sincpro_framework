@@ -16,6 +16,7 @@ from sincpro_framework.common.failures.classification import (
     said_to_the_caller,
 )
 from sincpro_framework.common.failures.problem import (
+    GUIDANCE_OF,
     HTTP_STATUS_OF,
     NEXT_STEP_OF,
     TITLE_OF,
@@ -30,6 +31,7 @@ from sincpro_framework.exceptions import FailureKind
 __all__ = [
     "DEFAULT_RETRY_AFTER",
     "FieldError",
+    "GUIDANCE_OF",
     "HTTP_STATUS_OF",
     "NEXT_STEP_OF",
     "NextStep",

@@ -97,7 +97,7 @@ type Answer = tuple[int, str, dict[str, Any]]
 
 def error_data(kind: str, reason: str, retryable: bool, **disclosed: Any) -> dict[str, Any]:
     """An error's `data`: the members every error carries, then what it discloses — the next step
-    and its guidance are the kind's (`common.failures.NEXT_STEP_OF`) unless given.
+    and its guidance are the kind's (`Problem.for_kind`), in the call's language, unless given.
 
         error_data("invalid", "BATCH_TOO_LARGE", False, limit=50)
         ->  {"kind": "invalid", "reason": "BATCH_TOO_LARGE", "retryable": False,
@@ -105,13 +105,13 @@ def error_data(kind: str, reason: str, retryable: bool, **disclosed: Any) -> dic
 
     The extra keywords are what the error chose to disclose.
     """
-    step, guidance = failures.NEXT_STEP_OF[exceptions.FailureKind(kind)]
+    default = failures.Problem.for_kind(exceptions.FailureKind(kind))
     return {
         "kind": kind,
         "reason": reason,
         "retryable": retryable,
-        "next_step": step.value,
-        "guidance": guidance,
+        "next_step": default.next_step.value,
+        "guidance": default.guidance,
         **disclosed,
     }
 

@@ -55,7 +55,7 @@ can be persisted in a store for whoever resumes the flow.
 | `Owner.of(context, by)` / `Owner.BY_TENANT` / `Owner.BY_TENANT_AND_USER` | Whose something saved is (a draft, a pipeline run, a cached answer): the keys of `by` with what the context says, encoded | DTO | `sincpro_framework.context` |
 | `bus.execution_ids(fn)` | Mint execution ids with another generator (ULID, UUID v4) | function | method of `UseFramework` |
 | `carrying(values, kind)` | Opens a flow for code that is not a bus call (a cron tick, a poll tick) | function | `sincpro_framework.context` |
-| `ContextKey` | The keys the framework reads: `USER_ID`, `TENANT_ID`, `TENANT_IDS`, `EXECUTION_ID`, `CAUSATION_ID`, `CORRELATION_ID` — a member is its text (`"user_id"`) | setting (StrEnum) | `sincpro_framework.context` |
+| `ContextKey` | The keys the framework reads: `USER_ID`, `TENANT_ID`, `TENANT_IDS`, `EXECUTION_ID`, `CAUSATION_ID`, `CORRELATION_ID`, `LANG` (the call's language), `PREFERRED_LANGS` (what `Accept-Language` prefers; the first is `LANG` when nothing set it — a provider that gives `LANG` wins) — a member is its text (`"user_id"`) | setting (StrEnum) | `sincpro_framework.context` |
 
 Look-alikes: `context[key] = v` (the scope of the call — siblings see it) ≠ `context.set(key, v)` (this
 node — only what it runs). `bus.context(...)` **opens** a scope; `use_context()` / `self.context`

@@ -2,7 +2,8 @@
 may be bound as `GET` without being a `Query`; a `PreviewEntity` stays `POST` and is still a read.
 Every wire publishes the four as reads — MCP read-only, JSON-RPC idempotent, the manifest's
 `query`, OpenAPI's `x-sincpro-query`, no `Idempotency-Key` asked —, in line with the metamodel.
-Opt-in: a read nobody binds as `GET` is served as it was.
+Opt-in: a read nobody binds as `GET` is served as it was. A read of the project's own says so
+by its base, `ReadOnly`, and is served the same way.
 """
 
 from dataclasses import dataclass
@@ -10,7 +11,7 @@ from datetime import timedelta
 
 import pytest
 
-from sincpro_framework import UseFramework, exceptions
+from sincpro_framework import DataTransferObject, Feature, ReadOnly, UseFramework, exceptions
 from sincpro_framework.data_layer.caching import Idempotency
 from sincpro_framework.data_layer.repositories import MemoryRepository
 from sincpro_framework.data_layer.store import InMemoryKeyValue
@@ -184,3 +185,88 @@ def test_running_a_read_once_is_refused_like_on_a_query():
 
     with pytest.raises(exceptions.ProgrammingError, match="@idempotency.once on a read"):
         RpcGateway([bus], unguarded=True).manifest()
+
+
+# --- a read of the project's own -------------------------------------------------------------
+
+
+class QueryCashBalance(ReadOnly):
+    """A read of the context's own: no criteria, no entity — a balance by its account."""
+
+    account_id: str
+    currency: str = "BOB"
+
+
+class QueryCashBalanceDerived(ReadOnly):
+    account_id: str
+
+
+class ResponseCashBalance(DataTransferObject):
+    account_id: str
+    currency: str
+    balance: int
+
+
+def ledger() -> UseFramework:
+    bus = UseFramework("ledger", log_after_execution=False)
+
+    @bus.feature(QueryCashBalance)
+    @rest.get("/balances/{account_id}")
+    @rpc()
+    @mcp()
+    class CashBalance(Feature):
+        def execute(self, dto: QueryCashBalance) -> ResponseCashBalance:
+            return ResponseCashBalance(
+                account_id=dto.account_id, currency=dto.currency, balance=1150
+            )
+
+    @bus.feature(QueryCashBalanceDerived)
+    @rest()
+    class CashBalanceDerived(Feature):
+        def execute(self, dto: QueryCashBalanceDerived) -> ResponseCashBalance:
+            return ResponseCashBalance(account_id=dto.account_id, currency="BOB", balance=0)
+
+    return bus
+
+
+def test_a_read_of_the_project_bound_as_get_answers_from_the_url():
+    gateway_type, client_type = _fastapi()
+    client = client_type(gateway_type([ledger()], unguarded=True).app())
+
+    answered = client.get("/ledger/balances/A-1?currency=USD")
+
+    assert answered.status_code == 200, answered.text
+    assert answered.json() == {"account_id": "A-1", "currency": "USD", "balance": 1150}
+
+
+def test_a_read_of_the_project_is_published_as_a_read_on_every_wire():
+    gateway_type, client_type = _fastapi()
+    bus = ledger()
+    document = (
+        client_type(gateway_type([bus], unguarded=True).app()).get("/openapi.json").json()
+    )
+    read = document["paths"]["/ledger/balances/{account_id}"]["get"]
+    tools = {
+        entry.command: entry.binding for entry in McpGateway([bus], unguarded=True).manifest()
+    }
+    kinds = {
+        entry.command: entry.kind for entry in RpcGateway([bus], unguarded=True).manifest()
+    }
+
+    assert read["x-sincpro-query"] is True
+    assert "Idempotency-Key" not in {one["name"] for one in read.get("parameters", [])}
+    assert not requires_idempotency_key(bus, QueryCashBalance)
+    balance = tools["ledger.QueryCashBalance"]
+    assert (balance["read_only"], balance["destructive"]) == (True, False)
+    assert kinds["ledger.QueryCashBalance"] == "features.query"
+
+
+def test_a_read_of_the_project_bound_with_no_verb_stays_post():
+    gateway_type, _ = _fastapi()
+
+    derived = {
+        entry.command: entry.method
+        for entry in gateway_type([ledger()], unguarded=True).manifest()
+    }
+
+    assert derived["ledger.QueryCashBalanceDerived"] == "POST"  # only a `Query` derives `GET`

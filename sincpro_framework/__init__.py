@@ -39,6 +39,7 @@ from .sincpro_abstractions import (
     DryRunnable,
     Feature,
     Preview,
+    ReadOnly,
     TypeDTO,
     TypeDTOResponse,
 )
@@ -60,6 +61,7 @@ __all__ = [
     "Preview",
     "Problem",
     "ProgrammingError",
+    "ReadOnly",
     "ServiceUnavailableError",
     "Feature",
     "UseFramework",
