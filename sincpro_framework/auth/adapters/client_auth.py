@@ -84,6 +84,10 @@ class ClientSecretJwt(ClientAuthentication):
         self._key = jws.HmacKey.of(None, client_secret, algorithm)
         self.clock = clock
 
+    def _sign(self, claims: dict[str, Any]) -> str:
+        """`claims` signed as a compact JWS with the secret."""
+        return jws.encode({"alg": self._key.algorithm, "typ": "JWT"}, claims, self._key.sign)
+
     def applied(
         self, fields: Sequence[tuple[str, str]], endpoint: str
     ) -> tuple[list[tuple[str, str]], dict[str, str]]:
@@ -93,10 +97,6 @@ class ClientSecretJwt(ClientAuthentication):
             *fields,
             *assertion_fields(self.client_id, endpoint, self._sign, self.clock),
         ], {}
-
-    def _sign(self, claims: dict[str, Any]) -> str:
-        """`claims` signed as a compact JWS with the secret."""
-        return jws.encode({"alg": self._key.algorithm, "typ": "JWT"}, claims, self._key.sign)
 
     def __repr__(self) -> str:
         return f"ClientSecretJwt(client_id={self.client_id!r})"

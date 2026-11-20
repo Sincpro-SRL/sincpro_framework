@@ -20,9 +20,9 @@ from pydantic import ConfigDict
 from sincpro_framework.auth.adapters.outbound.client_credentials import endpoint_of
 from sincpro_framework.auth.domain import exceptions
 from sincpro_framework.auth.domain.http import ClientAuthentication, HttpClient, HttpRequest
+from sincpro_framework.auth.infrastructure.server_metadata import OidcDiscovery
+from sincpro_framework.auth.infrastructure.token_endpoint import IssuedToken, TokenEndpoint
 from sincpro_framework.auth.infrastructure.urllib_http import UrllibHttp
-from sincpro_framework.auth.services.server_metadata import OidcDiscovery
-from sincpro_framework.auth.services.token_endpoint import IssuedToken, TokenEndpoint
 from sincpro_framework.sincpro_abstractions import DataTransferObject
 
 DEVICE_CODE = "urn:ietf:params:oauth:grant-type:device_code"

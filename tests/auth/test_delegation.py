@@ -30,7 +30,7 @@ from sincpro_framework.auth import (
 )
 from sincpro_framework.auth.domain import exceptions
 from sincpro_framework.auth.infrastructure.security_context import presenting
-from sincpro_framework.auth.services.token_endpoint import TokenEndpoint
+from sincpro_framework.auth.infrastructure.token_endpoint import TokenEndpoint
 from sincpro_framework.data_layer.store import InMemoryKeyValue
 from sincpro_framework.runtime.testing import FakeTokenEndpoint, ManualClock
 

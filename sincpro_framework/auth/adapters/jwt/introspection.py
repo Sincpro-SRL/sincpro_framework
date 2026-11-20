@@ -30,8 +30,8 @@ from sincpro_framework.auth.domain.resolver import IdentityResolver, resolved
 from sincpro_framework.auth.domain.revocations import Revocations
 from sincpro_framework.auth.infrastructure import jws
 from sincpro_framework.auth.infrastructure.digests import digest
+from sincpro_framework.auth.infrastructure.server_metadata import OidcDiscovery
 from sincpro_framework.auth.infrastructure.urllib_http import UrllibHttp
-from sincpro_framework.auth.services.server_metadata import OidcDiscovery
 from sincpro_framework.data_layer.caching import Cache, CachePolicy, JsonCodec, TimeToLive
 from sincpro_framework.sincpro_logger import logger
 

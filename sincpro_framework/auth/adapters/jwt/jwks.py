@@ -23,8 +23,8 @@ from sincpro_framework.auth.domain import exceptions
 from sincpro_framework.auth.domain.http import HttpClient, HttpRequest, safe_url
 from sincpro_framework.auth.domain.keys import KeySource, VerificationKey
 from sincpro_framework.auth.infrastructure.jose_keys import ASYMMETRIC, PublicKey, fits
+from sincpro_framework.auth.infrastructure.server_metadata import OidcDiscovery
 from sincpro_framework.auth.infrastructure.urllib_http import UrllibHttp
-from sincpro_framework.auth.services.server_metadata import OidcDiscovery
 from sincpro_framework.data_layer.caching import (
     Cache,
     CachePolicy,

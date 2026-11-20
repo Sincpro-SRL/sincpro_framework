@@ -1,7 +1,8 @@
 # PRD_34: The auth plugin — verify what arrives, present what goes out, manage accounts
 
-- **Status**: built on `feat/304-auth-plugin` (#304). Record rules applied by the framework's
-  reads and field access by permission are #305.
+- **Status**: built on `feat/304-auth-plugin` (#304), documented in [docs/auth](../auth/README.md)
+  — `server.md`, `grants.md`, `client.md`, `accounts.md`, every page executed by the docs test.
+  Record rules applied by the framework's reads and field access by permission are #305.
 - **Builds on**: PRD_11 (the contract: `Credentials`, `Identity`, `AuthProvider`,
   `AccessControl`, the guard, `security`), the caching primitives (`Cache`, `KeyValueStore`,
   `Leases`, `StoreBypass`), the template tables of `data_layer.orm`, the entrypoints.

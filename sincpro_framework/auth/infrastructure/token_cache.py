@@ -27,7 +27,7 @@ from pydantic import SecretStr
 from sincpro_framework.auth.domain import exceptions
 from sincpro_framework.auth.domain.outbound import Sealer
 from sincpro_framework.auth.infrastructure.digests import digest, fingerprint
-from sincpro_framework.auth.services.token_endpoint import IssuedToken
+from sincpro_framework.auth.infrastructure.token_endpoint import IssuedToken
 from sincpro_framework.context.entrypoint.resolution import current_store, key_value_store_of
 from sincpro_framework.data_layer.caching import Cache, CachePolicy, TimeToLive, Validation
 from sincpro_framework.data_layer.store import KeyValueStore

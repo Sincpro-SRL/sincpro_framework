@@ -73,6 +73,9 @@ class TimestampedSignature(SignatureStyle):
     def __init__(self, header: str = "x-signature") -> None:
         self.header = header.lower()
 
+    def covered(self, body: bytes, timestamp: int | None) -> bytes:
+        return f"{timestamp}.".encode() + body
+
     def written(self, secret: bytes, body: bytes, timestamp: int) -> str:
         return f"t={timestamp},v1={hmac_sha256(secret, self.covered(body, timestamp)).hex()}"
 
@@ -89,6 +92,3 @@ class TimestampedSignature(SignatureStyle):
             except ValueError:
                 return [], None
         return signatures, timestamp
-
-    def covered(self, body: bytes, timestamp: int | None) -> bytes:
-        return f"{timestamp}.".encode() + body

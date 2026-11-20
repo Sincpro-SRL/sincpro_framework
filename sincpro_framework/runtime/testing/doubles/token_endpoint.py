@@ -145,6 +145,41 @@ class FakeTokenEndpoint(ScriptedHttp):
             said["refresh_token"] = refresh
         return said
 
+    def _refreshed(self, form: dict[str, str]) -> HttpAnswer:
+        """A refresh: rotated; a refresh token used twice revokes its whole family."""
+        with self._server_lock:
+            held = self.refresh.get(form.get("refresh_token", ""))
+            if held is None:
+                return self.answer({"error": "invalid_grant"}, status=400)
+            if held["used"]:
+                for one in self.refresh.values():
+                    if one["family"] == held["family"]:
+                        one["used"] = True
+                return self.answer(
+                    {"error": "invalid_grant", "error_description": "reused"}, status=400
+                )
+            held["used"] = True
+        return self.answer(self._issued(held["family"]))
+
+    def _exchanged(self, form: dict[str, str]) -> HttpAnswer:
+        """RFC 8693: a token for `audience` acting for the subject token."""
+        if not form.get("subject_token"):
+            return self.answer({"error": "invalid_request"}, status=400)
+        if form["subject_token"] in self.revoked:
+            return self.answer({"error": "invalid_grant"}, status=400)
+        said = self._issued()
+        said["issued_token_type"] = "urn:ietf:params:oauth:token-type:access_token"
+        return self.answer(said)
+
+    def _device_token(self, form: dict[str, str]) -> HttpAnswer:
+        device = self.devices.get(form.get("device_code", ""))
+        if device is None:
+            return self.answer({"error": "expired_token"}, status=400)
+        device["polls"] += 1
+        if device["approved"] is None:
+            return self.answer({"error": "authorization_pending"}, status=400)
+        return self.answer(self._issued(self._next("family")))
+
     def _token(self, request: HttpRequest) -> HttpAnswer:
         """The token endpoint."""
         if self.delay:
@@ -176,32 +211,6 @@ class FakeTokenEndpoint(ScriptedHttp):
             return self.answer({"error": "unsupported_grant_type"}, status=400)
         return handler(form)
 
-    def _refreshed(self, form: dict[str, str]) -> HttpAnswer:
-        """A refresh: rotated; a refresh token used twice revokes its whole family."""
-        with self._server_lock:
-            held = self.refresh.get(form.get("refresh_token", ""))
-            if held is None:
-                return self.answer({"error": "invalid_grant"}, status=400)
-            if held["used"]:
-                for one in self.refresh.values():
-                    if one["family"] == held["family"]:
-                        one["used"] = True
-                return self.answer(
-                    {"error": "invalid_grant", "error_description": "reused"}, status=400
-                )
-            held["used"] = True
-        return self.answer(self._issued(held["family"]))
-
-    def _exchanged(self, form: dict[str, str]) -> HttpAnswer:
-        """RFC 8693: a token for `audience` acting for the subject token."""
-        if not form.get("subject_token"):
-            return self.answer({"error": "invalid_request"}, status=400)
-        if form["subject_token"] in self.revoked:
-            return self.answer({"error": "invalid_grant"}, status=400)
-        said = self._issued()
-        said["issued_token_type"] = "urn:ietf:params:oauth:token-type:access_token"
-        return self.answer(said)
-
     def _device(self, request: HttpRequest) -> HttpAnswer:
         """RFC 8628 device authorization."""
         device_code, user_code = self._next("dc"), self._next("UC").upper()
@@ -215,12 +224,3 @@ class FakeTokenEndpoint(ScriptedHttp):
                 "interval": 1,
             }
         )
-
-    def _device_token(self, form: dict[str, str]) -> HttpAnswer:
-        device = self.devices.get(form.get("device_code", ""))
-        if device is None:
-            return self.answer({"error": "expired_token"}, status=400)
-        device["polls"] += 1
-        if device["approved"] is None:
-            return self.answer({"error": "authorization_pending"}, status=400)
-        return self.answer(self._issued(self._next("family")))

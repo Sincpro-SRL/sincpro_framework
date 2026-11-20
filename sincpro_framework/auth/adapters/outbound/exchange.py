@@ -24,10 +24,10 @@ from sincpro_framework.auth.domain.http import ClientAuthentication, HttpClient
 from sincpro_framework.auth.domain.outbound import OutgoingRequest, TokenSource
 from sincpro_framework.auth.infrastructure.digests import fingerprint
 from sincpro_framework.auth.infrastructure.security_context import presented_credential
+from sincpro_framework.auth.infrastructure.server_metadata import OidcDiscovery
+from sincpro_framework.auth.infrastructure.token_cache import TokenCache, bearer_of
+from sincpro_framework.auth.infrastructure.token_endpoint import IssuedToken, TokenEndpoint
 from sincpro_framework.auth.infrastructure.urllib_http import UrllibHttp
-from sincpro_framework.auth.services.server_metadata import OidcDiscovery
-from sincpro_framework.auth.services.token_cache import TokenCache, bearer_of
-from sincpro_framework.auth.services.token_endpoint import IssuedToken, TokenEndpoint
 
 TOKEN_EXCHANGE = "urn:ietf:params:oauth:grant-type:token-exchange"
 ACCESS_TOKEN = "urn:ietf:params:oauth:token-type:access_token"

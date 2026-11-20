@@ -23,10 +23,10 @@ from sincpro_framework.auth.adapters.client_auth import ClientSecretBasic
 from sincpro_framework.auth.domain import exceptions
 from sincpro_framework.auth.domain.http import ClientAuthentication, HttpClient
 from sincpro_framework.auth.domain.outbound import OutgoingRequest, TokenSource
+from sincpro_framework.auth.infrastructure.server_metadata import OidcDiscovery
+from sincpro_framework.auth.infrastructure.token_cache import TokenCache, bearer_of
+from sincpro_framework.auth.infrastructure.token_endpoint import IssuedToken, TokenEndpoint
 from sincpro_framework.auth.infrastructure.urllib_http import UrllibHttp
-from sincpro_framework.auth.services.server_metadata import OidcDiscovery
-from sincpro_framework.auth.services.token_cache import TokenCache, bearer_of
-from sincpro_framework.auth.services.token_endpoint import IssuedToken, TokenEndpoint
 
 if TYPE_CHECKING:
     from sincpro_framework.auth.adapters.outbound.dpop import DpopProver

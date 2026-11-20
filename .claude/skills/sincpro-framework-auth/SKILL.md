@@ -1,6 +1,6 @@
 ---
 name: sincpro-framework-auth
-description: Guard a sincpro_framework service — declare permissions on use cases and hooks (@auth.requires, @auth.authenticated, @auth.public, when_denied=SKIP), implement an AuthProvider (JWT, API key, service token), and let every entrypoint authenticate by itself. Use whenever a task adds authorization, permission checks, an identity, a token/API-key provider, or asks who is calling / what they may do.
+description: Guard a sincpro_framework service — declare permissions on use cases and hooks (@auth.requires, @auth.authenticated, @auth.public, auth.assurance, when_denied=SKIP), verify what arrives (JwtProvider for Keycloak/Entra/Google, introspection, API keys, webhook signatures, DPoP, mTLS, policy engines), resolve roles into permissions (GrantCatalog, GrantResolver, revocations), present what goes out (TokenSource — client credentials, token exchange, refresh, per tenant), and manage accounts (PasswordHasher, LoginAttempts, OneTimeTokens, Totp, TokenIssuer). Use whenever a task adds authorization, an identity, a token, a login, a role, or a call to another API that needs credentials.
 ---
 
 # sincpro-framework-auth
@@ -9,7 +9,7 @@ A use case or a hook declares the permission it requires; a provider says who is
 they hold it; the guard applies the declaration **however** the use case is reached — an entrypoint,
 a cron, another bus, an ApplicationService. A refusal is one of two errors every entrypoint already
 tells the caller: `Unauthenticated` or `PermissionDenied`. This skill stands alone; the long form is
-`docs/auth/README.md` and PRD_11 in the framework repo.
+`docs/auth/README.md`, PRD_11 and PRD_34 in the framework repo.
 
 ## Context
 
@@ -19,8 +19,12 @@ tells the caller: `Unauthenticated` or `PermissionDenied`. This skill stands alo
   is verified, which keys exist, what is public, how strict to be: the project chooses. Nothing is
   forced — a use case/hook that declares nothing is not checked, and a bus with no `AccessControl`
   checks nothing.
-- **It is not** an identity provider, a login flow, a user store, a token issuer for users, or field
-  masking. The IdP issues tokens; a provider of the project verifies them.
+- **It is not** a login screen nor a user table — those are the IdP's or the project's own entity —
+  nor field masking (#305). It ships the building blocks a self-managed project needs (hashing,
+  lockout, one-time links, TOTP, `TokenIssuer`) and verifies what an IdP issues (`JwtProvider`).
+- **Two roles, one vocabulary.** *Server*: providers verify what arrives. *Client*: a `TokenSource`
+  says what an outgoing request presents — injected in the adapter that calls the API, never in a
+  use case. Long form: `docs/auth/{server,grants,client,accounts}.md`, PRD_34.
 - **Do not use it** for business validation ("amount above limit" is a domain rule, unless it is a
   permission decision the provider owns), nor duplicate it with checks in FastAPI routes.
 
@@ -50,6 +54,20 @@ Every name below imports from `sincpro_framework.auth` unless the Import column 
 | `IdentityMiddleware` | ASGI middleware for a project's own app | adapter | same |
 | `Credentials.from_asgi` / `Credentials.from_headers` / `security.authenticated_as` / `security.challenges` / `security.identity_headers` | what an entrypoint does | classmethod / facade | same |
 | `describe()` / `verify()` / `requirements_of()` | introspection, test-time checks | function | `AccessControl` methods |
+| `JwtProvider` / `Issuer` / `ClaimMapping.keycloak()` / `.entra()` / `.google()` / `SharedSecrets` | bearer JWTs of the issuers trusted; claims → identity; HMAC keys (stdlib) | adapter / config | same |
+| `Jwks` / `PublicKeys` / `JwtProvider.from_issuer` | public keys by OIDC discovery, cached, rotated — `[jwt]`, imported on first use | adapter | same |
+| `IntrospectionProvider` | opaque tokens (RFC 7662), cached by digest | adapter | same |
+| `SignatureProvider` / `RequestSigner` / `HexDigest` / `TimestampedSignature` | webhook HMAC in and out | adapter | same |
+| `BasicProvider` / `CertificateProvider` / `DpopProofs` | HTTP Basic; mTLS + SPIFFE (`[jwt]`); DPoP proofs (`[jwt]`) | adapter | same |
+| `GrantCatalog` / `Category` / `Privilege` / `Role` / `Entitlement` | roles in code, Odoo 20's shape: implies, exclusive levels, disjoint, `describe()` | domain | same |
+| `GrantStore` (`InMemoryGrants`, `KeyValueGrants`, `DatabaseGrants`) / `GrantAdministration` / `GrantResolver` / `RoleMapping` / `ScopeCeiling` | who holds which role per tenant; checked changes; resolved per call | port / adapter / service | same (`DatabaseGrants`: `data_layer.orm`) |
+| `Revocations` (`KeyValueRevocations`) | a token, a session, a subject signed out, a permission version | port / adapter | same |
+| `auth.assurance(acr=, methods=, max_age=)` | step-up requirement (RFC 9470) | requirement | `AccessControl` method |
+| `TokenSource` / `StaticToken` / `ApiKeyHeader` / `BasicCredentials` / `ClientCredentials` / `TokenSources` | what an outgoing request presents | port / adapter | same |
+| `TokenExchange` + `PresentingProvider` / `RefreshingToken` + `HeldGrants` / `DeviceCode` / `DpopProver` | act for the caller (RFC 8693); hold consent; RFC 8628; DPoP client | adapter | same |
+| `call_with_credentials` / `requests_auth` / `httpx_auth` | send, and once more after a 401 | function | same |
+| `PasswordHasher` / `LoginAttempts` / `OneTimeTokens` / `Totp` / `TokenIssuer` / `SigningKeys` | accounts the service manages itself | adapter | same |
+| `ScriptedHttp` / `FakeTokenEndpoint` / `TokenSourceContract` / `RevocationsContract` / `GrantStoreContract` / `RefreshTokensContract` / `ApiKeyStoreContract` | test doubles and contracts | double / contract | `sincpro_framework.runtime.testing` |
 | `granting` / `RecordingProvider` / `AuthProviderContract` | test helpers | function / adapter / port | `sincpro_framework.runtime.testing` |
 
 Look-alikes: `auth.Identity` is **who calls**; `observability.ObservabilityIdentity` is **who the
@@ -67,8 +85,10 @@ service is** (release, version). `PermissionDenied` is not Python's `PermissionE
   identity `ContextVar`; `services/guard.py` the bus interceptor (`BusGuard`, outermost) and the
   hook gate (`HookGuard`, via `Hooks.gate`); `entrypoint/access_control.py` declarations and
   decisions; `entrypoint/security.py` (`security`) + `entrypoint/asgi.py` what entrypoints call.
-- No JWT/OIDC library is shipped. A provider for Keycloak/Entra/Google is the project's own adapter,
-  and its library (e.g. PyJWT) is the project's dependency.
+- HS256 and HMAC, scrypt, TOTP and the HTTP client (`UrllibHttp`) are the standard library;
+  asymmetric JOSE (RS/PS/ES/EdDSA, JWKS, DPoP, mTLS, AES-GCM) is the `[jwt]` extra (PyJWT +
+  cryptography), argon2 the `[argon2]` one. PyJWT only signs and verifies: claims are always
+  checked by `auth/infrastructure/jws.py`. `import sincpro_framework.auth` never loads an extra.
 
 **Inside a consumer service** (one `UseFramework` per bounded context, created in
 `infrastructure/framework.py` before `services/` is imported; `auth.on(bus)` before any gateway):
@@ -77,9 +97,11 @@ service is** (release, version). `PermissionDenied` is not Python's `PermissionE
 billing/
   __init__.py                  # billing = config_billing_framework("billing"); then `from . import services`
   domain/permissions.py        # class BillingPermission(Permission)
-  adapters/keycloak.py         # class KeycloakProvider(AuthProvider) — the project's own
+  adapters/bank_api.py         # the API client; its TokenSource injected, never in a use case
   infrastructure/
-    auth.py                    # auth = AccessControl[BillingPermission](providers=[...])
+    auth.py                    # auth = AccessControl[BillingPermission](providers=[JwtProvider.from_issuer(
+                               #     KEYCLOAK, audience="billing-api", mapping=ClaimMapping.keycloak(client=…),
+                               #     resolvers=[GrantResolver(catalog, KeyValueGrants(), revocations=…)])])
     dependencies.py            # DependencyContextType: auth: AccessControl[BillingPermission]  (typing only)
     framework.py               # UseFramework(...); register_dependencies(...); auth.on(instance); auth.on(hooks)
   services/issue_invoice.py    # @billing.feature(Cmd) + @auth.requires(BillingPermission.ISSUE_INVOICE)
@@ -129,6 +151,17 @@ Silent ones first — the runtime says nothing.
   consumers, with a reason that is logged.
 - **A handwritten FastAPI route calling `bus(dto)`.** No credentials reach the bus. Use the gateway,
   or wrap the app in `IdentityMiddleware(app, access=auth)`.
+- **An `Issuer` with no audience, or a mapping that forgets Keycloak's `typ`.** The first is refused
+  at construction; use `ClaimMapping.keycloak(...)`, which refuses ID and refresh tokens.
+- **Resolvers on `AccessControl`.** They belong to a provider (`resolvers=` or `Resolving`): a
+  service token or an API key arrives resolved, a global resolver grants twice.
+- **Permissions frozen in a self-issued token.** `TokenIssuer` resolves them per call by default;
+  a role taken away needs `GrantAdministration` (it bumps the version) to hold at once.
+- **A `TokenSource` in a use case, or a token in the context.** The context travels to other
+  services; a source belongs to the adapter that calls the API (`dependencies.py`).
+- **An outbound misconfiguration raised as `Unauthenticated`.** The inbound caller would log in
+  again in a loop; the framework raises `CredentialsRejected` / `EndpointUnavailable`.
+- **A cache or a store keyed by a raw token.** Every store here keys by digest; do the same.
 - **Refusals counted as failures.** An `AuthError` is a `ClientError`: left out of GlitchTip by
   default, but counted as its kind in the metrics unless the bus is told it is traffic:
   `billing.ignore_sentry_exceptions(AuthError)`.
