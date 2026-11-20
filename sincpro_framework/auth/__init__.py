@@ -23,7 +23,8 @@ and the middleware for an ASGI app of the project's (`asgi`). JSON-RPC, gRPC, MC
 `remote_execution` authenticate by themselves when the bus is guarded. See `docs/auth/README.md`
 and PRD_34 for the whole catalog.
 
-The `[jwt]` extra's names — `Jwks`, `PublicKeys`, `PublicKey`, `PrivateKey` — are imported when
+The `[jwt]` extra's names — `Jwks`, `PublicKeys`, `PublicKey`, `PrivateKey`, `PrivateKeyJwt` — are
+imported when
 first asked for, so `import sincpro_framework.auth` never loads PyJWT.
 """
 
@@ -52,6 +53,7 @@ from sincpro_framework.auth.adapters.grants import (
 from sincpro_framework.auth.adapters.jwt import (
     ClaimMapping,
     ClaimTest,
+    IntrospectionProvider,
     Issuer,
     JwtProvider,
     ProtectedResource,
@@ -155,6 +157,7 @@ __all__ = [
     "InMemoryApiKeys",
     "InMemoryGrants",
     "InMemoryRevocations",
+    "IntrospectionProvider",
     "InvalidGrant",
     "Issuer",
     "JwtProvider",
@@ -188,11 +191,13 @@ _LAZY = {
     "PublicKeys": "sincpro_framework.auth.adapters.jwt.jwks",
     "PublicKey": "sincpro_framework.auth.infrastructure.jose_keys",
     "PrivateKey": "sincpro_framework.auth.infrastructure.jose_keys",
+    "PrivateKeyJwt": "sincpro_framework.auth.adapters.private_key_jwt",
 }
 """Names of the `[jwt]` extra, by the module that holds them — loaded on first use."""
 
 if TYPE_CHECKING:
     from sincpro_framework.auth.adapters.jwt.jwks import Jwks, PublicKeys
+    from sincpro_framework.auth.adapters.private_key_jwt import PrivateKeyJwt
     from sincpro_framework.auth.infrastructure.jose_keys import PrivateKey, PublicKey
 
 

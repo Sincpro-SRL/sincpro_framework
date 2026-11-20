@@ -253,3 +253,31 @@ with security.as_identity(with_password_only):
 `auth_time` its provider read — with the `AccessControl`'s `clock`. `describe()` says
 `billing.invoice.issue and assurance(mfa, 5m)`; `when_denied=WhenDenied.SKIP` leaves an optional
 step out, as for a permission.
+
+## Opaque tokens: introspection — RFC 7662
+
+An opaque token is asked of the server that issued it. `IntrospectionProvider` authenticates as a
+client (`ClientSecretBasic`, `ClientSecretPost`, `ClientSecretJwt`, `PrivateKeyJwt` — `[jwt]`),
+caches every answer by the token's SHA-256 — never the token — and never past the token's own
+`exp`; an inactive answer is remembered for `inactive_for`, so a stream of bad tokens is not a
+stream of requests. A JWT is left to `JwtProvider`.
+
+```python
+from sincpro_framework.auth import ClientSecretBasic, IntrospectionProvider
+
+introspect = f"{KEYCLOAK}/protocol/openid-connect/token/introspect"
+http = ScriptedHttp({f"POST {introspect}": {"active": True, "sub": "4c1d", "aud": "billing-api",
+                                             "exp": time.time() + 300, "scope": "openid"}})
+opaque = IntrospectionProvider(
+    client=ClientSecretBasic("billing-api", "the client secret"),
+    endpoint=introspect,                         # or issuer=… to discover it
+    audience="billing-api",
+    http=http,
+)
+assert opaque.authenticate(bearer("an-opaque-token")).subject == "user:4c1d"
+assert opaque.authenticate(bearer("an-opaque-token")).subject == "user:4c1d"
+assert http.count(introspect) == 1               # the second answer came from the cache
+```
+
+The endpoint refusing this service's own client (401, 403) is its misconfiguration, never the
+caller's: `EndpointUnavailable` (503), logged as an error.
