@@ -11,6 +11,7 @@ from sincpro_framework.auth import (
     OPEN,
     AccessCall,
     AccessControl,
+    AuthError,
     Category,
     GrantCatalog,
     Identity,
@@ -19,6 +20,7 @@ from sincpro_framework.auth import (
     Privilege,
     Role,
     Unauthenticated,
+    WhenDenied,
     security,
 )
 
@@ -234,3 +236,65 @@ def test_any_of_mixes_a_rule_and_a_role_its_owner_or_an_admin() -> None:
     with pytest.raises(PermissionDenied, match="its owner does not hold and holds no"):
         run(bus, QueryInvoice(number="F-1", owner="user:ana"), BEA)
     assert str(owner_or_admin) == "its owner or role billing.admin"
+
+
+def test_a_rule_asked_with_no_command_is_refused_never_a_crash() -> None:
+    bus, auth = billing()
+    assert not auth.may_run(bus, QueryInvoice, ANA)  # `call.dto.owner` cannot be read
+    with security.as_identity(ANA):
+        assert not auth.allows(auth.rule("its own", lambda call: call.dto.owner == "x"))
+        lenient = auth.rule("its own", lambda call: call.dto is None or call.dto.owner == "x")
+        assert auth.allows(lenient)
+
+
+def test_every_call_is_raised_even_where_the_declaration_says_skip() -> None:
+    auth = AccessControl[P]()
+    bus = UseFramework("skip-billing", log_after_execution=False)
+    auth.every_call(lambda call: call.context.get("tenant_id") != "pe", name="tenant_active")
+
+    @bus.feature(QueryHealth)
+    @auth.requires(P.READ, when_denied=WhenDenied.SKIP)
+    class Health(Feature):
+        def execute(self, dto: QueryHealth) -> Answer:
+            return Answer(by="ran")
+
+    auth.on(bus)
+    with pytest.raises(PermissionDenied, match="tenant_active"):
+        run(bus, QueryHealth(), ANA, tenant="pe")
+
+
+def test_any_of_answers_a_step_up_when_one_would_meet_it() -> None:
+    auth = AccessControl[P]()
+    with security.as_identity(BEA), pytest.raises(Unauthenticated) as refused:
+        auth.check(auth.any_of(auth.assurance(methods={"mfa"}), P.APPROVE))
+    assert refused.value.step_up == "mfa"
+
+
+def test_a_refusal_of_the_projects_own_without_a_reason_is_still_worded() -> None:
+    class Closed(AuthError):
+        http_status = 403
+
+    def closed(call: AccessCall) -> bool:
+        raise Closed("the ledger is closed")
+
+    auth = AccessControl[P]()
+    with security.as_identity(BEA), pytest.raises(PermissionDenied, match="ledger is closed"):
+        auth.check(auth.any_of(auth.rule("open ledger", closed), P.APPROVE))
+
+
+def test_by_field_with_no_command_keeps_roles_and_rules_among_its_options() -> None:
+    auth = AccessControl[P]()
+    chosen = auth.by_field(
+        "number", {"in": auth.any_of(auth.role("billing.clerk")), "out": P.APPROVE}
+    )
+    with security.as_identity(BEA):
+        assert auth.allows(chosen)
+
+
+def test_open_is_no_rules_name_and_a_test_copy_never_adds_checks_to_production() -> None:
+    auth = AccessControl[P]()
+    with pytest.raises(Exception, match="not named 'open'"):
+        auth.rule("open", lambda call: True)
+    copy = auth.using([])
+    copy.every_call(lambda call: False, name="the test's own")
+    assert auth.checks == [] and [one.name for one in copy.checks] == ["the test's own"]

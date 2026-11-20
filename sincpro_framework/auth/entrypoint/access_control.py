@@ -264,7 +264,13 @@ class AccessControl[P: Permission]:
             is_own = auth.rule("its own invoice",
                                lambda call: call.dto.owner == call.identity.subject)
             @auth.requires(BillingPermission.READ, is_own)
+
+        `open` is not a rule's name: it is what declaring nothing is called.
         """
+        if name == OPEN:
+            raise exceptions.ProgrammingError(
+                "a rule is not named 'open' — that names a use case that declares nothing"
+            )
         return Rule(name, check)
 
     def every_call[F: Callable[[AccessCall], bool]](
@@ -429,12 +435,28 @@ class AccessControl[P: Permission]:
 
     def _ruled(self, rule: Rule, call: AccessCall) -> exceptions.AuthError | None:
         """The refusal of a rule that does not hold — `PermissionDenied` naming it, or the
-        `AuthError` its check raised to answer otherwise."""
+        `AuthError` its check raised to answer otherwise.
+
+        1. The check holds: `None`.
+        2. It raised an `AuthError`: that refusal.
+        3. Asked with no Command (`may_run`, `allows`, a hook) and it failed reading one:
+           refused — what cannot be judged is never granted. A rule that may be judged
+           without it says so: `lambda call: call.dto is None or call.dto.owner == ...`.
+        Final: `PermissionDenied` naming the rule.
+        """
         try:
             if rule.check(call):
                 return None
         except exceptions.AuthError as refused:
             return refused
+        except Exception:
+            if call.dto is not None:
+                raise
+            return exceptions.PermissionDenied(
+                call.identity.subject,
+                rule.name,
+                f"{rule.name} cannot be judged without the Command",
+            )
         return exceptions.PermissionDenied(
             call.identity.subject, rule.name, f"{rule.name} does not hold"
         )
@@ -458,7 +480,8 @@ class AccessControl[P: Permission]:
         Context: every member of an `AnyOf` is asked, even after one is granted — the provider
         may be remote, but the answer, and the reasons joined, stay complete and in order; when
         every member is a permission, a provider that words the whole refusal (`refusing_any`)
-        is told it instead.
+        is told it instead. A member refused with `Unauthenticated` — a step-up — answers for
+        the whole: authenticating again may meet it, a 403 would not say so.
         """
         if isinstance(requirement, AssuranceRequirement):
             return self._assured(identity, requirement)
@@ -491,7 +514,13 @@ class AccessControl[P: Permission]:
         ]
         if any(one is None for one in denials):
             return None
-        each = [one.reason for one in denials if one is not None]
+        refused = [one for one in denials if one is not None]
+        step_up = next(
+            (one for one in refused if isinstance(one, exceptions.Unauthenticated)), None
+        )
+        if step_up is not None:
+            return step_up
+        each = [getattr(one, "reason", None) or str(one) for one in refused]
         provider = self._provider_of(identity)
         permissions = [
             one.value for one in requirement.members if isinstance(one, Permission)
@@ -704,8 +733,8 @@ class AccessControl[P: Permission]:
         return self.refusal_of(bus, command, identity, dto) is None
 
     def using(self, providers: AuthProvider | Sequence[AuthProvider]) -> "AccessControl[P]":
-        """This object with other providers — the same declarations, `every_call` checks and
-        `enabled`:
+        """This object with other providers — the same declarations and `enabled`, a copy of
+        the `every_call` checks (one added to either is the other's no more):
         what a test puts on a `fresh()` bus, so the rules of production are checked against
         providers of its own.
 
@@ -714,7 +743,7 @@ class AccessControl[P: Permission]:
         """
         other: AccessControl[P] = AccessControl(providers, self.enabled, self.clock)
         other.declarations = self.declarations
-        other.checks = self.checks
+        other.checks = list(self.checks)
         return other
 
     def on(

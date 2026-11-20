@@ -224,8 +224,10 @@ class BusGuard:
            nothing said one — not a provider of the project's, not a scope —, so a fact the use
            case records names its `actor`.
         2. Disabled: it runs.
-        3. Refused (`refusal_for`): an open use case raises the refusal; a declared one is
-           refused, or skipped (`None`) when it said `WhenDenied.SKIP`.
+        3. Declared something the identity lacks: refused, or skipped (`None`) when it said
+           `WhenDenied.SKIP`.
+        4. An `every_call` check refuses: always raised — `SKIP` speaks for the declaration
+           only, never for the project's interceptor.
         Final: it runs, this `AccessControl` in play.
         """
         identity = current_identity()
@@ -235,17 +237,26 @@ class BusGuard:
         if not self.access.enabled:
             return call_next(dto)
         command = type(dto)
-        refusal = self.refusal_for(command, identity, dto)
-        if refusal is None:
+        if identity.kind == IdentityKind.SYSTEM:
             return self._run_in_play(call_next, dto)
         declaration = self.declaration_of(command)
-        if declaration is None:
-            logger.warning(
-                f"access refused: {identity.subject} → {command.__name__} — {refusal}"
+        bus_context = self.bus.current_context()
+        if declaration is not None:
+            refused = self.access.refusal(
+                identity, declaration, command.__name__, None, bus_context, dto
             )
-            raise refusal
-        _refused_or_skipped(refusal, declaration, identity, command.__name__)
-        return None
+            if refused is not None:
+                _refused_or_skipped(refused, declaration, identity, command.__name__)
+                return None
+        intercepted = self.access.every_call_refusal(
+            identity, command.__name__, dto, bus_context
+        )
+        if intercepted is not None:
+            logger.warning(
+                f"access refused: {identity.subject} → {command.__name__} — {intercepted}"
+            )
+            raise intercepted
+        return self._run_in_play(call_next, dto)
 
 
 class HookGuard:

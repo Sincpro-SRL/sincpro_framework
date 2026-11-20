@@ -395,9 +395,9 @@ def method_object(
     1. Params and result from the DTOs' schemas, nested definitions hoisted to `schemas`.
     2. One tag, the context (the bus's alias) — the document is tagged per context —, and one
        per entity it belongs to; `x-sincpro-role`, what it is for its entity (`role_of`).
-    3. `x-sincpro-requires`: what the use case declared (`public`, `authenticated`, the
-       requirements, `unguarded`); `x-idempotent`: a read (`Operation.reads`), or `@idempotency.once` — a retry
-       is safe.
+    3. `x-sincpro-requires`: what the use case declared (`authenticated`, the requirements) —
+       or `x-sincpro-access: open` when it declared nothing; `x-idempotent`: a read
+       (`Operation.reads`), or `@idempotency.once` — a retry is safe.
     4. Final: `deprecated` and `x-sunset` when its binding is on its way out.
 
     Context: `schemas` is the document's `components.schemas`; without one the hoisted

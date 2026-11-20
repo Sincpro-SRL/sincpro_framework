@@ -121,7 +121,8 @@ class ManifestEntry(DataTransferObject):
     """`feature` or `app_service`, then `query` or `command`: `features.query`."""
     method: str | None
     """The binding's method when it has one — REST's verb, gRPC's method."""
-    access: str | None
+    access: str
+    """What it declared, or `open`."""
     deprecated: bool
     sunset: date | None
     replacement: str | None

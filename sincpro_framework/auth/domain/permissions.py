@@ -70,11 +70,11 @@ class ByField:
         return next((needed for one, needed in self.permissions if one == value), None)
 
     def every(self) -> AnyOf:
-        """One among every permission it may name — what is asked with no Command at hand."""
-        found: list[Permission] = []
+        """One among every requirement it may name — what is asked with no Command at hand."""
+        found: list[Requirement] = []
         for _, needed in self.permissions:
             for one in needed.members if isinstance(needed, AnyOf) else (needed,):
-                if isinstance(one, Permission) and one not in found:
+                if one not in found:
                     found.append(one)
         return AnyOf(tuple(found))
 

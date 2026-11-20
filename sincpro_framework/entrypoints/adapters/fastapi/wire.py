@@ -235,7 +235,7 @@ def problem_responses(
              401: ..., 403: ...}
 
     1. 400, 422 and 500 — any operation can answer them.
-    2. 401 and 403 when the bus's `AccessControl` requires anything but `public`.
+    2. 401 and 403 when the bus's `AccessControl` requires something, or checks every call.
     3. 409 when the use case runs once — the same request still running.
     4. Final: each declared error under the status of its kind, its name appended to that
        status's description.
@@ -247,7 +247,7 @@ def problem_responses(
     }
     access = AccessControl.of(bus)
     declaration = access.requirements_of(command) if access else None
-    if declaration is not None:
+    if declaration is not None or (access is not None and access.checks):
         described[401] = problem_response("Who is calling is not known")
         described[403] = problem_response("The identity may not do this")
     handler = bus.handler_of(command)
