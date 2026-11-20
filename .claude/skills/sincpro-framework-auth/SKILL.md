@@ -52,7 +52,7 @@ Every name below imports from `sincpro_framework.auth` unless the Import column 
 | `enabled=` | `False` checks nothing | setting | `AccessControl(...)` |
 | `self.auth.allows` / `check` / `has_role` / `identity` / `permitted` / `scope_of` | in-handler decisions — `allows`/`check` take any requirement (permission, role, rule, `any_of`) | function | injected `auth` |
 | `security.identity` / `security.as_identity` / `security.as_system` | who the execution acts as (a `ContextVar`) | facade | `security` |
-| `AuthError` → `Unauthenticated` (401) / `PermissionDenied` (403) | the two refusals, `ClientError`s; `.http_status`, `.refusal_body()` | DTO (exception) | same |
+| `AuthError` → `Unauthenticated` (401) / `PermissionDenied` (403) | the two refusals, `ClientError`s; `.http_status`, `.refusal_body()` (`anonymous: true` when nothing was presented); `refusal_from(body)` rebuilds one from an answer | DTO (exception) | same |
 | `IdentityMiddleware` | ASGI middleware for a project's own app | adapter | same |
 | `Credentials.from_asgi` / `Credentials.from_headers` / `security.authenticated_as` / `security.challenges` / `security.identity_headers` | what an entrypoint does | classmethod / facade | same |
 | `describe()` / `verify()` / `requirements_of()` | introspection, test-time checks | function | `AccessControl` methods |
@@ -60,10 +60,10 @@ Every name below imports from `sincpro_framework.auth` unless the Import column 
 | `Jwks` / `PublicKeys` / `JwtProvider.from_issuer` | public keys by OIDC discovery, cached, rotated — `[jwt]`, imported on first use | adapter | same |
 | `IntrospectionProvider` | opaque tokens (RFC 7662), cached by digest | adapter | same |
 | `SignatureProvider` / `RequestSigner` / `HexDigest` / `TimestampedSignature` | webhook HMAC in and out | adapter | same |
-| `BasicProvider` / `CertificateProvider` / `DpopProofs` | HTTP Basic; mTLS + SPIFFE (`[jwt]`); DPoP proofs (`[jwt]`) | adapter | same |
+| `BasicProvider` / `CertificateProvider` / `DpopProofs` | HTTP Basic; mTLS + SPIFFE (`[jwt]`; with `trust_domain`, SPIFFE IDs only — never a bare CN); DPoP proofs (`[jwt]`) | adapter | same |
 | `GrantCatalog` / `Category` / `Privilege` / `Role` / `Entitlement` | roles in code, Odoo 20's shape: implies, exclusive levels, disjoint, `describe()` | domain | same |
 | `GrantStore` (`InMemoryGrants`, `KeyValueGrants`, `DatabaseGrants`) / `GrantAdministration` / `GrantResolver` / `RoleMapping` / `ScopeCeiling` | who holds which role per tenant; checked changes; resolved per call | port / adapter / service | same (`DatabaseGrants`: `data_layer.orm`) |
-| `Revocations` (`KeyValueRevocations`) | a token, a session, a subject signed out, a permission version | port / adapter | same |
+| `Revocations` (`KeyValueRevocations`) / `remembering_versions()` | a token, a session, a subject signed out (to the second, as `iat`), a permission version — one read per authentication inside `remembering_versions()` | port / adapter / function | same |
 | `auth.assurance(acr=, methods=, max_age=)` | step-up requirement (RFC 9470) | requirement | `AccessControl` method |
 | `TokenSource` / `StaticToken` / `ApiKeyHeader` / `BasicCredentials` / `ClientCredentials` / `TokenSources` | what an outgoing request presents | port / adapter | same |
 | `TokenExchange` + `PresentingProvider` / `RefreshingToken` + `HeldGrants` / `DeviceCode` / `DpopProver` | act for the caller (RFC 8693); hold consent; RFC 8628; DPoP client | adapter | same |
@@ -158,7 +158,15 @@ Silent ones first — the runtime says nothing.
 - **Resolvers on `AccessControl`.** They belong to a provider (`resolvers=` or `Resolving`): a
   service token or an API key arrives resolved, a global resolver grants twice.
 - **Permissions frozen in a self-issued token.** `TokenIssuer` resolves them per call by default;
-  a role taken away needs `GrantAdministration` (it bumps the version) to hold at once.
+  a role taken away needs `GrantAdministration` (it bumps the version) to hold at once. With
+  `embed_permissions=True` and refresh tokens, give the issuer `resolvers=`: a refresh resolves
+  the permissions again (without them the issuer refuses to be built).
+- **A provider of the project's that checks revocations, then resolves grants.** Two reads of the
+  store per call. Open `remembering_versions()` around both, as `JwtProvider` does: the resolver's
+  permission versions come from the revocation check's one read.
+- **A wire of the project's answering a 401 from a JSON body with `security.challenges(buses)`.**
+  The refusal is lost: an expired token or a step-up gets a bare `Bearer`. Pass
+  `refusal_from(body)` as the refusal.
 - **A `TokenSource` in a use case, or a token in the context.** The context travels to other
   services; a source belongs to the adapter that calls the API (`dependencies.py`).
 - **An outbound misconfiguration raised as `Unauthenticated`.** The inbound caller would log in

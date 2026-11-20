@@ -154,7 +154,7 @@ except Unauthenticated as refused:
 
 | | |
 |---|---|
-| the access token | ten minutes; who, which session, when and how they authenticated, the scopes — no permissions: the provider's resolvers give them per call, so a role taken away holds at once (`embed_permissions=True` carries them with a version a change refuses, resolved by the issuer's `resolvers=` at sign-in and again at every refresh) |
+| the access token | ten minutes; who, which session, when and how they authenticated, the scopes — no permissions: the provider's resolvers give them per call, so a role taken away holds at once (`embed_permissions=True` carries them with a version a change refuses, resolved by the issuer's `resolvers=` at sign-in and again at every refresh — with refresh tokens and no `resolvers=` it is refused at construction: a refresh never copies permissions a role taken away would outlive) |
 | the refresh token | random, stored by digest, rotated on every use; used twice past `reuse_grace` (ten seconds — two tabs) it is a replay, and the whole session is revoked |
 | a session | ends `idle_for` (14 days) after the last refresh and `at_most` (30 days) after it began |
 | a logout | `revoke(token)` — an access or a refresh token — ends its session, its access tokens refused at once |

@@ -73,6 +73,7 @@ class Totp:
         return f"otpauth://totp/{label}?{query}"
 
     def _key(self, secret: str) -> bytes:
+        """The secret's bytes — base32, as an authenticator app reads it, padding restored."""
         return base64.b32decode(secret.upper() + "=" * (-len(secret) % 8))
 
     def code_at(self, secret: str, step: int) -> str:

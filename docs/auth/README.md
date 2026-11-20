@@ -551,6 +551,8 @@ assert refused["error"]["data"]["kind"] == "unauthenticated"
   short JWT (`ServiceTokenProvider.credentials_for`) in its own header, and the host verifies it
   with the same keys. Only subject, kind, tenant and permissions travel — never the claims — and
   the request context it sends is never read for identity. The system does not cross services.
+  Replicas' clocks may differ by `leeway_seconds` (5): a token signed a moment "ahead" by another
+  replica, or a moment past its minute, is still accepted.
 - **A bus nobody guards** is left alone by every entrypoint: nothing is authenticated, the
   identity is what the host opened.
 - **Nothing here needs an extra**: `security`, `Credentials` and the middleware are the standard library;
