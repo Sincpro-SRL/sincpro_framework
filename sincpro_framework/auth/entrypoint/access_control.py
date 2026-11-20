@@ -22,7 +22,9 @@ identity opened by hand — a test, in-process code — answers with its `permis
 """
 
 import functools
-from collections.abc import Mapping, Sequence
+import time
+from collections.abc import Callable, Iterable, Mapping, Sequence
+from datetime import timedelta
 from typing import TYPE_CHECKING, Any, ClassVar
 from weakref import WeakKeyDictionary, WeakSet
 
@@ -31,6 +33,7 @@ from sincpro_framework.auth.domain.identity import Credentials, Identity, Identi
 from sincpro_framework.auth.domain.permissions import (
     AccessDeclaration,
     AnyOf,
+    AssuranceRequirement,
     ByField,
     Permission,
     Requirement,
@@ -93,6 +96,7 @@ class AccessControl[P: Permission]:
         providers: AuthProvider | Sequence[AuthProvider] = (),
         strict: bool = False,
         enabled: bool = True,
+        clock: Callable[[], float] = time.time,
     ) -> None:
         """`providers` are tried in order to authenticate a call; `strict` refuses a use case
         entered from outside that declares nothing; `enabled=False` checks nothing — a local
@@ -109,6 +113,7 @@ class AccessControl[P: Permission]:
         )
         self.strict = strict
         self.enabled = enabled
+        self.clock = clock
         self.declarations = Declarations()
         self._buses: WeakSet["UseFramework"] = WeakSet()
         """Every bus guarded — those given to `on` and the generations made of them."""
@@ -145,6 +150,18 @@ class AccessControl[P: Permission]:
         return found
 
     @property
+    def needs_body(self) -> bool:
+        """Whether a provider reads the request's raw body — a webhook signature — so the
+        entrypoints hand it over; no wire reads it otherwise."""
+        return any(one.needs_body for one in self.providers)
+
+    @classmethod
+    def any_needs_body(cls) -> bool:
+        """Whether any `AccessControl` of this process reads bodies — what an entrypoint that
+        does not know its bus yet asks before it reads one."""
+        return any(access.needs_body for access in list(cls._guarding.values()))
+
+    @property
     def identity(self) -> Identity:
         """Who the execution in progress acts as — never `None`."""
         return current_identity()
@@ -152,7 +169,9 @@ class AccessControl[P: Permission]:
     # Declaring
 
     def requires(
-        self, *requirements: P | AnyOf | ByField, when_denied: WhenDenied = WhenDenied.RAISE
+        self,
+        *requirements: P | AnyOf | ByField | AssuranceRequirement,
+        when_denied: WhenDenied = WhenDenied.RAISE,
     ):
         """Every requirement listed, and every other `requires` stacked on the same class, is
         needed — `any_of` for one among several. On a Feature, an ApplicationService or a Hook.
@@ -186,6 +205,21 @@ class AccessControl[P: Permission]:
         if not permissions:
             raise exceptions.ProgrammingError("by_field() names at least one permission")
         return ByField(field, tuple(permissions.items()))
+
+    def assurance(
+        self,
+        acr: Iterable[str] = (),
+        methods: Iterable[str] = (),
+        max_age: timedelta | None = None,
+    ) -> AssuranceRequirement:
+        """A requirement on how the caller authenticated — for `requires`: a step-up (RFC 9470).
+        Refused with `Unauthenticated(step_up=…, max_age=…)`, never 403: the caller can meet it
+        by authenticating again.
+
+            @auth.requires(BillingPermission.APPROVE_PAYMENT,
+                           auth.assurance(methods={"mfa"}, max_age=timedelta(minutes=5)))
+        """
+        return AssuranceRequirement(tuple(acr), frozenset(methods), max_age)
 
     def any_of(self, *permissions: P) -> AnyOf:
         """A requirement met by one of `permissions` — for `requires`.
@@ -240,13 +274,18 @@ class AccessControl[P: Permission]:
                 return identity
         return Identity.anonymous()
 
-    def challenges(self) -> list[str]:
-        """The `WWW-Authenticate` values a 401 answers with, one per provider that has one."""
-        return [challenge for one in self.providers if (challenge := one.challenge())]
+    def challenges(self, refusal: exceptions.Unauthenticated | None = None) -> list[str]:
+        """The `WWW-Authenticate` values a 401 answers with, one per provider that has one —
+        for `refusal` when the wire knows it, so a step-up names what to come back with."""
+        return [
+            challenge for one in self.providers if (challenge := one.challenge_for(refusal))
+        ]
 
-    def credentials_for(self, identity: Identity | None = None) -> Credentials | None:
-        """What to send another service so it knows who this call acts for — asked of the
-        identity's provider first.
+    def credentials_for(
+        self, identity: Identity | None = None, audience: str | None = None
+    ) -> Credentials | None:
+        """What to send another service — `audience`, when named — so it knows who this call
+        acts for: asked of the identity's provider first (`outbound_for`).
 
             # acting as user:42, vouched for by "service-tokens"
             auth.credentials_for()
@@ -258,9 +297,13 @@ class AccessControl[P: Permission]:
         in order, the first that issues something wins.
         """
         acting = identity or current_identity()
+        if acting.provider is not None and acting.provider not in {
+            one.name for one in self.providers
+        }:
+            return None
         own = self._provider_of(acting)
         for provider in (own, *(one for one in self.providers if one is not own)):
-            if provider is not None and (issued := provider.credentials_for(acting)):
+            if provider is not None and (issued := provider.outbound_for(acting, audience)):
                 return issued
         return None
 
@@ -293,6 +336,43 @@ class AccessControl[P: Permission]:
             return denied
         return None if allowed else exceptions.PermissionDenied(identity.subject, permission)
 
+    def _assured(
+        self, identity: Identity, requirement: AssuranceRequirement
+    ) -> exceptions.Unauthenticated | None:
+        """The step-up refusal when `identity` authenticated too weakly or too long ago.
+
+            assurance(methods={"mfa"}), amr ["pwd"]   ->  Unauthenticated("mfa required",
+                                                               step_up="mfa")
+            assurance(max_age=5m), authenticated 1h ago  ->  Unauthenticated("a recent
+                                                               authentication required", …)
+
+        Context: judged on the identity itself — its `assurance` and `authenticated_at`, as
+        the provider read them — with this object's clock; no provider is asked.
+        """
+        reasons = []
+        if requirement.acr and identity.assurance.level not in requirement.acr:
+            reasons.append(f"authentication level {' or '.join(requirement.acr)} required")
+        missing = requirement.methods - identity.assurance.methods
+        if missing:
+            reasons.append(f"{', '.join(sorted(missing))} required")
+        if requirement.max_age is not None and (
+            identity.authenticated_at is None
+            or self.clock() - identity.authenticated_at.timestamp()
+            > requirement.max_age.total_seconds()
+        ):
+            reasons.append("a recent authentication required")
+        if not reasons:
+            return None
+        return exceptions.Unauthenticated(
+            "; ".join(reasons),
+            step_up=requirement.step_up,
+            max_age=(
+                None
+                if requirement.max_age is None
+                else int(requirement.max_age.total_seconds())
+            ),
+        )
+
     def _denial(
         self,
         identity: Identity,
@@ -300,7 +380,7 @@ class AccessControl[P: Permission]:
         resource: Any,
         context: Mapping[str, Any] | None,
         dto: Any = None,
-    ) -> exceptions.PermissionDenied | None:
+    ) -> exceptions.AuthError | None:
         """The refusal of a requirement — one permission, or an `AnyOf` refused only when
         every member is.
 
@@ -312,6 +392,8 @@ class AccessControl[P: Permission]:
         may be remote, but the answer, and the reasons joined, stay complete and in order; a
         provider that words the whole refusal (`refusing_any`) is told it instead.
         """
+        if isinstance(requirement, AssuranceRequirement):
+            return self._assured(identity, requirement)
         if isinstance(requirement, ByField):
             chosen = requirement.every() if dto is None else requirement.chosen(dto)
             if chosen is None:
@@ -367,7 +449,7 @@ class AccessControl[P: Permission]:
         if declaration.kind == "public" or identity.kind == IdentityKind.SYSTEM:
             return None
         if identity.is_anonymous:
-            return exceptions.Unauthenticated(f"authenticate to run {what}")
+            return exceptions.Unauthenticated(f"authenticate to run {what}", anonymous=True)
         for requirement in declaration.requirements:
             denied = self._denial(identity, requirement, resource, context, dto)
             if denied is not None:
@@ -395,7 +477,9 @@ class AccessControl[P: Permission]:
         if identity.kind == IdentityKind.SYSTEM:
             return
         if identity.is_anonymous:
-            raise exceptions.Unauthenticated(f"authenticate to {permission.value}")
+            raise exceptions.Unauthenticated(
+                f"authenticate to {permission.value}", anonymous=True
+            )
         denied = self._denial(identity, permission, resource, context_scopes.live())
         if denied is not None:
             raise denied
@@ -528,7 +612,9 @@ class AccessControl[P: Permission]:
             test = billing.fresh()
             auth.using(providers=[StaticProvider(...)]).on(test, replaces=auth)
         """
-        other: AccessControl[P] = AccessControl(providers, self.strict, self.enabled)
+        other: AccessControl[P] = AccessControl(
+            providers, self.strict, self.enabled, self.clock
+        )
         other.declarations = self.declarations
         return other
 

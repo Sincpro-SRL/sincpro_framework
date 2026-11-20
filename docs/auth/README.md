@@ -22,6 +22,15 @@ Nothing is forced: a use case or hook that declares nothing is not checked, and 
 `AccessControl` runs as before. JSON-RPC, gRPC, MCP and a context hosted for another service
 authenticate by themselves when the bus is guarded — see [Entrypoints](#entrypoints-authenticate-by-themselves).
 
+**The rest of the plugin** — every page runs the same way:
+
+| Page | What it covers | Extra |
+|---|---|---|
+| [Verifying what arrives](server.md) | `JwtProvider` (Keycloak, Entra, Google, several issuers, JWKS by discovery), revocations, step-up (RFC 9470), introspection (RFC 7662), webhook signatures, DPoP (RFC 9449), mTLS and SPIFFE, policy engines (AuthZEN, OPA, OpenFGA) | asymmetric keys, DPoP, mTLS: `[jwt]` |
+| [Grants](grants.md) | roles declared in code the Odoo 20 way — categories, privileges, exclusive levels, disjoint roles, entitlements — assignments per tenant, resolved per call, a role taken away holding at once | — |
+| [Presenting what goes out](client.md) | token sources: static credentials, client credentials shared by every replica, a credential per tenant, token exchange (RFC 8693), refresh tokens held and rotated, device code (RFC 8628), `requests`/`httpx` hooks | `private_key_jwt`, DPoP: `[jwt]` |
+| [Accounts the service manages itself](accounts.md) | password hashing, lockout, HTTP Basic, one-time links, TOTP, the token issuer with refresh rotation and logout, all of it on the project's database | argon2: `[argon2]` |
+
 Every block on this page runs, in order, in `tests/docs/test_persistence_guide.py`.
 
 ## Permissions of a bounded context
@@ -469,7 +478,8 @@ assert refused["error"]["data"]["kind"] == "unauthenticated"
 
 - **Kerberos, NTLM, SPNEGO** — handshakes over several round trips bound to a connection; done at
   the proxy, which hands on a header or a JWT.
-- **Interactive login** — passwords, OTP, passkeys, SAML: the identity provider's job; the
-  service receives the token it issues.
-- **Masking fields of a response** — `WhenDenied.SKIP` leaves out a step, not a field.
+- **A login screen, a user table, SAML, passkeys** — the identity provider's, or the project's
+  own entity; what a service that manages its own accounts needs to hash, lock, link and issue is
+  [accounts](accounts.md).
+- **Masking fields of a response, record rules on every framework read** — #305.
 - **Revocation in the middle of a long stream** — a WebSocket is authenticated when it connects.

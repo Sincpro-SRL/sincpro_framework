@@ -1,0 +1,105 @@
+"""An authorization server's metadata is discovered once and cached: OpenID Connect Discovery
+first, RFC 8414 next, a document naming another issuer refused, the last good one served while
+the server is down — and nothing fetched until it is asked for."""
+
+from datetime import UTC, datetime, timedelta
+
+import pytest
+
+from sincpro_framework.auth import (
+    ClientCredentials,
+    ClientSecretBasic,
+    EndpointUnavailable,
+    IntrospectionProvider,
+    OidcDiscovery,
+)
+from sincpro_framework.auth.domain import exceptions
+from sincpro_framework.auth.infrastructure.server_metadata import discovery_for, located
+from sincpro_framework.data_layer.caching import Cache
+from sincpro_framework.runtime.testing import ManualClock, ScriptedHttp
+
+ISSUER = "https://auth.acme.bo/realms/acme"
+OIDC = f"{ISSUER}/.well-known/openid-configuration"
+OAUTH = "https://auth.acme.bo/.well-known/oauth-authorization-server/realms/acme"
+DOCUMENT = {
+    "issuer": ISSUER,
+    "jwks_uri": f"{ISSUER}/certs",
+    "token_endpoint": f"{ISSUER}/token",
+    "introspection_endpoint": f"{ISSUER}/introspect",
+}
+
+
+def test_the_openid_document_is_read_once_and_cached() -> None:
+    http = ScriptedHttp({OIDC: DOCUMENT})
+    discovery = OidcDiscovery(http=http)
+    assert http.sent == []
+    first, again = discovery.of(ISSUER), discovery.of(ISSUER)
+    assert first == again and first.jwks_uri == f"{ISSUER}/certs"
+    assert first.endpoint("token_endpoint") == f"{ISSUER}/token"
+    assert http.count(OIDC) == 1
+
+
+def test_rfc_8414_is_asked_when_there_is_no_openid_document() -> None:
+    http = ScriptedHttp({OAUTH: DOCUMENT})
+    assert OidcDiscovery(http=http).of(ISSUER).token_endpoint == f"{ISSUER}/token"
+    assert [one.target for one in http.sent] == [OIDC, OAUTH]
+
+
+def test_a_document_naming_another_issuer_is_refused() -> None:
+    http = ScriptedHttp({OIDC: {**DOCUMENT, "issuer": "https://evil.example"}})
+    with pytest.raises(EndpointUnavailable, match="names issuer"):
+        OidcDiscovery(http=http).of(ISSUER)
+
+
+def test_what_the_server_does_not_publish_is_a_programming_error() -> None:
+    metadata = OidcDiscovery(http=ScriptedHttp({OIDC: DOCUMENT})).of(ISSUER)
+    with pytest.raises(exceptions.ProgrammingError, match="device_authorization_endpoint"):
+        metadata.endpoint("device_authorization_endpoint")
+
+
+def test_the_last_good_document_stands_in_while_the_server_is_down() -> None:
+    clock = ManualClock(datetime(2026, 11, 20, tzinfo=UTC))
+    http = ScriptedHttp({OIDC: DOCUMENT})
+    discovery = OidcDiscovery(
+        http=http,
+        cache=Cache(now=clock.now),
+        ttl=timedelta(hours=1),
+        serve_stale_for=timedelta(days=1),
+    )
+    assert discovery.of(ISSUER).issuer == ISSUER
+    http.route(OIDC, EndpointUnavailable(OIDC, "could not be reached"))
+    clock.advance(hours=2)
+    assert discovery.of(ISSUER).issuer == ISSUER
+
+
+def test_with_nothing_cached_a_server_down_is_unavailable() -> None:
+    http = ScriptedHttp(
+        {OIDC: ScriptedHttp.answer({}, status=503, headers={"retry-after": "7"})}
+    )
+    with pytest.raises(EndpointUnavailable) as raised:
+        OidcDiscovery(http=http).of(ISSUER)
+    assert raised.value.retry_after == timedelta(seconds=7)
+
+
+def test_components_built_on_the_defaults_share_the_process_discovery() -> None:
+    client = ClientSecretBasic("billing", "s3cret")
+    bank = ClientCredentials(client=client, issuer=ISSUER)
+    introspection = IntrospectionProvider(client, issuer=ISSUER)
+    assert bank.discovery is introspection.discovery is discovery_for(None, None)
+    http = ScriptedHttp({OIDC: DOCUMENT})
+    assert discovery_for(http, None).http is http
+    own = OidcDiscovery(http=http)
+    assert ClientCredentials(client=client, issuer=ISSUER, discovery=own).discovery is own
+
+
+def test_an_endpoint_is_given_or_discovered_on_its_first_use() -> None:
+    http = ScriptedHttp({OIDC: DOCUMENT})
+    discovery = OidcDiscovery(http=http)
+    assert located("https://given/token", None, discovery, "token_endpoint") == (
+        "https://given/token"
+    )
+    found = located(None, ISSUER, discovery, "introspection_endpoint")
+    assert callable(found) and http.sent == []
+    assert found() == f"{ISSUER}/introspect"
+    with pytest.raises(exceptions.ProgrammingError, match="no token_endpoint given"):
+        located(None, None, discovery, "token_endpoint")

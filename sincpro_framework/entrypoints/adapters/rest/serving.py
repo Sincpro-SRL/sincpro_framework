@@ -18,7 +18,7 @@ from collections.abc import Callable, Sequence
 from typing import Any
 
 from sincpro_framework.aio.async_threads import on_async_thread
-from sincpro_framework.auth import Credentials
+from sincpro_framework.auth import AccessControl, Credentials
 from sincpro_framework.entrypoints.adapters.rest import exceptions
 from sincpro_framework.entrypoints.adapters.rest.routing import (
     RestRoute,
@@ -143,13 +143,15 @@ def routes(
                 status, body = failure_answer(error)
                 return JSONResponse({"error": body}, status_code=status)
             context = merge_http_context(request.headers) or None
+            access = AccessControl.of(route.bus)
+            raw = await request.body() if access is not None and access.needs_body else None
             status, body = await on_async_thread(
                 route.bus,
                 call_route,
                 route,
                 payload,
                 context,
-                Credentials.from_asgi(request.scope),
+                Credentials.from_asgi(request.scope, body=raw),
             )
             headers: dict[str, str] = {}
             if status == 401 and (refusals := challenges()):

@@ -10,6 +10,7 @@ is never `None`: a caller nobody vouched for is `Identity.anonymous()`.
 """
 
 from collections.abc import Iterable, Mapping, Sequence
+from datetime import datetime
 from enum import StrEnum
 from http.cookies import SimpleCookie
 from typing import Any
@@ -113,7 +114,9 @@ class Credentials(DataTransferObject):
         )
 
     @classmethod
-    def from_asgi(cls, scope: Mapping[str, Any], transport: str = "http") -> "Credentials":
+    def from_asgi(
+        cls, scope: Mapping[str, Any], transport: str = "http", body: bytes | None = None
+    ) -> "Credentials":
         """Credentials out of an ASGI scope — headers, cookies, query, method and target; the
         client certificate when the server hands the TLS extension.
 
@@ -141,6 +144,7 @@ class Credentials(DataTransferObject):
                 "query": _first(parse_qsl(raw_query, keep_blank_values=True)),
                 "method": scope.get("method"),
                 "uri": f"{path}?{raw_query}" if raw_query else path,
+                "body": body,
             }
         )
 
@@ -163,6 +167,21 @@ class Credentials(DataTransferObject):
     __str__ = __repr__
 
 
+class Assurance(DataTransferObject):
+    """How strongly the caller proved who they are — OIDC's `acr` and `amr`, what a step-up
+    requirement (RFC 9470) asks of an identity.
+
+        Assurance(level="urn:sincpro:mfa", methods={"pwd", "otp"})
+    """
+
+    model_config = ConfigDict(frozen=True)
+
+    level: str | None = None
+    """The authentication context class reached — `acr`."""
+    methods: frozenset[str] = frozenset()
+    """How the caller authenticated — `amr`: `pwd`, `otp`, `mfa`, `hwk`…"""
+
+
 class Identity(DataTransferObject):
     """Who a call acts as, once a provider vouched for it — or as opened by hand.
 
@@ -170,6 +189,12 @@ class Identity(DataTransferObject):
     Identity.service("billing")         ->  subject "service:billing"
     Identity.system("nightly close")    ->  admitted by every requirement, reason logged
     Identity.anonymous()                ->  nobody — what is in play outside `as_identity`
+
+    Context: what a token says about itself — its scopes, its client, its session, its id, when
+    the caller authenticated and when it expires — is typed here rather than left in `claims`,
+    so a resolver, a revocation check and a step-up requirement read it the same way whatever
+    provider filled it. Every one of those fields has a default: an identity opened by hand, or
+    by a provider that knows nothing of them, still is one.
     """
 
     model_config = ConfigDict(frozen=True)
@@ -194,6 +219,21 @@ class Identity(DataTransferObject):
     """What the credential said besides, read-only; typed with `claims_as`."""
     reason: str | None = None
     """Why the system acts, for a SYSTEM identity — on its log line."""
+    scopes: frozenset[str] = frozenset()
+    """What the client was allowed to do on the subject's behalf — OAuth's `scope`: a ceiling
+    over its permissions, never permissions of their own."""
+    client: str | None = None
+    """The application the token was issued to — `azp` / `client_id`."""
+    session: str | None = None
+    """The session the credential belongs to — `sid`: what a logout revokes."""
+    token_id: str | None = None
+    """The credential's own id — `jti`, or a certificate's thumbprint: what a revocation names."""
+    authenticated_at: datetime | None = None
+    """When the caller last proved who they are — `auth_time`, UTC."""
+    expires_at: datetime | None = None
+    """When the credential stops being good — `exp`, UTC; `None` for one with no end."""
+    assurance: Assurance = Assurance()
+    """How strongly the caller authenticated — `acr` and `amr`."""
 
     @property
     def is_anonymous(self) -> bool:
@@ -219,6 +259,7 @@ class Identity(DataTransferObject):
         tenant: str | None = None,
         permissions: Iterable[str] = (),
         roles: Iterable[str] = (),
+        scopes: Iterable[str] = (),
     ) -> "Identity":
         """A person, opened by hand — a test, in-process code; its `permissions` are the
         answer, as no provider vouched for it."""
@@ -228,6 +269,7 @@ class Identity(DataTransferObject):
             tenant=tenant,
             permissions=frozenset(permissions),
             roles=frozenset(roles),
+            scopes=frozenset(scopes),
         )
 
     @classmethod

@@ -8,10 +8,17 @@ each — authenticate again. `PermissionDenied`, not `PermissionError`: Python's
 `OSError` about files, and a handler catching one would catch the other.
 """
 
+from datetime import timedelta
 from typing import Any
 
 from sincpro_framework.common.failures.problem import Problem
-from sincpro_framework.exceptions import ClientError, FailureKind, ProgrammingError
+from sincpro_framework.exceptions import (
+    ClientError,
+    ExternalServiceError,
+    FailureKind,
+    ProgrammingError,
+    ServiceUnavailableError,
+)
 
 
 class AuthError(ClientError):
@@ -55,22 +62,35 @@ class AuthError(ClientError):
 
 class Unauthenticated(AuthError):
     """Who is calling is not known well enough. `step_up` names what the caller has to come back
-    with — MFA, for RFC 9470's challenge."""
+    with — MFA, for RFC 9470's challenge; `anonymous` says it presented nothing at all."""
 
     failure_kind = FailureKind.UNAUTHENTICATED
     http_status = 401
 
-    def __init__(self, reason: str, step_up: str | None = None) -> None:
-        """A refusal saying why — `"expired token"` — and, for a step-up, what to bring."""
+    def __init__(
+        self,
+        reason: str,
+        step_up: str | None = None,
+        max_age: int | None = None,
+        anonymous: bool = False,
+    ) -> None:
+        """A refusal saying why — `"expired token"` — and, for a step-up, what to bring and,
+        in seconds, how recent the authentication must be. `anonymous` when the caller
+        presented no credential: its challenge names no error (RFC 6750 §3.1) — there is no
+        token to call invalid."""
         super().__init__(reason)
         self.reason = reason
         self.step_up = step_up
+        self.max_age = max_age
+        self.anonymous = anonymous
 
     def refusal_body(self) -> dict[str, Any]:
-        """The kind and the reason, and `step_up` when one was named."""
+        """The kind and the reason, and `step_up` and `max_age` when named."""
         body = super().refusal_body()
         if self.step_up:
             body["step_up"] = self.step_up
+        if self.max_age is not None:
+            body["max_age"] = self.max_age
         return body
 
 
@@ -95,3 +115,85 @@ class PermissionDenied(AuthError):
     def refusal_body(self) -> dict[str, Any]:
         """The kind and the reason, and the `requirement` that was missing."""
         return {**super().refusal_body(), "requirement": self.requirement}
+
+
+class EndpointUnavailable(ServiceUnavailableError):
+    """An endpoint auth depends on did not answer usefully — an identity provider's discovery,
+    its keys, its token or introspection endpoint, a policy engine: unreachable, past its time,
+    a server error, or an answer that cannot be read.
+
+    Context: never `Unauthenticated` — the caller's credentials did not fail, the service could
+    not check them — so every wire answers 503, with `Retry-After` when the endpoint asked for
+    one. `endpoint` is said without its query, userinfo or fragment: it may be logged.
+
+        EndpointUnavailable("https://auth.acme.bo/realms/a/protocol/openid-connect/certs",
+                            "answered 503", status=503, retry_after=timedelta(seconds=30))
+    """
+
+    def __init__(
+        self,
+        endpoint: str,
+        reason: str,
+        status: int | None = None,
+        retry_after: timedelta | None = None,
+    ) -> None:
+        """A failure of `endpoint`, saying why; `status` when it answered one."""
+        super().__init__(f"{endpoint} {reason}")
+        self.endpoint = endpoint
+        self.reason = reason
+        self.status = status
+        self.retry_after = retry_after
+
+
+class InvalidGrant(ClientError):
+    """A grant that cannot be given — a role the catalog does not declare, two roles never held
+    together, two levels of one privilege — said to whoever administers it (400)."""
+
+
+class CredentialsRejected(ExternalServiceError):
+    """An authorization server refused what this service presented to get a token — its client
+    (`invalid_client`), its scope, its grant: this service's configuration, never the caller's
+    credentials, so never `Unauthenticated` (the caller would be told to log in again, and
+    loop). Running it again as it is fails the same way.
+
+        CredentialsRejected("https://auth.bank.bo/token", "invalid_client", "unknown client")
+    """
+
+    def __init__(
+        self,
+        endpoint: str,
+        error: str,
+        description: str = "",
+        dpop_nonce: str | None = None,
+    ) -> None:
+        """What `endpoint` answered: its `error` code, cut short its `error_description`, and
+        the `DPoP-Nonce` it demands proofs carry from now on, when it sent one (RFC 9449 §8).
+        """
+        clean = "".join(one for one in description if one.isprintable())[:200]
+        super().__init__(f"{endpoint} refused: {error}" + (f" — {clean}" if clean else ""))
+        self.endpoint = endpoint
+        self.error = error
+        self.description = clean
+        self.dpop_nonce = dpop_nonce
+
+
+class GrantRejected(CredentialsRejected):
+    """A refresh token or a device code the server no longer honours (`invalid_grant`): the
+    grant is dropped, and consent must be given again."""
+
+
+class NoCredentialsFor(ClientError):
+    """The tenant this call acts for has no credentials for the API it asked — never answered
+    with another tenant's (403)."""
+
+    failure_kind = FailureKind.PERMISSION_DENIED
+
+    def __init__(self, tenant: str | None, source: str) -> None:
+        """`tenant`, the one the call acts for; `source`, the credentials it has none of."""
+        super().__init__(f"tenant {tenant!r} has no credentials for {source}")
+        self.tenant = tenant
+        self.source = source
+
+
+class PasswordRejected(ClientError):
+    """A password that cannot be taken as it came — longer than a hasher accepts (400)."""

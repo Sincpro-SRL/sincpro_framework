@@ -1,5 +1,5 @@
 """Auth: who is calling, and what they may do — permissions declared on use cases and hooks,
-decided by providers, applied by a guard.
+decided by providers, applied by a guard; and what this service presents when it calls another.
 
     class BillingPermission(Permission):
         ISSUE_INVOICE = "billing.invoice.issue"
@@ -14,64 +14,333 @@ decided by providers, applied by a guard.
     with security.authenticated_as(billing, Credentials.from_asgi(scope)):   # an entrypoint
         billing(CommandIssueInvoice(...))
 
-`domain/` holds the vocabulary and the `AuthProvider` contract, `adapters/` the providers and
-helpers the framework ships, `infrastructure/` who the execution acts as, `services/` the guard
-that runs around a use case and before a hook, and `entrypoint/` `AccessControl` (the
-declarations and the checks), `security` (who acts, and the door every wire hands auth what a
-caller presented) and the middleware for an ASGI app of the project's (`asgi`). JSON-RPC, gRPC,
-MCP and `remote_execution` authenticate by themselves when the bus is guarded. See
-`docs/auth/README.md`.
+`domain/` holds the vocabulary and the ports (`AuthProvider`, `HttpClient`, `IdentityResolver`),
+`adapters/` the providers and helpers the framework ships, `infrastructure/` who the execution
+acts as, the JWS core and the standard library's HTTP client, `services/` the guard and what is
+discovered of an authorization server, and `entrypoint/` `AccessControl` (the declarations and
+the checks), `security` (who acts, and the door every wire hands auth what a caller presented)
+and the middleware for an ASGI app of the project's (`asgi`). JSON-RPC, gRPC, MCP and
+`remote_execution` authenticate by themselves when the bus is guarded. See `docs/auth/README.md`
+and PRD_34 for the whole catalog.
+
+The `[jwt]` extra's names — `Jwks`, `PublicKeys`, `PublicKey`, `PrivateKey`, `PrivateKeyJwt`,
+`DpopProofs`, `DpopProver`, `CertificateProvider`, `AesGcmSealer` — are imported when
+first asked for, so `import sincpro_framework.auth` never loads PyJWT.
 """
 
+import importlib
+from typing import TYPE_CHECKING, Any
+
+from sincpro_framework.auth.adapters.accounts import (
+    BasicProvider,
+    HashedCredentials,
+    InMemoryRefreshTokens,
+    KeyValueRefreshTokens,
+    LoginAttempts,
+    OneTimeGrant,
+    OneTimeTokens,
+    PasswordHasher,
+    ScryptCost,
+    Totp,
+)
 from sincpro_framework.auth.adapters.api_key_provider import (
     ApiKey,
     ApiKeyProvider,
     ApiKeyStore,
     InMemoryApiKeys,
+    digest_of,
 )
+from sincpro_framework.auth.adapters.client_auth import (
+    ClientSecretBasic,
+    ClientSecretJwt,
+    ClientSecretPost,
+    PublicClient,
+)
+from sincpro_framework.auth.adapters.grants import (
+    GrantResolver,
+    InMemoryGrants,
+    KeyValueGrants,
+    RoleMapping,
+    ScopeCeiling,
+)
+from sincpro_framework.auth.adapters.jwt import (
+    ClaimMapping,
+    ClaimTest,
+    IntrospectionProvider,
+    IssuedTokens,
+    Issuer,
+    JwtProvider,
+    ProtectedResource,
+    SharedSecrets,
+    SigningKeys,
+    TokenIssuer,
+)
+from sincpro_framework.auth.adapters.key_value_revocations import (
+    InMemoryRevocations,
+    KeyValueRevocations,
+)
+from sincpro_framework.auth.adapters.outbound import (
+    ApiKeyHeader,
+    BasicCredentials,
+    ClientCredentials,
+    DeviceCode,
+    DevicePrompt,
+    InMemoryHeldGrants,
+    KeyValueHeldGrants,
+    RefreshingToken,
+    RequestSigner,
+    StaticToken,
+    TokenExchange,
+    TokenSources,
+)
+from sincpro_framework.auth.adapters.policy import (
+    AuthZenEngine,
+    DecidedBy,
+    OpaEngine,
+    OpenFgaEngine,
+)
+from sincpro_framework.auth.adapters.presenting import PresentingProvider
+from sincpro_framework.auth.adapters.resolving import Resolving
 from sincpro_framework.auth.adapters.role_permissions import RolePermissions
 from sincpro_framework.auth.adapters.service_token_provider import ServiceTokenProvider
+from sincpro_framework.auth.adapters.signature_provider import SignatureProvider
 from sincpro_framework.auth.adapters.static_provider import StaticProvider
+from sincpro_framework.auth.domain.accounts import (
+    CredentialVerifier,
+    RefreshRecord,
+    RefreshTokens,
+)
 from sincpro_framework.auth.domain.exceptions import (
     AuthError,
+    CredentialsRejected,
+    EndpointUnavailable,
+    GrantRejected,
+    InvalidGrant,
+    NoCredentialsFor,
+    PasswordRejected,
     PermissionDenied,
     Unauthenticated,
 )
-from sincpro_framework.auth.domain.identity import Credentials, Identity, IdentityKind
+from sincpro_framework.auth.domain.grants import (
+    Assignment,
+    CatalogDescription,
+    Category,
+    Entitlement,
+    GrantCatalog,
+    GrantSource,
+    GrantStore,
+    Held,
+    Privilege,
+    Role,
+)
+from sincpro_framework.auth.domain.http import (
+    ClientAuthentication,
+    HttpAnswer,
+    HttpClient,
+    HttpRequest,
+)
+from sincpro_framework.auth.domain.identity import (
+    Assurance,
+    Credentials,
+    Identity,
+    IdentityKind,
+)
+from sincpro_framework.auth.domain.outbound import (
+    HeldGrant,
+    HeldGrants,
+    OutgoingRequest,
+    Sealer,
+    TokenSource,
+)
 from sincpro_framework.auth.domain.permissions import (
     AccessDeclaration,
     AnyOf,
+    AssuranceRequirement,
     ByField,
     Permission,
     WhenDenied,
 )
+from sincpro_framework.auth.domain.policy import PolicyEngine
 from sincpro_framework.auth.domain.provider import AuthProvider
+from sincpro_framework.auth.domain.resolver import IdentityResolver
+from sincpro_framework.auth.domain.revocations import (
+    Revocations,
+    RevocationState,
+    remembering_versions,
+)
 from sincpro_framework.auth.entrypoint.access_control import AccessControl, AccessDescription
 from sincpro_framework.auth.entrypoint.asgi import IdentityMiddleware
+from sincpro_framework.auth.entrypoint.outbound import (
+    call_with_credentials,
+    httpx_auth,
+    requests_auth,
+)
 from sincpro_framework.auth.entrypoint.security import security
+from sincpro_framework.auth.infrastructure.server_metadata import (
+    OidcDiscovery,
+    ServerMetadata,
+)
+from sincpro_framework.auth.infrastructure.signatures import (
+    HexDigest,
+    SignatureStyle,
+    TimestampedSignature,
+)
+from sincpro_framework.auth.infrastructure.token_cache import TokenCache
+from sincpro_framework.auth.infrastructure.token_endpoint import IssuedToken, TokenEndpoint
+from sincpro_framework.auth.infrastructure.urllib_http import UrllibHttp
+from sincpro_framework.auth.services.grant_administration import GrantAdministration
 
 __all__ = [
     "AccessControl",
+    "AccessDeclaration",
     "AccessDescription",
+    "AnyOf",
     "ApiKey",
+    "ApiKeyHeader",
     "ApiKeyProvider",
     "ApiKeyStore",
-    "AnyOf",
-    "ByField",
+    "Assignment",
+    "Assurance",
+    "AssuranceRequirement",
     "AuthError",
     "AuthProvider",
+    "AuthZenEngine",
+    "BasicCredentials",
+    "BasicProvider",
+    "ByField",
+    "CatalogDescription",
+    "Category",
+    "ClaimMapping",
+    "ClaimTest",
+    "ClientAuthentication",
+    "ClientCredentials",
+    "ClientSecretBasic",
+    "ClientSecretJwt",
+    "ClientSecretPost",
     "Credentials",
-    "AccessDeclaration",
+    "CredentialsRejected",
+    "CredentialVerifier",
+    "DecidedBy",
+    "DeviceCode",
+    "DevicePrompt",
+    "EndpointUnavailable",
+    "Entitlement",
+    "GrantAdministration",
+    "GrantCatalog",
+    "GrantRejected",
+    "GrantResolver",
+    "GrantSource",
+    "GrantStore",
+    "HashedCredentials",
+    "Held",
+    "HeldGrant",
+    "HeldGrants",
+    "HexDigest",
+    "HttpAnswer",
+    "HttpClient",
+    "HttpRequest",
     "Identity",
     "IdentityKind",
     "IdentityMiddleware",
+    "IdentityResolver",
     "InMemoryApiKeys",
+    "InMemoryGrants",
+    "InMemoryHeldGrants",
+    "InMemoryRefreshTokens",
+    "InMemoryRevocations",
+    "IntrospectionProvider",
+    "InvalidGrant",
+    "IssuedToken",
+    "IssuedTokens",
+    "Issuer",
+    "JwtProvider",
+    "KeyValueGrants",
+    "KeyValueHeldGrants",
+    "KeyValueRefreshTokens",
+    "KeyValueRevocations",
+    "LoginAttempts",
+    "NoCredentialsFor",
+    "OidcDiscovery",
+    "OneTimeGrant",
+    "OneTimeTokens",
+    "OpaEngine",
+    "OpenFgaEngine",
+    "OutgoingRequest",
+    "PasswordHasher",
+    "PasswordRejected",
     "Permission",
     "PermissionDenied",
+    "PolicyEngine",
+    "PresentingProvider",
+    "Privilege",
+    "ProtectedResource",
+    "PublicClient",
+    "RefreshingToken",
+    "RefreshRecord",
+    "RefreshTokens",
+    "RequestSigner",
+    "Resolving",
+    "Revocations",
+    "RevocationState",
+    "Role",
+    "RoleMapping",
     "RolePermissions",
+    "ScopeCeiling",
+    "ScryptCost",
+    "Sealer",
+    "ServerMetadata",
     "ServiceTokenProvider",
+    "SharedSecrets",
+    "SignatureProvider",
+    "SignatureStyle",
+    "SigningKeys",
     "StaticProvider",
+    "StaticToken",
+    "TimestampedSignature",
+    "TokenCache",
+    "TokenEndpoint",
+    "TokenExchange",
+    "TokenIssuer",
+    "TokenSource",
+    "TokenSources",
+    "Totp",
     "Unauthenticated",
+    "UrllibHttp",
     "WhenDenied",
+    "call_with_credentials",
+    "digest_of",
+    "httpx_auth",
+    "remembering_versions",
+    "requests_auth",
     "security",
 ]
+
+_LAZY = {
+    "Jwks": "sincpro_framework.auth.adapters.jwt.jwks",
+    "PublicKeys": "sincpro_framework.auth.adapters.jwt.jwks",
+    "PublicKey": "sincpro_framework.auth.infrastructure.jose_keys",
+    "PrivateKey": "sincpro_framework.auth.infrastructure.jose_keys",
+    "PrivateKeyJwt": "sincpro_framework.auth.adapters.private_key_jwt",
+    "DpopProofs": "sincpro_framework.auth.adapters.jwt.dpop",
+    "DpopProver": "sincpro_framework.auth.adapters.outbound.dpop",
+    "CertificateProvider": "sincpro_framework.auth.adapters.certificate_provider",
+    "AesGcmSealer": "sincpro_framework.auth.infrastructure.sealing",
+}
+"""Names of the `[jwt]` extra, by the module that holds them — loaded on first use."""
+
+if TYPE_CHECKING:
+    from sincpro_framework.auth.adapters.certificate_provider import CertificateProvider
+    from sincpro_framework.auth.adapters.jwt.dpop import DpopProofs
+    from sincpro_framework.auth.adapters.jwt.jwks import Jwks, PublicKeys
+    from sincpro_framework.auth.adapters.outbound.dpop import DpopProver
+    from sincpro_framework.auth.adapters.private_key_jwt import PrivateKeyJwt
+    from sincpro_framework.auth.infrastructure.jose_keys import PrivateKey, PublicKey
+    from sincpro_framework.auth.infrastructure.sealing import AesGcmSealer
+
+
+def __getattr__(name: str) -> Any:
+    """A name of the `[jwt]` extra, imported now — `ImportError` naming the extra when it is
+    not installed."""
+    if name in _LAZY:
+        return getattr(importlib.import_module(_LAZY[name]), name)
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

@@ -18,7 +18,11 @@ from weakref import WeakKeyDictionary, WeakValueDictionary
 from sincpro_framework.auth.domain import exceptions
 from sincpro_framework.auth.domain.identity import Identity, IdentityKind
 from sincpro_framework.auth.domain.permissions import AccessDeclaration, WhenDenied
-from sincpro_framework.auth.infrastructure.security_context import _decided, current_identity
+from sincpro_framework.auth.infrastructure.security_context import (
+    _access_in_play,
+    _decided,
+    current_identity,
+)
 from sincpro_framework.context import ContextKey, context_scopes, use_context
 from sincpro_framework.sincpro_logger import logger
 
@@ -181,10 +185,11 @@ class BusGuard:
     def _decided_run(self, command: type, call_next: Callable[[Any], Any], dto: Any) -> Any:
         """Run the use case with its decision recorded, so a nested use case it calls inherits
         it instead of being refused by `strict` — the mark is undone once it answers."""
-        token = _decided.set(command.__name__)
+        token, guarding = _decided.set(command.__name__), _access_in_play.set(self.access)
         try:
             return call_next(dto)
         finally:
+            _access_in_play.reset(guarding)
             _decided.reset(token)
 
     def _undeclared(self, command: type, identity: Identity) -> exceptions.AuthError | None:
@@ -199,7 +204,9 @@ class BusGuard:
         if not self.access.strict:
             return None
         return (
-            exceptions.Unauthenticated(f"authenticate to run {command.__name__}")
+            exceptions.Unauthenticated(
+                f"authenticate to run {command.__name__}", anonymous=True
+            )
             if identity.is_anonymous
             else exceptions.PermissionDenied(
                 identity.subject, command.__name__, f"{command.__name__} declares no access"

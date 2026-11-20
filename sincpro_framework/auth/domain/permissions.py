@@ -10,7 +10,8 @@ it, so changing it is a breaking change. The base is empty on purpose: Python le
 no members be extended.
 """
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+from datetime import timedelta
 from enum import StrEnum
 from typing import Literal
 
@@ -73,7 +74,42 @@ class ByField:
         return f"{self.field}: {named}"
 
 
-type Requirement = Permission | AnyOf | ByField
+@dataclass(frozen=True)
+class AssuranceRequirement:
+    """Met when the caller authenticated strongly enough, recently enough — `auth.assurance(...)`:
+    a step-up (RFC 9470). Refused with `Unauthenticated(step_up=…)`, so the client authenticates
+    again as asked and comes back.
+
+        AssuranceRequirement(methods=frozenset({"mfa"}), max_age=timedelta(minutes=5))
+            an identity whose amr lacks mfa, or who authenticated an hour ago  ->  refused
+    """
+
+    acr: tuple[str, ...] = ()
+    """One of these authentication context classes (`acr`), when named."""
+    methods: frozenset[str] = field(default_factory=frozenset)
+    """Every one of these methods (`amr`: `mfa`, `otp`, `hwk`…)."""
+    max_age: timedelta | None = None
+    """Authenticated at most this long ago (`auth_time`)."""
+
+    @property
+    def step_up(self) -> str:
+        """What the client has to come back with — the classes asked, else the methods, else a
+        fresh authentication."""
+        if self.acr:
+            return " ".join(self.acr)
+        if self.methods:
+            return " ".join(sorted(self.methods))
+        return "reauthenticate"
+
+    def __str__(self) -> str:
+        """`assurance(mfa, 5m)` — how `describe()` and the logs say it."""
+        said = [*self.acr, *sorted(self.methods)]
+        if self.max_age is not None:
+            said.append(f"{int(self.max_age.total_seconds() // 60)}m")
+        return f"assurance({', '.join(said)})"
+
+
+type Requirement = Permission | AnyOf | ByField | AssuranceRequirement
 
 
 @dataclass(frozen=True)

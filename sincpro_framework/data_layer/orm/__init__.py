@@ -43,9 +43,15 @@ from sincpro_framework.data_layer.orm.sqlalchemy.entrypoint import template_tabl
 from sincpro_framework.data_layer.orm.sqlalchemy.entrypoint.aggregate_repository import (
     DatabaseAggregateRepository,
 )
+from sincpro_framework.data_layer.orm.sqlalchemy.entrypoint.auth_stores import (
+    DatabaseApiKeys,
+    DatabaseGrants,
+    DatabaseRefreshTokens,
+)
 from sincpro_framework.data_layer.orm.sqlalchemy.entrypoint.idempotency_records import (
     DatabaseIdempotencyRecords,
 )
+from sincpro_framework.data_layer.orm.sqlalchemy.entrypoint.key_value import DatabaseKeyValue
 from sincpro_framework.data_layer.orm.sqlalchemy.entrypoint.mapping import (
     map_aggregates,
     map_events,
@@ -66,7 +72,11 @@ __all__ = [
     "Consolidated",
     "Database",
     "DatabaseAggregateRepository",
+    "DatabaseApiKeys",
+    "DatabaseGrants",
     "DatabaseIdempotencyRecords",
+    "DatabaseKeyValue",
+    "DatabaseRefreshTokens",
     "DatabaseNumbering",
     "Isolation",
     "JsonText",

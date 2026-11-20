@@ -7,6 +7,8 @@
     external_keys.py   external_key_table                   the names other systems give records
     numbering.py       numbering_table                      gapless numbers
     idempotency.py     idempotency_table                    a write run exactly once
+    auth.py            key_value_table, api_key_table,      what auth keeps on a database
+                       grant_assignment_table, entitlement_table, refresh_token_table
     runtime_use_cases.py  use_case_table                    the use cases a context stores
     properties.py      properties_column, slot_field        the slot an extensible entity reserves
 
@@ -19,6 +21,13 @@ from sincpro_framework.data_layer.orm.sqlalchemy.entrypoint.template_table.archi
 )
 from sincpro_framework.data_layer.orm.sqlalchemy.entrypoint.template_table.audit import (
     audit_columns,
+)
+from sincpro_framework.data_layer.orm.sqlalchemy.entrypoint.template_table.auth import (
+    api_key_table,
+    entitlement_table,
+    grant_assignment_table,
+    key_value_table,
+    refresh_token_table,
 )
 from sincpro_framework.data_layer.orm.sqlalchemy.entrypoint.template_table.entity import (
     entity_columns,
@@ -48,16 +57,21 @@ from sincpro_framework.data_layer.orm.sqlalchemy.entrypoint.template_table.runti
 
 __all__ = [
     "SlotType",
+    "api_key_table",
     "archive_columns",
     "audit_columns",
+    "entitlement_table",
     "entity_columns",
     "entity_table",
     "event_columns",
     "event_table",
     "external_key_table",
+    "grant_assignment_table",
     "idempotency_table",
+    "key_value_table",
     "numbering_table",
     "properties_column",
+    "refresh_token_table",
     "slot_field",
     "use_case_table",
 ]

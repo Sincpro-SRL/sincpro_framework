@@ -201,7 +201,7 @@ def routes(
         raw = await bounded_body(request)
         if raw is None:
             return answered(body_too_large(surface.max_body_bytes))
-        credentials = Credentials.from_asgi(request.scope)
+        credentials = Credentials.from_asgi(request.scope, body=raw)
         try:
             body: Any = json.loads(raw.decode("utf-8"))
         except (UnicodeDecodeError, json.JSONDecodeError):

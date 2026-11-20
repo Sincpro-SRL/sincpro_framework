@@ -23,7 +23,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from sincpro_framework import exceptions
 from sincpro_framework.aio.async_threads import on_async_thread
-from sincpro_framework.auth import Credentials, security
+from sincpro_framework.auth import AccessControl, Credentials, security
 from sincpro_framework.common.failures import (
     backoff,
     declared_retry_after,
@@ -479,11 +479,13 @@ class QueueWire(Wire[QueueBinding]):
         dto: Any,
         headers: dict[str, str],
         envelope: Envelope,
+        body: bytes | None,
     ) -> None:
         """Run one context's bus on the DTO, off the event loop, as the producer's execution
         goes on.
 
-        1. The headers become the queue's credentials, read as lower-case names.
+        1. The headers become the queue's credentials, read as lower-case names — with the
+           message's raw `body` when a provider of the bus verifies a signature over it.
         2. The context the message carried (`queue_context`).
         3. On one of the bus's async threads: authenticated and inside that context, the
            bus runs the DTO — identity is a `ContextVar`, so it is set in the thread that runs.
@@ -491,9 +493,11 @@ class QueueWire(Wire[QueueBinding]):
            call left to finish on its own, its `self.context.cancelled` set.
         """
         bus = resolved.operation.bus
+        access = AccessControl.of(bus)
         credentials = Credentials(
             transport="queue",
             headers={name.lower(): value for name, value in headers.items()},
+            body=body if access is not None and access.needs_body else None,
         )
 
         carried = queue_context(envelope, credentials.headers)
@@ -546,7 +550,13 @@ class QueueWire(Wire[QueueBinding]):
             if claimed == Claimed.KEY_REUSED:
                 return refused(exceptions.FailureKind.KEY_REUSED, "KEY_REUSED")
         try:
-            await self._run(resolved, dto, Envelope.text_headers(message.headers), envelope)
+            await self._run(
+                resolved,
+                dto,
+                Envelope.text_headers(message.headers),
+                envelope,
+                message.body if isinstance(message.body, bytes) else None,
+            )
         except TimeoutError:
             return refused(exceptions.FailureKind.UNAVAILABLE, "TIME_LIMIT")
         except Exception as error:

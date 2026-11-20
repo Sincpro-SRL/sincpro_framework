@@ -31,6 +31,11 @@ BLOCKED = (
     "prometheus_client",
     "boto3",
     "botocore",
+    "jwt",
+    "cryptography",
+    "argon2",
+    "requests",
+    "httpx",
 )
 
 PROGRAM = r"""
@@ -229,6 +234,27 @@ with granting():
         pass
     else:
         raise AssertionError("a guarded use case ran for an identity that lacks its permission")
+
+try:
+    from sincpro_framework.auth import Jwks
+except ImportError as error:
+    assert "sincpro-framework[jwt]" in str(error), error
+else:
+    raise AssertionError("Jwks imported without PyJWT")
+
+from sincpro_framework.auth import Issuer, JwtProvider, SharedSecrets
+
+JwtProvider(Issuer("core", audience="core", keys=SharedSecrets({"k": "a secret of 32 bytes or more!!"})))
+
+from sincpro_framework.auth import ClientCredentials, OutgoingRequest, TokenCache, call_with_credentials
+from sincpro_framework.data_layer.store import InMemoryKeyValue as _Memory
+from sincpro_framework.runtime.testing import FakeTokenEndpoint
+
+token_server = FakeTokenEndpoint(clients={"core": "s"})
+outbound = ClientCredentials(client_id="core", client_secret="s", issuer=token_server.issuer,
+                             http=token_server, cache=TokenCache(_Memory()))
+assert call_with_credentials(outbound, OutgoingRequest(url="https://api.example/x"),
+                             token_server.resource()).status == 200
 
 sent: list[dict] = []
 

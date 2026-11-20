@@ -21,12 +21,16 @@ from collections.abc import Generator, Iterable
 from contextlib import AbstractContextManager, contextmanager, nullcontext
 from typing import TYPE_CHECKING
 
+from sincpro_framework.auth.domain.exceptions import Unauthenticated
 from sincpro_framework.auth.domain.identity import Credentials, Identity
 from sincpro_framework.auth.entrypoint.access_control import AccessControl
 from sincpro_framework.auth.infrastructure.security_context import (
+    access_in_play,
     as_identity,
     as_system,
     current_identity,
+    presented_credential,
+    presenting,
 )
 
 if TYPE_CHECKING:
@@ -80,10 +84,15 @@ class SecurityContext:
             with nullcontext(current_identity()) as unchanged:
                 yield unchanged
             return
-        with as_identity(access.authenticate(credentials)) as identity:
+        with (
+            as_identity(access.authenticate(credentials)) as identity,
+            presenting(credentials.bearer),
+        ):
             yield identity
 
-    def challenges(self, buses: Iterable["UseFramework"]) -> list[str]:
+    def challenges(
+        self, buses: Iterable["UseFramework"], refusal: Unauthenticated | None = None
+    ) -> list[str]:
         """Every `WWW-Authenticate` value the buses' providers answer a 401 with, once each.
 
             security.challenges([billing, sales])   # both guarded by AccessControl([jwt])
@@ -95,10 +104,16 @@ class SecurityContext:
         found: list[str] = []
         for bus in buses:
             access = AccessControl.of(bus)
-            for challenge in access.challenges() if access else ():
+            for challenge in access.challenges(refusal) if access else ():
                 if challenge not in found:
                     found.append(challenge)
         return found
+
+    @property
+    def presented(self) -> str | None:
+        """The bearer token the caller presented, while its call runs — what a token exchange
+        acts for; never logged, never on the identity."""
+        return presented_credential()
 
     def identity_headers(self, context: str) -> dict[str, str]:
         """The headers a call to the service hosting `context` carries, so it knows who the
@@ -113,14 +128,18 @@ class SecurityContext:
                 ->  {"x-sp-service-token": "eyJhbGciOiJIUzI1NiIs…"}
             # nobody calling, or no AccessControl issuing anything  ->  {}
 
-        The `AccessControl`s guarding a bus of `context` are asked first; the first to issue
-        wins.
+        The `AccessControl` guarding the use case in progress is asked first — it vouched for
+        the identity —, then those guarding a bus of `context`, then the rest; one that does not
+        know the identity's provider steps aside; the first to issue wins.
         """
         identity = current_identity()
         if identity.is_anonymous:
             return {}
-        for access in AccessControl.guarding(context):
-            issued = access.credentials_for(identity)
+        in_play = access_in_play()
+        asked = [in_play] if in_play is not None else []
+        asked += [one for one in AccessControl.guarding(context) if one is not in_play]
+        for access in asked:
+            issued = access.credentials_for(identity, audience=context)
             if issued is not None:
                 return dict(issued.headers)
         return {}
