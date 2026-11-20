@@ -315,6 +315,31 @@ def test_the_double_increments_as_the_engine_does(ana):
     assert sorted(double.pluck(Account, "balance")) == [0, 1]
 
 
+def test_buyers_at_once_never_take_more_than_there_is_in_the_double_either(ana):
+    for _ in range(10):  # the race it guards against showed in one run of four
+        double = MemoryRepository()
+        account = Account(owner_id=ana.id, balance=5)
+        double.save(account)
+        in_stock = Criteria(
+            selection=All(
+                all=[
+                    Condition(field="id", value=account.id),
+                    Condition(field="balance", operator=Operator.GT, value=0),
+                ]
+            )
+        )
+
+        def take(_: int) -> int:
+            return double.update_all(Account, in_stock, {"balance": Increment(-1)})
+
+        with ThreadPoolExecutor(max_workers=16) as buyers:
+            taken = list(buyers.map(take, range(64)))
+
+        stored = double.get(Account, account.id)
+        assert sum(taken) == 5
+        assert stored is not None and stored.balance == 0
+
+
 def test_remove_all_deletes_every_matching_row(ledger, ana):
     ledger.save([Account(owner_id=ana.id, balance=b) for b in (1, 2)])
 
