@@ -111,6 +111,35 @@ assert members(CommandSignIn(username="MFAQ0123", password="clave segura 123"), 
 
 What it answers — a token, a session — is the [token issuer](#issuing-tokens)'s.
 
+## Links that work once, and a second factor
+
+```python
+from sincpro_framework.auth import OneTimeTokens, Totp
+
+links = OneTimeTokens(InMemoryKeyValue())                  # the context's store in production
+reset = links.issue("password-reset", "user:MFAQ0123", ttl=timedelta(minutes=30))
+# … emailed as https://colegio.bo/restablecer?token=<reset> …
+assert links.redeem("password-reset", reset).subject == "user:MFAQ0123"
+
+totp = Totp(issuer="CAUOR", replay=InMemoryKeyValue())
+secret = totp.new_secret()                                 # kept encrypted with the account
+uri = totp.provisioning_uri(secret, "MFAQ0123")            # the QR code the app scans
+assert totp.verify(secret, totp.now(secret), subject="user:MFAQ0123")
+assert not totp.verify(secret, totp.now(secret), subject="user:MFAQ0123")   # once only
+```
+
+| `OneTimeTokens` | |
+|---|---|
+| bound to its purpose | stored by the token's digest under `purpose` — a reset link is never an invitation |
+| once | taken atomically: two clicks at once redeem it once |
+| the last one sent | `single_outstanding` (default): asking again voids the link before; `void(purpose, subject)` voids them all |
+| replaces | an administrator handing a temporary password in an HTTP answer |
+
+`Totp` is RFC 6238 on the standard library — its own test vectors pass — accepting a code within
+one step either side; with `replay`, a step accepted for a subject is never accepted again, nor
+an older one. Six digits can be guessed: count failed codes with `LoginAttempts`. After a code,
+the identity's `assurance` says `otp` — what a [step-up](server.md#step-up-how-strongly-how-recently--rfc-9470) asks for.
+
 ## HTTP Basic: service accounts
 
 ```python
