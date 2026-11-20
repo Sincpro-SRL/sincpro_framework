@@ -63,14 +63,24 @@ from sincpro_framework.auth.adapters.key_value_revocations import (
     InMemoryRevocations,
     KeyValueRevocations,
 )
+from sincpro_framework.auth.adapters.outbound import (
+    ApiKeyHeader,
+    BasicCredentials,
+    ClientCredentials,
+    StaticToken,
+    TokenSources,
+)
 from sincpro_framework.auth.adapters.resolving import Resolving
 from sincpro_framework.auth.adapters.role_permissions import RolePermissions
 from sincpro_framework.auth.adapters.service_token_provider import ServiceTokenProvider
 from sincpro_framework.auth.adapters.static_provider import StaticProvider
 from sincpro_framework.auth.domain.exceptions import (
     AuthError,
+    CredentialsRejected,
     EndpointUnavailable,
+    GrantRejected,
     InvalidGrant,
+    NoCredentialsFor,
     PermissionDenied,
     Unauthenticated,
 )
@@ -98,6 +108,7 @@ from sincpro_framework.auth.domain.identity import (
     Identity,
     IdentityKind,
 )
+from sincpro_framework.auth.domain.outbound import OutgoingRequest, Sealer, TokenSource
 from sincpro_framework.auth.domain.permissions import (
     AccessDeclaration,
     AnyOf,
@@ -111,10 +122,17 @@ from sincpro_framework.auth.domain.resolver import IdentityResolver
 from sincpro_framework.auth.domain.revocations import Revocations, RevocationState
 from sincpro_framework.auth.entrypoint.access_control import AccessControl, AccessDescription
 from sincpro_framework.auth.entrypoint.asgi import IdentityMiddleware
+from sincpro_framework.auth.entrypoint.outbound import (
+    call_with_credentials,
+    httpx_auth,
+    requests_auth,
+)
 from sincpro_framework.auth.entrypoint.security import security
 from sincpro_framework.auth.infrastructure.urllib_http import UrllibHttp
 from sincpro_framework.auth.services.grant_administration import GrantAdministration
 from sincpro_framework.auth.services.server_metadata import OidcDiscovery, ServerMetadata
+from sincpro_framework.auth.services.token_cache import TokenCache
+from sincpro_framework.auth.services.token_endpoint import IssuedToken, TokenEndpoint
 
 __all__ = [
     "AccessControl",
@@ -122,6 +140,7 @@ __all__ = [
     "AccessDescription",
     "AnyOf",
     "ApiKey",
+    "ApiKeyHeader",
     "ApiKeyProvider",
     "ApiKeyStore",
     "Assignment",
@@ -129,20 +148,24 @@ __all__ = [
     "AssuranceRequirement",
     "AuthError",
     "AuthProvider",
+    "BasicCredentials",
     "ByField",
     "CatalogDescription",
     "Category",
     "ClaimMapping",
     "ClaimTest",
     "ClientAuthentication",
+    "ClientCredentials",
     "ClientSecretBasic",
     "ClientSecretJwt",
     "ClientSecretPost",
     "Credentials",
+    "CredentialsRejected",
     "EndpointUnavailable",
     "Entitlement",
     "GrantAdministration",
     "GrantCatalog",
+    "GrantRejected",
     "GrantResolver",
     "GrantSource",
     "GrantStore",
@@ -159,11 +182,14 @@ __all__ = [
     "InMemoryRevocations",
     "IntrospectionProvider",
     "InvalidGrant",
+    "IssuedToken",
     "Issuer",
     "JwtProvider",
     "KeyValueGrants",
     "KeyValueRevocations",
+    "NoCredentialsFor",
     "OidcDiscovery",
+    "OutgoingRequest",
     "Permission",
     "PermissionDenied",
     "Privilege",
@@ -176,13 +202,22 @@ __all__ = [
     "RoleMapping",
     "RolePermissions",
     "ScopeCeiling",
+    "Sealer",
     "ServerMetadata",
     "ServiceTokenProvider",
     "SharedSecrets",
     "StaticProvider",
+    "StaticToken",
+    "TokenCache",
+    "TokenEndpoint",
+    "TokenSource",
+    "TokenSources",
     "Unauthenticated",
     "UrllibHttp",
     "WhenDenied",
+    "call_with_credentials",
+    "httpx_auth",
+    "requests_auth",
     "security",
 ]
 

@@ -35,12 +35,14 @@ from .contracts.idempotency_records import IdempotencyRecordsContract
 from .contracts.key_value_store import KeyValueStoreContract
 from .contracts.object_store import ObjectStoreContract
 from .contracts.revocations import RevocationsContract
+from .contracts.token_source import TokenSourceContract
 from .doubles.auth import RecordingProvider, granting
 from .doubles.clock import ManualClock
 from .doubles.context import fresh_context
 from .doubles.dependencies import override_dependencies, unregistered_dependencies
 from .doubles.events import RecordingQueue
 from .doubles.http import ScriptedHttp
+from .doubles.token_endpoint import FakeResource, FakeTokenEndpoint
 
 __all__ = [
     "AuthProviderContract",
@@ -59,6 +61,9 @@ __all__ = [
     "RecordingQueue",
     "RevocationsContract",
     "ScriptedHttp",
+    "TokenSourceContract",
+    "FakeResource",
+    "FakeTokenEndpoint",
     "SettingsScopeViolation",
     "fresh_context",
     "granting",

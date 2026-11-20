@@ -14,6 +14,7 @@ from typing import Any
 from sincpro_framework.common.failures.problem import Problem
 from sincpro_framework.exceptions import (
     ClientError,
+    ExternalServiceError,
     FailureKind,
     ProgrammingError,
     ServiceUnavailableError,
@@ -140,3 +141,38 @@ class EndpointUnavailable(ServiceUnavailableError):
 class InvalidGrant(ClientError):
     """A grant that cannot be given — a role the catalog does not declare, two roles never held
     together, two levels of one privilege — said to whoever administers it (400)."""
+
+
+class CredentialsRejected(ExternalServiceError):
+    """An authorization server refused what this service presented to get a token — its client
+    (`invalid_client`), its scope, its grant: this service's configuration, never the caller's
+    credentials, so never `Unauthenticated` (the caller would be told to log in again, and
+    loop). Running it again as it is fails the same way.
+
+        CredentialsRejected("https://auth.bank.bo/token", "invalid_client", "unknown client")
+    """
+
+    def __init__(self, endpoint: str, error: str, description: str = "") -> None:
+        """What `endpoint` answered: its `error` code and, cut short, its `error_description`."""
+        clean = "".join(one for one in description if one.isprintable())[:200]
+        super().__init__(f"{endpoint} refused: {error}" + (f" — {clean}" if clean else ""))
+        self.endpoint = endpoint
+        self.error = error
+        self.description = clean
+
+
+class GrantRejected(CredentialsRejected):
+    """A refresh token or a device code the server no longer honours (`invalid_grant`): the
+    grant is dropped, and consent must be given again."""
+
+
+class NoCredentialsFor(ClientError):
+    """The tenant this call acts for has no credentials for the API it asked — never answered
+    with another tenant's (403)."""
+
+    failure_kind = FailureKind.PERMISSION_DENIED
+
+    def __init__(self, tenant: str | None, source: str) -> None:
+        super().__init__(f"tenant {tenant!r} has no credentials for {source}")
+        self.tenant = tenant
+        self.source = source
