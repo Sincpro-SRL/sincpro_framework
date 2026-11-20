@@ -5,6 +5,7 @@ EventBridge to the buses that hear it."""
 
 import asyncio
 import json
+import time
 from collections.abc import Iterator
 from datetime import timedelta
 
@@ -14,7 +15,11 @@ boto3 = pytest.importorskip("boto3")
 moto = pytest.importorskip("moto")
 
 from sincpro_framework.entrypoints import QueueGateway  # noqa: E402
-from sincpro_framework.entrypoints.adapters.queue import SqsBroker, queue_name  # noqa: E402
+from sincpro_framework.entrypoints.adapters.queue import (  # noqa: E402
+    QueueOptions,
+    SqsBroker,
+    queue_name,
+)
 from sincpro_framework.event_driven import (  # noqa: E402
     HEADERS_ATTRIBUTE,
     Envelope,
@@ -82,7 +87,12 @@ def waiting(queue: str) -> int:
 
 def gateway_on_sqs(ran: list[str]) -> SqsBroker:
     broker = SqsBroker(wait=timedelta(0))
-    QueueGateway(broker, [billing_bus(ran), accounting_bus(ran)], unguarded=True).build()
+    QueueGateway(
+        broker,
+        [billing_bus(ran), accounting_bus(ran)],
+        options=QueueOptions(max_retry_wait=timedelta(0)),
+        unguarded=True,
+    ).build()
     return broker
 
 
@@ -110,6 +120,25 @@ def test_a_failing_command_is_visible_again_and_counted_until_the_redrive():
         MessageSystemAttributeNames=["ApproximateReceiveCount"],
     )["Messages"][0]
     assert int(message["Attributes"]["ApproximateReceiveCount"]) == 3
+
+
+def test_sqs_holds_a_retry_for_its_wait_and_the_consumer_never_waits():
+    ran: list[str] = []
+    broker = SqsBroker(wait=timedelta(0))
+    QueueGateway(
+        broker,
+        [billing_bus(ran)],
+        options=QueueOptions(retry_jitter=False),
+        unguarded=True,
+    ).build()
+    issue(0)  # the database went away: a retry, a second's wait
+
+    started = time.monotonic()
+    polled(broker)
+
+    assert time.monotonic() - started < 1
+    held = boto3.client("sqs").receive_message(QueueUrl=a_queue(queue_name(ISSUE_CHANNEL)))
+    assert "Messages" not in held  # invisible until its wait passes
 
 
 def test_a_producer_not_allowed_is_refused_before_the_bus():

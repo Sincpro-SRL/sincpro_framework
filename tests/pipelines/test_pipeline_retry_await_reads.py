@@ -141,7 +141,7 @@ def test_without_retry_nothing_is_run_again():
 def test_the_wait_grows_and_stops_at_its_bound():
     from datetime import timedelta
 
-    retry = Retry(backoff=3.0, max_wait=timedelta(seconds=5))
+    retry = Retry(backoff=3.0, max_wait=timedelta(seconds=5), jitter=False)
 
     assert [retry.wait_before(attempt, None).total_seconds() for attempt in (1, 2, 3)] == [
         1.0,
@@ -149,6 +149,19 @@ def test_the_wait_grows_and_stops_at_its_bound():
         5.0,
     ]
     assert retry.wait_before(1, timedelta(seconds=2)) == timedelta(seconds=2)
+
+
+def test_with_jitter_each_wait_falls_at_random_under_what_it_grew_to():
+    from datetime import timedelta
+
+    retry = Retry(backoff=3.0, max_wait=timedelta(seconds=5))
+
+    waits = [retry.wait_before(2, None) for _ in range(200)]
+    declared = [retry.wait_before(2, timedelta(seconds=2)) for _ in range(200)]
+
+    assert all(timedelta(0) <= one <= timedelta(seconds=3) for one in waits)
+    assert len(set(waits)) > 1  # runs that failed together come back apart
+    assert all(timedelta(seconds=2) <= one <= timedelta(seconds=5) for one in declared)
 
 
 # --- await -------------------------------------------------------------------------------------

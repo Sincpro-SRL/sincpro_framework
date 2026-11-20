@@ -10,12 +10,17 @@ carries over.
 | NATS | queue group | JetStream's `num_delivered` | nack | the `{channel}.dlq` subject |
 | Amazon SQS | none: every consumer competes | `ApproximateReceiveCount` | nack — the message is visible again | reject — the queue's redrive policy |
 
+A retry waits before it is carried back (`QueueOptions.retry_backoff`): Amazon SQS and NATS
+JetStream hold a nacked message for that wait themselves (`holds_retry`), so the consumer never
+waits; on the others the consumer waits before it settles.
+
 Context: a FastStream broker is recognised by its class's module, so no broker library is imported
 to ask; a broker of another kind says its own with a `flavour` attribute (the SQS broker does); a
 broker neither knows gets the portable choices (a counted copy, a dead-letter channel).
 """
 
-from collections.abc import Callable
+from collections.abc import Awaitable, Callable
+from datetime import timedelta
 from enum import StrEnum
 from typing import Any, Literal
 
@@ -49,6 +54,14 @@ class DeadLetterBy(StrEnum):
 
 
 type BrokerName = Literal["kafka", "rabbit", "redis", "nats", "sqs", "other"]
+type HoldRetry = Callable[[Any, timedelta], Awaitable[None]]
+"""How a broker keeps a delivery for a wait before it is delivered again: nacks it so."""
+
+
+async def nak_with_delay(message: Any, wait: timedelta) -> None:
+    """NATS JetStream: a `nak` with a delay — the server holds the message that long, then
+    delivers it again."""
+    await message.nack(delay=wait.total_seconds())
 
 
 class Flavour(DataTransferObject):
@@ -72,6 +85,9 @@ class Flavour(DataTransferObject):
     faststream: bool = True
     """A FastStream broker: subscribed with its manual acknowledgement policy, and handing the
     message by its `Context`. A broker of another kind says `False` in its own flavour."""
+    holds_retry: HoldRetry | None = None
+    """How the broker holds a nacked delivery for a retry's wait itself — so the consumer never
+    waits; `None`: the consumer waits before it settles."""
 
 
 FLAVOURS: dict[BrokerName, Flavour] = {
@@ -87,7 +103,12 @@ FLAVOURS: dict[BrokerName, Flavour] = {
         dead_letter_by=DeadLetterBy.CHANNEL,
         acknowledges=False,
     ),
-    "nats": Flavour(name="nats", retry_by=RetryBy.NACK, dead_letter_by=DeadLetterBy.CHANNEL),
+    "nats": Flavour(
+        name="nats",
+        retry_by=RetryBy.NACK,
+        dead_letter_by=DeadLetterBy.CHANNEL,
+        holds_retry=nak_with_delay,
+    ),
     "other": Flavour(
         name="other", retry_by=RetryBy.REPUBLISH, dead_letter_by=DeadLetterBy.CHANNEL
     ),

@@ -6,13 +6,14 @@ never from FastStream's per-broker default (PRD_15 §1.3, §5.2).
 | the bus handled it | `ACK` | ack |
 | a redelivery of a message the inbox saw completed | `REPLAY` | ack, the bus not run |
 | an event nobody here handles, on a shared channel | `SKIP` | ack |
-| conflict, in progress, exhausted, unavailable, internal, the time limit | `RETRY` | nack, or a copy with the attempt counted — then dead-letter at `max_attempts` |
+| conflict, in progress, exhausted, unavailable, internal, the time limit | `RETRY` | after its wait (`backoff`), nack, or a copy with the attempt counted — then dead-letter at `max_attempts` |
 | undecodable, invalid, unauthenticated, permission denied, a producer not allowed, not found, key reused, domain, expired | `DEAD_LETTER` | the dead-letter channel, or the broker's own |
 
 Context: pure — no broker here. The classification is `common.failures`', shared by every
 wire; this module is the queue column of its table.
 """
 
+from datetime import timedelta
 from enum import StrEnum
 
 from pydantic import ConfigDict
@@ -51,6 +52,9 @@ class Verdict(DataTransferObject):
     attempts: int = 1
     command: str | None = None
     """The message's type — the Command or event it was consumed as, when known."""
+    retry_after: timedelta | None = None
+    """What the failure declared to wait before it runs again — a `RateLimited`'s turn, a
+    `CircuitOpen`'s time left —; `None` when it declared nothing."""
 
 
 def settlement_of(kind: exceptions.FailureKind) -> Settlement:
