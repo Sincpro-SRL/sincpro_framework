@@ -45,7 +45,40 @@ use case whose `execute` answers `None`. A framework read that is no `Query` —
 `LiteralSearch` — may be bound as `GET` (`@rest.get("/issues/{id}")`): its key from the path,
 criteria as the JSON parameter `Search` takes. Bound with no verb, it stays `POST`; a
 `PreviewEntity` keeps `POST`, carrying the whole record. Each is published as a read
-(`x-sincpro-query`) and asks for no `Idempotency-Key`. The `operationId` is the DTO's name. When two contexts
+(`x-sincpro-query`) and asks for no `Idempotency-Key`. A read of the project's own that is no
+`Query` says so by its base and is served the same way — the pipelines' `GetRun` is one:
+
+```python
+from fastapi.testclient import TestClient
+
+from sincpro_framework import DataTransferObject, Feature, ReadOnly, UseFramework
+from sincpro_framework.entrypoints import FastApiGateway
+from sincpro_framework.entrypoints.entrypoint.decorators import rest
+
+
+class QueryCashBalance(ReadOnly):          # a read with no criteria: it says so by its base
+    account_id: str
+
+
+class ResponseCashBalance(DataTransferObject):
+    account_id: str
+    balance: int
+
+
+treasury = UseFramework("treasury", log_after_execution=False)
+
+
+@treasury.feature(QueryCashBalance)
+@rest.get("/balances/{account_id}")
+class CashBalance(Feature):
+    def execute(self, dto: QueryCashBalance) -> ResponseCashBalance:
+        return ResponseCashBalance(account_id=dto.account_id, balance=1150)
+
+
+balances = TestClient(FastApiGateway([treasury], unguarded=True).app())
+assert balances.get("/treasury/balances/A-1").json() == {"account_id": "A-1", "balance": 1150}
+```
+ The `operationId` is the DTO's name. When two contexts
 publish the same name, it becomes `{alias}_{Dto}`. A path field (`{invoice_id}`) must be a field of
 the Command, and a `location` field (`{number}`) a field of the response. The gateway refuses the
 surface otherwise, and it also refuses two operations on one method and path, or two with one

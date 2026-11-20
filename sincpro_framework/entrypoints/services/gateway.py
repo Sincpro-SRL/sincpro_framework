@@ -155,11 +155,12 @@ def _rest_problems(
         _rest_problems("CommandIssue (rest)", CommandIssue, None,
                        RestBinding(method="GET", path="/invoices/{id}"))
         ->  ["…: path /invoices/{id} names {id}, which is not a field of CommandIssue — …",
-             "…: GET on a Command that writes — a read is a Query or a framework read …"]
+             "…: GET on a Command that writes — a read says so by its base, ReadOnly …"]
 
     1. Every `{field}` of the path is a field of the Command.
     2. Every `{field}` of `location` is a field of what it answers.
-    3. `GET` only on what only reads (`only_reads`): a `Query`, or a framework read.
+    3. `GET` only on what only reads (`only_reads`): a `ReadOnly` (a `Query` is one), or a
+       framework read.
     4. `DELETE` or a 204 answers nothing.
     5. `PATCH` without `body="merge-patch"` leaves no required field outside the path.
     Final: every problem found, said at once.
@@ -182,8 +183,9 @@ def _rest_problems(
             )
     if binding.method == "GET" and not only_reads(command):
         problems.append(
-            f"{where}: GET on a Command that writes — a read is a Query or a framework read "
-            f"(Get, GetMany, LiteralSearch, PreviewEntity)"
+            f"{where}: GET on a Command that writes — a read says so by its base, ReadOnly "
+            f"(class {command.__name__}(ReadOnly)); a Query is one, and so are the framework's "
+            f"reads (Get, GetMany, LiteralSearch, PreviewEntity)"
         )
     answers_no_body = binding.method == "DELETE" or binding.status == 204
     if answers_no_body and response not in (None, type(None)):
