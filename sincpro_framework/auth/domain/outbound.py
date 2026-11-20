@@ -14,6 +14,7 @@ answers whether new headers could help — the caller retries once, never in a l
 
 from abc import ABC, abstractmethod
 from collections.abc import Mapping
+from datetime import datetime
 from typing import Any, Protocol
 
 from pydantic import ConfigDict, Field
@@ -76,3 +77,29 @@ class Sealer(Protocol):
     def seal(self, plain: bytes) -> bytes: ...
 
     def open(self, sealed: bytes) -> bytes: ...
+
+
+class HeldGrant(DataTransferObject):
+    """A grant this service holds for an API that issues refresh tokens — the refresh token, the
+    access token it last got, when that one expires. Its `version` counts the refreshes."""
+
+    model_config = ConfigDict(frozen=True)
+
+    refresh_token: str = Field(repr=False)
+    access_token: str | None = Field(default=None, repr=False)
+    expires_at: datetime | None = None
+    version: int = 0
+
+
+class HeldGrants(ABC):
+    """The port: where held grants live, written by compare-and-set — two replicas refreshing
+    at once never both store their answer."""
+
+    @abstractmethod
+    def current(self, key: str) -> HeldGrant | None:
+        """The grant held under `key`, if any."""
+
+    @abstractmethod
+    def replace(self, key: str, expected: HeldGrant | None, new: HeldGrant | None) -> bool:
+        """Write `new` (`None` drops it) only when `key` holds `expected` now — `True` when it
+        was written."""

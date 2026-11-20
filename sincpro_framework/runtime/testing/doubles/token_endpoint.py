@@ -67,7 +67,7 @@ class FakeTokenEndpoint(ScriptedHttp):
         self.refresh: dict[str, dict[str, Any]] = {}
         self.devices: dict[str, dict[str, Any]] = {}
         self._failures: list[HttpAnswer] = []
-        self._counter = 0
+        self._counters: dict[str, int] = {}
         self._grants: list[str] = []
         self._server_lock = threading.Lock()
         self.route(f"{issuer}/.well-known/openid-configuration", self._discovery)
@@ -113,9 +113,10 @@ class FakeTokenEndpoint(ScriptedHttp):
                 device["approved"] = subject
 
     def _next(self, prefix: str) -> str:
+        """`<prefix>-<n>`, counted per prefix: at-1, at-2, rt-1…"""
         with self._server_lock:
-            self._counter += 1
-            return f"{prefix}-{self._counter}"
+            self._counters[prefix] = self._counters.get(prefix, 0) + 1
+            return f"{prefix}-{self._counters[prefix]}"
 
     def _client_of(self, request: HttpRequest, form: dict[str, str]) -> str | None:
         """The client the request authenticates as — `None` when it does not."""

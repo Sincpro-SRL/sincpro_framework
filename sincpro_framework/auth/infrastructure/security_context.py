@@ -22,6 +22,28 @@ _current: ContextVar[Identity] = ContextVar("sincpro_identity", default=ANONYMOU
 _decided: ContextVar[str | None] = ContextVar("sincpro_access_decided", default=None)
 """The use case entered from outside that was let through — a nested one inherits its decision."""
 
+_presented: ContextVar[str | None] = ContextVar("sincpro_presented_credential", default=None)
+"""The bearer token the caller presented, while the call it authenticated runs — what a token
+exchange acts for. Never on the `Identity`: it is serialized, logged and carried to other
+services, and a token must be none of those."""
+
+
+def presented_credential() -> str | None:
+    """The bearer token the caller of the execution in progress presented — `None` outside an
+    authenticated call, or when it presented none."""
+    return _presented.get()
+
+
+@contextmanager
+def presenting(token: str | None) -> Generator[None, None, None]:
+    """`token` is the presented credential inside the block — set by the entrypoint that
+    authenticated it, and restored on leaving."""
+    held = _presented.set(token)
+    try:
+        yield
+    finally:
+        _presented.reset(held)
+
 
 def current_identity() -> Identity:
     """Who the execution in progress acts as — `Identity.anonymous()` outside any

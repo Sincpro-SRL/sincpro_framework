@@ -28,6 +28,8 @@ from sincpro_framework.auth.infrastructure.security_context import (
     as_identity,
     as_system,
     current_identity,
+    presented_credential,
+    presenting,
 )
 
 if TYPE_CHECKING:
@@ -81,7 +83,10 @@ class SecurityContext:
             with nullcontext(current_identity()) as unchanged:
                 yield unchanged
             return
-        with as_identity(access.authenticate(credentials)) as identity:
+        with (
+            as_identity(access.authenticate(credentials)) as identity,
+            presenting(credentials.bearer),
+        ):
             yield identity
 
     def challenges(
@@ -102,6 +107,12 @@ class SecurityContext:
                 if challenge not in found:
                     found.append(challenge)
         return found
+
+    @property
+    def presented(self) -> str | None:
+        """The bearer token the caller presented, while its call runs — what a token exchange
+        acts for; never logged, never on the identity."""
+        return presented_credential()
 
     def identity_headers(self, context: str) -> dict[str, str]:
         """The headers a call to the service hosting `context` carries, so it knows who the

@@ -67,10 +67,17 @@ from sincpro_framework.auth.adapters.outbound import (
     ApiKeyHeader,
     BasicCredentials,
     ClientCredentials,
+    DeviceCode,
+    DevicePrompt,
+    InMemoryHeldGrants,
+    KeyValueHeldGrants,
+    RefreshingToken,
     RequestSigner,
     StaticToken,
+    TokenExchange,
     TokenSources,
 )
+from sincpro_framework.auth.adapters.presenting import PresentingProvider
 from sincpro_framework.auth.adapters.resolving import Resolving
 from sincpro_framework.auth.adapters.role_permissions import RolePermissions
 from sincpro_framework.auth.adapters.service_token_provider import ServiceTokenProvider
@@ -110,7 +117,13 @@ from sincpro_framework.auth.domain.identity import (
     Identity,
     IdentityKind,
 )
-from sincpro_framework.auth.domain.outbound import OutgoingRequest, Sealer, TokenSource
+from sincpro_framework.auth.domain.outbound import (
+    HeldGrant,
+    HeldGrants,
+    OutgoingRequest,
+    Sealer,
+    TokenSource,
+)
 from sincpro_framework.auth.domain.permissions import (
     AccessDeclaration,
     AnyOf,
@@ -168,6 +181,8 @@ __all__ = [
     "ClientSecretPost",
     "Credentials",
     "CredentialsRejected",
+    "DeviceCode",
+    "DevicePrompt",
     "EndpointUnavailable",
     "Entitlement",
     "GrantAdministration",
@@ -177,6 +192,8 @@ __all__ = [
     "GrantSource",
     "GrantStore",
     "Held",
+    "HeldGrant",
+    "HeldGrants",
     "HexDigest",
     "HttpAnswer",
     "HttpClient",
@@ -187,6 +204,7 @@ __all__ = [
     "IdentityResolver",
     "InMemoryApiKeys",
     "InMemoryGrants",
+    "InMemoryHeldGrants",
     "InMemoryRevocations",
     "IntrospectionProvider",
     "InvalidGrant",
@@ -194,15 +212,18 @@ __all__ = [
     "Issuer",
     "JwtProvider",
     "KeyValueGrants",
+    "KeyValueHeldGrants",
     "KeyValueRevocations",
     "NoCredentialsFor",
     "OidcDiscovery",
     "OutgoingRequest",
     "Permission",
     "PermissionDenied",
+    "PresentingProvider",
     "Privilege",
     "ProtectedResource",
     "PublicClient",
+    "RefreshingToken",
     "RequestSigner",
     "Resolving",
     "Revocations",
@@ -222,6 +243,7 @@ __all__ = [
     "TimestampedSignature",
     "TokenCache",
     "TokenEndpoint",
+    "TokenExchange",
     "TokenSource",
     "TokenSources",
     "Unauthenticated",

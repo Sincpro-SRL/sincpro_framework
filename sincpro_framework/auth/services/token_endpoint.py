@@ -95,11 +95,12 @@ class TokenEndpoint:
                 if error == "invalid_grant"
                 else exceptions.CredentialsRejected
             )
-            logger.warning(
-                "a token endpoint refused this service",
-                endpoint=target,
-                error=error or str(answer.status),
-            )
+            if error not in ("authorization_pending", "slow_down"):
+                logger.warning(
+                    "a token endpoint refused this service",
+                    endpoint=target,
+                    error=error or str(answer.status),
+                )
             raise refused(
                 target,
                 error or f"status {answer.status}",

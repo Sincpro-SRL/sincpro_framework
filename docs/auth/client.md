@@ -110,3 +110,90 @@ except NoCredentialsFor:
 The tenant is the request's, else the identity's in play. `TokenSources(function)` resolves a
 source per tenant, keeps the least recently used `max_tenants`, keyed by the tenant — never by a
 token.
+
+## Acting for the caller: token exchange — RFC 8693
+
+A call to another service can carry a token for that service acting for the caller in play —
+exchanged for the bearer the caller presented, which the entrypoint holds while the call runs
+(`security.presented`), never on the identity. `PresentingProvider` names the source per service,
+so `remote_execution` — which sends `security.identity_headers(context)` — carries it with no
+change to its transports.
+
+```python
+from sincpro_framework import DataTransferObject, Feature, UseFramework
+from sincpro_framework.auth import (
+    AccessControl,
+    ClientSecretBasic,
+    Credentials,
+    PresentingProvider,
+    StaticProvider,
+    TokenExchange,
+)
+
+orders_token = TokenExchange(
+    ClientSecretBasic("billing", "s3cret"),
+    audience="orders-api",
+    issuer="https://auth.bank.bo",
+    http=server,
+    cache=TokenCache(InMemoryKeyValue()),
+)
+exchange_auth = AccessControl(providers=[
+    StaticProvider({"ana-token": Identity.user("user:ana", tenant="bo-001")}),
+    PresentingProvider({"orders": orders_token}),        # calls to the "orders" context
+])
+billing = UseFramework("billing-exchanges", log_after_execution=False)
+
+
+class CommandShip(DataTransferObject):
+    order: str
+
+
+class Carried(DataTransferObject):
+    headers: dict[str, str]
+
+
+@billing.feature(CommandShip)
+@exchange_auth.authenticated
+class Ship(Feature):
+    def execute(self, dto: CommandShip) -> Carried:
+        return Carried(headers=security.identity_headers("orders"))   # what remote_execution sends
+
+
+exchange_auth.on(billing)
+with security.authenticated_as(billing, Credentials(transport="http",
+                                                    headers={"authorization": "Bearer ana-token"})):
+    carried = billing(CommandShip(order="O-1"), Carried)
+assert carried.headers["authorization"].startswith("Bearer at-")
+```
+
+A caller's token the server will not exchange is the caller's to fix: `Unauthenticated`. Outside
+an authenticated call there is nothing to exchange: `ProgrammingError`.
+
+## Holding consent: refresh tokens and device code
+
+`RefreshingToken` keeps the grant of an API that issues refresh tokens — a tenant's Odoo consented
+once, a CLI authorized by device code (`DeviceCode`, RFC 8628) — in `HeldGrants`
+(`KeyValueHeldGrants` on the context's store, sealed when given a `Sealer`). A refresh runs under a
+lease, so one replica refreshes while the others wait for its answer, and it is stored by
+compare-and-set: a server that rotates refresh tokens never sees one used twice (and revokes the
+grant for it). `invalid_grant` drops the grant: `GrantRejected`, consent to be given again.
+
+```python
+from sincpro_framework.auth import DeviceCode, InMemoryHeldGrants, PublicClient, RefreshingToken
+
+device_server = FakeTokenEndpoint("https://auth.sincpro.dev", clients={"sincpro-cli": ""})
+shown = []
+issued = DeviceCode(
+    PublicClient("sincpro-cli"),
+    show=shown.append,                                   # print(prompt.verification_uri, …)
+    issuer="https://auth.sincpro.dev",
+    http=device_server,
+    sleep=lambda seconds: device_server.approve(shown[0].user_code),   # the person approves
+).authorize()
+
+cli = RefreshingToken(PublicClient("sincpro-cli"), InMemoryHeldGrants(), key="sincpro-cli",
+                      issuer="https://auth.sincpro.dev", http=device_server,
+                      store=InMemoryKeyValue())
+cli.seed(issued)
+assert cli.headers_for(request)["authorization"].startswith("Bearer at-")
+```
