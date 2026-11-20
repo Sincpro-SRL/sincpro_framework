@@ -129,3 +129,8 @@ class EndpointUnavailable(ServiceUnavailableError):
         self.reason = reason
         self.status = status
         self.retry_after = retry_after
+
+
+class InvalidGrant(ClientError):
+    """A grant that cannot be given — a role the catalog does not declare, two roles never held
+    together, two levels of one privilege — said to whoever administers it (400)."""

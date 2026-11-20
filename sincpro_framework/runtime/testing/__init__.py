@@ -30,6 +30,7 @@ from .analysis.settings_scope import SettingsScopeViolation, settings_scope_viol
 from .contracts.auth_provider import AuthProviderContract
 from .contracts.caching_strategies import CodecContract, EvictionContract, FreshnessContract
 from .contracts.exchange_rates import ExchangeRatesContract
+from .contracts.grant_store import GrantStoreContract
 from .contracts.idempotency_records import IdempotencyRecordsContract
 from .contracts.key_value_store import KeyValueStoreContract
 from .contracts.object_store import ObjectStoreContract
@@ -46,6 +47,7 @@ __all__ = [
     "CodecContract",
     "EvictionContract",
     "ExchangeRatesContract",
+    "GrantStoreContract",
     "FreshnessContract",
     "IdempotencyRecordsContract",
     "ImportCycle",

@@ -45,6 +45,7 @@ OBJECT_STORAGE = ROOT / "docs" / "object_storage" / "README.md"
 MONEY = ROOT / "docs" / "ddd" / "money.md"
 AUTH = ROOT / "docs" / "auth" / "README.md"
 AUTH_SERVER = ROOT / "docs" / "auth" / "server.md"
+AUTH_GRANTS = ROOT / "docs" / "auth" / "grants.md"
 REST = ROOT / "docs" / "entrypoints" / "rest.md"
 FASTAPI = ROOT / "docs" / "entrypoints" / "fastapi.md"
 READINESS = ROOT / "docs" / "entrypoints" / "readiness.md"
@@ -105,6 +106,7 @@ def _failing_line(error: Exception, path: Path) -> int:
         MONEY,
         AUTH,
         AUTH_SERVER,
+        AUTH_GRANTS,
         REST,
         FASTAPI,
         READINESS,

@@ -42,6 +42,13 @@ from sincpro_framework.auth.adapters.client_auth import (
     ClientSecretPost,
     PublicClient,
 )
+from sincpro_framework.auth.adapters.grants import (
+    GrantResolver,
+    InMemoryGrants,
+    KeyValueGrants,
+    RoleMapping,
+    ScopeCeiling,
+)
 from sincpro_framework.auth.adapters.jwt import (
     ClaimMapping,
     ClaimTest,
@@ -61,8 +68,21 @@ from sincpro_framework.auth.adapters.static_provider import StaticProvider
 from sincpro_framework.auth.domain.exceptions import (
     AuthError,
     EndpointUnavailable,
+    InvalidGrant,
     PermissionDenied,
     Unauthenticated,
+)
+from sincpro_framework.auth.domain.grants import (
+    Assignment,
+    CatalogDescription,
+    Category,
+    Entitlement,
+    GrantCatalog,
+    GrantSource,
+    GrantStore,
+    Held,
+    Privilege,
+    Role,
 )
 from sincpro_framework.auth.domain.http import (
     ClientAuthentication,
@@ -90,6 +110,7 @@ from sincpro_framework.auth.entrypoint.access_control import AccessControl, Acce
 from sincpro_framework.auth.entrypoint.asgi import IdentityMiddleware
 from sincpro_framework.auth.entrypoint.security import security
 from sincpro_framework.auth.infrastructure.urllib_http import UrllibHttp
+from sincpro_framework.auth.services.grant_administration import GrantAdministration
 from sincpro_framework.auth.services.server_metadata import OidcDiscovery, ServerMetadata
 
 __all__ = [
@@ -100,10 +121,13 @@ __all__ = [
     "ApiKey",
     "ApiKeyProvider",
     "ApiKeyStore",
+    "Assignment",
     "Assurance",
     "AuthError",
     "AuthProvider",
     "ByField",
+    "CatalogDescription",
+    "Category",
     "ClaimMapping",
     "ClaimTest",
     "ClientAuthentication",
@@ -112,6 +136,13 @@ __all__ = [
     "ClientSecretPost",
     "Credentials",
     "EndpointUnavailable",
+    "Entitlement",
+    "GrantAdministration",
+    "GrantCatalog",
+    "GrantResolver",
+    "GrantSource",
+    "GrantStore",
+    "Held",
     "HttpAnswer",
     "HttpClient",
     "HttpRequest",
@@ -120,19 +151,26 @@ __all__ = [
     "IdentityMiddleware",
     "IdentityResolver",
     "InMemoryApiKeys",
+    "InMemoryGrants",
     "InMemoryRevocations",
+    "InvalidGrant",
     "Issuer",
     "JwtProvider",
+    "KeyValueGrants",
     "KeyValueRevocations",
     "OidcDiscovery",
     "Permission",
     "PermissionDenied",
+    "Privilege",
     "ProtectedResource",
     "PublicClient",
     "Resolving",
-    "RevocationState",
     "Revocations",
+    "RevocationState",
+    "Role",
+    "RoleMapping",
     "RolePermissions",
+    "ScopeCeiling",
     "ServerMetadata",
     "ServiceTokenProvider",
     "SharedSecrets",
