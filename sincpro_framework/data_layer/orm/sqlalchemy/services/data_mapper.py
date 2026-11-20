@@ -20,6 +20,7 @@ already had the machinery; this is the line that switches it on.
 """
 
 from collections.abc import Callable, Collection, Mapping
+from contextvars import ContextVar
 from dataclasses import MISSING, fields, is_dataclass
 from typing import Any
 
@@ -54,6 +55,21 @@ from sincpro_framework.ddd.entity.relations import RelationKind, key_pair
 from sincpro_framework.ddd.metamodel import forget_models, model_of
 from sincpro_framework.ddd.query import serialising
 
+_DESCRIBING: ContextVar[bool] = ContextVar("sincpro_describing", default=False)
+
+
+class NotAsked:
+    """What a record's description shows for a relation it does not hold.
+
+    repr(workspace)   ->  "Workspace(code='acme', ..., repositories=<not asked>)"
+    """
+
+    def __repr__(self) -> str:
+        return "<not asked>"
+
+
+NOT_ASKED = NotAsked()
+
 
 class RelatedAttribute:
     """The attribute a declared relation becomes on the class.
@@ -83,11 +99,13 @@ class RelatedAttribute:
         1. Read on the class: the descriptor itself.
         2. While an answer is being serialised: the field's default, so pydantic sees the
            declared shape and nothing is resolved.
-        3. Resolved on the record: that value — unless it was cut (a page, a filter) and a
+        3. While the record describes itself: what it holds, or `<not asked>` — a log line
+           never reads.
+        4. Resolved on the record: that value — unless it was cut (a page, a filter) and a
            unit of work is open, where the Feature gets the whole relation instead.
-        4. No unit of work on the record's session: `RelationNotResolved`, naming the fix.
-        5. Resolved whole now through the repository on the session.
-           5.1 The resolver wrote nothing — a relation declared the wrong way round:
+        5. No unit of work on the record's session: `RelationNotResolved`, naming the fix.
+        6. Resolved whole now through the repository on the session.
+           6.1 The resolver wrote nothing — a relation declared the wrong way round:
                `RelationNotResolved` explaining the declaration.
         Final: the value just resolved.
         """
@@ -97,9 +115,11 @@ class RelatedAttribute:
             # The answer writes the resolved relations itself; here pydantic sees the
             # declared shape, so it neither warns nor triggers a resolution.
             return self.default()
+        relations = HeldRelations(record)
+        if _DESCRIBING.get():
+            return relations.value(self.name) if relations.holds(self.name) else NOT_ASKED
         session = object_session(record)
         repository = session.info.get(REPOSITORY) if session is not None else None
-        relations = HeldRelations(record)
         if relations.holds(self.name):
             value = relations.value(self.name)
             # A value cut for a client — a page, a filter — is not what a Feature inside a unit
@@ -327,6 +347,45 @@ def computed_properties(entity: type, table: Table) -> dict[str, Any]:
     return found
 
 
+_WITHOUT_READING: set[Callable[[Any], str]] = set()
+
+
+def describe_without_reading(aggregate: type) -> None:
+    """Makes the class's own `repr` describe a record without reading its relations: one it
+    holds shows its value, one it does not shows `<not asked>`.
+
+        repr(workspace)   ->  "Workspace(code='acme', ..., repositories=<not asked>)"
+                              outside a unit of work, nothing raised; inside one, nothing read
+
+    Context: a dataclass's `repr` reads every field, and a relation read outside a unit of
+    work refuses while inside one it queries. A log line, a debugger or a traceback describes
+    records anywhere, and must do neither.
+
+    1. A class with no relation attribute, or whose `repr` is inherited or already wrapped:
+       nothing to do.
+    Final: its `repr` wrapped, the record described while `_DESCRIBING` is set.
+    """
+    own = vars(aggregate).get("__repr__")
+    if own is None or own in _WITHOUT_READING:
+        return
+    if not any(
+        isinstance(value, RelatedAttribute)
+        for klass in aggregate.__mro__
+        for value in vars(klass).values()
+    ):
+        return
+
+    def described(record: Any) -> str:
+        token = _DESCRIBING.set(True)
+        try:
+            return own(record)
+        finally:
+            _DESCRIBING.reset(token)
+
+    _WITHOUT_READING.add(described)
+    setattr(aggregate, "__repr__", described)
+
+
 def install(aggregate: type, declared: Mapping[str, relations.Relation]) -> None:
     """Registers the relations and puts the attribute that resolves them on the class. What
     was declared wins over what is inferred; a second call changes nothing.
@@ -340,6 +399,7 @@ def install(aggregate: type, declared: Mapping[str, relations.Relation]) -> None
        1.2 when it says its cardinality and the class does not annotate the name, the
            annotation written — `list[Related]` or `Related | None`;
        1.3 the attribute that resolves it set on the class, with the field's default.
+    2. The class's `repr` describes a record without reading a relation.
     Final: when anything was added, every cached description cleared — one read before knew
     no relations.
     """
@@ -355,6 +415,7 @@ def install(aggregate: type, declared: Mapping[str, relations.Relation]) -> None
         setattr(
             aggregate, name, RelatedAttribute(name, relation, _default_of(aggregate, name))
         )
+    describe_without_reading(aggregate)
     if added:
         # `ModelIntrospection.describe` caches per class; a definition read before this point knew no relations.
 
