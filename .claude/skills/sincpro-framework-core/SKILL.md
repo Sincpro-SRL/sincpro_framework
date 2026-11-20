@@ -282,6 +282,14 @@ one layer only. A bus hosted elsewhere has one only when asked: `?circuit_breake
 the caller's transport raised (`error.unreached`), never what the host answered — not even the host's
 own `CircuitOpen`. Depth: `docs/core/circuit-breaker.md`.
 
+**Limiting how often** (`sincpro_framework.rate_limiter`). Wired where a circuit is, never inside a
+use case. A dependency's quota: the adapter takes a `RateLimiter("siat", 10, per=1s, wait=5s)` in
+its constructor beside its circuit, built in `infrastructure/dependencies.py` — its calls are paced,
+not failed. Each caller: an interceptor that opens `with limiter:` (`by="user_id"`), registered in the
+context's `__init__.py` after `from . import services`, beside `auth.on(...)`. A per-IP or
+whole-service ceiling belongs at the edge (Kong); "at most 4 per buyer" is a rule of the write, not
+a rate. Depth: `docs/core/rate-limit.md`.
+
 An income and its outcome name the same `execution_id`. What a listener must not do: hold state a
 process depends on (it may not run) or change the answer. The whole path, step by step:
 `docs/core/execution-path.md`.

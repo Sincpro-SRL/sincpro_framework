@@ -25,6 +25,18 @@ Every block on this page runs, in order, in `tests/docs/test_persistence_guide.p
 A rule of the business is not a rate: "at most four tickets per buyer for a show" holds whenever
 the tickets are bought, so it is checked in the write that sells them, as any rule of the aggregate.
 
+### Where it is written in a project
+
+A limiter is wired where a circuit is, never inside a use case:
+
+| A limit on | File | Written as |
+|---|---|---|
+| a dependency's quota | `adapters/siat.py`, built in `infrastructure/dependencies.py` | the adapter takes it in its constructor, as a `CircuitBreaker`: `add_dependency("siat", SiatClient(CircuitBreaker("siat"), RateLimiter("siat", 10, per=timedelta(seconds=1), wait=timedelta(seconds=5))))` — every Feature that uses the adapter shares its one limit |
+| each caller | the bounded context's `__init__.py`, after `from . import services` | an interceptor that opens the block — beside `auth.on(...)` and the error handlers, step 3 of the bootstrap |
+
+A Feature never holds a limiter: it raises what it raises, and the limit is said once, where the
+calls go in or out.
+
 ## Refused at once: in front of a use case
 
 ```python
