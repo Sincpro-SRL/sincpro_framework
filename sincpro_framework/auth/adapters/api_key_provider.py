@@ -11,9 +11,11 @@ last for a legacy client that can send nothing else. `ApiKeyStore` is the port: 
 its keys in its own table by implementing two methods.
 """
 
-import hashlib
 import secrets
 from abc import ABC, abstractmethod
+from collections.abc import Callable
+from datetime import UTC, datetime
+from functools import partial
 from typing import Any
 
 from pydantic import ConfigDict
@@ -21,6 +23,7 @@ from pydantic import ConfigDict
 from sincpro_framework.auth.domain import exceptions
 from sincpro_framework.auth.domain.identity import Credentials, Identity, IdentityKind
 from sincpro_framework.auth.domain.provider import AuthProvider
+from sincpro_framework.auth.infrastructure.digests import digest
 from sincpro_framework.sincpro_abstractions import DataTransferObject
 
 
@@ -32,7 +35,7 @@ def digest_of(key: str) -> str:
 
         digest_of("sk_3f9…")   ->  "a1b2…" (64 hex characters)
     """
-    return hashlib.sha256(key.encode()).hexdigest()
+    return digest(key)
 
 
 class ApiKey(DataTransferObject):
@@ -45,6 +48,10 @@ class ApiKey(DataTransferObject):
     permissions: frozenset[str] = frozenset()
     digest: str = ""
     revoked: bool = False
+    scopes: frozenset[str] = frozenset()
+    """What the key may be used for, beside its permissions — a ceiling a resolver applies."""
+    expires_at: datetime | None = None
+    """When the key stops working, UTC — `None` for a key revoked only by hand."""
 
 
 class ApiKeyStore(ABC):
@@ -125,14 +132,17 @@ class ApiKeyProvider(AuthProvider):
         header: str = "x-api-key",
         query: str | None = None,
         name: str = "api-keys",
+        now: Callable[[], datetime] = partial(datetime.now, UTC),
     ) -> None:
         """A provider over `store`, reading the key from `header` and, when named, from the
         query parameter `query` — the header name is lower-cased, as `Credentials` stores them.
+        `now` is the clock a key's `expires_at` is judged by.
         """
         self.store = store
         self.header = header.lower()
         self.query = query
         self.name = name
+        self.now = now
 
     def security_scheme(self) -> dict[str, Any] | None:
         """An `apiKey` in `header` — the query parameter, a legacy fallback, is not shown."""
@@ -167,7 +177,9 @@ class ApiKeyProvider(AuthProvider):
         1. No key in the credentials: `None` — not this provider's kind, the next is tried.
         2. A key whose digest the store does not know: `Unauthenticated("unknown api key")`.
         3. A revoked key: `Unauthenticated("revoked api key")`.
-        Final: an `Identity` with the key's subject, tenant and permissions, `provider=name`.
+        4. A key past its `expires_at`: `Unauthenticated("expired api key")`.
+        Final: an `Identity` with the key's subject, tenant, permissions, scopes and expiry,
+        `provider=name`.
         """
         key = self._key_in(credentials)
         if key is None:
@@ -177,10 +189,15 @@ class ApiKeyProvider(AuthProvider):
             raise exceptions.Unauthenticated("unknown api key")
         if stored.revoked:
             raise exceptions.Unauthenticated("revoked api key")
+        if stored.expires_at is not None and self.now() >= stored.expires_at:
+            raise exceptions.Unauthenticated("expired api key")
         return Identity(
             subject=stored.subject,
             kind=IdentityKind.SERVICE,
             tenant=stored.tenant,
             permissions=stored.permissions,
             provider=self.name,
+            scopes=stored.scopes,
+            expires_at=stored.expires_at,
+            token_id=stored.digest[:16] or None,
         )

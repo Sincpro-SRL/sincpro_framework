@@ -37,7 +37,12 @@ from sincpro_framework.auth.domain.exceptions import (
     PermissionDenied,
     Unauthenticated,
 )
-from sincpro_framework.auth.domain.identity import Credentials, Identity, IdentityKind
+from sincpro_framework.auth.domain.identity import (
+    Assurance,
+    Credentials,
+    Identity,
+    IdentityKind,
+)
 from sincpro_framework.auth.domain.permissions import (
     AccessDeclaration,
     AnyOf,
@@ -53,6 +58,7 @@ from sincpro_framework.auth.entrypoint.security import security
 __all__ = [
     "AccessControl",
     "AccessDescription",
+    "Assurance",
     "ApiKey",
     "ApiKeyProvider",
     "ApiKeyStore",

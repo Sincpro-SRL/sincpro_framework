@@ -13,30 +13,18 @@ are by id (`kid`), the newest signs and every one verifies, so a key rotates wit
 where calls fail.
 """
 
-import base64
-import hashlib
-import hmac
-import json
 import time
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from typing import Any
 
 from sincpro_framework.auth.domain import exceptions
 from sincpro_framework.auth.domain.identity import Credentials, Identity, IdentityKind
 from sincpro_framework.auth.domain.provider import AuthProvider
+from sincpro_framework.auth.infrastructure import jws
+from sincpro_framework.auth.infrastructure.digests import random_token
 
 HEADER = "x-sp-service-token"
 """Its own header, so a user's `Authorization` travels untouched beside it."""
-
-
-def _encoded(raw: bytes) -> str:
-    """`raw` as base64url without padding — the JWT alphabet (RFC 7515)."""
-    return base64.urlsafe_b64encode(raw).rstrip(b"=").decode()
-
-
-def _decoded(text: str) -> bytes:
-    """The bytes of an unpadded base64url `text` — the padding JWT drops is put back first."""
-    return base64.urlsafe_b64decode(text + "=" * (-len(text) % 4))
 
 
 class ServiceTokenProvider(AuthProvider):
@@ -50,37 +38,41 @@ class ServiceTokenProvider(AuthProvider):
     def __init__(
         self,
         issuer: str,
-        keys: Mapping[str, str],
+        keys: Mapping[str, Any],
         audience: str = "sincpro",
         ttl_seconds: int = 60,
         name: str = "service-tokens",
+        clock: Callable[[], float] = time.time,
     ) -> None:
         """A provider issuing as `issuer` for `audience`, with tokens alive `ttl_seconds`.
 
         Context: the last key of `keys` signs — the newest, by insertion order — and every key
         verifies; rotating is adding a key at the end and dropping the oldest once no token
-        signed with it can still be alive. No key at all is a `ValueError`, at construction.
+        signed with it can still be alive. A key is text or a pydantic `Secret`. No key at all
+        is a `ValueError`, at construction. `clock` answers seconds since the epoch — a test's.
 
             ServiceTokenProvider("billing", keys={"2026-08": old, "2026-09": new})
                 ->  signing_key == "2026-09"; both keys verify
             ServiceTokenProvider("billing", keys={})
                 ->  raises ValueError("ServiceTokenProvider needs at least one key")
-
-        The rest is taken as given: `issuer`, `audience`, `ttl_seconds`, `name`.
         """
         if not keys:
             raise ValueError("ServiceTokenProvider needs at least one key")
         self.issuer = issuer
-        self.keys = dict(keys)
+        self.keys = {
+            key_id: jws.HmacKey.of(key_id, secret) for key_id, secret in keys.items()
+        }
         self.signing_key = list(self.keys)[-1]
         self.audience = audience
         self.ttl_seconds = ttl_seconds
         self.name = name
-
-    def _signature(self, key_id: str, signed: str) -> str:
-        """The HMAC-SHA256 of `signed` with key `key_id`, base64url — a JWT's third part."""
-        secret = self.keys[key_id].encode()
-        return _encoded(hmac.new(secret, signed.encode(), hashlib.sha256).digest())
+        self.clock = clock
+        self._rules = jws.ClaimRules(
+            audiences=frozenset({audience}),
+            leeway=0,
+            required=frozenset({"exp", "sub", "iss"}),
+            what="service token",
+        )
 
     def token_for(self, identity: Identity) -> str:
         """A signed JWT saying this service acts for `identity`, valid for `ttl_seconds`.
@@ -89,57 +81,45 @@ class ServiceTokenProvider(AuthProvider):
                 ->  "eyJhbGciOiJIUzI1NiIs….eyJpc3MiOiJiaWxsaW5nIi….3q2-…"
 
         1. The header names HS256 and the signing key's id (`kid`).
-        2. The claims: issuer, audience, issued-at, expiry `now + ttl_seconds`, the identity's
-           subject, kind, tenant and sorted permissions, and `act` naming this service.
-        3. Header and claims are compact JSON, base64url, joined by a dot.
-        Final: that text and its signature, joined by a dot.
+        2. The claims: issuer, audience, issued-at, expiry `now + ttl_seconds`, a token id
+           (`jti`), the identity's subject, kind, tenant and sorted permissions, and `act`
+           naming this service.
+        Final: header and claims as compact JSON, base64url, signed with the newest key.
         """
-        now = int(time.time())
-        header = {"alg": "HS256", "typ": "JWT", "kid": self.signing_key}
+        now = int(self.clock())
+        key = self.keys[self.signing_key]
+        header = {"alg": key.algorithm, "typ": "JWT", "kid": self.signing_key}
         claims: dict[str, Any] = {
             "iss": self.issuer,
             "aud": self.audience,
             "iat": now,
             "exp": now + self.ttl_seconds,
+            "jti": random_token(length=12),
             "sub": identity.subject,
             "kind": identity.kind.value,
             "tenant": identity.tenant,
             "permissions": sorted(identity.permissions),
             "act": {"sub": f"service:{self.issuer}"},
         }
-        signed = ".".join(
-            _encoded(json.dumps(part, separators=(",", ":")).encode())
-            for part in (header, claims)
-        )
-        return f"{signed}.{self._signature(self.signing_key, signed)}"
+        return jws.encode(header, claims, key.sign)
 
-    def _claims(self, token: str) -> dict[str, Any]:
+    def _claims(self, token: str) -> Mapping[str, Any]:
         """The claims of `token` once it is proven genuine, current and for this audience —
         `Unauthenticated` with the reason otherwise.
 
-        1. Three parts, a header naming a key this provider holds and HS256 — `alg` read
-           from the header is never trusted to pick another algorithm.
+        1. A compact JWS whose header names a key this provider holds — `alg` read from the
+           header is never trusted to pick another algorithm: the key's own must match.
         2. The signature, compared in constant time.
-        3. The audience.
-        Final: the expiry, then the claims.
+        Final: the audience, the expiry and the claims every token of these carries.
         """
-        try:
-            header_part, claims_part, signature = token.split(".")
-            header = json.loads(_decoded(header_part))
-            claims = json.loads(_decoded(claims_part))
-        except ValueError as error:
-            raise exceptions.Unauthenticated("malformed service token") from error
-        key_id = header.get("kid")
-        if header.get("alg") != "HS256" or key_id not in self.keys:
+        parsed = jws.parse(token, what="service token")
+        key = self.keys.get(parsed.key_id or "")
+        if key is None or parsed.algorithm != key.algorithm:
             raise exceptions.Unauthenticated("service token signed with an unknown key")
-        expected = self._signature(key_id, f"{header_part}.{claims_part}")
-        if not hmac.compare_digest(expected, signature):
+        if not key.verifies(parsed):
             raise exceptions.Unauthenticated("service token signature does not match")
-        if claims.get("aud") != self.audience:
-            raise exceptions.Unauthenticated("service token is for another audience")
-        if int(claims.get("exp", 0)) < int(time.time()):
-            raise exceptions.Unauthenticated("service token expired")
-        return claims
+        self._rules.check(parsed.claims, now=self.clock())
+        return parsed.claims
 
     def authenticate(self, credentials: Credentials) -> Identity | None:
         """The identity the peer acts for, read from the `x-sp-service-token` header.
@@ -168,6 +148,8 @@ class ServiceTokenProvider(AuthProvider):
             permissions=frozenset(claims.get("permissions", ())),
             provider=self.name,
             actor=Identity.service(claims["iss"]),
+            token_id=claims.get("jti"),
+            expires_at=jws.moment(claims, "exp"),
         )
 
     def security_scheme(self) -> dict[str, Any] | None:
