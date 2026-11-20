@@ -285,8 +285,9 @@ own `CircuitOpen`. Depth: `docs/core/circuit-breaker.md`.
 
 **Limiting how often** (`sincpro_framework.rate_limiter`). Wired where a circuit is, never inside a
 use case. A dependency's quota: the adapter takes a `RateLimiter("siat", 10, per=1s, wait=5s)` in
-its constructor beside its circuit, built in `infrastructure/dependencies.py` — its calls are paced,
-not failed. Each caller: an interceptor that opens `with limiter:` (`by="user_id"`), registered in the
+its constructor beside its circuit, built in `infrastructure/dependencies.py`, and opens the limiter
+**outside** it — `with self.rate_limiter, self.circuit_breaker:` — or the limiter's refusals
+(`EXHAUSTED`) open the circuit; its calls take their turns in order and are paced, not failed. Each caller: an interceptor that opens `with limiter:` (`by="user_id"`), registered in the
 context's `__init__.py` after `from . import services`, beside `auth.on(...)`. A per-IP or
 whole-service ceiling belongs at the edge (Kong); "at most 4 per buyer" is a rule of the write, not
 a rate. Depth: `docs/core/rate-limit.md`.

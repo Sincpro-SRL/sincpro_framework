@@ -7,8 +7,8 @@ lets so many calls through every so long; past that, a call is **refused** — n
 once with `RateLimited` — or, when it may, **waits its turn**.
 
 `RateLimited` is `EXHAUSTED`, with the seconds until there is room as its `retry_after` — never
-under a second —, which every wire (429 and `Retry-After` over REST), a pipeline's `Retry` and a
-queue already know how to wait for. A limiter is part of the core and needs no library; it has
+under a second —: 429 and `Retry-After` over REST; a pipeline's `Retry` waits it, and so does a
+queue whose broker holds the wait ([queue](../entrypoints/queue.md#how-long-a-retry-waits)). A limiter is part of the core and needs no library; it has
 the shape of a [circuit](circuit-breaker.md): built once, used as a block, a decorator or a call,
 its state stored where the context stores its leases.
 
@@ -31,7 +31,7 @@ A limiter is wired where a circuit is, never inside a use case:
 
 | A limit on | File | Written as |
 |---|---|---|
-| a dependency's quota | `adapters/siat.py`, built in `infrastructure/dependencies.py` | the adapter takes it in its constructor, as a `CircuitBreaker`: `add_dependency("siat", SiatClient(CircuitBreaker("siat"), RateLimiter("siat", 10, per=timedelta(seconds=1), wait=timedelta(seconds=5))))` — every Feature that uses the adapter shares its one limit |
+| a dependency's quota | `adapters/siat.py`, built in `infrastructure/dependencies.py` | the adapter takes it in its constructor beside its `CircuitBreaker` — `add_dependency("siat", SiatClient(RateLimiter("siat", 10, per=timedelta(seconds=1), wait=timedelta(seconds=5)), CircuitBreaker("siat")))` — and opens the limiter **outside** the circuit, `with self.rate_limiter, self.circuit_breaker:`: a call the limiter refuses never reaches the circuit, which counts only what the dependency answered. Every Feature that uses the adapter shares its one limit |
 | each caller | the bounded context's `__init__.py`, after `from . import services` | an interceptor that opens the block — beside `auth.on(...)` and the error handlers, step 3 of the bootstrap |
 
 A Feature never holds a limiter: it raises what it raises, and the limit is said once, where the
@@ -99,8 +99,9 @@ not later.
 ## Waited for: a dependency with a quota
 
 A call to SIAT that fails because this service went too fast is a failure this service caused.
-With `wait=` a call waits its turn instead — up to that long — and is refused only when its turn
-comes later. A coroutine waits without holding the event loop:
+With `wait=` a call takes its turn — up to that far ahead — and waits for it: the turns go in the
+order they were asked, a newcomer never takes a waiting caller's, and a call is refused only when
+its turn comes later than it may wait. A coroutine waits without holding the event loop:
 
 ```python
 import asyncio
@@ -178,8 +179,9 @@ assert recorder.totals("sincpro.rate_limiter.refusals") == {
 ```
 
 Every refusal — made, or only watched — is counted on `sincpro.rate_limiter.refusals`, labelled
-by `sincpro.limiter` and `sincpro.enforced`; one that is only watched also writes a line in the
-log. Once the numbers say the limit is right, `enforce` goes back to its default.
+by `sincpro.limiter` and `sincpro.enforced` — and logged nowhere: under the traffic a limit is
+for, a line per call would bury the log. Once the numbers say the limit is right, `enforce` goes
+back to its default.
 
 ## How it counts
 
@@ -196,12 +198,16 @@ What that gives, against the usual counters:
 |---|---|---|
 | A burst across the edge of two windows | up to twice the limit | never more than the limit |
 | A refused call | counted | writes nothing |
-| A call that waits | counted again on each try | takes no place while it waits |
+| A call that waits | counted again on each try | takes its turn once, and waits for it |
 | What it stores | a counter per window | one number per key |
 
 A count every caller shares — no `by` — is one key that every replica compares and writes: under
-heavy concurrency the writers retry. That is why a ceiling for the whole service belongs at the
-edge, and a limiter here is per caller or per dependency.
+heavy concurrency the writers retry, and a call that loses 64 tries in a row is refused for a
+second rather than spin. That is why a ceiling for the whole service belongs at the edge, and a
+limiter here is per caller or per dependency.
+
+The moment the next call is due is read on each replica's own clock: replicas whose clocks drift
+apart let a little more through, as much as they drift — keep them on NTP.
 
 ## Where its state lives: the context's
 
