@@ -128,6 +128,9 @@ reportInvalidTypeForm = "none"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+# A test past a minute dumps where every thread is: the suite runs in minutes, and one that
+# waits shows its stack in the log instead of only the time it took.
+faulthandler_timeout = 60
 markers = [
     "realworld: end-to-end cases over a populated ledger; `make test-realworld`",
     "stress: the real-world cases at volume, timed; `make test-stress`",

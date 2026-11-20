@@ -169,7 +169,7 @@ except InvoiceRefused as error:
     refused = str(error)
 
 try:
-    billing(CommandSlow(seconds=8))
+    billing(CommandSlow(seconds=4))  # past the 3 s the environment gives every call
     timed_out = False
 except ContextTimeout:
     timed_out = True
@@ -245,7 +245,7 @@ def test_a_service_configured_only_by_its_environment_is_answered_by_the_other(
     environment = {
         **os.environ,
         "PYTHONPATH": str(context_on_disk),
-        "SINCPRO_CONTEXT_MAP": f"billing-two-processes={service_b}?timeout=5",
+        "SINCPRO_CONTEXT_MAP": f"billing-two-processes={service_b}?timeout=3",
     }
 
     finished = subprocess.run(
