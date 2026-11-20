@@ -1,7 +1,8 @@
 # PRD_11: Authentication and authorization, from the application's point of view
 
 - **Status**: phases 1 and 2 built — `sincpro_framework.auth`, documented in
-  [docs/auth](../auth/README.md). Phases 3–5 proposed, to iterate.
+  [docs/auth](../auth/README.md). Phase 3 and the accounts are built by
+  [PRD_34](PRD_34_auth-plugin.md) (#304); phase 4 is #305; phase 5 is still proposed.
 - **Depends on**: interceptors (`bus.interceptor`, ordered), dependencies (`add_dependency`,
   `DependencyContextType`), repository hooks (`Hooks.gate`), `Criteria`, `KeyValueStore`, domain
   events, settings (`SincproConfig`, `Secret`), the entrypoints (RPC, MCP, gRPC, HTTP Open Host),
@@ -179,8 +180,10 @@ provider that calls the network blocks that thread only.
 
 - **Kerberos, NTLM, SPNEGO** — handshakes over several round trips bound to a connection: done at
   the proxy, which hands on a header or a JWT.
-- **Interactive login** — passwords, OTP, passkeys, SAML: the identity provider's job. No user
-  table, no login UI, no token issuing for users.
+- **Interactive login** — passkeys, SAML: the identity provider's job. *Reversed in part by
+  PRD_34*: a project that manages its own users gets the building blocks (password hashing,
+  lockout, one-time tokens, TOTP, a token issuer with refresh rotation); still no user table and
+  no login UI.
 - **Masking fields of a response** — `WhenDenied.SKIP` leaves out a step, not a field.
 - **Revocation in the middle of a long stream** — authenticated when it connects.
 - **Asynchronous providers** — until a case needs one.
@@ -380,7 +383,8 @@ stays out of the `Identity`, resolved from the tenant by the adapter that alread
    opened. Proposed: `security.as_system(reason=<event name>)` by default, and later the publisher's identity
    carried signed in the event's metadata.
 2. **Odoo as the identity provider** — should the Odoo SDKs issue OIDC tokens for Odoo users?
-3. **The JWT library of the `[jwt]` extra** — joserfc or PyJWT (Authlib's stack is joserfc).
+3. **The JWT library of the `[jwt]` extra** — PyJWT, decided in PRD_34: it signs and verifies the
+   asymmetric signatures; the claims are checked by the framework's own code.
 4. **Reads filtered by default** — should a repository apply `scope_of` by itself while an identity
    is in play, or stay explicit as in phase 1?
 

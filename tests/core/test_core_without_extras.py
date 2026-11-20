@@ -31,6 +31,11 @@ BLOCKED = (
     "prometheus_client",
     "boto3",
     "botocore",
+    "jwt",
+    "cryptography",
+    "argon2",
+    "requests",
+    "httpx",
 )
 
 PROGRAM = r"""

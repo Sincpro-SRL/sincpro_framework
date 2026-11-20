@@ -42,6 +42,9 @@ redis = {version = ">=5", optional = true}
 pymemcache = {version = ">=4", optional = true}
 boto3 = {version = ">=1.35", optional = true}
 pillow = {version = ">=11", optional = true}
+pyjwt = {version = ">=2.10", optional = true, extras = ["crypto"]}
+cryptography = {version = ">=44", optional = true}
+argon2-cffi = {version = ">=23.1", optional = true}
 
 [tool.poetry.extras]
 opentelemetry = [
@@ -66,6 +69,8 @@ redis = ["redis"]
 memcached = ["pymemcache"]
 aws = ["boto3"]
 images = ["pillow"]
+jwt = ["pyjwt", "cryptography"]
+argon2 = ["argon2-cffi"]
 
 [tool.poetry.group.dev.dependencies]
 isort = "^9.0.1"
@@ -107,6 +112,11 @@ grpcio-status = ">=1.60"
 prometheus-client = ">=0.20"
 hypothesis = ">=6.100"
 psycopg = {version = ">=3.2", extras = ["binary"]}
+pyjwt = {version = ">=2.10", extras = ["crypto"]}
+cryptography = ">=44"
+argon2-cffi = ">=23.1"
+requests = ">=2.32"
+httpx = ">=0.28"
 
 
 [build-system]
