@@ -157,7 +157,7 @@ def test_fastapi_answers_readiness_as_a_problem():
     pytest.importorskip("fastapi")
     from sincpro_framework.entrypoints import FastApiGateway
 
-    gateway = FastApiGateway([_bus()], unguarded=True)
+    gateway = FastApiGateway([_bus()])
     gateway.readiness.add("valkey", _down)
 
     answered = TestClient(gateway.app()).get("/readyz")

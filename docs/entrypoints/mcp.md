@@ -84,8 +84,7 @@ from sincpro_framework.entrypoints import McpGateway
 class IssueInvoice(Feature): ...
 
 @billing.feature(QueryInvoice)
-@auth.public
-@mcp()
+@mcp()                                   # declares nothing: open
 class GetInvoice(Feature): ...
 
 server = McpGateway([billing, sales]).server()                      # declared
@@ -103,7 +102,7 @@ admin = McpGateway([billing], exposure=Exposure.CATALOG).server()   # every use 
 | `openWorldHint` | `@mcp(open_world=True)`; false by default |
 | `title` | `@mcp(title=...)`, on the tool and its annotations |
 | deprecation | MCP has no field: the description starts `DEPRECATED since …, removed on …; use … instead.` |
-| access | every exposed use case says who may call it (`@auth.requires` / `@auth.public`); a bus with no `AccessControl` needs `McpGateway(..., unguarded=True)` |
+| access | open unless the use case declares `@auth.authenticated` or `@auth.requires`; the bus's `AccessControl` decides on every call, and the gateway logs each tool it publishes open |
 
 **Hints are never authorization.** Each tool call goes through the bus as whoever called; a tool
 declared `destructive=False` is refused exactly as its `@auth.requires` says.
@@ -115,7 +114,7 @@ subclassing `McpWire` and passing `McpGateway(..., port=MyWire())`.
 
 `Entrypoint(bus)` is the catalog of one bus — every JSON-safe use case, named by its DTO class
 (`CommandIssueInvoice`), with the derived hints. The catalog over several buses is
-`McpGateway([billing, sales], exposure=Exposure.CATALOG, unguarded=True)`.
+`McpGateway([billing, sales], exposure=Exposure.CATALOG)`.
 
 ---
 

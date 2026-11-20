@@ -21,9 +21,9 @@ class CommandPing(DataTransferObject):
     pass
 
 
-def sales(strict: bool = False) -> tuple[UseFramework, AccessControl[SalesPermission]]:
-    auth = AccessControl[SalesPermission](strict=strict)
-    bus = UseFramework(f"sales-may-run-{strict}", log_after_execution=False)
+def sales() -> tuple[UseFramework, AccessControl[SalesPermission]]:
+    auth = AccessControl[SalesPermission]()
+    bus = UseFramework("sales-may-run", log_after_execution=False)
 
     @bus.feature(CommandCreateQuote)
     @auth.requires(SalesPermission.QUOTE)
@@ -63,12 +63,11 @@ def test_the_identity_in_play_is_asked_when_none_is_given():
         assert not auth.may_run(bus, CommandCreateQuote)
 
 
-def test_what_declares_nothing_runs_unless_strict():
+def test_what_declares_nothing_may_be_run_by_anyone():
     bus, auth = sales()
-    strict_bus, strict_auth = sales(strict=True)
 
     assert auth.may_run(bus, CommandPing, GUEST) is True
-    assert strict_auth.may_run(strict_bus, CommandPing, GUEST) is False
+    assert auth.may_run(bus, CommandPing, Identity.anonymous()) is True
 
 
 def test_the_requirements_of_a_command_on_one_bus():

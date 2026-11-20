@@ -63,7 +63,7 @@ def _client(bus: UseFramework) -> Any:
 
     from sincpro_framework.entrypoints import FastApiGateway
 
-    return TestClient(FastApiGateway([bus], unguarded=True).app())
+    return TestClient(FastApiGateway([bus]).app())
 
 
 def test_accept_language_is_read_best_first():

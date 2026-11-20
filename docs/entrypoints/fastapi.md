@@ -75,7 +75,7 @@ class CashBalance(Feature):
         return ResponseCashBalance(account_id=dto.account_id, balance=1150)
 
 
-balances = TestClient(FastApiGateway([treasury], unguarded=True).app())
+balances = TestClient(FastApiGateway([treasury]).app())
 assert balances.get("/treasury/balances/A-1").json() == {"account_id": "A-1", "balance": 1150}
 ```
  The `operationId` is the DTO's name. When two contexts
@@ -161,8 +161,7 @@ class IssueInvoice(Feature):
 
 
 @billing.feature(QueryInvoice)
-@auth.public
-@rest.get("/invoices/{invoice_id}")
+@rest.get("/invoices/{invoice_id}")                   # declares nothing: open to anyone
 class GetInvoice(Feature):
     def execute(self, dto: QueryInvoice) -> Invoice:
         if dto.invoice_id == "F-404":
@@ -409,7 +408,7 @@ async def measure(body: DocumentBody, call: BusCall = Depends(bus_call(documents
     return await call(CommandMeasureDocument(content=content))
 
 
-documents_api = FastApiGateway({"documents": documents}, unguarded=True)
+documents_api = FastApiGateway({"documents": documents})
 documents_app = documents_api.app()
 documents_app.include_router(uploads)
 assert documents_api.verify(documents_app) == []
@@ -468,7 +467,7 @@ class ListMovements(Feature):
         )
 
 
-ledger_client = TestClient(FastApiGateway([ledger], unguarded=True).app())
+ledger_client = TestClient(FastApiGateway([ledger]).app())
 criteria = json.dumps({"pagination": {"limit": 3}})          # the same on every page
 
 read, cursor = [], None

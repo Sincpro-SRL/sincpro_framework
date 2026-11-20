@@ -37,7 +37,7 @@ def _client(count: int) -> TestClient:
     bus = UseFramework("shop", log_after_execution=False)
     bus.add_dependency("repository", repository)
     bus.feature(QueryExportSales)(SaleReads)
-    return TestClient(FastApiGateway([bus], unguarded=True).app())
+    return TestClient(FastApiGateway([bus]).app())
 
 
 def test_an_export_streams_json_lines_with_the_name_to_save_it_under():
@@ -82,7 +82,7 @@ def test_the_client_contract_says_the_answer_is_streamed_bytes():
     bus.add_dependency("repository", repository)
     bus.feature(QueryExportSales)(SaleReads)
 
-    contract = client_contracts([FastApiGateway([bus], unguarded=True)])["shop"]
+    contract = client_contracts([FastApiGateway([bus])])["shop"]
     operation = contract["operations"]["shop.QueryExportSales"]
     output = operation["output"]
 

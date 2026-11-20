@@ -71,10 +71,12 @@ The build refuses the surface, giving every reason at once, when:
 - two handlers consume one command channel,
 - a command channel also carries events,
 - `max_attempts` or `concurrency` is below 1,
-- `time_limit` is not below the inbox's `in_progress_for`,
-- a Command does not say who may send it: it needs `producers=`, an `@auth.requires` or
-  `@auth.public` on a guarded bus, or `unguarded=True` on the gateway. A guarded bus with
-  nothing declared is refused even with `producers=`, because the bus itself would refuse the call.
+- `time_limit` is not below the inbox's `in_progress_for`.
+
+Who may send a Command is never a build condition. It is open unless its use case declares
+`@auth.authenticated` or `@auth.requires(...)` — the bus's `AccessControl` decides, at the
+application layer — and `producers=` is an optional filter of who may produce it. The gateway
+logs each consumer it publishes open.
 
 ## Settling: a verdict per delivery
 
@@ -273,7 +275,7 @@ Each subscription the gateway built appears there as a channel with a `receive` 
 
 | | |
 |---|---|
-| `QueueGateway(broker, buses, options=, exposure=, unguarded=, port=)` | `wire = "queue"`; its port is a `QueueWire` |
+| `QueueGateway(broker, buses, options=, exposure=, port=)` | `wire = "queue"`; its port is a `QueueWire` |
 | `gateway.build()` | the `Subscription`s registered; a second call registers nothing new |
 | `await gateway.consume(message, as_=, decode=, channel=)` | full control; answers a `Verdict` |
 | `gateway.surface()`, `verify()`, `manifest()`, `asyncapi()` | as on every wire |

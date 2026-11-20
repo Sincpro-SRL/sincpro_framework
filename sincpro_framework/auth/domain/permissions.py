@@ -1,8 +1,11 @@
 """What a use case or a hook may require: a permission of the bounded context's own, one among
-several, and what happens when it is missing.
+several, a role, a rule of the project's own, and what happens when it is missing.
 
     class BillingPermission(Permission):
         ISSUE_INVOICE = "billing.invoice.issue"
+
+    RoleRequirement(("billing.manager",))             Odoo's `groups=` — a role held
+    Rule("its own invoice", lambda call: call.dto.owner == call.identity.subject)
 
 Context: the member is for code — "find usages" shows every handler that requires it, and
 renaming it is a safe refactor; the value is for the wire — tokens, the IdP, `describe()` carry
@@ -10,10 +13,13 @@ it, so changing it is a breaking change. The base is empty on purpose: Python le
 no members be extended.
 """
 
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
 from datetime import timedelta
 from enum import StrEnum
-from typing import Literal
+from typing import Any, Literal
+
+from sincpro_framework.auth.domain.identity import Identity
 
 
 class Permission(StrEnum):
@@ -109,22 +115,78 @@ class AssuranceRequirement:
         return f"assurance({', '.join(said)})"
 
 
-type Requirement = Permission | AnyOf | ByField | AssuranceRequirement
+@dataclass(frozen=True)
+class AccessCall:
+    """What a rule is asked about: who calls, which use case, with what, on what — and the
+    execution's context, where the runtime says the rest (the tenant, the language, the flow,
+    what a provider or an entrance put there).
+
+        AccessCall(identity=ana, use_case="CommandApprove", dto=CommandApprove(...),
+                   context={"tenant_id": "bo", ...})
+    """
+
+    identity: Identity
+    use_case: str = ""
+    """The DTO's name of the use case run — empty when a handler asks `allows` by hand."""
+    dto: Any = None
+    resource: Any = None
+    context: Mapping[str, Any] = field(default_factory=dict)
+
+
+@dataclass(frozen=True)
+class RoleRequirement:
+    """Met when the identity holds one of `roles` — `auth.role(...)`: Odoo's `groups=`. Read off
+    the roles the identity carries, which a `GrantResolver` fills with their closure — a manager
+    holds what implies it.
+
+        RoleRequirement(("billing.manager", "billing.admin"))   an accountant  ->  refused
+    """
+
+    roles: tuple[str, ...]
+
+    def __str__(self) -> str:
+        """`role billing.manager or billing.admin`."""
+        return "role " + " or ".join(self.roles)
+
+
+@dataclass(frozen=True)
+class Rule:
+    """Met when `check` says so of the call — `auth.rule(...)`: whatever the project decides
+    with the identity, the Command, the resource or the context. `check` may raise an
+    `AuthError` of its own (a step-up, `Unauthenticated`) to answer otherwise than 403.
+
+        Rule("its own invoice", lambda call: call.dto.owner == call.identity.subject)
+    """
+
+    name: str
+    check: Callable[[AccessCall], bool] = field(compare=False)
+
+    def __str__(self) -> str:
+        """Its name — what `describe()`, a refusal and the documents say."""
+        return self.name
+
+
+type Requirement = Permission | AnyOf | ByField | AssuranceRequirement | RoleRequirement | Rule
+
+
+OPEN = "open"
+"""How a use case that declares nothing is described — in `describe()`, the manifest, OpenAPI
+and the logs: anyone may run it."""
 
 
 @dataclass(frozen=True)
 class AccessDeclaration:
-    """What a use case or a hook declared: `public`, `authenticated`, or the requirements it
-    needs, and what it does when they are missing."""
+    """What a use case or a hook declared: `authenticated`, or the requirements it needs, and
+    what it does when they are missing. Declaring nothing is open — anyone may run it."""
 
-    kind: Literal["public", "authenticated", "requires"]
+    kind: Literal["authenticated", "requires"]
     requirements: tuple[Requirement, ...] = ()
     when_denied: WhenDenied = WhenDenied.RAISE
 
     def __str__(self) -> str:
         """How `describe()` and the logs say it.
 
-        AccessDeclaration("public")                                   ->  "public"
+        AccessDeclaration("authenticated")                            ->  "authenticated"
         AccessDeclaration("requires", (A, AnyOf((B, C))))             ->  "a and b or c"
         AccessDeclaration("requires", (A,), WhenDenied.SKIP)          ->  "a (else skipped)"
         """

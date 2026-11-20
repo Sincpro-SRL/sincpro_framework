@@ -38,7 +38,6 @@ from sincpro_framework.entrypoints.adapters.queue.wire import (
 from sincpro_framework.entrypoints.domain.bindings import QueueBinding
 from sincpro_framework.entrypoints.domain.surface import (
     Exposure,
-    Operation,
     Resolved,
     Wire,
 )
@@ -78,7 +77,6 @@ class QueueGateway(Gateway):
         version: str = "1.0.0",
         options: QueueOptions | None = None,
         exposure: Exposure = Exposure.DECLARED,
-        unguarded: bool = False,
         port: Wire[Any] | None = None,
     ) -> None:
         """`broker` and `options` build the wire; a `port` (a `QueueWire`) brings its own.
@@ -92,7 +90,7 @@ class QueueGateway(Gateway):
         1. No port: a `QueueWire` over `broker` and `options` — refused without a broker.
         2. A port that is not a `QueueWire` is refused; given with a broker or options too,
            refused as well.
-        3. The port told whether the gateway is unguarded, and stored as the gateway's wire.
+        3. The port stored as the gateway's wire.
         Final: the `Gateway` built over it, with the buses, layers and exposure given.
         """
         if port is None:
@@ -108,7 +106,6 @@ class QueueGateway(Gateway):
             )
         elif broker is not None or options is not None:
             raise ValueError("QueueGateway(port=...): the broker and options are the port's")
-        port.unguarded = unguarded
         self._wire: QueueWire = port
         super().__init__(
             instances,
@@ -116,7 +113,6 @@ class QueueGateway(Gateway):
             title,
             version,
             exposure=exposure,
-            unguarded=unguarded,
             port=port,
         )
 
@@ -162,11 +158,6 @@ class QueueGateway(Gateway):
             or self._declared_on_queue(one)
         ]
 
-    def _access_problems(self, operation: Operation, wire: str) -> list[str]:
-        """The queue's fallback rule knows `producers=`, which the operation does not carry:
-        `QueueWire.validate` applies it with the binding in hand."""
-        return []
-
     def build(self) -> list[Subscription]:
         """The surface validated, then one subscription per channel and consumer group
         registered on the broker — MANUAL settlement on each."""
@@ -174,7 +165,7 @@ class QueueGateway(Gateway):
 
     def _resolved_for(self, command: type) -> Resolved[QueueBinding]:
         """`command` on the surface — or, for a full-control subscriber of the project's, the
-        binding the wire derives, under the same access rule."""
+        binding the wire derives."""
         for one in self.surface():
             if one.operation.command is command:
                 return one
@@ -186,13 +177,7 @@ class QueueGateway(Gateway):
             operation = self._operation(published, handler)
             group = self.groups[alias]
             binding = self._wire.derive(operation, group)
-            resolved = Resolved[QueueBinding](
-                operation=operation, group=group, binding=binding
-            )
-            problem = self._wire._access_problem(resolved)
-            if problem:
-                raise exceptions.ProgrammingError(problem)
-            return resolved
+            return Resolved[QueueBinding](operation=operation, group=group, binding=binding)
         raise exceptions.ProgrammingError(
             f"consume(as_={command.__name__}): no bus of this gateway answers it"
         )
@@ -252,7 +237,6 @@ def events_gateway(
     return _EventsGateway(
         instances=buses,
         port=EventsWire(broker, options, channel_of_name, group),
-        unguarded=True,
     )
 
 

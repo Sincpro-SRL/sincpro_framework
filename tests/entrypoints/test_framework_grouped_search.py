@@ -49,7 +49,7 @@ def _client():
     class FeeReads(EntityReads[Fee]):
         pass
 
-    return TestClient(FastApiGateway([bus], unguarded=True).app())
+    return TestClient(FastApiGateway([bus]).app())
 
 
 def _held(answer: dict) -> list:

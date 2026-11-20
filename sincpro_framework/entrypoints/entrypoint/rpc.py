@@ -57,7 +57,6 @@ class RpcGateway(Gateway):
         max_batch_size: int | None = None,
         max_body_bytes: int | None = None,
         exposure: Exposure = Exposure.DECLARED,
-        unguarded: bool = False,
         port: Wire[Any] | None = None,
     ):
         """Without a `port`, a `JsonRpcWire` of `title`, `version` and the limits (each its
@@ -93,7 +92,6 @@ class RpcGateway(Gateway):
             port.title,
             port.version,
             exposure=exposure,
-            unguarded=unguarded,
             port=port,
         )
 

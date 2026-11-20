@@ -49,8 +49,7 @@ from sincpro_framework.entrypoints.entrypoint.decorators import rpc
 class IssueInvoice(Feature): ...
 
 @billing.feature(QueryInvoice)
-@auth.public
-@rpc("billing.invoices.get")             # a whole name of its own
+@rpc("billing.invoices.get")             # a whole name of its own; declares nothing: open
 class GetInvoice(Feature): ...
 
 RpcGateway({"billing": billing}).run()
@@ -67,10 +66,11 @@ publishes), `bind(Command, RpcBinding(...))` (publishes), `@internal` (never on 
 `surface()`, `manifest()` and `verify()` are the core's (PRD_14): the manifest's `name` is the
 JSON-RPC method name.
 
-**Who may call it.** A published method on a bus guarded by `AccessControl` must declare
-`@auth.requires(...)` or `@auth.public`; a bus with no `AccessControl` is refused unless the
-gateway says so on purpose: `RpcGateway(buses, unguarded=True)`. Both are build errors, listed
-together, before anything is served.
+**Who may call it.** The bus's `AccessControl` decides, at the application layer — never the
+gateway. A method is open unless its use case declares `@auth.authenticated` or `@auth.requires(...)`;
+a bus with no `AccessControl` is open whole. The gateway logs each method it publishes open, and
+the document says it (`x-sincpro-access: open`). `@entrypoints.internal` keeps a use case off every
+wire.
 
 ---
 
@@ -225,7 +225,8 @@ Each method object carries, besides its params and result:
 |---|---|
 | `tags` | one tag, the **context** (the bus's alias) — the document is tagged per context |
 | `x-sincpro-context`, `x-sincpro-dto` | the context and the DTO the method runs |
-| `x-sincpro-requires` | what the use case declared: `public`, `authenticated`, its requirements (`billing.invoice.issue`), or `unguarded` |
+| `x-sincpro-requires` | what the use case declared: `authenticated`, or its requirements (`billing.invoice.issue`) |
+| `x-sincpro-access` | `open` when it declared nothing, or its bus has no `AccessControl` — anyone may call it |
 | `x-idempotent` | `true` for a `Query` (it reads) or a use case under `@idempotency.once` — a retry is safe |
 | `deprecated`, `x-sunset` | from the binding's `Deprecation` |
 
@@ -392,7 +393,7 @@ enforced after the request already arrived.
 
 | Symbol | Role |
 |---|---|
-| `RpcGateway(buses, layers=, title=, version=, max_batch_size=50, max_body_bytes=1 MiB, *, exposure=DECLARED, unguarded=False, port=None)` | Composition root. Several buses, one process. |
+| `RpcGateway(buses, layers=, title=, version=, max_batch_size=50, max_body_bytes=1 MiB, *, exposure=DECLARED, port=None)` | Composition root. Several buses, one process. |
 | `.add(alias, bus, include=, exclude=, wrap=)`, `.group(bus, namespace=, version=)`, `.override(...)`, `.bind(...)` | The composition (PRD_14). |
 | `.surface()`, `.manifest()`, `.verify()` | The validated surface, as data; the reasons it would be refused. |
 | `.build()` | The `RpcSurface` served — methods, limits, document. |

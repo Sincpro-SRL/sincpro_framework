@@ -97,7 +97,6 @@ def _guarded(name: str = "wired-billing") -> tuple[UseFramework, AccessControl[P
             return Issued(by=security.identity.subject)
 
     @billing.feature(CommandHealth)
-    @auth.public
     class Health(Feature):
         def execute(self, dto: CommandHealth) -> Issued:
             return Issued(by=security.identity.subject)
@@ -170,7 +169,7 @@ def test_a_bus_nobody_guards_answers_as_before() -> None:
         def execute(self, dto: CommandIssue) -> Issued:
             return Issued(by=security.identity.subject)
 
-    gateway = RpcGateway({"billing": plain}, exposure=Exposure.CATALOG, unguarded=True)
+    gateway = RpcGateway({"billing": plain}, exposure=Exposure.CATALOG)
     client = TestClient(gateway.app())
     assert client.post("/rpc", json=_call(ISSUE_METHOD)).json()["result"] == {
         "by": "anonymous"

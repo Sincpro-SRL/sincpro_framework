@@ -36,7 +36,6 @@ def _desk(gives_user_id: Any = None) -> UseFramework:
         bus.context_provider(gives=[ContextKey.USER_ID])(gives_user_id)
 
     @bus.feature(CommandWhoActs)
-    @auth.public
     class WhoActs(Feature):
         def execute(self, dto: CommandWhoActs) -> Answer:
             return Answer(user_id=use_context().get(ContextKey.USER_ID))

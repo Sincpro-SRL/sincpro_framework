@@ -260,6 +260,9 @@ answers with its `permissions`.
 | `AccessControl(strict=True)` | a use case entered from outside that declares nothing is refused; a nested one inherits |
 | `AccessControl(enabled=False)` | nothing is checked; `on(...)` warns once |
 | `when_denied=WhenDenied.SKIP` | a use case answers `None`, a hook's moment is left out; logged at info |
+
+> Superseded by #309: `strict=` and `@auth.public` are gone — a use case or hook that declares
+> nothing is open, entered from outside or nested.
 | an ApplicationService orchestrating Features | a nested use case that declares nothing inherits the decision; one that declares is checked again |
 | `security.as_system(reason)` — a cron, a migration | every requirement met; the reason logged |
 | one bus that must not be guarded | no `auth.on(bus)` for it |

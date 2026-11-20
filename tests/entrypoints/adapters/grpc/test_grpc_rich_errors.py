@@ -72,7 +72,7 @@ def _billing() -> UseFramework:
 
 @pytest.fixture(scope="module")
 def call() -> Iterator[Any]:
-    gateway = GrpcGateway({"billing": _billing()}, exposure=Exposure.CATALOG, unguarded=True)
+    gateway = GrpcGateway({"billing": _billing()}, exposure=Exposure.CATALOG)
     server = gateway.server(max_workers=2, reflection=False)
     port = server.add_insecure_port("127.0.0.1:0")
     server.start()

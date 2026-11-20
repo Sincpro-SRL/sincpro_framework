@@ -76,9 +76,9 @@ class Operation(DataTransferObject):
     `reads`."""
     idempotent: bool
     """`@idempotency.once` declared: a retry is safe."""
-    access: str | None
-    """What it declared — `public`, `authenticated`, the requirements — or `unguarded`; `None`
-    when its bus is guarded and it declared nothing."""
+    access: str
+    """What it declared — `authenticated`, the requirements — or `open`: it declared nothing,
+    or its bus has no `AccessControl`; anyone may call it."""
     run: RunFn
     call: CallFn
     """`run` inside the context, the trace and the identity a wire carried — what a wire calls."""

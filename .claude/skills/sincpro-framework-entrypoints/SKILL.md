@@ -115,14 +115,15 @@ class GetInvoice(Feature): ...
 # 2. entrypoints/http/app.py — the only new file
 from sincpro_framework.entrypoints import FastApiGateway
 
-api = FastApiGateway({"billing": billing}, title="Billing API", unguarded=True)
+api = FastApiGateway({"billing": billing}, title="Billing API")
 api.group(billing, version="v1")         # /v1/billing/invoices
 api.readiness.add("valkey", valkey.ping)  # readiness: a binary, a key, a store — bounded in time
 app = api.app()                          # routes, OpenAPI (each entity's contract, ETag), RFC 9457 problems, /healthz, /readyz
 ```
 
-`uvicorn my_service.entrypoints.http.app:app`. `unguarded=True` is only for a bus with no
-`AccessControl` (see `sincpro-framework-auth`). `FastApiGateway` is the REST host; `RestGateway`
+`uvicorn my_service.entrypoints.http.app:app`. Who may call each route is the bus's
+`AccessControl` (see `sincpro-framework-auth`) — open unless a use case restricts it.
+`FastApiGateway` is the REST host; `RestGateway`
 (Starlette) is frozen and remains only for older services.
 
 ## Mistakes an agent makes
@@ -311,9 +312,9 @@ handler inherits, wire by wire, the binding of the one it replaces.
 - **Gateways are made last.** Adding a bus to a gateway builds it, and a wiring error surfaces
   there — register `auth.on(bus)`, interceptors and handlers first. What is registered later answers
   from the next execution.
-- **The build fails closed.** A published use case on a guarded bus must declare
-  `@auth.requires` / `@auth.public`; a bus with no `AccessControl` needs `unguarded=True`. A
-  `{field}` in a path must be a Command field. Wrong hints, reserved names, `@internal` + a binding,
+- **The build fails on what cannot be served, never on access.** Access is open unless a use case
+  declares `@auth.authenticated` / `@auth.requires`; the gateway logs each use case it publishes
+  open. A `{field}` in a path must be a Command field. Wrong hints, reserved names, `@internal` + a binding,
   a deprecation past its sunset — all refused, every reason at once, `ProgrammingError`.
 - **The facade is handed back, not started.** `.routes()`, `.app()`, `.server()`, `.handlers()` let
   the project add middleware, interceptors, plugins. `.run(...)` is the one-liner.

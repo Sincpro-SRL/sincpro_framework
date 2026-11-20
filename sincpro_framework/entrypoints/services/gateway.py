@@ -31,7 +31,7 @@ from typing import Any, ClassVar, Self
 from pydantic import BaseModel, ValidationError
 
 from sincpro_framework import exceptions
-from sincpro_framework.auth import AccessControl
+from sincpro_framework.auth import OPEN, AccessControl
 from sincpro_framework.common.naming import registered_name
 from sincpro_framework.data_layer.caching import Idempotency
 from sincpro_framework.ddd.events import DomainEvent
@@ -63,7 +63,6 @@ from sincpro_framework.sincpro_logger import logger
 from sincpro_framework.use_bus import UseFramework
 
 DEFAULT_LAYERS = (Layer.APP_SERVICES, Layer.FEATURES)
-UNGUARDED = "unguarded"
 TEMPLATE_FIELD = re.compile(r"\{([^{}]+)\}")
 
 type Buses = Mapping[str, UseFramework] | Iterable[UseFramework]
@@ -297,19 +296,19 @@ class Gateway:
         title: str = "sincpro",
         version: str = "1.0.0",
         exposure: Exposure = Exposure.DECLARED,
-        unguarded: bool = False,
         port: Wire[Any] | None = None,
     ) -> None:
         """Publish `instances` — `{"ventas": sales}` under each alias, `[billing]` under each
         bus's own name — in `layers`.
 
-        `exposure` is the mode of a gateway that names a wire; `unguarded=True` says its buses
-        have no `AccessControl` on purpose; `port` is a project's own transport. `title` and
-        `version` are what a wire's document (OpenAPI, OpenRPC) is titled with.
+        `exposure` is the mode of a gateway that names a wire; `port` is a project's own
+        transport. `title` and `version` are what a wire's document (OpenAPI, OpenRPC) is titled
+        with. Who may call what is the buses' own business — their `AccessControl`, at the
+        application layer: a gateway publishes, it never polices.
 
-            Gateway({"ventas": sales}, layers=("features",), unguarded=True)
+            Gateway({"ventas": sales}, layers=("features",))
 
-        1. The layers, title, version, exposure, unguarded and port stored as given.
+        1. The layers, title, version, exposure and port stored as given.
         2. No catalog, group or composition yet; nothing resolved; `buses` the one readiness
            check.
         3. `instances` read as aliases to buses when a mapping, as buses otherwise.
@@ -320,7 +319,6 @@ class Gateway:
         self._title = title
         self._version = version
         self._exposure = exposure
-        self._unguarded = unguarded
         self._port = port
         self._groups: dict[str, Group] = {}
         self._composition: list[tuple[type, Binding | dict[str, Any]]] = []
@@ -453,19 +451,16 @@ class Gateway:
                 layers.append(entry)
         return layers, bound
 
-    def _access_of(self, bus: UseFramework, command: type) -> str | None:
-        """Who may call `command` — what it declared to its bus's `AccessControl`, `unguarded`
-        when the bus has none, `None` when the bus is guarded and it declared nothing.
+    def _access_of(self, bus: UseFramework, command: type) -> str:
+        """Who may call `command` — what it declared to its bus's `AccessControl`; `open` when
+        it declared nothing, or its bus has no `AccessControl`.
 
             _access_of(billing, CommandIssue)   ->  "billing.invoice.issue"   # @auth.requires
-            _access_of(billing, QueryInvoice)   ->  "public"                  # @auth.public
-            _access_of(unguarded, CommandIssue) ->  "unguarded"
+            _access_of(billing, QueryInvoice)   ->  "open"                    # nothing declared
         """
         guard = AccessControl.of(bus)
-        if guard is None:
-            return UNGUARDED
-        declaration = guard.requirements_of(command)
-        return None if declaration is None else str(declaration)
+        declaration = None if guard is None else guard.requirements_of(command)
+        return OPEN if declaration is None else str(declaration)
 
     def _operation(self, published: Published, handler: type) -> Operation:
         """The facts of one published use case a wire derives from — its kind, schemas,
@@ -488,21 +483,6 @@ class Gateway:
             call=packed.call,
             entities=packed.entities,
         )
-
-    def _access_problems(self, operation: Operation, wire: str) -> list[str]:
-        """The fallback rule: what is reachable says who may call it (PRD_14 §7)."""
-        where = f"{operation.command.__name__} ({wire})"
-        if operation.access is None:
-            return [
-                f"{where}: published on a bus guarded by AccessControl, but declares neither "
-                "@auth.requires nor @auth.public — say who may call it"
-            ]
-        if operation.access == UNGUARDED and not self._unguarded:
-            return [
-                f"{where}: its bus '{operation.bus.name}' has no AccessControl — guard it, or "
-                "tell the gateway unguarded=True"
-            ]
-        return []
 
     def _published_by_default(self, published: Published) -> bool:
         """A use case this wire publishes with no binding in DECLARED mode. None on a wire an
@@ -554,7 +534,6 @@ class Gateway:
             )
             return None
         problems.extend(_binding_problems(command, packed.response, binding, today))
-        problems.extend(self._access_problems(operation, wire))
         return Resolved[Any](operation=operation, group=group, binding=binding)
 
     def _answered(self, target: type) -> bool:
@@ -678,7 +657,7 @@ class Gateway:
         2. Resolve; any problem refuses the whole surface with `ProgrammingError`.
         3. Cache it with the revisions it was read at.
         4. In `Exposure.CATALOG`, log every operation published, so an automatic surface is
-           never a surprise.
+           never a surprise; otherwise each one published `open` — anyone may call it.
         Final: the resolved surface.
         """
         revisions = tuple(catalog.revision for catalog in self._catalogs.values())
@@ -692,12 +671,14 @@ class Gateway:
             )
         self._resolved = resolved
         self._resolved_revisions = revisions
-        if self._exposure == Exposure.CATALOG:
-            for entry in self.manifest():
+        for entry in self.manifest():
+            if self._exposure == Exposure.CATALOG:
                 logger.info(
                     f"{entry.wire}: {entry.name} published by catalog — {entry.command}, "
                     f"access {entry.access}"
                 )
+            elif entry.access == OPEN:
+                logger.info(f"{entry.wire}: {entry.name} open — anyone may call it")
         return resolved
 
     def operations(self) -> list[Published]:

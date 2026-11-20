@@ -50,7 +50,7 @@ def store_answers() -> None:
     raise ConnectionError("valkey:6379 refused the connection")
 
 
-gateway = FastApiGateway([ocr], unguarded=True)
+gateway = FastApiGateway([ocr])
 gateway.readiness.add("python", lambda: shutil.which("python3") is not None)   # a binary
 gateway.readiness.add("license", lambda: bool(settings.get("OCR_LICENSE")))   # a key
 gateway.readiness.add("valkey", store_answers, timeout=timedelta(milliseconds=300))   # a store

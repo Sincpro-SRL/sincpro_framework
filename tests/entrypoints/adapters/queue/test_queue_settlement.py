@@ -97,7 +97,7 @@ class Delivery:
         self.broker = broker_cls(middlewares=[Spy])
         self.test_broker = test_broker
         made = (buses or (lambda ran: [billing_bus(ran), accounting_bus(ran)]))(self.ran)
-        self.gateway = QueueGateway(self.broker, made, options=options, unguarded=True)
+        self.gateway = QueueGateway(self.broker, made, options=options)
         self.gateway.build()
 
         @self.broker.subscriber(DLQ)
@@ -472,7 +472,7 @@ def test_an_event_from_fast_stream_queue_is_heard_once_by_its_own_id():
     inbox keys it by the event's own id."""
     ran: list[str] = []
     broker = KafkaBroker()
-    QueueGateway(broker, [accounting_bus(ran)], unguarded=True).build()
+    QueueGateway(broker, [accounting_bus(ran)]).build()
     event = InvoiceIssued(number="F-1")
 
     async def scenario() -> None:
@@ -626,7 +626,7 @@ def _full_control(
     broker_cls: type, ran: list[str], settled: list[Any], verdicts: list[Any]
 ) -> tuple[Any, Callable[[], Awaitable[None]]]:
     broker = broker_cls()
-    gateway = QueueGateway(broker, [billing_bus(ran)], unguarded=True)
+    gateway = QueueGateway(broker, [billing_bus(ran)])
 
     @broker.subscriber("legacy.issue", ack_policy=AckPolicy.MANUAL)
     async def legacy(message: StreamMessage[Any] = Context("message")) -> None:
@@ -699,7 +699,7 @@ def test_consume_refuses_a_command_no_bus_answers():
     class Unknown(DataTransferObject):
         x: int
 
-    gateway = QueueGateway(KafkaBroker(), [billing_bus([])], unguarded=True)
+    gateway = QueueGateway(KafkaBroker(), [billing_bus([])])
 
     async def scenario() -> None:
         await gateway.consume(None, as_=Unknown)  # type: ignore[arg-type]
@@ -753,7 +753,7 @@ class _Message:
 def test_a_copy_that_cannot_be_published_leaves_the_message_to_the_broker(amount):
     """A dead letter or a counted retry is a copy then an ack: when the copy fails, the
     delivery is nacked — acking it would lose the message."""
-    gateway = QueueGateway(_Unreachable(), [billing_bus([])], unguarded=True)  # type: ignore[arg-type]
+    gateway = QueueGateway(_Unreachable(), [billing_bus([])])  # type: ignore[arg-type]
     body, _, headers = issue(amount)
     message = _Message(body, headers)
 
@@ -794,7 +794,7 @@ def throttled_bus() -> UseFramework:
 def retried(options: QueueOptions) -> tuple[float, _Message, _Recording]:
     """A delivery the bus refuses with `Throttled`, consumed once over a broker that copies."""
     broker = _Recording()
-    gateway = QueueGateway(broker, [throttled_bus()], options=options, unguarded=True)  # type: ignore[arg-type]
+    gateway = QueueGateway(broker, [throttled_bus()], options=options)  # type: ignore[arg-type]
     body, _, headers = issue(5)
     message = _Message(body, headers)
     started = time.monotonic()

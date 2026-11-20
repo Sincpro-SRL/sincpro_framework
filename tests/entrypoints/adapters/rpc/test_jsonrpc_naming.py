@@ -135,7 +135,7 @@ def test_the_operation_is_the_dto_name_without_command_or_query_in_snake_case(
 
 
 def test_a_declared_method_is_named_namespace_dot_operation_with_no_layer() -> None:
-    gateway = RpcGateway({"billing": _billing()}, unguarded=True)
+    gateway = RpcGateway({"billing": _billing()})
 
     assert set(gateway.methods()) == {"billing.issue_invoice", "billing.invoice"}
     answered = gateway.handle(_call("billing.issue_invoice", {"customer_id": 7}))
@@ -156,8 +156,8 @@ def test_the_name_is_unchanged_when_a_feature_becomes_an_application_service() -
             return Issued(number=f"S-{dto.customer_id}")
 
     as_app_service.build_root_bus()
-    before = RpcGateway({"billing": as_feature}, unguarded=True)
-    after = RpcGateway({"billing": as_app_service}, unguarded=True)
+    before = RpcGateway({"billing": as_feature})
+    after = RpcGateway({"billing": as_app_service})
 
     assert "billing.issue_invoice" in before.methods()
     assert set(after.methods()) == {"billing.issue_invoice"}
@@ -169,17 +169,15 @@ def test_the_name_is_unchanged_when_a_feature_becomes_an_application_service() -
 
 def test_the_group_namespace_carries_a_breaking_version() -> None:
     bus = _billing()
-    by_namespace = RpcGateway({"billing": bus}, unguarded=True).group(
-        bus, namespace="billing.v2"
-    )
-    by_version = RpcGateway({"billing": bus}, unguarded=True).group(bus, version="v2")
+    by_namespace = RpcGateway({"billing": bus}).group(bus, namespace="billing.v2")
+    by_version = RpcGateway({"billing": bus}).group(bus, version="v2")
 
     assert set(by_namespace.methods()) == {"billing.v2.issue_invoice", "billing.v2.invoice"}
     assert set(by_version.methods()) == set(by_namespace.methods())
 
 
 def test_an_alias_that_is_not_snake_case_is_made_fit_for_the_namespace() -> None:
-    gateway = RpcGateway([_billing("sincpro-billing")], unguarded=True)
+    gateway = RpcGateway([_billing("sincpro-billing")])
 
     assert list(gateway.catalogs) == ["sincpro-billing"]
     assert set(gateway.methods()) == {
@@ -189,9 +187,7 @@ def test_an_alias_that_is_not_snake_case_is_made_fit_for_the_namespace() -> None
 
 
 def test_a_declared_name_is_the_whole_name() -> None:
-    gateway = RpcGateway(
-        {"billing": _billing(issue=rpc("billing.invoices.issue"))}, unguarded=True
-    )
+    gateway = RpcGateway({"billing": _billing(issue=rpc("billing.invoices.issue"))})
 
     assert set(gateway.methods()) == {"billing.invoices.issue", "billing.invoice"}
     assert [entry.name for entry in gateway.manifest()] == [
@@ -212,13 +208,13 @@ def test_a_declared_name_is_the_whole_name() -> None:
 def test_a_declared_name_that_breaks_the_rule_is_refused_at_build(
     declared: str, rule: str
 ) -> None:
-    gateway = RpcGateway({"billing": _billing(issue=rpc(declared))}, unguarded=True)
+    gateway = RpcGateway({"billing": _billing(issue=rpc(declared))})
 
     assert rule in _refused(gateway)
 
 
 def test_an_override_name_is_validated_too() -> None:
-    gateway = RpcGateway({"billing": _billing()}, unguarded=True)
+    gateway = RpcGateway({"billing": _billing()})
     gateway.override(CommandIssueInvoice, name="Issue")
 
     assert "namespace.operation" in _refused(gateway)
@@ -226,7 +222,7 @@ def test_an_override_name_is_validated_too() -> None:
 
 def test_a_group_namespace_under_rpc_is_refused() -> None:
     bus = _billing()
-    gateway = RpcGateway({"billing": bus}, unguarded=True).group(bus, namespace="rpc")
+    gateway = RpcGateway({"billing": bus}).group(bus, namespace="rpc")
 
     assert "reserved" in _refused(gateway)
 
@@ -245,7 +241,7 @@ def test_two_operations_answering_one_name_fail_the_build() -> None:
         def execute(self, dto: CommandInvoice) -> None:
             return None
 
-    refused = _refused(RpcGateway({"billing": bus}, unguarded=True))
+    refused = _refused(RpcGateway({"billing": bus}))
 
     assert "billing.invoice" in refused
     assert "CommandInvoice" in refused and "QueryInvoice" in refused
@@ -253,7 +249,7 @@ def test_two_operations_answering_one_name_fail_the_build() -> None:
 
 def test_two_buses_under_one_namespace_clash() -> None:
     first, second = _billing("first"), _billing("second")
-    gateway = RpcGateway({"a": first, "b": second}, unguarded=True)
+    gateway = RpcGateway({"a": first, "b": second})
     gateway.group(second, namespace="a")
 
     assert "a.issue_invoice" in _refused(gateway)
@@ -264,7 +260,7 @@ def test_two_buses_under_one_namespace_clash() -> None:
 
 def test_declared_is_the_default_and_publishes_only_what_is_bound() -> None:
     bus = _billing(read=lambda cls: cls)
-    gateway = RpcGateway({"billing": bus}, unguarded=True)
+    gateway = RpcGateway({"billing": bus})
 
     assert gateway.exposure is Exposure.DECLARED
     assert set(gateway.methods()) == {"billing.issue_invoice"}
@@ -275,7 +271,7 @@ def test_declared_is_the_default_and_publishes_only_what_is_bound() -> None:
 
 
 def test_bind_publishes_a_use_case_no_decorator_bound() -> None:
-    gateway = RpcGateway({"billing": _billing()}, unguarded=True)
+    gateway = RpcGateway({"billing": _billing()})
     gateway.bind(CommandReconcile, RpcBinding(name="billing.ledger.reconcile"))
 
     assert "billing.ledger.reconcile" in gateway.methods()
@@ -287,7 +283,7 @@ def test_bind_publishes_a_use_case_no_decorator_bound() -> None:
 
 
 def test_catalog_publishes_every_use_case_under_the_same_names() -> None:
-    gateway = RpcGateway({"billing": _billing()}, exposure=Exposure.CATALOG, unguarded=True)
+    gateway = RpcGateway({"billing": _billing()}, exposure=Exposure.CATALOG)
 
     assert set(gateway.methods()) == {
         "billing.issue_invoice",
@@ -296,14 +292,14 @@ def test_catalog_publishes_every_use_case_under_the_same_names() -> None:
     }
 
 
-def test_a_bus_with_no_access_control_is_refused_unless_said_on_purpose() -> None:
-    refused = _refused(RpcGateway({"billing": _billing()}))
+def test_a_bus_with_no_access_control_is_published_open() -> None:
+    manifest = RpcGateway({"billing": _billing()}).manifest()
 
-    assert "unguarded=True" in refused
+    assert {one.access for one in manifest} == {"open"}
 
 
 def test_the_manifest_names_what_a_client_calls() -> None:
-    manifest = RpcGateway({"billing": _billing()}, unguarded=True).manifest()
+    manifest = RpcGateway({"billing": _billing()}).manifest()
 
     assert [(one.wire, one.context, one.name) for one in manifest] == [
         ("rpc", "billing", "billing.invoice"),
@@ -325,7 +321,7 @@ def test_a_port_that_is_not_a_json_rpc_wire_is_refused() -> None:
             return surface
 
     with pytest.raises(TypeError, match="JsonRpcWire"):
-        RpcGateway({"billing": _billing()}, unguarded=True, port=Elsewhere())
+        RpcGateway({"billing": _billing()}, port=Elsewhere())
 
 
 def test_a_port_of_the_projects_derives_the_names() -> None:
@@ -334,13 +330,13 @@ def test_a_port_of_the_projects_derives_the_names() -> None:
             return super().operation_of(dto_name) + "_v1"
 
     port = Upper(title="billing-api", max_batch_size=3)
-    gateway = RpcGateway({"billing": _billing()}, unguarded=True, port=port)
+    gateway = RpcGateway({"billing": _billing()}, port=port)
 
     assert set(gateway.methods()) == {"billing.issue_invoice_v1", "billing.invoice_v1"}
     assert gateway.discover()["info"]["title"] == "billing-api"
     assert gateway.max_batch_size == 3
     with pytest.raises(ValueError, match="port"):
-        RpcGateway({"billing": _billing()}, unguarded=True, port=port, max_batch_size=9)
+        RpcGateway({"billing": _billing()}, port=port, max_batch_size=9)
 
 
 # --- the document ---------------------------------------------------------------------------
@@ -369,7 +365,6 @@ def _guarded() -> UseFramework:
             return Issued(number=f"F-{dto.customer_id}")
 
     @bus.feature(QueryInvoice)
-    @auth.public
     @rpc()
     class GetInvoice(Feature):
         def execute(self, dto: QueryInvoice) -> Issued:
@@ -387,13 +382,13 @@ def test_the_document_tags_each_method_by_context_and_says_access_and_idempotenc
     issue, read = methods["billing.issue_invoice"], methods["billing.invoice"]
     assert issue["tags"] == [{"name": "billing"}]
     assert issue["x-sincpro-requires"] == "billing.invoice.issue"
-    assert read["x-sincpro-requires"] == "public"
+    assert read["x-sincpro-access"] == "open" and "x-sincpro-requires" not in read
     assert (issue["x-idempotent"], read["x-idempotent"]) == (True, True)
     assert "x-sincpro-layer" not in issue
 
 
 def test_rpc_discover_answers_the_same_document_as_the_route() -> None:
-    gateway = RpcGateway({"billing": _billing()}, unguarded=True)
+    gateway = RpcGateway({"billing": _billing()})
     discovered = gateway.handle({"jsonrpc": "2.0", "id": 1, "method": "rpc.discover"})
 
     assert isinstance(discovered, dict)
@@ -440,7 +435,6 @@ def _parity_bus() -> UseFramework:
             return Issued(number=f"F-{dto.customer_id}")
 
     @bus.feature(QueryInvoice)
-    @auth.public
     @rpc()
     class GetInvoice(Feature):
         def execute(self, dto: QueryInvoice) -> Issued:
@@ -498,7 +492,7 @@ def test_dispatch_answers_exactly_what_the_gateway_app_answers(
 
 
 def test_dispatch_takes_the_gateway_surface_as_it_is() -> None:
-    gateway = RpcGateway({"billing": _billing()}, unguarded=True)
+    gateway = RpcGateway({"billing": _billing()})
 
     answered = dispatch(
         gateway.surface(),

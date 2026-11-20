@@ -64,7 +64,7 @@ def _billing() -> UseFramework:
 
 
 def _gateway() -> GrpcGateway:
-    return GrpcGateway({"billing": _billing()}, exposure=Exposure.CATALOG, unguarded=True)
+    return GrpcGateway({"billing": _billing()}, exposure=Exposure.CATALOG)
 
 
 class _SlowBeforeTheHandler(grpc.ServerInterceptor):

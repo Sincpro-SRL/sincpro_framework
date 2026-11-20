@@ -53,7 +53,7 @@ def _references(node: Any) -> Iterator[str]:
 
 
 def _document(bus: UseFramework) -> dict[str, Any]:
-    return TestClient(FastApiGateway([bus], unguarded=True).app()).get("/openapi.json").json()
+    return TestClient(FastApiGateway([bus]).app()).get("/openapi.json").json()
 
 
 def test_a_criteria_parameter_points_at_one_definition_every_route_shares():
@@ -143,7 +143,7 @@ def test_two_classes_of_one_name_never_point_at_each_others_shape():
 
 
 def test_the_document_answers_its_etag_and_304_to_a_client_that_holds_it():
-    client = TestClient(FastApiGateway([_lists(2)], unguarded=True).app())
+    client = TestClient(FastApiGateway([_lists(2)]).app())
 
     first = client.get("/openapi.json")
     again = client.get("/openapi.json", headers={"If-None-Match": first.headers["etag"]})

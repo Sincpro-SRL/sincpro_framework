@@ -247,7 +247,7 @@ def problem_responses(
     }
     access = AccessControl.of(bus)
     declaration = access.requirements_of(command) if access else None
-    if declaration is not None and declaration.kind != "public":
+    if declaration is not None:
         described[401] = problem_response("Who is calling is not known")
         described[403] = problem_response("The identity may not do this")
     handler = bus.handler_of(command)

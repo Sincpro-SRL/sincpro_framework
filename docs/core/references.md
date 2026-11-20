@@ -55,7 +55,7 @@ refs.resolve_many([one, other, gone])             # [Invoice(…), Member(…), 
   for the entity — its interceptors, its answer — and **its guards decide anew** for whoever is
   calling, as for a request from outside. A use case that resolves never lends its own permission:
   a `Get` that requires `billing.invoice.read` refuses a caller that lacks it, and a `Get` that
-  declares nothing on a strict bus is refused as it would be from outside.
+  declares nothing is open — as it would be from outside.
 - **A background caller has an identity too.** A webhook or a job resolves as the identity it runs
   under — `security.as_system("payment webhook")`, or a service token — and is refused like anyone
   else when the record's reads do not admit it.

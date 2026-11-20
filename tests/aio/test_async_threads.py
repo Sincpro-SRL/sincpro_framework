@@ -280,7 +280,6 @@ def test_each_call_of_a_json_rpc_batch_runs_on_the_threads_of_the_bus_that_answe
     gateway = RpcGateway(
         {"sandbox": sandbox_probes, "shared": shared_probes},
         exposure=Exposure.CATALOG,
-        unguarded=True,
     )
     methods = sorted(gateway.build().methods)
     batch = [

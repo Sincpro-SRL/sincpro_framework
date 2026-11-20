@@ -6,9 +6,9 @@ Context: the decorators only mark classes; the marks are read here, at a use cas
 first run, so a handler registered after `on(...)` is guarded all the same. A mark belongs to the
 class object, not to its name: a use case stored as source and loaded again is a new class, and
 declares anew. A `replaces=` handler or hook that declares nothing inherits the declaration of the
-one it replaces — replacing never opens a hole. A use case that declares nothing runs unchecked,
-unless the `AccessControl` is strict and the use case was entered from outside; a nested one
-inherits the decision of the use case that was.
+one it replaces — replacing never opens a hole. A use case that declares nothing is open: it runs
+for anyone, entered from outside or nested. The `every_call` checks of the `AccessControl` run on
+every use case, declared or open — the project's own interceptor, in the guard's place.
 """
 
 from collections.abc import Callable, Iterable, Mapping
@@ -20,7 +20,6 @@ from sincpro_framework.auth.domain.identity import Identity, IdentityKind
 from sincpro_framework.auth.domain.permissions import AccessDeclaration, WhenDenied
 from sincpro_framework.auth.infrastructure.security_context import (
     _access_in_play,
-    _decided,
     current_identity,
 )
 from sincpro_framework.context import ContextKey, context_scopes, use_context
@@ -108,15 +107,14 @@ class Declarations:
 
 
 class Access(Protocol):
-    """What a guard asks of the `AccessControl` that built it — whether it checks, how strict,
-    what was declared, and the decision itself.
+    """What a guard asks of the `AccessControl` that built it — whether it checks, what was
+    declared, and the decision itself.
 
     Context: a port, so the guard below the entrypoint never imports the `AccessControl` above
     it; that one object answers it as it is.
     """
 
     enabled: bool
-    strict: bool
     declarations: Declarations
 
     def refusal(
@@ -130,6 +128,12 @@ class Access(Protocol):
     ) -> exceptions.AuthError | None:
         """Why `identity` may not run what `declaration` guards — `None` when it may; `dto`, the
         Command being run, chooses a `by_field` requirement."""
+        ...
+
+    def every_call_refusal(
+        self, identity: Identity, what: str, dto: Any, context: Mapping[str, Any]
+    ) -> exceptions.AuthError | None:
+        """Why one of the `every_call` checks refuses this call — `None` when none does."""
         ...
 
 
@@ -182,36 +186,14 @@ class BusGuard:
             )
         return self._declared[command, handler]
 
-    def _decided_run(self, command: type, call_next: Callable[[Any], Any], dto: Any) -> Any:
-        """Run the use case with its decision recorded, so a nested use case it calls inherits
-        it instead of being refused by `strict` — the mark is undone once it answers."""
-        token, guarding = _decided.set(command.__name__), _access_in_play.set(self.access)
+    def _run_in_play(self, call_next: Callable[[Any], Any], dto: Any) -> Any:
+        """Run the use case with this `AccessControl` in play — what `security.identity_headers`
+        asks first for the credentials of a call onwards; undone once it answers."""
+        guarding = _access_in_play.set(self.access)
         try:
             return call_next(dto)
         finally:
             _access_in_play.reset(guarding)
-            _decided.reset(token)
-
-    def _undeclared(self, command: type, identity: Identity) -> exceptions.AuthError | None:
-        """Why a use case that declares nothing may not run — `None` when it may.
-
-        Context: refused only when strict and entered from outside — nobody calling is asked
-        to authenticate, a known identity is told the use case declares nothing."""
-        entered_by = _decided.get()
-        if entered_by is not None:
-            logger.debug(f"access: {command.__name__} inherits the decision of {entered_by}")
-            return None
-        if not self.access.strict:
-            return None
-        return (
-            exceptions.Unauthenticated(
-                f"authenticate to run {command.__name__}", anonymous=True
-            )
-            if identity.is_anonymous
-            else exceptions.PermissionDenied(
-                identity.subject, command.__name__, f"{command.__name__} declares no access"
-            )
-        )
 
     def refusal_for(
         self, command: type, identity: Identity, dto: Any = None
@@ -220,16 +202,20 @@ class BusGuard:
         decision the guard runs on, and what `AccessControl.may_run` asks without running.
 
         1. Disabled, or the system acting: it may.
-        2. Declared nothing: it may, unless strict and entered from outside.
-        Final: what the declaration requires, asked of the providers."""
+        2. Declared something: what it requires, asked of the providers — the first refusal.
+        Final: the `every_call` checks, open or declared — the first refusal; else it may.
+        """
         if not self.access.enabled or identity.kind == IdentityKind.SYSTEM:
             return None
         declaration = self.declaration_of(command)
-        if declaration is None:
-            return self._undeclared(command, identity)
-        return self.access.refusal(
-            identity, declaration, command.__name__, None, self.bus.current_context(), dto
-        )
+        context = self.bus.current_context()
+        if declaration is not None:
+            refused = self.access.refusal(
+                identity, declaration, command.__name__, None, context, dto
+            )
+            if refused is not None:
+                return refused
+        return self.access.every_call_refusal(identity, command.__name__, dto, context)
 
     def __call__(self, dto: Any, call_next: Callable[[Any], Any]) -> Any:
         """Decide whether the identity in play may run the use case `dto` enters, and run it.
@@ -237,10 +223,10 @@ class BusGuard:
         1. Who acts: the identity in play, unless anonymous, is the execution's `user_id` when
            nothing said one — not a provider of the project's, not a scope —, so a fact the use
            case records names its `actor`.
-        2. Disabled: it runs. The system acting: it runs, and the decision is recorded.
-        3. Declared nothing: it runs, unless strict and entered from outside.
-        Final: declared something the identity lacks — refused, or skipped (`None`) when it
-           said `WhenDenied.SKIP`; else it runs, and a use case it calls inherits the decision.
+        2. Disabled: it runs.
+        3. Refused (`refusal_for`): an open use case raises the refusal; a declared one is
+           refused, or skipped (`None`) when it said `WhenDenied.SKIP`.
+        Final: it runs, this `AccessControl` in play.
         """
         identity = current_identity()
         context = use_context()
@@ -250,16 +236,16 @@ class BusGuard:
             return call_next(dto)
         command = type(dto)
         refusal = self.refusal_for(command, identity, dto)
-        if refusal is not None:
-            declaration = self.declaration_of(command)
-            if declaration is None:
-                logger.warning(
-                    f"access refused: {identity.subject} → {command.__name__} — {refusal}"
-                )
-                raise refusal
-            _refused_or_skipped(refusal, declaration, identity, command.__name__)
-            return None
-        return self._decided_run(command, call_next, dto)
+        if refusal is None:
+            return self._run_in_play(call_next, dto)
+        declaration = self.declaration_of(command)
+        if declaration is None:
+            logger.warning(
+                f"access refused: {identity.subject} → {command.__name__} — {refusal}"
+            )
+            raise refusal
+        _refused_or_skipped(refusal, declaration, identity, command.__name__)
+        return None
 
 
 class HookGuard:

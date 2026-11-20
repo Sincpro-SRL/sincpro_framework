@@ -80,7 +80,7 @@ def _billing(name: str = "billing") -> UseFramework:
 
 
 def test_only_what_is_declared_is_served_by_default() -> None:
-    gateway = GrpcGateway({"billing": _billing()}, unguarded=True)
+    gateway = GrpcGateway({"billing": _billing()})
 
     assert set(gateway.methods()) == {
         "/billing.v1.BillingService/IssueInvoice",
@@ -91,7 +91,7 @@ def test_only_what_is_declared_is_served_by_default() -> None:
 def test_the_catalog_mode_publishes_every_use_case_with_the_same_names() -> None:
     """The layer never reaches a public name: an ApplicationService sits in the same service
     as a Feature, and `@internal` stays off the wire."""
-    gateway = GrpcGateway({"billing": _billing()}, exposure=Exposure.CATALOG, unguarded=True)
+    gateway = GrpcGateway({"billing": _billing()}, exposure=Exposure.CATALOG)
 
     assert set(gateway.methods()) == {
         "/billing.v1.BillingService/IssueInvoice",
@@ -101,7 +101,7 @@ def test_the_catalog_mode_publishes_every_use_case_with_the_same_names() -> None
 
 
 def test_bind_publishes_a_use_case_without_a_decorator() -> None:
-    gateway = GrpcGateway({"billing": _billing()}, unguarded=True).bind(
+    gateway = GrpcGateway({"billing": _billing()}).bind(
         CommandCancelInvoice, GrpcBinding(method="Void")
     )
 
@@ -109,19 +109,15 @@ def test_bind_publishes_a_use_case_without_a_decorator() -> None:
 
 
 def test_the_group_sets_the_package_and_its_major_version() -> None:
-    versioned = GrpcGateway({"billing": _billing()}, unguarded=True).group(
-        "billing", version="v2"
-    )
-    packaged = GrpcGateway({"billing": _billing()}, unguarded=True).group(
-        "billing", package="acme.billing"
-    )
+    versioned = GrpcGateway({"billing": _billing()}).group("billing", version="v2")
+    packaged = GrpcGateway({"billing": _billing()}).group("billing", package="acme.billing")
 
     assert "/billing.v2.BillingService/IssueInvoice" in versioned.methods()
     assert "/acme.billing.v1.BillingService/IssueInvoice" in packaged.methods()
 
 
 def test_the_service_is_the_pascal_case_of_the_alias() -> None:
-    gateway = GrpcGateway({"sales_orders": _billing("orders")}, unguarded=True)
+    gateway = GrpcGateway({"sales_orders": _billing("orders")})
 
     assert "/sales_orders.v1.SalesOrdersService/IssueInvoice" in gateway.methods()
 
@@ -147,7 +143,7 @@ def test_two_methods_answering_one_name_after_stripping_fail_the_build() -> None
             return None
 
     with pytest.raises(exceptions.ProgrammingError) as refused:
-        GrpcGateway({"clashing": bus}, unguarded=True).methods()
+        GrpcGateway({"clashing": bus}).methods()
 
     said = str(refused.value)
     assert "/clashing.v1.InvoiceReadService/Invoice" in said
@@ -155,7 +151,7 @@ def test_two_methods_answering_one_name_after_stripping_fail_the_build() -> None
 
 
 def test_a_name_that_is_no_proto_identifier_fails_the_build() -> None:
-    gateway = GrpcGateway({"billing": _billing()}, unguarded=True).override(
+    gateway = GrpcGateway({"billing": _billing()}).override(
         CommandIssueInvoice, method="issue-invoice"
     )
 
@@ -163,13 +159,14 @@ def test_a_name_that_is_no_proto_identifier_fails_the_build() -> None:
         gateway.methods()
 
 
-def test_a_bus_nobody_guards_is_refused_unless_said() -> None:
-    with pytest.raises(exceptions.ProgrammingError, match="unguarded=True"):
-        GrpcGateway({"billing": _billing()}).methods()
+def test_a_bus_nobody_guards_is_published_open() -> None:
+    manifest = GrpcGateway({"billing": _billing()}).manifest()
+
+    assert {one.access for one in manifest} == {"open"}
 
 
 def test_the_manifest_names_each_method_by_its_path() -> None:
-    manifest = GrpcGateway({"billing": _billing()}, unguarded=True).manifest()
+    manifest = GrpcGateway({"billing": _billing()}).manifest()
 
     assert [(one.wire, one.name, one.method) for one in manifest] == [
         ("grpc", "/billing.v1.BillingService/IssueInvoice", "IssueInvoice"),
@@ -178,7 +175,7 @@ def test_the_manifest_names_each_method_by_its_path() -> None:
 
 
 def test_describe_and_the_proto_carry_the_new_names() -> None:
-    gateway = GrpcGateway({"billing": _billing()}, unguarded=True)
+    gateway = GrpcGateway({"billing": _billing()})
     services = {one["name"]: one for one in gateway.describe()["services"]}
     files = gateway.proto_files()
     source = files["billing/v1/billing.proto"]
@@ -196,7 +193,7 @@ def test_describe_and_the_proto_carry_the_new_names() -> None:
 
 
 def test_write_proto_files_lays_out_the_package_directories(tmp_path: Any) -> None:
-    written = GrpcGateway({"billing": _billing()}, unguarded=True).write_proto_files(tmp_path)
+    written = GrpcGateway({"billing": _billing()}).write_proto_files(tmp_path)
 
     assert (tmp_path / "billing" / "v1" / "billing.proto") in written
     assert (
@@ -208,7 +205,7 @@ def test_write_proto_files_lays_out_the_package_directories(tmp_path: Any) -> No
 
 @pytest.fixture
 def served() -> Iterator[GrpcClient]:
-    server = GrpcGateway({"billing": _billing()}, unguarded=True).server(max_workers=2)
+    server = GrpcGateway({"billing": _billing()}).server(max_workers=2)
     port = server.add_insecure_port("127.0.0.1:0")
     server.start()
     client = GrpcClient(f"127.0.0.1:{port}")

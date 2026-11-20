@@ -154,11 +154,15 @@ from sincpro_framework.auth.domain.outbound import (
     TokenSource,
 )
 from sincpro_framework.auth.domain.permissions import (
+    OPEN,
+    AccessCall,
     AccessDeclaration,
     AnyOf,
     AssuranceRequirement,
     ByField,
     Permission,
+    RoleRequirement,
+    Rule,
     WhenDenied,
 )
 from sincpro_framework.auth.domain.policy import PolicyEngine
@@ -192,6 +196,10 @@ from sincpro_framework.auth.infrastructure.urllib_http import UrllibHttp
 from sincpro_framework.auth.services.grant_administration import GrantAdministration
 
 __all__ = [
+    "AccessCall",
+    "RoleRequirement",
+    "Rule",
+    "OPEN",
     "AccessControl",
     "AccessDeclaration",
     "AccessDescription",

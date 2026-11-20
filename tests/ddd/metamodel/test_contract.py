@@ -329,7 +329,7 @@ def test_the_fastapi_wire_publishes_the_same_contract():
         def execute(self, dto: QueryFastOrders) -> ResponseOrders:
             return ResponseOrders(orders=[])
 
-    document = FastApiGateway([shop], unguarded=True).app().openapi()
+    document = FastApiGateway([shop]).app().openapi()
     schemas = document["components"]["schemas"]
     operations = [one for item in document["paths"].values() for one in item.values()]
 
@@ -528,7 +528,7 @@ def test_an_agent_reads_the_models_of_what_the_mcp_wire_exposes():
         def execute(self, dto: QueryMcpOrders) -> ResponseOrders:
             return ResponseOrders(orders=[])
 
-    server = McpGateway([shop], unguarded=True).server()
+    server = McpGateway([shop]).server()
 
     async def read() -> tuple[list[str], Any]:
         async with fastmcp.Client(server) as client:
@@ -578,9 +578,9 @@ def test_every_document_publishes_the_entity_a_read_belongs_to():
     expected = contract_of(Order)
     expected.pop("$defs")
 
-    fastapi = FastApiGateway([a_bus_whose_read_declares_no_answer()], unguarded=True)
+    fastapi = FastApiGateway([a_bus_whose_read_declares_no_answer()])
     rest_wire = RestGateway([a_bus_whose_read_declares_no_answer()])
-    rpc_wire = RpcGateway([a_bus_whose_read_declares_no_answer()], unguarded=True)
+    rpc_wire = RpcGateway([a_bus_whose_read_declares_no_answer()])
 
     for document in (
         fastapi.app().openapi(),

@@ -12,7 +12,7 @@ from typing import Any
 
 from pydantic import ValidationError
 
-from sincpro_framework.auth import Credentials
+from sincpro_framework.auth import OPEN, Credentials
 from sincpro_framework.context import EntrypointKind, use_context
 from sincpro_framework.ddd.metamodel import contract_of
 from sincpro_framework.entrypoints.adapters.rpc import exceptions
@@ -430,7 +430,9 @@ def method_object(
         "x-sincpro-role": str(role_of(operation.command)),
         "x-idempotent": operation.idempotent or operation.reads,
     }
-    if operation.access is not None:
+    if operation.access == OPEN:
+        method["x-sincpro-access"] = OPEN
+    else:
         method["x-sincpro-requires"] = operation.access
     deprecation = resolved.binding.deprecated
     if deprecation is not None:

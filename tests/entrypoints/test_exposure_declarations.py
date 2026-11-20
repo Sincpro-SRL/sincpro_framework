@@ -222,7 +222,7 @@ from sincpro_framework.entrypoints import Gateway
 class RestSurface(Gateway):
     wire = "rest"
 
-assert [one.binding.path for one in RestSurface([bus], unguarded=True).surface()] == ["/pings"]
+assert [one.binding.path for one in RestSurface([bus]).surface()] == ["/pings"]
 print("ok")
 """
     ran = subprocess.run(

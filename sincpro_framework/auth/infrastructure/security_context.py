@@ -20,9 +20,6 @@ from sincpro_framework.sincpro_logger import logger
 
 _current: ContextVar[Identity] = ContextVar("sincpro_identity", default=ANONYMOUS)
 
-_decided: ContextVar[str | None] = ContextVar("sincpro_access_decided", default=None)
-"""The use case entered from outside that was let through — a nested one inherits its decision."""
-
 _access_in_play: ContextVar[Any] = ContextVar("sincpro_access_in_play", default=None)
 """The `AccessControl` guarding the use case in progress — what an outgoing call asks first for
 the credentials it carries, before any other of the process."""
@@ -71,14 +68,12 @@ def as_identity(identity: Identity) -> Generator[Identity, None, None]:
             current_identity().subject   ->  "user:42"
         current_identity().subject       ->  "anonymous"    # as it was before the block
 
-    Context: both the identity and the access decision are restored on leaving, even when
-    the block raises.
+    Context: the identity is restored on leaving, even when the block raises.
     """
-    current, decided = _current.set(identity), _decided.set(None)
+    current = _current.set(identity)
     try:
         yield identity
     finally:
-        _decided.reset(decided)
         _current.reset(current)
 
 

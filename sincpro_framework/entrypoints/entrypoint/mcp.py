@@ -131,7 +131,6 @@ class McpGateway(Gateway):
         title: str = "sincpro-mcp",
         version: str = "1.0.0",
         exposure: Exposure = Exposure.DECLARED,
-        unguarded: bool = False,
         port: McpWire | None = None,
     ):
         """The gateway's arguments (`Gateway`), with `McpWire` as the port when none is
@@ -142,7 +141,6 @@ class McpGateway(Gateway):
             title,
             version,
             exposure=exposure,
-            unguarded=unguarded,
             port=port or McpWire(),
         )
 
