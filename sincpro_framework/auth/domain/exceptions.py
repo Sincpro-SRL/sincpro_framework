@@ -176,3 +176,7 @@ class NoCredentialsFor(ClientError):
         super().__init__(f"tenant {tenant!r} has no credentials for {source}")
         self.tenant = tenant
         self.source = source
+
+
+class PasswordRejected(ClientError):
+    """A password that cannot be taken as it came — longer than a hasher accepts (400)."""

@@ -47,6 +47,7 @@ AUTH = ROOT / "docs" / "auth" / "README.md"
 AUTH_SERVER = ROOT / "docs" / "auth" / "server.md"
 AUTH_GRANTS = ROOT / "docs" / "auth" / "grants.md"
 AUTH_CLIENT = ROOT / "docs" / "auth" / "client.md"
+AUTH_ACCOUNTS = ROOT / "docs" / "auth" / "accounts.md"
 REST = ROOT / "docs" / "entrypoints" / "rest.md"
 FASTAPI = ROOT / "docs" / "entrypoints" / "fastapi.md"
 READINESS = ROOT / "docs" / "entrypoints" / "readiness.md"
@@ -109,6 +110,7 @@ def _failing_line(error: Exception, path: Path) -> int:
         AUTH_SERVER,
         AUTH_GRANTS,
         AUTH_CLIENT,
+        AUTH_ACCOUNTS,
         REST,
         FASTAPI,
         READINESS,

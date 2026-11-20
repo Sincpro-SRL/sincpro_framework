@@ -31,6 +31,13 @@ first asked for, so `import sincpro_framework.auth` never loads PyJWT.
 import importlib
 from typing import TYPE_CHECKING, Any
 
+from sincpro_framework.auth.adapters.accounts import (
+    BasicProvider,
+    HashedCredentials,
+    LoginAttempts,
+    PasswordHasher,
+    ScryptCost,
+)
 from sincpro_framework.auth.adapters.api_key_provider import (
     ApiKey,
     ApiKeyProvider,
@@ -83,6 +90,7 @@ from sincpro_framework.auth.adapters.role_permissions import RolePermissions
 from sincpro_framework.auth.adapters.service_token_provider import ServiceTokenProvider
 from sincpro_framework.auth.adapters.signature_provider import SignatureProvider
 from sincpro_framework.auth.adapters.static_provider import StaticProvider
+from sincpro_framework.auth.domain.accounts import CredentialVerifier
 from sincpro_framework.auth.domain.exceptions import (
     AuthError,
     CredentialsRejected,
@@ -90,6 +98,7 @@ from sincpro_framework.auth.domain.exceptions import (
     GrantRejected,
     InvalidGrant,
     NoCredentialsFor,
+    PasswordRejected,
     PermissionDenied,
     Unauthenticated,
 )
@@ -169,6 +178,7 @@ __all__ = [
     "AuthError",
     "AuthProvider",
     "BasicCredentials",
+    "BasicProvider",
     "ByField",
     "CatalogDescription",
     "Category",
@@ -181,6 +191,7 @@ __all__ = [
     "ClientSecretPost",
     "Credentials",
     "CredentialsRejected",
+    "CredentialVerifier",
     "DeviceCode",
     "DevicePrompt",
     "EndpointUnavailable",
@@ -191,6 +202,7 @@ __all__ = [
     "GrantResolver",
     "GrantSource",
     "GrantStore",
+    "HashedCredentials",
     "Held",
     "HeldGrant",
     "HeldGrants",
@@ -214,9 +226,12 @@ __all__ = [
     "KeyValueGrants",
     "KeyValueHeldGrants",
     "KeyValueRevocations",
+    "LoginAttempts",
     "NoCredentialsFor",
     "OidcDiscovery",
     "OutgoingRequest",
+    "PasswordHasher",
+    "PasswordRejected",
     "Permission",
     "PermissionDenied",
     "PresentingProvider",
@@ -232,6 +247,7 @@ __all__ = [
     "RoleMapping",
     "RolePermissions",
     "ScopeCeiling",
+    "ScryptCost",
     "Sealer",
     "ServerMetadata",
     "ServiceTokenProvider",
