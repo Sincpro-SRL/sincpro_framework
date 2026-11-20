@@ -36,6 +36,7 @@ with:
 | Store an object and publish it by an id — for a time, for a number of uses, to read or to upload | Object storage | `ObjectStorage(S3CompatibleObjectStore(...))`, `open`, `take`, `publish`, `check`, `redeem` | [object_storage/](object_storage/README.md) |
 | A sign-in that lasts while it is used; a code used once | Sessions | `use_context().sessions().open({...})` | [core/sessions.md](core/sessions.md) |
 | Whether a failure is the caller's, the business's or the service's — answer it, retry it, report it | `failure_kind` | declared once on the error; every wire, `Retry`, the queue and the observability read it | [core/exceptions.md](core/exceptions.md) |
+| Where a service's REST, MCP and files live on a host, beside its web, so every product is reached the same way | One host, `/api/<door>` | `group(prefix="/api/rest/v1/…")`, `files_path="/api/files"`, `http_app(path="/api/mcp")`; the web at `/` | [entrypoints/hosting.md](entrypoints/hosting.md) |
 
 ## By layer
 
