@@ -97,7 +97,7 @@ def test_what_the_issuer_signs_its_provider_reads_as_the_same_person() -> None:
 def test_a_refresh_spends_the_token_and_keeps_the_session() -> None:
     sessions = issuer()
     first = sessions.issue(ANA)
-    second = sessions.refresh(first.refresh_token.get_secret_value())  # type: ignore[union-attr]
+    second = sessions.refresh(refresh_of(first))
     assert second.session == first.session and second.refresh_token != first.refresh_token
     assert sessions.provider().authenticate(bearer(second)) is not None
 
@@ -111,7 +111,7 @@ def test_a_refresh_token_used_twice_at_once_is_refused_the_session_kept() -> Non
     clock.now += 5
     with pytest.raises(exceptions.Unauthenticated, match="already used"):
         sessions.refresh(spent)
-    assert sessions.refresh(second.refresh_token.get_secret_value())  # type: ignore[union-attr]
+    assert sessions.refresh(refresh_of(second))
 
 
 def test_a_refresh_token_replayed_later_revokes_the_whole_session() -> None:
@@ -124,14 +124,14 @@ def test_a_refresh_token_replayed_later_revokes_the_whole_session() -> None:
     with pytest.raises(exceptions.Unauthenticated, match="session was revoked"):
         sessions.refresh(spent)
     with pytest.raises(exceptions.Unauthenticated, match="session revoked"):
-        sessions.refresh(second.refresh_token.get_secret_value())  # type: ignore[union-attr]
+        sessions.refresh(refresh_of(second))
     with pytest.raises(exceptions.Unauthenticated, match="session revoked"):
         sessions.provider().authenticate(bearer(second))
 
 
 def test_racing_refreshes_with_one_token_give_one_new_pair() -> None:
     sessions = issuer()
-    spent = sessions.issue(ANA).refresh_token.get_secret_value()  # type: ignore[union-attr]
+    spent = refresh_of(sessions.issue(ANA))
     barrier = threading.Barrier(16)
     outcomes: list[bool] = []
 
@@ -158,7 +158,7 @@ def test_a_logout_refuses_the_access_token_at_once() -> None:
     with pytest.raises(exceptions.Unauthenticated, match="session revoked"):
         sessions.provider().authenticate(bearer(tokens))
     assert sessions.provider().authenticate(bearer(other)) is not None
-    sessions.revoke(other.refresh_token.get_secret_value())  # type: ignore[union-attr]
+    sessions.revoke(refresh_of(other))
     with pytest.raises(exceptions.Unauthenticated):
         sessions.provider().authenticate(bearer(other))
 
@@ -172,7 +172,7 @@ def test_signing_out_everywhere_ends_every_session_and_a_new_sign_in_works() -> 
     with pytest.raises(exceptions.Unauthenticated, match="signed out"):
         sessions.provider().authenticate(bearer(before))
     with pytest.raises(exceptions.Unauthenticated, match="signed out"):
-        sessions.refresh(before.refresh_token.get_secret_value())  # type: ignore[union-attr]
+        sessions.refresh(refresh_of(before))
     clock.now += 1
     assert sessions.provider().authenticate(bearer(sessions.issue(ANA))) is not None
 
@@ -183,12 +183,12 @@ def test_a_session_ends_idle_or_at_most() -> None:
     tokens = sessions.issue(ANA)
     clock.now += 3601
     with pytest.raises(exceptions.Unauthenticated, match="session expired"):
-        sessions.refresh(tokens.refresh_token.get_secret_value())  # type: ignore[union-attr]
+        sessions.refresh(refresh_of(tokens))
     kept = sessions.issue(ANA)
     for _ in range(5):
         clock.now += 3000
         try:
-            kept = sessions.refresh(kept.refresh_token.get_secret_value())  # type: ignore[union-attr]
+            kept = sessions.refresh(refresh_of(kept))
         except exceptions.Unauthenticated as ended:
             assert "expired" in ended.reason
             break
@@ -199,7 +199,7 @@ def test_a_session_ends_idle_or_at_most() -> None:
 def test_the_sessions_a_person_is_signed_in_on() -> None:
     sessions = issuer()
     one, two = sessions.issue(ANA), sessions.issue(ANA)
-    sessions.refresh(one.refresh_token.get_secret_value())  # type: ignore[union-attr]
+    sessions.refresh(refresh_of(one))
     assert sorted(one.family for one in sessions.sessions_of(ANA.subject)) == sorted(
         [one.session, two.session]
     )
