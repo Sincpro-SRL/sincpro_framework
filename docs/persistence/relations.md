@@ -229,6 +229,14 @@ records would be two hundred queries hidden in an attribute access. A page a cli
 specification that is still on a record gives way to the whole when touched inside a context; a
 Feature never decides on a cut page.
 
+**Describing a record never reads.** A log line, a debugger or a traceback calls `repr`, inside a
+unit of work or outside one: what the record holds is shown, what nobody asked for reads
+`<not asked>`, and nothing is resolved or refused.
+
+```python
+repr(page[0])     # Entry(..., memo='Rent', lines=<not asked>)
+```
+
 **Whole, and said when it is large.** A relation read whole by touching it brings every row —
 the framework reads what it is asked to. Past `WHOLE_WARNING` (ten thousand) the log says so,
 naming the relation, how many it brought and the cheaper ways to ask: a page, a count, each one by

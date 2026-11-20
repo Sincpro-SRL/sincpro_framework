@@ -11,11 +11,12 @@ from typing import Any, cast
 import pytest
 from sqlalchemy import event
 
+from sincpro_framework import UseFramework
 from sincpro_framework.data_layer.orm.sqlalchemy.entrypoint.repository import Repository
 from sincpro_framework.data_layer.orm.sqlalchemy.services.model_introspection import (
     ModelIntrospection,
 )
-from sincpro_framework.ddd import exceptions
+from sincpro_framework.ddd import EntityReads, Search, exceptions
 from sincpro_framework.ddd.criteria import (
     Condition,
     Criteria,
@@ -26,6 +27,7 @@ from sincpro_framework.ddd.criteria import (
 )
 from sincpro_framework.ddd.entity.entity_collection import Count, EntityCollection
 from sincpro_framework.ddd.query import ResponsePaginatedQuery
+from sincpro_framework.sincpro_conf import settings
 
 from .related_models import (
     CALLS,
@@ -300,6 +302,46 @@ def test_without_a_specification_nothing_is_resolved_and_touching_it_refuses(she
 
     with pytest.raises(exceptions.RelationNotResolved):
         book.author
+
+
+def test_describing_a_record_never_reads_a_relation(shelf, library, statements):
+    """A log line, a debugger or a traceback describes records anywhere: outside a unit of
+    work an unasked relation shows `<not asked>` instead of refusing, inside one it is not
+    read; what the record holds is shown as it is."""
+    book = shelf.search(Books).first()
+    assert book is not None
+    assert "author=<not asked>" in repr(book)
+
+    ada = library["authors"][0]
+    with shelf.context() as unit:
+        author = unit.get(Author, ada.id)
+        assert author is not None
+        with statements() as seen:
+            described = repr(author)
+        assert seen == [] and "books=<not asked>" in described
+        assert len(author.books) == 3
+        assert "books=EntityCollection(3 records of 3)" in repr(author)
+
+
+@pytest.mark.parametrize("level", ["INFO", "DEBUG"])
+def test_the_built_in_search_answers_at_every_log_level(shelf, level, monkeypatch):
+    """#275: the bus wrote its debug line before checking the level, and that line described
+    every record of the answer — reading relations nobody asked for, which refused."""
+    monkeypatch.setattr(settings, "sincpro_framework_log_level", level)
+
+    class SearchBooks(Search[Book, ResponseBooks]):
+        pass
+
+    bus = UseFramework(f"books-at-{level.lower()}", log_after_execution=False)
+    bus.add_dependency("repository", shelf)
+
+    @bus.feature(SearchBooks)
+    class BookReads(EntityReads[Book]):
+        pass
+
+    answer = bus(SearchBooks(criteria=Criteria()), ResponseBooks)
+
+    assert answer is not None and answer.books
 
 
 def test_inside_a_unit_of_work_a_relation_resolves_whole_on_first_touch(shelf, library):

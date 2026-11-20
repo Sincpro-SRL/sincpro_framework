@@ -172,7 +172,8 @@ class FeatureBus(Bus):
                 )
             if is_logger_in_debug() or self.log_after_execution:
                 self.logger.info(f"Executing feature dto: [{dto_name}]")
-            self.logger.debug(f"{dto_name}({dto})")
+            if is_logger_in_debug():
+                self.logger.debug(f"{dto_name}({dto})")
 
             with self.observability.handling(dto_name):
                 try:
@@ -193,7 +194,7 @@ class FeatureBus(Bus):
             measured.answered(response)
             self.outcomes.answered(dto, response, "feature", node)
             self.observability.describe(span, feature, response)
-            if response:
+            if response and is_logger_in_debug():
                 self.logger.debug(
                     f"Feature response {response.__class__.__name__}({response})",
                 )
@@ -326,7 +327,8 @@ class ApplicationServiceBus(Bus):
                 )
             if is_logger_in_debug() or self.log_after_execution:
                 self.logger.info(f"Executing app service dto: [{dto_name}]")
-            self.logger.debug(f"{dto_name}({dto})")
+            if is_logger_in_debug():
+                self.logger.debug(f"{dto_name}({dto})")
 
             with self.observability.handling(dto_name):
                 try:
@@ -349,7 +351,7 @@ class ApplicationServiceBus(Bus):
             measured.answered(response)
             self.outcomes.answered(dto, response, "application_service", node)
             self.observability.describe(span, app_service, response)
-            if response:
+            if response and is_logger_in_debug():
                 self.logger.debug(
                     f"Application service response {response.__class__.__name__}({response})"
                 )
