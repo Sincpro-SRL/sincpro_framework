@@ -351,3 +351,28 @@ token naming `cnf.x5t#S256` is accepted only over that client certificate.
 `CertificateProvider(trust_domain="sincpro.bo")` authenticates the certificate itself — a SPIFFE
 workload (`spiffe://sincpro.bo/billing` → `service:billing`), PEM or DER, its chain checked against
 `trusted_roots` when the TLS server did not.
+
+## Decisions taken outside: policy engines
+
+A policy engine or a relationship store decides beside the provider whose identities it judges —
+in OpenID AuthZEN's terms: a subject, an action, a resource, a context. `DecidedBy` keeps the
+provider's name and answers `has_permission`, `permitted` and `scope` from the engine.
+
+```python
+from sincpro_framework.auth import AuthZenEngine, DecidedBy, OpaEngine, OpenFgaEngine
+
+pdp = ScriptedHttp({"POST https://pdp.internal/access/v1/evaluation": {"decision": True}})
+decided = DecidedBy(provider, AuthZenEngine("https://pdp.internal", http=pdp))
+assert decided.has_permission(ana, BillingPermission.ISSUE_INVOICE)
+assert decided.name == provider.name
+```
+
+| Engine | Asks | Answers |
+|---|---|---|
+| `AuthZenEngine(url)` | `POST /access/v1/evaluation` and `/evaluations` (a batch in one call) | any AuthZEN PDP — Topaz, Cerbos, … |
+| `OpaEngine(url, path)` | `POST /v1/data/<path>` with the decision as `input` | `result: true` allows; an undefined rule refuses |
+| `OpenFgaEngine(url, store_id, relations=…, types=…)` | `check`, `batch-check`, `list-objects` | a permission is a relation; `scope(identity, Invoice)` is the ids OpenFGA lists, as a `Criteria` |
+
+No decision is cached — a policy that changes holds at once. An engine that does not answer is
+`EndpointUnavailable` (503), never `False`: a refusal the engine did not make would be a lie.
+`headers=` authenticates this service to the engine — a dict, or a function of a `TokenSource`.

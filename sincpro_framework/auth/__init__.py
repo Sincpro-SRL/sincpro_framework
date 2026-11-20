@@ -92,6 +92,12 @@ from sincpro_framework.auth.adapters.outbound import (
     TokenExchange,
     TokenSources,
 )
+from sincpro_framework.auth.adapters.policy import (
+    AuthZenEngine,
+    DecidedBy,
+    OpaEngine,
+    OpenFgaEngine,
+)
 from sincpro_framework.auth.adapters.presenting import PresentingProvider
 from sincpro_framework.auth.adapters.resolving import Resolving
 from sincpro_framework.auth.adapters.role_permissions import RolePermissions
@@ -153,6 +159,7 @@ from sincpro_framework.auth.domain.permissions import (
     Permission,
     WhenDenied,
 )
+from sincpro_framework.auth.domain.policy import PolicyEngine
 from sincpro_framework.auth.domain.provider import AuthProvider
 from sincpro_framework.auth.domain.resolver import IdentityResolver
 from sincpro_framework.auth.domain.revocations import Revocations, RevocationState
@@ -189,6 +196,7 @@ __all__ = [
     "AssuranceRequirement",
     "AuthError",
     "AuthProvider",
+    "AuthZenEngine",
     "BasicCredentials",
     "BasicProvider",
     "ByField",
@@ -204,6 +212,7 @@ __all__ = [
     "Credentials",
     "CredentialsRejected",
     "CredentialVerifier",
+    "DecidedBy",
     "DeviceCode",
     "DevicePrompt",
     "EndpointUnavailable",
@@ -246,11 +255,14 @@ __all__ = [
     "OidcDiscovery",
     "OneTimeGrant",
     "OneTimeTokens",
+    "OpaEngine",
+    "OpenFgaEngine",
     "OutgoingRequest",
     "PasswordHasher",
     "PasswordRejected",
     "Permission",
     "PermissionDenied",
+    "PolicyEngine",
     "PresentingProvider",
     "Privilege",
     "ProtectedResource",
