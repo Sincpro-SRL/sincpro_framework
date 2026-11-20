@@ -25,6 +25,7 @@ from sincpro_framework.auth.domain.exceptions import Unauthenticated
 from sincpro_framework.auth.domain.identity import Credentials, Identity
 from sincpro_framework.auth.entrypoint.access_control import AccessControl
 from sincpro_framework.auth.infrastructure.security_context import (
+    access_in_play,
     as_identity,
     as_system,
     current_identity,
@@ -127,13 +128,17 @@ class SecurityContext:
                 ->  {"x-sp-service-token": "eyJhbGciOiJIUzI1NiIs…"}
             # nobody calling, or no AccessControl issuing anything  ->  {}
 
-        The `AccessControl`s guarding a bus of `context` are asked first; the first to issue
-        wins.
+        The `AccessControl` guarding the use case in progress is asked first — it vouched for
+        the identity —, then those guarding a bus of `context`, then the rest; one that does not
+        know the identity's provider steps aside; the first to issue wins.
         """
         identity = current_identity()
         if identity.is_anonymous:
             return {}
-        for access in AccessControl.guarding(context):
+        in_play = access_in_play()
+        asked = [in_play] if in_play is not None else []
+        asked += [one for one in AccessControl.guarding(context) if one is not in_play]
+        for access in asked:
             issued = access.credentials_for(identity, audience=context)
             if issued is not None:
                 return dict(issued.headers)

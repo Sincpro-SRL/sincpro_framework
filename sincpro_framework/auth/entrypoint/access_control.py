@@ -297,6 +297,10 @@ class AccessControl[P: Permission]:
         in order, the first that issues something wins.
         """
         acting = identity or current_identity()
+        if acting.provider is not None and acting.provider not in {
+            one.name for one in self.providers
+        }:
+            return None
         own = self._provider_of(acting)
         for provider in (own, *(one for one in self.providers if one is not own)):
             if provider is not None and (issued := provider.outbound_for(acting, audience)):

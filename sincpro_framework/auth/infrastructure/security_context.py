@@ -13,6 +13,7 @@ not cross to another service: that is `AuthProvider.credentials_for`'s job.
 from collections.abc import Generator
 from contextlib import contextmanager
 from contextvars import ContextVar
+from typing import Any
 
 from sincpro_framework.auth.domain.identity import ANONYMOUS, Identity
 from sincpro_framework.sincpro_logger import logger
@@ -21,6 +22,16 @@ _current: ContextVar[Identity] = ContextVar("sincpro_identity", default=ANONYMOU
 
 _decided: ContextVar[str | None] = ContextVar("sincpro_access_decided", default=None)
 """The use case entered from outside that was let through — a nested one inherits its decision."""
+
+_access_in_play: ContextVar[Any] = ContextVar("sincpro_access_in_play", default=None)
+"""The `AccessControl` guarding the use case in progress — what an outgoing call asks first for
+the credentials it carries, before any other of the process."""
+
+
+def access_in_play() -> Any:
+    """The `AccessControl` guarding the use case in progress — `None` outside a guarded one."""
+    return _access_in_play.get()
+
 
 _presented: ContextVar[str | None] = ContextVar("sincpro_presented_credential", default=None)
 """The bearer token the caller presented, while the call it authenticated runs — what a token
