@@ -89,10 +89,6 @@ class Delivery:
         self.broker = broker_cls(middlewares=[Spy])
         self.test_broker = test_broker
         made = (buses or (lambda ran: [billing_bus(ran), accounting_bus(ran)]))(self.ran)
-        # Retried at once: how long a retry waits is proven on its own, below.
-        options = (options or QueueOptions()).model_copy(
-            update={"max_retry_wait": timedelta(0)}
-        )
         self.gateway = QueueGateway(self.broker, made, options=options, unguarded=True)
         self.gateway.build()
 
@@ -706,12 +702,7 @@ class _Message:
 def test_a_copy_that_cannot_be_published_leaves_the_message_to_the_broker(amount):
     """A dead letter or a counted retry is a copy then an ack: when the copy fails, the
     delivery is nacked — acking it would lose the message."""
-    gateway = QueueGateway(
-        _Unreachable(),  # type: ignore[arg-type]
-        [billing_bus([])],
-        options=QueueOptions(max_retry_wait=timedelta(0)),
-        unguarded=True,
-    )
+    gateway = QueueGateway(_Unreachable(), [billing_bus([])], unguarded=True)  # type: ignore[arg-type]
     body, _, headers = issue(amount)
     message = _Message(body, headers)
 
@@ -760,8 +751,16 @@ def retried(options: QueueOptions) -> tuple[float, _Message, _Recording]:
     return started, message, broker
 
 
-def test_a_retry_waits_what_the_failure_declared_before_it_is_carried_back():
+def test_where_the_broker_cannot_hold_a_wait_a_retry_is_carried_back_at_once():
     started, message, broker = retried(QueueOptions())
+
+    (copied_at,) = broker.published_at
+    assert copied_at - started < 0.2  # Kafka, RabbitMQ, Redis: the partition is never held
+    assert message.settled == ["ack"]
+
+
+def test_a_consumer_asked_to_wait_waits_what_the_failure_declared_first():
+    started, message, broker = retried(QueueOptions(consumer_waits=True))
 
     (copied_at,) = broker.published_at
     assert copied_at - started >= 0.2
@@ -770,7 +769,7 @@ def test_a_retry_waits_what_the_failure_declared_before_it_is_carried_back():
 
 def test_a_retry_never_waits_longer_than_its_bound():
     started, message, broker = retried(
-        QueueOptions(max_retry_wait=timedelta(milliseconds=50))
+        QueueOptions(consumer_waits=True, max_retry_wait=timedelta(milliseconds=50))
     )
 
     (copied_at,) = broker.published_at
@@ -803,4 +802,4 @@ def test_a_broker_that_holds_a_retry_is_handed_the_wait_and_the_consumer_goes_on
     asyncio.run(wire._settle(message, verdict, ISSUE_CHANNEL, Envelope.of(headers)))  # type: ignore[arg-type]
 
     assert time.monotonic() - started < 0.5
-    assert (message.settled, message.delay) == (["nack"], 6.0)  # 3s declared, doubled
+    assert (message.settled, message.delay) == (["nack"], 5.0)  # 3s declared, 2s its own

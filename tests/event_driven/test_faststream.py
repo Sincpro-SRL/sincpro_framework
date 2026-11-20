@@ -6,7 +6,6 @@ that is already `async def`.
 """
 
 import asyncio
-from datetime import timedelta
 
 import pytest
 from faststream import Context, StreamMessage
@@ -232,9 +231,7 @@ def test_a_handler_that_raises_leaves_the_message_to_be_redelivered():
     promised at least once. On RabbitMQ a failed handler hands the message back (nack)."""
     settled: list = []
     broker = RabbitBroker(middlewares=[_settling_spy(settled)])
-    subscribe(
-        broker, Subscriber(failing_bus()), options=QueueOptions(max_retry_wait=timedelta(0))
-    )
+    subscribe(broker, Subscriber(failing_bus()))
 
     asyncio.run(
         _deliver(broker, TestRabbitBroker, TicketClosed(reason="x").as_json().encode())
@@ -249,11 +246,7 @@ def test_on_kafka_a_handler_that_raises_is_retried_by_a_counted_copy_then_dead_l
     message goes to `{channel}.dlq` — never lost, never a poison loop."""
     dead: list[dict] = []
     broker = KafkaBroker()
-    subscribe(
-        broker,
-        Subscriber(failing_bus()),
-        options=QueueOptions(max_attempts=3, max_retry_wait=timedelta(0)),
-    )
+    subscribe(broker, Subscriber(failing_bus()), options=QueueOptions(max_attempts=3))
 
     @broker.subscriber(f"{TicketClosed.name}.dlq")
     async def dead_letters(message: StreamMessage = Context("message")) -> None:  # type: ignore[type-arg]
@@ -328,9 +321,7 @@ def test_an_event_no_bus_here_registered_is_acknowledged_as_anothers(heard):
 def test_every_subscription_settles_manually_whatever_the_brokers_default():
     """The settlement is the framework's, never FastStream's per-broker default."""
     broker = KafkaBroker()
-    subscribe(
-        broker, Subscriber(failing_bus()), options=QueueOptions(max_retry_wait=timedelta(0))
-    )
+    subscribe(broker, Subscriber(failing_bus()))
 
     (subscription,) = broker.subscribers
     assert subscription.ack_policy is AckPolicy.MANUAL

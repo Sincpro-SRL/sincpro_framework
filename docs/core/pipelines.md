@@ -267,11 +267,11 @@ assert collected.state is PipelineState.SUCCEEDED and collected.steps[0].attempt
 
 Only what is worth running again as it is runs again — a service unavailable, a conflict, a claim
 in progress, an exhausted quota (`Retry.on`). A step that answers `ok=False`, or a rule of the
-business that refused it, is never retried. Each wait is what the error says (`retry_after`) — a
-second when it says nothing — grown by `backoff`, never above `max_wait`: a step that needs longer
-is a run to continue later, from a cron. Each wait falls at random up to that, never under what the
-error said (`jitter`): runs that failed together do not come back together; `Retry(jitter=False)`
-waits exactly. A queue's retry waits by the same rule ([queue](../entrypoints/queue.md#how-long-a-retry-waits)).
+business that refused it, is never retried. Each wait is what the error says (`retry_after`), as it
+is, and on top the step's own wait — a second, grown by `backoff` each attempt —, never above
+`max_wait`: a step that needs longer is a run to continue later, from a cron. `Retry(jitter=True)` spreads the step's own wait at random,
+so runs that failed together do not come back together. A queue's retry waits by the same rule
+([queue](../entrypoints/queue.md#how-long-a-retry-waits)).
 
 ### Waiting for a decision
 

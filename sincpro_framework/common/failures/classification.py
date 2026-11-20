@@ -181,27 +181,28 @@ def backoff(
     attempt: int, declared: timedelta | None, factor: float, longest: timedelta, jitter: bool
 ) -> timedelta:
     """How long to wait before running again a call that failed on attempt `attempt`: what
-    the failure declared — a second when it declared nothing — grown by `factor` each attempt,
-    never longer than `longest`. With `jitter`, a moment at random between what the failure
-    declared — nothing, when it declared nothing — and that: callers that failed together do
-    not come back together (AWS's full jitter, Celery's `retry_jitter`).
+    the failure declared, as it is — nothing when it declared nothing — and on top a wait of
+    its own, a second `factor` times longer each attempt; never longer than `longest`. With
+    `jitter` the wait of its own falls at random up to what it grew to (AWS's full jitter):
+    callers that failed together never come back together, even when all of them were told
+    the same `retry_after`.
 
-        backoff(1, None, 2.0, 30s, jitter=False)         ->  1s
-        backoff(3, None, 2.0, 30s, jitter=False)         ->  4s
-        backoff(9, None, 2.0, 30s, jitter=False)         ->  30s     the bound
-        backoff(3, None, 2.0, 30s, jitter=True)          ->  at random from 0s to 4s
-        backoff(2, 5s, 2.0, 30s, jitter=True)            ->  at random from 5s to 10s
+        backoff(1, None, 2.0, 30s, jitter=False)          ->  1s
+        backoff(3, None, 2.0, 30s, jitter=False)          ->  4s
+        backoff(9, None, 2.0, 30s, jitter=False)          ->  30s        the bound
+        backoff(2, 18s, 2.0, 60s, jitter=False)           ->  20s        18s declared, 2s its own
+        backoff(1, 1s, 2.0, 30s, jitter=True)             ->  at random from 1s to 2s
+        backoff(3, None, 2.0, 30s, jitter=True)           ->  at random from 0s to 4s
 
-    Context: what a pipeline's `Retry` and a queue's retry both wait — one rule, so a step and a
-    message that failed the same way come back the same way. A declared wait above `longest`
-    is cut to it: the bound is what keeps a retry inside the broker's visibility.
+    Context: one rule for a pipeline's `Retry` and a queue's retry. What a failure declared —
+    a `CircuitOpen`'s time left, a `RateLimited`'s turn — is when it may work again, so it is
+    waited as it is, never multiplied. The wait of its own grows no further than `longest`
+    before it is spread, so the retries at the bound are spread too; its exponent stops at 32,
+    so no attempt overflows.
     """
-    first = DEFAULT_RETRY_AFTER if declared is None else declared
-    grown = min(first * factor ** (attempt - 1), longest)
-    if not jitter:
-        return grown
-    floor = timedelta(0) if declared is None else min(declared, grown)
-    return floor + (grown - floor) * random.random()
+    grown = DEFAULT_RETRY_AFTER.total_seconds() * factor ** min(attempt - 1, 32)
+    own = min(grown, longest.total_seconds()) * (random.random() if jitter else 1)
+    return min((declared or timedelta(0)) + timedelta(seconds=own), longest)
 
 
 def json_safe_validation_errors(error: ValidationError) -> list[dict[str, Any]]:

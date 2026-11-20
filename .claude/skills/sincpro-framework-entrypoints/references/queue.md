@@ -57,12 +57,12 @@ once). Each delivery gets a verdict from the shared failure classification:
 - Retry/dead-letter mechanics are per broker (Kafka republishes; RabbitMQ nacks/rejects; Redis/NATS
   copy to `{channel}.dlq`). A copy that cannot be published ⇒ the delivery is **nacked**: nothing is
   acked that was not written somewhere.
-- **A retry waits first**: the failure's `retry_after` (a second when it says nothing), doubled each
-  attempt, at most `QueueOptions.max_retry_wait` (10 s), at random up to that — never under what the
-  failure said (`retry_jitter`); the rule a pipeline's `Retry` waits by. SQS (visibility) and NATS
-  JetStream (`nak` with delay) hold the wait themselves; on Kafka/RabbitMQ/Redis the consumer holds
-  the delivery — keep `max_retry_wait` below the broker's visibility timeout and
-  `max.poll.interval.ms`. `max_retry_wait=timedelta(0)` retries at once.
+- **Where the broker holds a wait, a retry waits first** — SQS (visibility) and NATS JetStream (`nak`
+  with delay): the failure's `retry_after` as it is, plus its own wait (1 s, doubled each attempt, at
+  random — `retry_jitter`), at most `QueueOptions.max_retry_wait` (1 min); the rule a pipeline's
+  `Retry` waits by. Kafka/RabbitMQ/Redis retry at once — `consumer_waits=True` makes the consumer wait,
+  holding the delivery (on Kafka its partition): keep `max_retry_wait` below the broker's visibility
+  timeout and `max.poll.interval.ms`. `max_retry_wait=timedelta(0)` retries at once everywhere.
 - **RabbitMQ classic queues have no delivery count** — use a quorum queue or
   `retry_by=RetryBy.REPUBLISH`. On RabbitMQ two *services* on one event compete for it (Kafka/NATS
   give each group a copy natively).

@@ -15,7 +15,6 @@ the queue a channel is read from (`SqsBroker.queue_of`): `billing.invoice.v1.iss
 
 import asyncio
 from collections.abc import Callable, Iterable
-from datetime import timedelta
 from typing import Any
 
 from sincpro_framework.entrypoints.adapters.queue.sqs import SqsBroker, SqsDelivery
@@ -55,9 +54,10 @@ class _RecordDelivery(SqsDelivery):
         """Settled: left out of `batchItemFailures`, so Lambda deletes it with the batch."""
         self.failed = False
 
-    async def nack(self, wait: timedelta | None = None) -> None:
+    async def nack(self, delay: float | None = None) -> None:
         """A retry: answered in `batchItemFailures`, so SQS delivers it again — once the queue's
-        own visibility timeout passes: a batch's answer carries no wait of its own."""
+        own visibility timeout passes, whatever `delay` asks: a batch's answer carries no wait
+        of its own."""
         self.failed = True
 
     async def reject(self) -> None:

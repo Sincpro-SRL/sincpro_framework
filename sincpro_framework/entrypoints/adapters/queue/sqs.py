@@ -46,18 +46,12 @@ def queue_name(channel: str) -> str:
     return re.sub(r"[^A-Za-z0-9_-]", "-", stem) + (".fifo" if fifo else "")
 
 
-async def visible_again_after(message: Any, wait: timedelta) -> None:
-    """SQS holds a retried message invisible for the wait — its visibility timeout — and the
-    consumer never waits."""
-    await message.nack(wait)
-
-
 SQS = Flavour(
     name="sqs",
     retry_by=RetryBy.NACK,
     dead_letter_by=DeadLetterBy.NATIVE,
     faststream=False,
-    holds_retry=visible_again_after,
+    holds_retry=True,
 )
 
 
@@ -138,11 +132,11 @@ class SqsDelivery:
         """Settled: the message is deleted from its queue."""
         await self._call("delete_message")
 
-    async def nack(self, wait: timedelta | None = None) -> None:
-        """A retry: visible again once `wait` passes — at once without one —, one more receive
-        counted; SQS takes whole seconds, so a part of one is rounded up."""
-        seconds = math.ceil(wait.total_seconds()) if wait is not None else 0
-        await self._call("change_message_visibility", VisibilityTimeout=seconds)
+    async def nack(self, delay: float | None = None) -> None:
+        """A retry: visible again once `delay` seconds pass — at once without one —, one more
+        receive counted. SQS holds it meanwhile, in whole seconds: a part of one is rounded up.
+        """
+        await self._call("change_message_visibility", VisibilityTimeout=math.ceil(delay or 0))
 
     async def reject(self) -> None:
         """Visible again: the queue's redrive policy moves it once its receives run out."""

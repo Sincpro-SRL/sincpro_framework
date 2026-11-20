@@ -1,6 +1,7 @@
 """What a pipeline grows into when it needs to: a step retried when its failure is worth it, a run
 that waits for a decision and goes on with it, and the runs read through the bus."""
 
+from datetime import timedelta
 from typing import Any
 
 import pytest
@@ -102,7 +103,8 @@ def forge(
 
 def test_a_step_that_failed_in_a_way_worth_it_is_run_again():
     bus, did = forge(
-        fails=[Unavailable("siat"), Unavailable("siat")], retry=Retry(attempts=3)
+        fails=[Unavailable("siat"), Unavailable("siat")],
+        retry=Retry(attempts=3, max_wait=timedelta(0)),  # what is retried, not how long
     )
 
     run = bus(CommandRunIssue(run_id="i-1"), PipelineRun)
@@ -113,7 +115,10 @@ def test_a_step_that_failed_in_a_way_worth_it_is_run_again():
 
 
 def test_retries_run_out_and_the_run_fails_with_the_last_error():
-    bus, did = forge(fails=[Unavailable("a"), Unavailable("b")], retry=Retry(attempts=2))
+    bus, did = forge(
+        fails=[Unavailable("a"), Unavailable("b")],
+        retry=Retry(attempts=2, max_wait=timedelta(0)),
+    )
 
     with pytest.raises(Unavailable):
         bus(CommandRunIssue(run_id="i-2"))
@@ -140,8 +145,6 @@ def test_without_retry_nothing_is_run_again():
 
 
 def test_the_wait_grows_and_stops_at_its_bound():
-    from datetime import timedelta
-
     retry = Retry(backoff=3.0, max_wait=timedelta(seconds=5), jitter=False)
 
     assert [retry.wait_before(attempt, None).total_seconds() for attempt in (1, 2, 3)] == [
@@ -149,13 +152,13 @@ def test_the_wait_grows_and_stops_at_its_bound():
         3.0,
         5.0,
     ]
-    assert retry.wait_before(1, timedelta(seconds=2)) == timedelta(seconds=2)
+    assert retry.wait_before(1, timedelta(seconds=2)) == timedelta(
+        seconds=3
+    )  # 2s said, 1s own
 
 
-def test_with_jitter_each_wait_falls_at_random_under_what_it_grew_to():
-    from datetime import timedelta
-
-    retry = Retry(backoff=3.0, max_wait=timedelta(seconds=5))
+def test_with_jitter_each_wait_of_its_own_falls_at_random_up_to_what_it_grew_to():
+    retry = Retry(backoff=3.0, max_wait=timedelta(seconds=5), jitter=True)
 
     waits = [retry.wait_before(2, None) for _ in range(200)]
     declared = [retry.wait_before(2, timedelta(seconds=2)) for _ in range(200)]
