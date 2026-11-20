@@ -44,7 +44,7 @@ Every name below imports from `sincpro_framework.auth` unless the Import column 
 | `RolePermissions` | roles → permissions, with implied roles | adapter (helper) | same |
 | `AccessControl[P]` | holds providers + declarations, decides, `on(bus)` wires the guard; `AccessControl.of(bus)` the one guarding a bus | registry | same |
 | `@auth.requires(...)` / `@auth.authenticated` | restrict a Feature, ApplicationService or Hook — undeclared is open | decorator | methods of `AccessControl` |
-| `auth.any_of(A, B)` → `AnyOf` | one among several | function / DTO | same |
+| `auth.any_of(A, B)` → `AnyOf` | one among several — permissions, roles, rules mixed ("its owner, or an admin") | function / DTO | same |
 | `auth.role(*roles)` → `RoleRequirement` | Odoo's `groups=`: one of the roles held, read off their closure | function / DTO | same |
 | `auth.rule(name, check)` → `Rule` / `AccessCall` | a requirement of the project's own: `check(call) -> bool` with the identity, use case, Command, resource and the execution's context | function / DTO | same |
 | `@auth.every_call` | an interceptor of the project's own, asked on every use case of every guarded bus — open or declared | decorator | same |

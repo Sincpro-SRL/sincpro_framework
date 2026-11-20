@@ -38,13 +38,17 @@ class WhenDenied(StrEnum):
 
 @dataclass(frozen=True)
 class AnyOf:
-    """Met when one of its permissions is — `auth.any_of(...)`."""
+    """Met when one of its members is — `auth.any_of(...)`: permissions, roles, rules, any
+    requirement — "its owner, or an admin".
 
-    permissions: tuple[Permission, ...]
+        AnyOf((Rule("its owner", is_owner), RoleRequirement(("billing.admin",))))
+    """
+
+    members: "tuple[Requirement, ...]"
 
     def __str__(self) -> str:
-        """Its permissions joined by `or` — `billing.read or billing.admin`."""
-        return " or ".join(str(one) for one in self.permissions)
+        """Its members joined by `or` — `billing.read or billing.admin`."""
+        return " or ".join(str(one) for one in self.members)
 
 
 @dataclass(frozen=True)
@@ -69,8 +73,8 @@ class ByField:
         """One among every permission it may name — what is asked with no Command at hand."""
         found: list[Permission] = []
         for _, needed in self.permissions:
-            for one in needed.permissions if isinstance(needed, AnyOf) else (needed,):
-                if one not in found:
+            for one in needed.members if isinstance(needed, AnyOf) else (needed,):
+                if isinstance(one, Permission) and one not in found:
                     found.append(one)
         return AnyOf(tuple(found))
 

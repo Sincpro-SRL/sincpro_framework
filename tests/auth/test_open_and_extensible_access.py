@@ -211,3 +211,26 @@ def test_every_call_takes_a_name_and_answers_the_check_as_given() -> None:
 
     assert auth.every_call(maintenance, name="not in maintenance") is maintenance
     assert [one.name for one in auth.checks] == ["not in maintenance"]
+
+
+def test_any_of_mixes_a_rule_and_a_role_its_owner_or_an_admin() -> None:
+    auth = AccessControl[P]()
+    bus = UseFramework("owner-or-admin", log_after_execution=False)
+    owner_or_admin = auth.any_of(
+        auth.rule("its owner", lambda call: call.dto.owner == call.identity.subject),
+        auth.role("billing.admin"),
+    )
+
+    @bus.feature(QueryInvoice)
+    @auth.requires(owner_or_admin)
+    class ReadInvoice(Feature):
+        def execute(self, dto: QueryInvoice) -> Answer:
+            return Answer(by=security.identity.subject)
+
+    auth.on(bus)
+    admin = Identity.user("user:root", roles={"billing.admin"})
+    assert run(bus, QueryInvoice(number="F-1", owner="user:ana"), ANA).by == "user:ana"
+    assert run(bus, QueryInvoice(number="F-1", owner="user:ana"), admin).by == "user:root"
+    with pytest.raises(PermissionDenied, match="its owner does not hold and holds no"):
+        run(bus, QueryInvoice(number="F-1", owner="user:ana"), BEA)
+    assert str(owner_or_admin) == "its owner or role billing.admin"

@@ -229,12 +229,16 @@ class AccessControl[P: Permission]:
         """
         return AssuranceRequirement(tuple(acr), frozenset(methods), max_age)
 
-    def any_of(self, *permissions: P) -> AnyOf:
-        """A requirement met by one of `permissions` — for `requires`.
+    def any_of(self, *requirements: P | Requirement) -> AnyOf:
+        """A requirement met by one of `requirements` — permissions, roles, rules — for
+        `requires`, `allows` and `check`.
 
-        @auth.requires(auth.any_of(BillingPermission.ISSUE, BillingPermission.ADMIN))
+            @auth.requires(auth.any_of(BillingPermission.ISSUE, BillingPermission.ADMIN))
+            @auth.requires(auth.any_of(auth.rule("its owner", is_owner), auth.role("admin")))
         """
-        return AnyOf(tuple(permissions))
+        if not requirements:
+            raise exceptions.ProgrammingError("any_of() names at least one requirement")
+        return AnyOf(tuple(requirements))
 
     def authenticated[T: type](self, cls: T) -> T:
         """Anyone authenticated, whatever they may do."""
@@ -452,8 +456,9 @@ class AccessControl[P: Permission]:
                 "billing.read or billing.admin", "lacks billing.read and lacks billing.admin")
 
         Context: every member of an `AnyOf` is asked, even after one is granted — the provider
-        may be remote, but the answer, and the reasons joined, stay complete and in order; a
-        provider that words the whole refusal (`refusing_any`) is told it instead.
+        may be remote, but the answer, and the reasons joined, stay complete and in order; when
+        every member is a permission, a provider that words the whole refusal (`refusing_any`)
+        is told it instead.
         """
         if isinstance(requirement, AssuranceRequirement):
             return self._assured(identity, requirement)
@@ -481,19 +486,20 @@ class AccessControl[P: Permission]:
         if not isinstance(requirement, AnyOf):
             return self._has(identity, requirement.value, resource, context)
         denials = [
-            self._has(identity, one.value, resource, context)
-            for one in requirement.permissions
+            self._denial(identity, one, resource, context, dto, what)
+            for one in requirement.members
         ]
         if any(one is None for one in denials):
             return None
         each = [one.reason for one in denials if one is not None]
         provider = self._provider_of(identity)
+        permissions = [
+            one.value for one in requirement.members if isinstance(one, Permission)
+        ]
         said = (
-            None
-            if provider is None
-            else provider.refusing_any(
-                identity, [one.value for one in requirement.permissions], each
-            )
+            provider.refusing_any(identity, permissions, each)
+            if provider is not None and len(permissions) == len(requirement.members)
+            else None
         )
         return exceptions.PermissionDenied(
             identity.subject, str(requirement), said or " and ".join(each)
