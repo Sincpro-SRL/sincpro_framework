@@ -34,13 +34,18 @@ from dataclasses import dataclass
 from decimal import Decimal
 from typing import Any, Self, overload
 
+from sincpro_framework.ddd import exceptions
 from sincpro_framework.ddd.criteria import Bucket, Criteria
 from sincpro_framework.ddd.entity.entity_collection import (
     Count,
     EntityCollection,
     model_and_collection,
 )
+from sincpro_framework.ddd.entity.entity_meta import FieldType, Meta
 from sincpro_framework.ddd.repositories.fingerprint import fingerprint_of
+
+NUMBERS = frozenset({FieldType.INTEGER, FieldType.NUMBER})
+"""The fields an `Increment` adds to."""
 
 
 @dataclass(frozen=True)
@@ -78,7 +83,30 @@ class Increment:
     A row that holds no value keeps none: `NULL + 1` is `NULL`, in the engine and in memory.
     """
 
-    by: int | Decimal
+    by: int | float | Decimal
+
+    def __post_init__(self) -> None:
+        """Refused at once when `by` is no number: a text would be joined, a bool counted."""
+        if isinstance(self.by, bool) or not isinstance(self.by, int | float | Decimal):
+            raise exceptions.ProgrammingError(f"Increment adds a number, not {self.by!r}")
+
+
+def refuse_increments_of_non_numbers(
+    model: type, meta: Meta, values: Mapping[str, Any]
+) -> None:
+    """What `update_all` checks of its `Increment`s, in the engine and in the double alike: each
+    adds to a field that holds a number — on text an engine would join the two, on a date it would
+    fail halfway through the statement.
+
+        refuse_increments_of_non_numbers(Show, meta, {"title": Increment(1)})
+            ->  ProgrammingError("Increment adds to a number; Show.title holds text")
+    """
+    for name, value in values.items():
+        field = meta.fields.get(name)
+        if isinstance(value, Increment) and field is not None and field.type not in NUMBERS:
+            raise exceptions.ProgrammingError(
+                f"Increment adds to a number; {model.__name__}.{name} holds {field.type}"
+            )
 
 
 @dataclass(frozen=True)

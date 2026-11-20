@@ -104,6 +104,7 @@ from sincpro_framework.ddd.repositories.capabilities import (
     Transacts,
     Upserted,
     WritesInBulk,
+    refuse_increments_of_non_numbers,
 )
 from sincpro_framework.ddd.repositories.hooks import Hooks
 from sincpro_framework.ddd.repositories.mixins.change_tracking import (
@@ -1590,6 +1591,7 @@ class MemoryRepository(
                 f"update_all cannot set {', '.join(wrong)} on {model.__name__}: not a field, "
                 "or one the framework sets"
             )
+        refuse_increments_of_non_numbers(model, meta, values)
         bulk_rules.keep_or_skip(
             model,
             "update_all",

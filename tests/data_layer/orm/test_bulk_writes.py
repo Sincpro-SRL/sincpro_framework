@@ -315,6 +315,16 @@ def test_the_double_increments_as_the_engine_does(ana):
     assert sorted(double.pluck(Account, "balance")) == [0, 1]
 
 
+def test_an_increment_of_a_field_that_holds_no_number_is_refused_in_both(ledger, ana):
+    every = Criteria()
+
+    for store in (ledger, MemoryRepository()):
+        with pytest.raises(exceptions.ProgrammingError, match="Account.reference holds text"):
+            store.update_all(Account, every, {"reference": Increment(1)})
+    with pytest.raises(exceptions.ProgrammingError, match="adds a number"):
+        Increment("1")  # type: ignore[arg-type]
+
+
 def test_buyers_at_once_never_take_more_than_there_is_in_the_double_either(ana):
     for _ in range(10):  # the race it guards against showed in one run of four
         double = MemoryRepository()
