@@ -52,7 +52,7 @@ import time
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any
 
-from sincpro_framework.common.failures import refined_failure_kind, retry_after
+from sincpro_framework.common.failures import declared_retry_after, refined_failure_kind
 from sincpro_framework.common.naming import registered_name
 from sincpro_framework.context import context_executions, use_context
 from sincpro_framework.pipelines.domain import exceptions
@@ -142,7 +142,9 @@ class Pipeline(PipelineDeclaration):
                 ):
                     raise
                 time.sleep(
-                    self.retry.wait_before(attempt, retry_after(error, kind)).total_seconds()
+                    self.retry.wait_before(
+                        attempt, declared_retry_after(error)
+                    ).total_seconds()
                 )
                 attempt += 1
 

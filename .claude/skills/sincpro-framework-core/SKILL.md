@@ -259,7 +259,8 @@ with `resume = Resume.CONTINUE`. `by = "<field>"` picks one of several recipes; 
 leaves the recorder out. Nothing is refused: no tenant, no store or a step the bus does not answer
 is said in the logs. When it needs more, one line each: `retry = Retry()` runs again a step whose
 failure is worth it by its kind (unavailable, conflict, in progress — never `ok=False` nor a domain
-refusal); `Await("approval")` in the steps makes the run wait (`PipelineState.WAITING`) until the same
+refusal), each wait grown from the error's `retry_after` and spread at random (`jitter`, the rule a
+queue's retry waits by too); `Await("approval")` in the steps makes the run wait (`PipelineState.WAITING`) until the same
 `run_id` is run with the input's `approval` filled; `GetRun[Command]` / `FindRuns[Command]` answered
 by a `PipelineReads` Feature read the runs on any wire; `lease = timedelta(minutes=2)` makes it one run
 of a `run_id` at a time across replicas, renewed while it runs, and `PipelineRuns.of().abandoned(…)`

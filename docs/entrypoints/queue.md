@@ -128,7 +128,33 @@ events. The reason is a stable UPPER_SNAKE string: the error's class when the pr
   settled. The same holds for core NATS.
 - A counted copy goes to the **back** of the channel, so per-key order does not hold across a
   retry.
-- Retries run **without delay** in this release. Delayed retry topics are phase 2.
+
+### How long a retry waits
+
+A retry run at once fails the same way while its dependency is still down: its attempts are spent
+in milliseconds of an outage that lasts seconds, and it is dead-lettered. So a retry **waits**
+first — what the failure declared (a `RateLimited`'s turn, a `CircuitOpen`'s time left, any
+error's `retry_after`), a second when it declared nothing, doubled each attempt, never longer than
+`max_retry_wait`, and at random up to that (**jitter**) — never under what the failure declared —
+so the deliveries that failed together do not come back together. It is the rule a pipeline's
+`Retry` waits by (`common.failures.backoff`).
+
+| Broker | Who holds the wait |
+|---|---|
+| Amazon SQS | the queue: the message stays invisible for the wait (its visibility timeout); in Lambda, the queue's own visibility timeout |
+| NATS JetStream | the server: a `nak` with that delay |
+| Kafka, RabbitMQ, Redis | the consumer, before it settles: the delivery is held meanwhile — on Kafka, its partition |
+
+```text
+QueueOptions()                                            1s, 2s, 4s… up to 10s, at random
+QueueOptions(max_retry_wait=timedelta(seconds=30))        longer, where the broker allows it
+QueueOptions(retry_backoff=3.0, retry_jitter=False)       1s, 3s, 9s… exactly
+QueueOptions(max_retry_wait=timedelta(0))                 at once, as before
+```
+
+Where the consumer holds the wait, `max_retry_wait` **must** stay below the broker's visibility
+timeout and Kafka's `max.poll.interval.ms`, or the broker hands the message to another consumer
+while this one waits. Delayed retry topics for Kafka — the wait without the partition — are phase 2.
 
 ## The inbox: at least once, run once
 
@@ -251,6 +277,6 @@ Each subscription the gateway built appears there as a channel with a `receive` 
 | `gateway.build()` | the `Subscription`s registered; a second call registers nothing new |
 | `await gateway.consume(message, as_=, decode=, channel=)` | full control; answers a `Verdict` |
 | `gateway.surface()`, `verify()`, `manifest()`, `asyncapi()` | as on every wire |
-| `QueueOptions(inbox, max_attempts, retry_by, dead_letter_by, dead_letter_suffix, time_limit, in_progress_for, keep_for, expires_after, identify, subscription_of)` | how the wire settles |
+| `QueueOptions(inbox, max_attempts, retry_by, dead_letter_by, dead_letter_suffix, time_limit, in_progress_for, keep_for, expires_after, retry_backoff, max_retry_wait, retry_jitter, identify, subscription_of)` | how the wire settles |
 | `Envelope.headers_for(message, source=, type=, id=, subject=, context=)`, `Envelope.of(headers)` | the envelope, from `sincpro_framework.event_driven` |
 | `Verdict(settlement, kind, reason, attempts, command)`, `Settlement` | the verdict |

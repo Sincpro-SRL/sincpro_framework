@@ -269,7 +269,9 @@ Only what is worth running again as it is runs again — a service unavailable, 
 in progress, an exhausted quota (`Retry.on`). A step that answers `ok=False`, or a rule of the
 business that refused it, is never retried. Each wait is what the error says (`retry_after`) — a
 second when it says nothing — grown by `backoff`, never above `max_wait`: a step that needs longer
-is a run to continue later, from a cron.
+is a run to continue later, from a cron. Each wait falls at random up to that, never under what the
+error said (`jitter`): runs that failed together do not come back together; `Retry(jitter=False)`
+waits exactly. A queue's retry waits by the same rule ([queue](../entrypoints/queue.md#how-long-a-retry-waits)).
 
 ### Waiting for a decision
 

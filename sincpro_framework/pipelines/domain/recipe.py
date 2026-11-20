@@ -16,7 +16,7 @@ from datetime import timedelta
 from enum import StrEnum
 from typing import Any, ClassVar
 
-from sincpro_framework.common.failures import RETRYABLE
+from sincpro_framework.common import failures
 from sincpro_framework.context import Owner
 from sincpro_framework.pipelines.domain import exceptions
 
@@ -52,6 +52,7 @@ class Retry:
 
     Retry()                                           3 attempts, as the error says to wait
     Retry(attempts=5, max_wait=timedelta(minutes=1))  more, and longer
+    Retry(jitter=False)                               every wait exactly as grown
     """
 
     attempts: int = 3
@@ -60,14 +61,19 @@ class Retry:
     """Each wait is this many times the one before."""
     max_wait: timedelta = timedelta(seconds=30)
     """No wait is longer: a step that needs more is a run to continue later."""
-    on: frozenset[exceptions.FailureKind] = RETRYABLE | {exceptions.FailureKind.CONFLICT}
+    on: frozenset[exceptions.FailureKind] = failures.RETRYABLE | {
+        exceptions.FailureKind.CONFLICT
+    }
     """The kinds of failure retried — unavailable, in progress, exhausted, a conflict."""
+    jitter: bool = True
+    """Each wait at random up to what it grew to, never under what the error declared: runs
+    that failed together do not come back together."""
 
     def wait_before(self, attempt: int, declared: timedelta | None) -> timedelta:
-        """The wait before `attempt` + 1: what the error declared — a second when it says
-        nothing — grown by `backoff` each attempt, never above `max_wait`."""
-        first = declared if declared is not None else timedelta(seconds=1)
-        return min(first * self.backoff ** (attempt - 1), self.max_wait)
+        """The wait before `attempt` + 1 — the framework's one rule (`backoff`): what the error
+        declared, a second when it declares nothing, grown by `backoff` each attempt, never
+        above `max_wait`, and spread at random with `jitter`."""
+        return failures.backoff(attempt, declared, self.backoff, self.max_wait, self.jitter)
 
 
 class PipelineDeclaration:
