@@ -173,7 +173,7 @@ criteria-contract:
 	fi
 
 test:
-	poetry run pytest tests -m "not realworld" $(COVERAGE_ARGS) --cov-report=term-missing --cov-report=xml
+	poetry run pytest tests -m "not realworld" $(COVERAGE_ARGS) --cov-report=term-missing --cov-report=xml --durations=20
 
 test-realworld:
 	poetry run pytest tests/realworld -m "realworld and not stress" -p no:cacheprovider

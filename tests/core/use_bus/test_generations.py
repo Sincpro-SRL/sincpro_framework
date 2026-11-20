@@ -344,6 +344,9 @@ def test_executions_never_see_half_of_an_extension_installed_meanwhile():
                 counted.append(bus(CommandCount(), Counted).hits)
             except BaseException as error:
                 failed.append(error)
+            # Hand the GIL over between calls: eight threads that never wait starve the one
+            # installing the extension — 9 to 25 minutes on CI under coverage (3.12, 3.13).
+            stop.wait(0.001)
 
     workers = [threading.Thread(target=execute) for _ in range(8)]
     for worker in workers:
@@ -356,6 +359,7 @@ def test_executions_never_see_half_of_an_extension_installed_meanwhile():
         worker.join(5)
 
     assert failed == []
+    assert counted, "the executions ran while the extension was installed"
     assert set(counted) <= {0, 50}
     assert bus(CommandCount(), Counted).hits == 50
 

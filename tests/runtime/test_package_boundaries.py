@@ -16,6 +16,7 @@ read the list: `pytest tests/runtime/test_package_boundaries.py -W always -rw`.
 
 import ast
 import warnings
+from functools import cache
 from pathlib import Path
 
 import pytest
@@ -56,19 +57,36 @@ def _is_within(module: str, package: str) -> bool:
     return module == full or module.startswith(f"{full}.") or module == door
 
 
-def _insides_imported(path: Path, package: str) -> list[str]:
-    """Every import in `path` that reaches into a layer of `package` other than `entrypoint`.
+@cache
+def _imports() -> dict[str, tuple[tuple[str, ...], ...]]:
+    """The absolute imports of every framework module — per import statement, the names it
+    reaches — parsed once for every package the analysis looks at.
+
+    from sincpro_framework.context import use_context, ContextKey
+        ->  ("sincpro_framework.context", "sincpro_framework.context.use_context", …)
+    """
+    found: dict[str, tuple[tuple[str, ...], ...]] = {}
+    for path in FRAMEWORK.rglob("*.py"):
+        statements = []
+        for node in ast.walk(ast.parse(path.read_text())):
+            if isinstance(node, ast.ImportFrom) and node.module and node.level == 0:
+                statements.append(
+                    (node.module, *(f"{node.module}.{alias.name}" for alias in node.names))
+                )
+            elif isinstance(node, ast.Import):
+                statements.append(tuple(alias.name for alias in node.names))
+        found[_module_name(path)] = tuple(statements)
+    return found
+
+
+def _insides_imported(statements: tuple[tuple[str, ...], ...], package: str) -> list[str]:
+    """Every import statement that reaches into a layer of `package` other than `entrypoint`.
 
     from sincpro_framework.context.services.nodes import live_context  ->  "context.services.nodes"
     """
     prefix = f"sincpro_framework.{package}."
     reached = []
-    for node in ast.walk(ast.parse(path.read_text())):
-        names = []
-        if isinstance(node, ast.ImportFrom) and node.module and node.level == 0:
-            names = [node.module] + [f"{node.module}.{alias.name}" for alias in node.names]
-        elif isinstance(node, ast.Import):
-            names = [alias.name for alias in node.names]
+    for names in statements:
         for name in names:
             if name.startswith(prefix) and name.removeprefix(prefix).split(".")[0] in INSIDES:
                 reached.append(name.removeprefix("sincpro_framework."))
@@ -80,9 +98,9 @@ def _insides_imported(path: Path, package: str) -> list[str]:
 def test_where_a_layered_package_is_entered_by_its_insides(package):
     """Each crossing found is a warning naming the module and what it reached."""
     reached = {
-        _module_name(path): _insides_imported(path, package)
-        for path in FRAMEWORK.rglob("*.py")
-        if not _is_within(_module_name(path), package)
+        module: _insides_imported(statements, package)
+        for module, statements in _imports().items()
+        if not _is_within(module, package)
     }
     for module, names in reached.items():
         if names:
