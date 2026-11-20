@@ -18,7 +18,7 @@ from collections.abc import Mapping, Sequence
 from functools import cached_property
 from typing import Any
 
-from sincpro_framework.auth import Credentials, security
+from sincpro_framework.auth import Credentials, refusal_from, security
 from sincpro_framework.common.naming import snake
 from sincpro_framework.entrypoints.adapters.rpc.errors import UNAUTHENTICATED
 from sincpro_framework.entrypoints.adapters.rpc.jrpc import (
@@ -113,11 +113,6 @@ class RpcSurface:
     def buses(self) -> list[UseFramework]:
         """The buses the methods run on, each once, in the order first published."""
         return list(dict.fromkeys(one.operation.bus for one in self.methods.values()))
-
-    @cached_property
-    def challenges(self) -> tuple[str, ...]:
-        """The `WWW-Authenticate` values a 401 answers with — its buses' providers'."""
-        return tuple(security.challenges(self.buses()))
 
 
 class JsonRpcWire(Wire[RpcBinding]):
@@ -284,8 +279,8 @@ def http_status(
     1. No reply: 204.
     2. A batch: 200 — each of its replies speaks for itself.
     3. An error whose reason is a limit (`STATUS_BY_REASON`): 413 or 415.
-    4. An unauthenticated error: 401, with the challenges of the surface's buses when they
-       have any.
+    4. An unauthenticated error: 401, with the challenges of the surface's buses for that
+       refusal — rebuilt from the error's `data` — when they have any.
     Final: 200 — a result, or any other JSON-RPC error.
     """
     if reply is None:
@@ -299,6 +294,6 @@ def http_status(
         return status, {}
     if error.get("code") == UNAUTHENTICATED:
         served = surface if isinstance(surface, RpcSurface) else RpcSurface(surface)
-        challenges = served.challenges
+        challenges = security.challenges(served.buses(), refusal_from(data))
         return 401, {"www-authenticate": ", ".join(challenges)} if challenges else {}
     return 200, {}

@@ -71,7 +71,8 @@ class RevocationState(DataTransferObject):
     token_revoked: bool = False
     session_revoked: bool = False
     not_before: datetime | None = None
-    """Credentials of the subject issued before this moment are revoked — "sign out everywhere"."""
+    """Credentials of the subject issued before this second are revoked — "sign out everywhere";
+    to the second, as a JWT's `iat` is."""
     permission_version: int = 0
     versions: dict[str, int] = Field(default_factory=dict)
     """The permission versions of the related subjects read with it — a tenant's."""

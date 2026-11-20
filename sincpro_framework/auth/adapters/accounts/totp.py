@@ -105,8 +105,8 @@ class Totp:
 
     def verify(self, secret: str, code: str, subject: str | None = None) -> bool:
         """Whether `code` is the secret's within `window` steps of now — and, with `replay` and a
-        `subject`, the first use of that step."""
-        if not code.isdigit() or len(code) != self.digits:
+        `subject`, the first use of that step. A code of anything but ASCII digits is not."""
+        if not (code.isascii() and code.isdigit()) or len(code) != self.digits:
             return False
         current = int(self.clock() // self.period)
         for step in range(current - self.window, current + self.window + 1):

@@ -3,7 +3,7 @@ carried to the next service with no change to its transports; a refresh token ro
 replica at a time, never reused; consent obtained by device code (RFC 8628)."""
 
 import threading
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 
 import pytest
 
@@ -31,7 +31,7 @@ from sincpro_framework.auth import (
 from sincpro_framework.auth.domain import exceptions
 from sincpro_framework.auth.infrastructure.security_context import presenting
 from sincpro_framework.auth.infrastructure.token_endpoint import TokenEndpoint
-from sincpro_framework.data_layer.store import InMemoryKeyValue
+from sincpro_framework.data_layer.store import InMemoryKeyValue, Leases
 from sincpro_framework.runtime.testing import FakeTokenEndpoint, ManualClock
 
 API = OutgoingRequest(url="https://odoo.acme.bo/json/2/res.partner")
@@ -226,3 +226,44 @@ def test_a_device_is_authorized_by_a_code_shown_to_a_person() -> None:
         cli.headers_for(API)["authorization"]
         == f"Bearer {issued.access_token.get_secret_value()}"
     )
+
+
+def test_an_app_behind_the_middleware_can_exchange_the_token_it_was_called_with() -> None:
+    from starlette.applications import Starlette
+    from starlette.requests import Request
+    from starlette.responses import PlainTextResponse
+    from starlette.routing import Route
+    from starlette.testclient import TestClient
+
+    from sincpro_framework.auth import IdentityMiddleware
+
+    async def presented(request: Request) -> PlainTextResponse:
+        return PlainTextResponse(security.presented or "")
+
+    app = Starlette(routes=[Route("/presented", presented)])
+    app.add_middleware(
+        IdentityMiddleware,
+        access=AccessControl(
+            providers=[StaticProvider({"t-ana": Identity.user("user:ana")})]
+        ),
+    )
+    answered = TestClient(app).get("/presented", headers={"authorization": "Bearer t-ana"})
+    assert answered.text == "t-ana"
+
+
+def test_a_replica_never_refreshes_while_another_holds_the_lease() -> None:
+    clock = ManualClock(datetime.now(UTC))
+    server = FakeTokenEndpoint(clients={"billing": "s3cret"})
+    store = InMemoryKeyValue()
+    odoo = refreshing(
+        server, InMemoryHeldGrants(), clock, store, wait=timedelta(milliseconds=20)
+    )
+    odoo.seed(consented(server))
+    clock.advance(seconds=290)
+    held = Leases(store, prefix="sincpro:auth:refreshing").take(
+        "odoo:tenant-bo", ttl=timedelta(minutes=1)
+    )
+    assert held is not None  # another replica, refreshing slowly
+    with pytest.raises(exceptions.EndpointUnavailable, match="still running"):
+        odoo.headers_for(API)
+    assert server.grants("refresh_token") == 0

@@ -76,9 +76,11 @@ class KeyValueRevocations(Revocations):
             self.store().set(self._key("sid", session), REVOKED, ttl)
 
     def revoke_subject(self, subject: str, until: datetime) -> None:
-        """`<prefix>:nbf:<digest>` holding this moment: what was issued before it is refused."""
+        """`<prefix>:nbf:<digest>` holding this second: what was issued before it is refused —
+        to the second, as a token's `iat` says it, so one issued later in this same second is
+        never taken for an older one."""
         if (ttl := self._ttl(until)) is not None:
-            moment = str(self.now().timestamp()).encode()
+            moment = str(int(self.now().timestamp())).encode()
             self.store().set(self._key("nbf", subject), moment, ttl)
 
     def bump_permissions(self, subject: str) -> int:

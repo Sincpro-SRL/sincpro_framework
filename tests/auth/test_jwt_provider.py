@@ -338,3 +338,18 @@ def test_a_project_app_answers_an_expired_token_401_saying_why() -> None:
     assert expired.status_code == 401
     assert 'error="invalid_token"' in expired.headers["www-authenticate"]
     assert expired.json()["error"]["reason"] == "token expired"
+
+
+def test_a_token_naming_no_subject_is_refused_never_a_shared_one() -> None:
+    entra = JwtProvider(
+        Issuer(
+            KEYCLOAK,
+            audience="billing-api",
+            keys=SharedSecrets({"2026-09": SECRET}),
+            mapping=ClaimMapping.entra(),
+        )
+    )
+    with pytest.raises(exceptions.Unauthenticated, match=r"names no subject \(oid\)"):
+        entra.authenticate(bearer(mint(claims())))  # a `sub`, but no `oid`
+    with pytest.raises(exceptions.Unauthenticated, match="names no subject"):
+        JwtProvider(issuer()).authenticate(bearer(mint(claims(sub=""))))

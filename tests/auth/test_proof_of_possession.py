@@ -335,3 +335,11 @@ def test_what_a_shared_store_keeps_of_a_secret_is_sealed() -> None:
     )
     assert bank.headers_for(OutgoingRequest(url=API)) == {"authorization": "Bearer at-1"}
     assert all(b"at-1" not in value for value, _ in cache_store._values.values())
+
+
+def test_a_trust_domain_never_takes_a_common_name_for_a_spiffe_id() -> None:
+    named_only = certificate("billing", issuer=CA)  # the proxy terminated TLS and checked it
+    with pytest.raises(exceptions.Unauthenticated, match="no SPIFFE ID"):
+        CertificateProvider(trust_domain="sincpro.bo").authenticate(over_mtls(named_only[0]))
+    by_name = CertificateProvider().authenticate(over_mtls(named_only[0]))
+    assert by_name is not None and by_name.subject == "service:billing"

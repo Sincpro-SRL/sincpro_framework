@@ -155,11 +155,12 @@ except Unauthenticated as refused:
 
 | | |
 |---|---|
-| the access token | ten minutes; who, which session, when and how they authenticated, the scopes — no permissions: the provider's resolvers give them per call, so a role taken away holds at once (`embed_permissions=True` carries them with a version a change refuses) |
+| the access token | ten minutes; who, which session, when and how they authenticated, the scopes — no permissions: the provider's resolvers give them per call, so a role taken away holds at once (`embed_permissions=True` carries them with a version a change refuses, resolved by the issuer's `resolvers=` at sign-in and again at every refresh) |
 | the refresh token | random, stored by digest, rotated on every use; used twice past `reuse_grace` (ten seconds — two tabs) it is a replay, and the whole session is revoked |
 | a session | ends `idle_for` (14 days) after the last refresh and `at_most` (30 days) after it began |
 | a logout | `revoke(token)` — an access or a refresh token — ends its session, its access tokens refused at once |
-| "sign out everywhere" | `revoke_subject(subject)`: a password changed, an account disabled |
+| the roles | the ones the identity carried at sign-in, kept with the session and carried by every refreshed token |
+| "sign out everywhere" | `revoke_subject(subject)`: a password changed, an account disabled — every session of the subject ends; a new sign-in in that same second works |
 | "signed in on…" | `sessions_of(subject)` |
 | other services | `SigningKeys.private({...}, "ES256")` (`[jwt]`): they verify with `jwks()` and `Issuer(..., mapping=TokenIssuer.mapping)`, no secret shared |
 

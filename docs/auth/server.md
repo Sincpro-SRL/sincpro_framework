@@ -85,7 +85,8 @@ A known issuer's token that fails is `Unauthenticated` with its reason; keys tha
 fetched are `EndpointUnavailable` (503) — the caller's token did not fail.
 
 **How claims read.** `ClaimMapping` says which claim is the subject, the tenant, the roles, the
-scopes and the client. The presets:
+scopes and the client. A token whose subject claim is missing or empty is refused — never a
+`user:None` every such token would share. The presets:
 
 | Preset | Subject | Tenant | Roles | Scopes | A service when |
 |---|---|---|---|---|---|
@@ -359,7 +360,8 @@ from an API's 401 and from the token endpoint's 400 — and the request goes onc
 naming `cnf.x5t#S256` is accepted only over that client certificate.
 `CertificateProvider(trust_domain="sincpro.bo")` authenticates the certificate itself — a SPIFFE
 workload (`spiffe://sincpro.bo/billing` → `service:billing`), PEM or DER, its chain checked against
-`trusted_roots` when the TLS server did not.
+`trusted_roots` when the TLS server did not. With a trust domain only its SPIFFE IDs are accepted —
+a certificate naming a common name alone is refused; without one, the common name is the service.
 
 ## Decisions taken outside: policy engines
 

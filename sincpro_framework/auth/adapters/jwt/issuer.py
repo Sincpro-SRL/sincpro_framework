@@ -12,7 +12,9 @@ them back: a logout, "sign out everywhere", a permission changed.
     auth = AccessControl(providers=[issuer.provider(resolvers=[GrantResolver(...)])])
 
 Context: the access token lives ten minutes and carries who and how — no permissions by default:
-the provider resolves them on every call, so a role taken away holds at once. A refresh token is
+the provider resolves them on every call, so a role taken away holds at once. With
+`embed_permissions`, the issuer's own `resolvers` resolve them at sign-in and again at every
+refresh — never copied from the token before, which a role taken away would outlive. A refresh token is
 random, stored by its digest, and rotated: used twice past `reuse_grace` (ten seconds — two tabs
 refreshing at once), it is a stolen token being replayed, and the whole session is revoked.
 Sessions end `idle_for` after the last refresh and `at_most` after they began, whatever is done.
@@ -31,7 +33,7 @@ from sincpro_framework.auth.adapters.jwt.signing import SigningKeys
 from sincpro_framework.auth.domain import exceptions
 from sincpro_framework.auth.domain.accounts import RefreshRecord, RefreshTokens
 from sincpro_framework.auth.domain.identity import Assurance, Identity, IdentityKind
-from sincpro_framework.auth.domain.resolver import IdentityResolver
+from sincpro_framework.auth.domain.resolver import IdentityResolver, resolved
 from sincpro_framework.auth.domain.revocations import Revocations
 from sincpro_framework.auth.infrastructure import jws
 from sincpro_framework.auth.infrastructure.digests import digest, random_token
@@ -95,11 +97,20 @@ class TokenIssuer:
         at_most: timedelta = timedelta(days=30),
         reuse_grace: timedelta = timedelta(seconds=10),
         embed_permissions: bool = False,
+        resolvers: Sequence[IdentityResolver] = (),
         clock: Callable[[], float] = time.time,
     ) -> None:
         """`embed_permissions` puts the permissions in the access token with the subject's
         permission version — for a verifier that resolves nothing; a version bumped refuses it.
+        `resolvers` resolve what a token carries when it is issued — at sign-in and at every
+        refresh; embedding permissions with refresh tokens needs them (`ProgrammingError`
+        otherwise): a refresh resolves the permissions again, it never copies the old ones.
         """
+        if embed_permissions and refresh_tokens is not None and not resolvers:
+            raise exceptions.ProgrammingError(
+                "embed_permissions with refresh tokens needs resolvers=: a refresh resolves "
+                "the permissions again, it never copies the old ones"
+            )
         self.issuer = issuer
         self.audience = audience
         self.keys = keys
@@ -110,9 +121,11 @@ class TokenIssuer:
         self.at_most = at_most
         self.reuse_grace = reuse_grace
         self.embed_permissions = embed_permissions
+        self.resolvers = tuple(resolvers)
         self.clock = clock
 
     def _now(self) -> datetime:
+        """This moment, by `clock`."""
         return datetime.fromtimestamp(self.clock(), UTC)
 
     def _access(
@@ -178,8 +191,9 @@ class TokenIssuer:
         assurance: Assurance | None = None,
         client: str | None = None,
     ) -> IssuedTokens:
-        """A new session for `identity` — just authenticated: an access token, and a refresh
-        token when refresh tokens are kept."""
+        """A new session for `identity` — just authenticated, resolved by `resolvers`: an access
+        token, and a refresh token when refresh tokens are kept, remembering its roles."""
+        identity = resolved(identity, self.resolvers)
         now = self._now()
         session = random_token("sid_", 16)
         how = assurance or identity.assurance
@@ -195,6 +209,7 @@ class TokenIssuer:
                 kind=identity.kind.value,
                 tenant=identity.tenant,
                 client=client,
+                roles=identity.roles,
                 scopes=chosen,
                 assurance=how,
                 authenticated_at=now,
@@ -235,7 +250,8 @@ class TokenIssuer:
         2. Its session revoked, or its subject signed out everywhere since: `Unauthenticated`.
         3. Already rotated: refused — and past `reuse_grace`, the session revoked.
         4. Rotated atomically; losing the race is step 3.
-        Final: a new access token of the same session and a new refresh token.
+        Final: a new access token of the same session — the roles of its sign-in, resolved
+        again by `resolvers` — and a new refresh token.
         """
         if self.refresh_tokens is None:
             raise exceptions.ProgrammingError("this TokenIssuer keeps no refresh tokens")
@@ -260,10 +276,15 @@ class TokenIssuer:
             if again is None or again.rotated_at is None:
                 raise exceptions.Unauthenticated("unknown refresh token")
             raise self._reused(again, again.rotated_at, now)
-        identity = Identity(
-            subject=record.subject,
-            kind=IdentityKind(record.kind),
-            tenant=record.tenant,
+        identity = resolved(
+            Identity(
+                subject=record.subject,
+                kind=IdentityKind(record.kind),
+                tenant=record.tenant,
+                roles=record.roles,
+                scopes=record.scopes,
+            ),
+            self.resolvers,
         )
         access = self._access(
             identity,
@@ -282,6 +303,7 @@ class TokenIssuer:
         )
 
     def _revocations(self) -> Revocations:
+        """The revocations given — `ProgrammingError` without them: nothing can be taken back."""
         if self.revocations is None:
             raise exceptions.ProgrammingError("taking tokens back needs revocations=")
         return self.revocations
@@ -309,14 +331,21 @@ class TokenIssuer:
         if isinstance(session, str):
             revocations.revoke_session(session, self._now() + self.at_most)
 
-    def revoke_subject(self, subject: str) -> None:
-        """ "Sign out everywhere": every token of `subject` issued until now is refused — a
-        password changed, an account disabled."""
-        self._revocations().revoke_subject(subject, self._now() + self.at_most)
-
     def sessions_of(self, subject: str) -> list[RefreshRecord]:
         """The sessions `subject` is signed in on."""
         return [] if self.refresh_tokens is None else self.refresh_tokens.sessions_of(subject)
+
+    def revoke_subject(self, subject: str) -> None:
+        """ "Sign out everywhere": every token of `subject` issued until now is refused — a
+        password changed, an account disabled.
+
+        1. The subject revoked from this second on — what a token's `iat` can say.
+        Final: each of its sessions revoked too, so one begun earlier in that same second ends.
+        """
+        revocations = self._revocations()
+        revocations.revoke_subject(subject, self._now() + self.at_most)
+        for record in self.sessions_of(subject):
+            revocations.revoke_session(record.family, record.session_ends)
 
     def provider(
         self, resolvers: Sequence[IdentityResolver] = (), name: str = "sessions"

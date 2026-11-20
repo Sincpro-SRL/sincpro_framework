@@ -1,6 +1,7 @@
-"""One `JwtProvider` behind the framework's own wires — FastAPI and gRPC: a good token runs the
-use case as its subject, an expired one is refused before it, and the refusal carries the
-provider's own challenge (`error="invalid_token"`), not a bare `Bearer`."""
+"""One `JwtProvider` behind the framework's own wires — FastAPI, gRPC, REST and JSON-RPC: a good
+token runs the use case as its subject, an expired one is refused before it, and the refusal
+carries the provider's own challenge (`error="invalid_token"`, a step-up's
+`insufficient_user_authentication`), not a bare `Bearer`; nobody gets no error code."""
 
 from collections.abc import Iterator
 from typing import Any
@@ -12,7 +13,7 @@ from google.protobuf.struct_pb2 import Struct
 
 from sincpro_framework import DataTransferObject, Feature, UseFramework, entrypoints
 from sincpro_framework.auth import AccessControl, JwtProvider, RolePermissions, security
-from sincpro_framework.entrypoints import FastApiGateway, GrpcGateway
+from sincpro_framework.entrypoints import FastApiGateway, GrpcGateway, RestGateway, RpcGateway
 from sincpro_framework.entrypoints.adapters.grpc.wire import (
     scalar_to_struct,
     struct_to_scalar,
@@ -34,6 +35,10 @@ class Issued(DataTransferObject):
     by: str
 
 
+class CommandApprovePayment(DataTransferObject):
+    amount: int
+
+
 def _billing() -> UseFramework:
     """A billing context whose one command needs `Perm.ISSUE`, granted to Keycloak's
     `accountant` client role."""
@@ -48,9 +53,18 @@ def _billing() -> UseFramework:
     @auth.requires(Perm.ISSUE)
     @rest.post("/invoices", status=201)
     @entrypoints.grpc()
+    @entrypoints.rpc()
     class IssueInvoice(Feature):
         def execute(self, dto: CommandIssueInvoice) -> Issued:
             return Issued(number=f"F-{dto.total}", by=security.identity.subject)
+
+    @bus.feature(CommandApprovePayment)
+    @auth.requires(Perm.ISSUE, auth.assurance(methods={"hwk"}))
+    @rest.post("/payments")
+    @entrypoints.rpc()
+    class ApprovePayment(Feature):
+        def execute(self, dto: CommandApprovePayment) -> Issued:
+            return Issued(number=f"P-{dto.amount}", by=security.identity.subject)
 
     auth.on(bus)
     return bus
@@ -111,3 +125,42 @@ def test_grpc_runs_a_good_token_and_refuses_an_expired_one_with_its_challenge(
     code, challenge = _issue(channel, EXPIRED)
     assert code == grpc.StatusCode.UNAUTHENTICATED
     assert 'error="invalid_token"' in challenge and "expired" in challenge
+
+
+def _rest_challenge(client: TestClient, path: str, token: str | None) -> tuple[int, str]:
+    """The status and `WWW-Authenticate` of a REST call — none when it was answered."""
+    headers = {"authorization": f"Bearer {token}"} if token else {}
+    answered = client.post(path, json={"total": 7, "amount": 7}, headers=headers)
+    return answered.status_code, answered.headers.get("www-authenticate", "")
+
+
+def test_rest_answers_each_refusal_with_its_own_challenge() -> None:
+    client = TestClient(RestGateway([_billing()]).app())
+    issue, approve = "/billing/command-issue-invoice", "/billing/command-approve-payment"
+    assert _rest_challenge(client, issue, GOOD)[0] == 200
+    status, challenge = _rest_challenge(client, issue, EXPIRED)
+    assert status == 401 and 'error="invalid_token"' in challenge
+    status, challenge = _rest_challenge(client, issue, None)
+    assert status == 401 and "error=" not in challenge
+    status, challenge = _rest_challenge(client, approve, GOOD)  # pwd and otp, not hwk
+    assert status == 401 and 'error="insufficient_user_authentication"' in challenge
+    assert 'acr_values="hwk"' in challenge
+
+
+def _rpc_challenge(client: TestClient, method: str, token: str | None) -> tuple[int, str]:
+    """The HTTP status and `WWW-Authenticate` of a JSON-RPC call."""
+    headers = {"authorization": f"Bearer {token}"} if token else {}
+    call = {"jsonrpc": "2.0", "id": 1, "method": method, "params": {"total": 7, "amount": 7}}
+    answered = client.post("/rpc", json=call, headers=headers)
+    return answered.status_code, answered.headers.get("www-authenticate", "")
+
+
+def test_json_rpc_answers_each_refusal_with_its_own_challenge() -> None:
+    client = TestClient(RpcGateway({"billing": _billing()}).app())
+    assert _rpc_challenge(client, "billing.issue_invoice", GOOD)[0] == 200
+    status, challenge = _rpc_challenge(client, "billing.issue_invoice", EXPIRED)
+    assert status == 401 and 'error="invalid_token"' in challenge
+    status, challenge = _rpc_challenge(client, "billing.issue_invoice", None)
+    assert status == 401 and "error=" not in challenge
+    status, challenge = _rpc_challenge(client, "billing.approve_payment", GOOD)
+    assert status == 401 and 'error="insufficient_user_authentication"' in challenge

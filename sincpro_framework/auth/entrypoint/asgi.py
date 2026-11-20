@@ -21,7 +21,7 @@ from typing import TYPE_CHECKING, Any
 
 from sincpro_framework.auth.domain import exceptions
 from sincpro_framework.auth.domain.identity import Credentials
-from sincpro_framework.auth.infrastructure.security_context import as_identity
+from sincpro_framework.auth.infrastructure.security_context import as_identity, presenting
 from sincpro_framework.common.failures import retry_after
 from sincpro_framework.exceptions import ExternalServiceError, FailureKind
 
@@ -176,7 +176,7 @@ class IdentityMiddleware:
                     raise
                 await self._unavailable(send, error)
                 return
-            with as_identity(identity):
+            with as_identity(identity), presenting(credentials.bearer):
                 await self.app(scope, receive, sending)
         except exceptions.AuthError as error:
             if started or scope["type"] != "http":

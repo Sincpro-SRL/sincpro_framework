@@ -147,8 +147,11 @@ class RefreshingToken(TokenSource):
 
         1. None held: `ProgrammingError` — seed it first.
         2. Good: as it is.
-        3. Else the refresh lease taken: refreshed — unless another replica already did.
-        Final: the lease held by another: its refresh awaited, else refreshed here.
+        3. The lease held by another replica: its refresh awaited for `wait`; still running,
+           the lease is asked once more — and refused, `EndpointUnavailable` (503): refreshing
+           without it would spend a refresh token the other may be spending, and a rotating
+           server revokes the whole grant on that reuse.
+        Final: under the lease, refreshed — unless another replica already did.
         """
         held = self.grants.current(self.key)
         if held is None:
@@ -160,11 +163,19 @@ class RefreshingToken(TokenSource):
         store = (
             self._store if self._store is not None else key_value_store_of(current_store())
         )
-        lease = Leases(store, prefix="sincpro:auth:refreshing").take(
-            self.key, ttl=self.wait * 2
-        )
+        leases = Leases(store, prefix="sincpro:auth:refreshing")
+        lease = leases.take(self.key, ttl=self.wait * 2)
         if lease is None:
-            return self._awaited(held) or self._refreshed(held)
+            awaited = self._awaited(held)
+            if awaited is not None:
+                return awaited
+            lease = leases.take(self.key, ttl=self.wait * 2)
+            if lease is None:
+                raise exceptions.EndpointUnavailable(
+                    f"refresh of {self.key}",
+                    "another replica's refresh is still running",
+                    retry_after=self.wait,
+                )
         try:
             again = self.grants.current(self.key)
             if again is not None and self._good(again):

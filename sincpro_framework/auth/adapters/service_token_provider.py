@@ -43,8 +43,11 @@ class ServiceTokenProvider(AuthProvider):
         ttl_seconds: int = 60,
         name: str = "service-tokens",
         clock: Callable[[], float] = time.time,
+        leeway_seconds: int = 5,
     ) -> None:
-        """A provider issuing as `issuer` for `audience`, with tokens alive `ttl_seconds`.
+        """A provider issuing as `issuer` for `audience`, with tokens alive `ttl_seconds`;
+        `leeway_seconds` is the clock difference between replicas a token's `iat` and `exp`
+        are allowed — one signed a fraction of a second "in the future" is not forged.
 
         Context: the last key of `keys` signs — the newest, by insertion order — and every key
         verifies; rotating is adding a key at the end and dropping the oldest once no token
@@ -69,7 +72,7 @@ class ServiceTokenProvider(AuthProvider):
         self.clock = clock
         self._rules = jws.ClaimRules(
             audiences=frozenset({audience}),
-            leeway=0,
+            leeway=leeway_seconds,
             required=frozenset({"exp", "sub", "iss"}),
             what="service token",
         )

@@ -16,6 +16,7 @@ from typing import Any
 
 from pydantic import ConfigDict
 
+from sincpro_framework.auth.domain import exceptions
 from sincpro_framework.auth.domain.identity import Assurance, Identity, IdentityKind
 from sincpro_framework.auth.infrastructure import jws
 from sincpro_framework.sincpro_abstractions import DataTransferObject
@@ -130,17 +131,22 @@ class ClaimMapping(DataTransferObject):
     def identity(self, claims: Mapping[str, Any], provider: str) -> Identity:
         """The identity `claims` describe, vouched for by `provider`.
 
-        1. A service when `service_when` holds: `service:<subject>`, else `user:<subject>`.
+        1. A service when `service_when` holds: `service:<subject>`, else `user:<subject>`;
+           no subject — the claim missing, empty, or not text nor a number: `Unauthenticated`,
+           never a `user:None` every such token would share.
         2. Tenant, roles, scopes, permissions and client from their paths.
         Final: session (`sid`), token id (`jti`), `auth_time`, `exp`, `acr` and `amr` typed;
         every claim kept in `claims`.
         """
+        named = value_at(claims, self.subject)
+        if isinstance(named, bool) or not isinstance(named, (str, int)) or named == "":
+            raise exceptions.Unauthenticated(f"the token names no subject ({self.subject})")
         service = self.service_when is not None and self.service_when.holds(claims)
         prefix = self.service_prefix if service else self.subject_prefix
         tenant = value_at(claims, self.tenant) if self.tenant else None
         level = claims.get("acr")
         return Identity(
-            subject=f"{prefix}{value_at(claims, self.subject)}",
+            subject=f"{prefix}{named}",
             kind=IdentityKind.SERVICE if service else IdentityKind.USER,
             tenant=None if tenant is None else str(tenant),
             roles=self._names(claims, self.roles),

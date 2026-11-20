@@ -105,6 +105,7 @@ def test_a_code_is_accepted_within_one_step_either_side_and_never_beyond() -> No
     now[0] += 30
     assert not totp.verify(secret, code)
     assert not totp.verify(secret, "12345") and not totp.verify(secret, "abcdef")
+    assert not totp.verify(secret, "\u0661\u0662\u0663\u0664\u0665\u0666")  # not ASCII
 
 
 def test_a_code_is_accepted_once_and_never_an_older_one() -> None:

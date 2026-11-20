@@ -8,6 +8,7 @@ each — authenticate again. `PermissionDenied`, not `PermissionError`: Python's
 `OSError` about files, and a handler catching one would catch the other.
 """
 
+from collections.abc import Mapping
 from datetime import timedelta
 from typing import Any
 
@@ -85,13 +86,40 @@ class Unauthenticated(AuthError):
         self.anonymous = anonymous
 
     def refusal_body(self) -> dict[str, Any]:
-        """The kind and the reason, and `step_up` and `max_age` when named."""
+        """The kind and the reason, `step_up` and `max_age` when named, and `anonymous` when
+        the caller presented nothing."""
         body = super().refusal_body()
         if self.step_up:
             body["step_up"] = self.step_up
         if self.max_age is not None:
             body["max_age"] = self.max_age
+        if self.anonymous:
+            body["anonymous"] = True
         return body
+
+
+def refusal_from(said: Any) -> Unauthenticated | None:
+    """The `Unauthenticated` a wire's answer describes — a REST problem body, a JSON-RPC
+    error's `data` — rebuilt where only the answer is left, to choose the challenge; `None` for
+    an answer of any other kind.
+
+        refusal_from({"kind": "unauthenticated", "detail": "mfa required", "step_up": "mfa"})
+            ->  Unauthenticated("mfa required", step_up="mfa")
+        refusal_from({"kind": "permission_denied", ...})       ->  None
+
+    Context: the reason is the problem's `detail`, or the JSON-RPC `message`; `step_up`,
+    `max_age` and `anonymous` sit beside it, as `refusal_body` wrote them.
+    """
+    if not isinstance(said, Mapping) or said.get("kind") != FailureKind.UNAUTHENTICATED.value:
+        return None
+    reason = said.get("detail", said.get("message", ""))
+    step_up, max_age = said.get("step_up"), said.get("max_age")
+    return Unauthenticated(
+        reason if isinstance(reason, str) else "",
+        step_up if isinstance(step_up, str) else None,
+        max_age if isinstance(max_age, int) and not isinstance(max_age, bool) else None,
+        anonymous=said.get("anonymous") is True,
+    )
 
 
 class PermissionDenied(AuthError):

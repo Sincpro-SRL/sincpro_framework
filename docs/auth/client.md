@@ -174,9 +174,10 @@ an authenticated call there is nothing to exchange: `ProgrammingError`.
 `RefreshingToken` keeps the grant of an API that issues refresh tokens — a tenant's Odoo consented
 once, a CLI authorized by device code (`DeviceCode`, RFC 8628) — in `HeldGrants`
 (`KeyValueHeldGrants` on the context's store, sealed when given a `Sealer`). A refresh runs under a
-lease, so one replica refreshes while the others wait for its answer, and it is stored by
-compare-and-set: a server that rotates refresh tokens never sees one used twice (and revokes the
-grant for it). `invalid_grant` drops the grant: `GrantRejected`, consent to be given again.
+lease, so one replica refreshes while the others wait for its answer — past `wait` with the
+refresh still running elsewhere, they answer `EndpointUnavailable` (503) and never refresh without
+the lease — and it is stored by compare-and-set: a server that rotates refresh tokens never sees
+one used twice (and revokes the grant for it). `invalid_grant` drops the grant: `GrantRejected`, consent to be given again.
 
 ```python
 from sincpro_framework.auth import DeviceCode, InMemoryHeldGrants, PublicClient, RefreshingToken
