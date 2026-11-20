@@ -38,9 +38,13 @@ from sincpro_framework.entrypoints.adapters.queue import (
     DEAD_LETTER_KIND,
     DEAD_LETTER_REASON,
     QueueOptions,
+    QueueWire,
+    RetryBy,
     Settlement,
+    Verdict,
     inbox_key,
 )
+from sincpro_framework.entrypoints.adapters.queue.flavours import FLAVOURS
 from sincpro_framework.entrypoints.entrypoint.decorators import queue
 from sincpro_framework.event_driven import ATTEMPTS_HEADER, Envelope
 from sincpro_framework.event_driven.adapters.faststream import FastStreamQueue
@@ -705,3 +709,97 @@ def test_a_copy_that_cannot_be_published_leaves_the_message_to_the_broker(amount
     asyncio.run(gateway.consume(message, as_=CommandIssueInvoice))  # type: ignore[arg-type]
 
     assert message.settled == ["nack"]
+
+
+# --- a retry waits what the failure asked, and comes back apart ---------------------------------
+
+
+class _Recording(_Unreachable):
+    """A broker that takes every copy, and says when."""
+
+    def __init__(self) -> None:
+        self.published_at: list[float] = []
+
+    async def publish(self, *args: Any, **kwargs: Any) -> None:
+        self.published_at.append(time.monotonic())
+
+
+class Throttled(exceptions.ClientError):
+    failure_kind = exceptions.FailureKind.EXHAUSTED
+    retry_after = timedelta(milliseconds=200)
+
+
+def throttled_bus() -> UseFramework:
+    bus = UseFramework("throttled-billing", log_after_execution=False)
+
+    @bus.feature(CommandIssueInvoice)
+    class IssueInvoice(Feature):
+        def execute(self, dto: CommandIssueInvoice) -> None:
+            raise Throttled("the gateway asked to be left alone")
+
+    return bus
+
+
+def retried(options: QueueOptions) -> tuple[float, _Message, _Recording]:
+    """A delivery the bus refuses with `Throttled`, consumed once over a broker that copies."""
+    broker = _Recording()
+    gateway = QueueGateway(broker, [throttled_bus()], options=options, unguarded=True)  # type: ignore[arg-type]
+    body, _, headers = issue(5)
+    message = _Message(body, headers)
+    started = time.monotonic()
+    asyncio.run(gateway.consume(message, as_=CommandIssueInvoice))  # type: ignore[arg-type]
+    return started, message, broker
+
+
+def test_where_the_broker_cannot_hold_a_wait_a_retry_is_carried_back_at_once():
+    started, message, broker = retried(QueueOptions())
+
+    (copied_at,) = broker.published_at
+    assert copied_at - started < 0.2  # Kafka, RabbitMQ, Redis: the partition is never held
+    assert message.settled == ["ack"]
+
+
+def test_a_consumer_asked_to_wait_waits_what_the_failure_declared_first():
+    started, message, broker = retried(QueueOptions(consumer_waits=True))
+
+    (copied_at,) = broker.published_at
+    assert copied_at - started >= 0.2
+    assert message.settled == ["ack"]  # the counted copy carries it back
+
+
+def test_a_retry_never_waits_longer_than_its_bound():
+    started, message, broker = retried(
+        QueueOptions(consumer_waits=True, max_retry_wait=timedelta(milliseconds=50))
+    )
+
+    (copied_at,) = broker.published_at
+    assert 0.05 <= copied_at - started < 0.2
+
+
+class _Held(_Message):
+    """A delivery of a broker that holds a nacked message for a wait — what JetStream does."""
+
+    def __init__(self, body: bytes, headers: dict[str, str]) -> None:
+        super().__init__(body, headers)
+        self.delay: float | None = None
+
+    async def nack(self, delay: float | None = None) -> None:  # type: ignore[override]
+        self.delay = delay
+        self.settled.append("nack")
+
+
+def test_a_broker_that_holds_a_retry_is_handed_the_wait_and_the_consumer_goes_on():
+    wire = QueueWire(_Recording(), QueueOptions(retry_jitter=False))  # type: ignore[arg-type]
+    wire.flavour = FLAVOURS["nats"]
+    wire.retry_by = RetryBy.NACK
+    body, _, headers = issue(5)
+    message = _Held(body, headers)
+    verdict = Verdict(
+        settlement=Settlement.RETRY, attempts=2, retry_after=timedelta(seconds=3)
+    )
+
+    started = time.monotonic()
+    asyncio.run(wire._settle(message, verdict, ISSUE_CHANNEL, Envelope.of(headers)))  # type: ignore[arg-type]
+
+    assert time.monotonic() - started < 0.5
+    assert (message.settled, message.delay) == (["nack"], 5.0)  # 3s declared, 2s its own

@@ -54,8 +54,10 @@ class _RecordDelivery(SqsDelivery):
         """Settled: left out of `batchItemFailures`, so Lambda deletes it with the batch."""
         self.failed = False
 
-    async def nack(self) -> None:
-        """A retry: answered in `batchItemFailures`, so SQS delivers it again."""
+    async def nack(self, delay: float | None = None) -> None:
+        """A retry: answered in `batchItemFailures`, so SQS delivers it again — once the queue's
+        own visibility timeout passes, whatever `delay` asks: a batch's answer carries no wait
+        of its own."""
         self.failed = True
 
     async def reject(self) -> None:

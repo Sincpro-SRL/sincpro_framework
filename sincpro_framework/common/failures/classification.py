@@ -13,6 +13,7 @@ here knows the components that raise them.
 """
 
 import json
+import random
 from datetime import timedelta
 from typing import Any
 
@@ -128,35 +129,27 @@ def failure_reason(error: Exception, kind: exceptions.FailureKind) -> str:
     return upper_snake(type(error).__name__)
 
 
-def retry_after(error: Exception, kind: exceptions.FailureKind) -> timedelta | None:
-    """How long a caller waits before retrying — `None` when retrying as it is will not help.
-    The error may say (`retry_after`: seconds, a `timedelta`, or the ISO-8601 duration a
-    `timedelta` travels as — `"PT25S"` — once rebuilt from another service); a second
-    otherwise.
+def declared_retry_after(error: Exception) -> timedelta | None:
+    """What the error itself asks a caller to wait — `None` when it asks nothing that reads as
+    a wait.
 
-        retry_after(error with retry_after=30, FailureKind.EXHAUSTED)
-            ->  timedelta(seconds=30)
-        retry_after(error with retry_after="PT25S", FailureKind.UNAVAILABLE)
-            ->  timedelta(seconds=25)
-        retry_after(error declaring nothing, FailureKind.IN_PROGRESS)
-            ->  timedelta(seconds=1)
-        retry_after(InvoiceNotFound("F-7"), FailureKind.NOT_FOUND)   ->  None
+        declared_retry_after(error with retry_after=30)        ->  timedelta(seconds=30)
+        declared_retry_after(error with retry_after="PT25S")   ->  timedelta(seconds=25)
+        declared_retry_after(error declaring nothing)          ->  None
 
-    1. A kind not in `RETRYABLE`: `None` — the same call fails the same way.
-    2. The error's `retry_after` is read, when it has one.
-       2.1 Text is read as an ISO-8601 duration; text that is not one is the default second.
-    3. A `timedelta`, given or read, is the answer as it is.
-    4. A number of seconds — not a bool, not negative — becomes a `timedelta`.
-    Final: anything else, or nothing declared, is `DEFAULT_RETRY_AFTER`, a second.
+    1. The error's `retry_after`, when it has one.
+       1.1 Text is read as an ISO-8601 duration — what a `timedelta` travels as, once rebuilt
+           from another service; text that is not one reads as nothing.
+    2. A `timedelta`, given or read, is the answer as it is.
+    3. A number of seconds — not a bool, not negative — becomes a `timedelta`.
+    Final: anything else is `None`.
     """
-    if kind not in RETRYABLE:
-        return None
     declared = getattr(error, "retry_after", None)
     if isinstance(declared, str):
         try:
             declared = DURATION.validate_python(declared)
         except ValidationError:
-            return DEFAULT_RETRY_AFTER
+            return None
     if isinstance(declared, timedelta):
         return declared
     if (
@@ -165,7 +158,51 @@ def retry_after(error: Exception, kind: exceptions.FailureKind) -> timedelta | N
         and declared >= 0
     ):
         return timedelta(seconds=declared)
-    return DEFAULT_RETRY_AFTER
+    return None
+
+
+def retry_after(error: Exception, kind: exceptions.FailureKind) -> timedelta | None:
+    """How long a caller waits before retrying — `None` when retrying as it is will not help:
+    what the error declares (`declared_retry_after`), a second when it declares nothing.
+
+        retry_after(error with retry_after=30, FailureKind.EXHAUSTED)
+            ->  timedelta(seconds=30)
+        retry_after(error declaring nothing, FailureKind.IN_PROGRESS)
+            ->  timedelta(seconds=1)
+        retry_after(InvoiceNotFound("F-7"), FailureKind.NOT_FOUND)   ->  None
+    """
+    if kind not in RETRYABLE:
+        return None
+    declared = declared_retry_after(error)
+    return DEFAULT_RETRY_AFTER if declared is None else declared
+
+
+def backoff(
+    attempt: int, declared: timedelta | None, factor: float, longest: timedelta, jitter: bool
+) -> timedelta:
+    """How long to wait before running again a call that failed on attempt `attempt`: what
+    the failure declared, as it is — nothing when it declared nothing — and on top a wait of
+    its own, a second `factor` times longer each attempt; never longer than `longest`. With
+    `jitter` the wait of its own falls at random up to what it grew to (AWS's full jitter):
+    callers that failed together never come back together, even when all of them were told
+    the same `retry_after`.
+
+        backoff(1, None, 2.0, 30s, jitter=False)          ->  1s
+        backoff(3, None, 2.0, 30s, jitter=False)          ->  4s
+        backoff(9, None, 2.0, 30s, jitter=False)          ->  30s        the bound
+        backoff(2, 18s, 2.0, 60s, jitter=False)           ->  20s        18s declared, 2s its own
+        backoff(1, 1s, 2.0, 30s, jitter=True)             ->  at random from 1s to 2s
+        backoff(3, None, 2.0, 30s, jitter=True)           ->  at random from 0s to 4s
+
+    Context: one rule for a pipeline's `Retry` and a queue's retry. What a failure declared —
+    a `CircuitOpen`'s time left, a `RateLimited`'s turn — is when it may work again, so it is
+    waited as it is, never multiplied. The wait of its own grows no further than `longest`
+    before it is spread, so the retries at the bound are spread too; its exponent stops at 32,
+    so no attempt overflows.
+    """
+    grown = DEFAULT_RETRY_AFTER.total_seconds() * factor ** min(attempt - 1, 32)
+    own = min(grown, longest.total_seconds()) * (random.random() if jitter else 1)
+    return min((declared or timedelta(0)) + timedelta(seconds=own), longest)
 
 
 def json_safe_validation_errors(error: ValidationError) -> list[dict[str, Any]]:

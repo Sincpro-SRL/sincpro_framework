@@ -10,6 +10,10 @@ carries over.
 | NATS | queue group | JetStream's `num_delivered` | nack | the `{channel}.dlq` subject |
 | Amazon SQS | none: every consumer competes | `ApproximateReceiveCount` | nack — the message is visible again | reject — the queue's redrive policy |
 
+A retry waits before it is delivered again: Amazon SQS and NATS JetStream hold a nacked message
+for that wait themselves (`holds_retry`), so the consumer never waits; Kafka, RabbitMQ and Redis
+cannot, and retry at once unless the consumer is asked to wait (`QueueOptions.consumer_waits`).
+
 Context: a FastStream broker is recognised by its class's module, so no broker library is imported
 to ask; a broker of another kind says its own with a `flavour` attribute (the SQS broker does); a
 broker neither knows gets the portable choices (a counted copy, a dead-letter channel).
@@ -17,7 +21,7 @@ broker neither knows gets the portable choices (a counted copy, a dead-letter ch
 
 from collections.abc import Callable
 from enum import StrEnum
-from typing import Any, Literal
+from typing import Any, Literal, Protocol
 
 from pydantic import ConfigDict
 
@@ -51,6 +55,16 @@ class DeadLetterBy(StrEnum):
 type BrokerName = Literal["kafka", "rabbit", "redis", "nats", "sqs", "other"]
 
 
+class HeldDelivery(Protocol):
+    """A delivery of a broker that holds a nacked message for a while before it delivers it
+    again — Amazon SQS, NATS JetStream; what `holds_retry` promises of the broker's deliveries.
+    """
+
+    async def nack(self, delay: float | None = None) -> Any:
+        """Settle as not handled: delivered again once `delay` seconds pass."""
+        ...
+
+
 class Flavour(DataTransferObject):
     """What one kind of broker is like, for the wire to settle on it — said once per broker.
 
@@ -72,6 +86,9 @@ class Flavour(DataTransferObject):
     faststream: bool = True
     """A FastStream broker: subscribed with its manual acknowledgement policy, and handing the
     message by its `Context`. A broker of another kind says `False` in its own flavour."""
+    holds_retry: bool = False
+    """The broker holds a nacked delivery for a retry's wait itself — its deliveries are
+    `HeldDelivery`s —, so the consumer never waits."""
 
 
 FLAVOURS: dict[BrokerName, Flavour] = {
@@ -87,7 +104,12 @@ FLAVOURS: dict[BrokerName, Flavour] = {
         dead_letter_by=DeadLetterBy.CHANNEL,
         acknowledges=False,
     ),
-    "nats": Flavour(name="nats", retry_by=RetryBy.NACK, dead_letter_by=DeadLetterBy.CHANNEL),
+    "nats": Flavour(
+        name="nats",
+        retry_by=RetryBy.NACK,
+        dead_letter_by=DeadLetterBy.CHANNEL,
+        holds_retry=True,
+    ),
     "other": Flavour(
         name="other", retry_by=RetryBy.REPUBLISH, dead_letter_by=DeadLetterBy.CHANNEL
     ),

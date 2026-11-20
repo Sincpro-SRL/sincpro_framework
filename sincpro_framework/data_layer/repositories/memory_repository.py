@@ -35,6 +35,7 @@ Two things it does not have: relations and date grains, which is where a databas
 """
 
 import dataclasses
+import threading
 from collections.abc import Callable, Generator, Iterator, Mapping, Sequence
 from contextlib import contextmanager
 from contextvars import ContextVar
@@ -103,6 +104,7 @@ from sincpro_framework.ddd.repositories.capabilities import (
     Transacts,
     Upserted,
     WritesInBulk,
+    refuse_increments_of_non_numbers,
 )
 from sincpro_framework.ddd.repositories.hooks import Hooks
 from sincpro_framework.ddd.repositories.mixins.change_tracking import (
@@ -445,6 +447,9 @@ class MemoryRepository(
             f"memory_unit_{id(self)}", default=None
         )
         self._row_locks = RowLocks()
+        # A write by criteria matches and changes under it — one statement, atomic as the
+        # engine's UPDATE: two threads taking stock never both see the last unit.
+        self._statements = threading.Lock()
         self.add(*records)
 
     def add(self, *records: Any) -> "MemoryRepository":
@@ -1565,7 +1570,8 @@ class MemoryRepository(
         4. Each one marked touched, its values set — an `Increment` added to what it holds, a
            value it does not hold left empty as the engine leaves `NULL` —, and an entity's
            version raised and `updated_at` stamped with one moment for all.
-        Final: how many records it changed.
+        Final: how many records it changed. Steps 3 and 4 are one statement: no other write
+        by criteria runs between the match and the change.
         """
         refuse_writing_in_preview("update_all")
         self._refuse_reentrant_write()
@@ -1585,24 +1591,26 @@ class MemoryRepository(
                 f"update_all cannot set {', '.join(wrong)} on {model.__name__}: not a field, "
                 "or one the framework sets"
             )
+        refuse_increments_of_non_numbers(model, meta, values)
         bulk_rules.keep_or_skip(
             model,
             "update_all",
             bulk_rules.unjudged_by_values(model, values),
             bulk_rules.UPDATE_REMEDY,
         )
-        rows = self._matched_for_writing(model, criteria, "update_all")
-        now = utc_now()
-        for one in rows:
-            self._touching(type(one), identity_of(one))
-            for name, value in values.items():
-                if isinstance(value, Increment):
-                    held = getattr(one, name)
-                    value = None if held is None else held + value.by
-                setattr(one, name, value)
-            if isinstance(one, Entity):
-                one.version += 1
-                one.updated_at = now
+        with self._statements:
+            rows = self._matched_for_writing(model, criteria, "update_all")
+            now = utc_now()
+            for one in rows:
+                self._touching(type(one), identity_of(one))
+                for name, value in values.items():
+                    if isinstance(value, Increment):
+                        held = getattr(one, name)
+                        value = None if held is None else held + value.by
+                    setattr(one, name, value)
+                if isinstance(one, Entity):
+                    one.version += 1
+                    one.updated_at = now
         return len(rows)
 
     def remove_all(self, target: type, criteria: Criteria) -> int:
@@ -1616,9 +1624,10 @@ class MemoryRepository(
         refuse_writing_in_preview("remove_all")
         self._refuse_reentrant_write()
         model, _ = model_and_collection(target)
-        rows = self._matched_for_writing(model, criteria, "remove_all")
-        for one in rows:
-            self._forget(one)
+        with self._statements:
+            rows = self._matched_for_writing(model, criteria, "remove_all")
+            for one in rows:
+                self._forget(one)
         return len(rows)
 
     def _upsert_row(

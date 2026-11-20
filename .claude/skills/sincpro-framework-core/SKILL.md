@@ -259,7 +259,8 @@ with `resume = Resume.CONTINUE`. `by = "<field>"` picks one of several recipes; 
 leaves the recorder out. Nothing is refused: no tenant, no store or a step the bus does not answer
 is said in the logs. When it needs more, one line each: `retry = Retry()` runs again a step whose
 failure is worth it by its kind (unavailable, conflict, in progress — never `ok=False` nor a domain
-refusal); `Await("approval")` in the steps makes the run wait (`PipelineState.WAITING`) until the same
+refusal), each wait the error's `retry_after` as it is plus the step's own (1 s, grown by `backoff`;
+`jitter=True` spreads it — the rule a queue's retry waits by too); `Await("approval")` in the steps makes the run wait (`PipelineState.WAITING`) until the same
 `run_id` is run with the input's `approval` filled; `GetRun[Command]` / `FindRuns[Command]` answered
 by a `PipelineReads` Feature read the runs on any wire; `lease = timedelta(minutes=2)` makes it one run
 of a `run_id` at a time across replicas, renewed while it runs, and `PipelineRuns.of().abandoned(…)`
@@ -281,6 +282,15 @@ one layer only. A bus hosted elsewhere has one only when asked: `?circuit_breake
 `hosted_by(address, circuit_breaker=True | CircuitBreaker(...) | False)` in code, which wins; it counts only what
 the caller's transport raised (`error.unreached`), never what the host answered — not even the host's
 own `CircuitOpen`. Depth: `docs/core/circuit-breaker.md`.
+
+**Limiting how often** (`sincpro_framework.rate_limiter`). Wired where a circuit is, never inside a
+use case. A dependency's quota: the adapter takes a `RateLimiter("siat", 10, per=1s, wait=5s)` in
+its constructor beside its circuit, built in `infrastructure/dependencies.py`, and opens the limiter
+**outside** it — `with self.rate_limiter, self.circuit_breaker:` — or the limiter's refusals
+(`EXHAUSTED`) open the circuit; its calls take their turns in order and are paced, not failed. Each caller: an interceptor that opens `with limiter:` (`by="user_id"`), registered in the
+context's `__init__.py` after `from . import services`, beside `auth.on(...)`. A per-IP or
+whole-service ceiling belongs at the edge (Kong); "at most 4 per buyer" is a rule of the write, not
+a rate. Depth: `docs/core/rate-limit.md`.
 
 An income and its outcome name the same `execution_id`. What a listener must not do: hold state a
 process depends on (it may not run) or change the answer. The whole path, step by step:

@@ -16,7 +16,7 @@ from datetime import timedelta
 from enum import StrEnum
 from typing import Any, ClassVar
 
-from sincpro_framework.common.failures import RETRYABLE
+from sincpro_framework.common import failures
 from sincpro_framework.context import Owner
 from sincpro_framework.pipelines.domain import exceptions
 
@@ -50,24 +50,31 @@ class Await:
 class Retry:
     """How a pipeline runs a step again after it failed in a way worth running again as it is.
 
-    Retry()                                           3 attempts, as the error says to wait
+    Retry()                                           3 attempts: what the error says, and 1s, 2s
     Retry(attempts=5, max_wait=timedelta(minutes=1))  more, and longer
+    Retry(jitter=True)                                each wait of its own at random
     """
 
     attempts: int = 3
     """How many times a step is run at most, the first included."""
     backoff: float = 2.0
-    """Each wait is this many times the one before."""
+    """The step's own wait — on top of what the error declared — is this many times the one
+    before, from a second."""
     max_wait: timedelta = timedelta(seconds=30)
     """No wait is longer: a step that needs more is a run to continue later."""
-    on: frozenset[exceptions.FailureKind] = RETRYABLE | {exceptions.FailureKind.CONFLICT}
+    on: frozenset[exceptions.FailureKind] = failures.RETRYABLE | {
+        exceptions.FailureKind.CONFLICT
+    }
     """The kinds of failure retried — unavailable, in progress, exhausted, a conflict."""
+    jitter: bool = False
+    """The step's own wait at random up to what it grew to: runs that failed together do not
+    come back together."""
 
     def wait_before(self, attempt: int, declared: timedelta | None) -> timedelta:
-        """The wait before `attempt` + 1: what the error declared — a second when it says
-        nothing — grown by `backoff` each attempt, never above `max_wait`."""
-        first = declared if declared is not None else timedelta(seconds=1)
-        return min(first * self.backoff ** (attempt - 1), self.max_wait)
+        """The wait before `attempt` + 1 — the framework's one rule (`backoff`): what the error
+        declared, as it is, and the step's own wait on top, grown by `backoff` each attempt and
+        spread at random with `jitter`; never above `max_wait`."""
+        return failures.backoff(attempt, declared, self.backoff, self.max_wait, self.jitter)
 
 
 class PipelineDeclaration:

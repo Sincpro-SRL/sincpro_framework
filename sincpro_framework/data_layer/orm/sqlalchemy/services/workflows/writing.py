@@ -55,7 +55,12 @@ from sincpro_framework.ddd.entity.entity_collection import (
     model_and_collection,
 )
 from sincpro_framework.ddd.events import DomainEvent
-from sincpro_framework.ddd.repositories.capabilities import Extends, Increment, Upserted
+from sincpro_framework.ddd.repositories.capabilities import (
+    Extends,
+    Increment,
+    Upserted,
+    refuse_increments_of_non_numbers,
+)
 from sincpro_framework.ddd.repositories.repository import (
     records_of,
     refuse_unarchivable,
@@ -479,6 +484,7 @@ class Writing(RepositoryState, Extends):
                 f"update_all cannot set {', '.join(wrong)} on {model.__name__}: not a column, "
                 "or one the framework sets"
             )
+        refuse_increments_of_non_numbers(model, ModelIntrospection.describe(model), values)
         bulk_rules.keep_or_skip(
             model,
             "update_all",

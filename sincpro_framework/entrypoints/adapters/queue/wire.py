@@ -17,14 +17,19 @@ import asyncio
 import json
 from collections.abc import Callable, Mapping, Sequence
 from datetime import UTC, datetime, timedelta
-from typing import Any, Literal
+from typing import Any, Literal, cast
 
 from pydantic import BaseModel, ConfigDict, Field
 
 from sincpro_framework import exceptions
 from sincpro_framework.aio.async_threads import on_async_thread
 from sincpro_framework.auth import Credentials, security
-from sincpro_framework.common.failures import failure_reason, refined_failure_kind
+from sincpro_framework.common.failures import (
+    backoff,
+    declared_retry_after,
+    failure_reason,
+    refined_failure_kind,
+)
 from sincpro_framework.common.naming import registered_name
 from sincpro_framework.context import ContextKey, EntrypointKind, context_propagation
 from sincpro_framework.data_layer.caching import IdempotencyRecords, KeyValueRecords
@@ -33,6 +38,7 @@ from sincpro_framework.ddd.events import DomainEvent
 from sincpro_framework.entrypoints.adapters.queue.flavours import (
     BrokerName,
     DeadLetterBy,
+    HeldDelivery,
     RetryBy,
     SubscriptionOf,
     delivery_count,
@@ -149,6 +155,19 @@ class QueueOptions(DataTransferObject):
     """How long a completed delivery is remembered — longer than a redelivery can take."""
     expires_after: timedelta | None = None
     """A message whose envelope `time` is older is dead-lettered — `EXPIRED`."""
+    retry_backoff: float = 2.0
+    """A retry waits what its failure declared and, on top, a wait of its own — a second, this
+    many times longer each attempt (`common.failures.backoff`)."""
+    retry_jitter: bool = True
+    """A retry's own wait falls at random up to what it grew to: deliveries that failed
+    together — told the same `retry_after` — never come back together."""
+    max_retry_wait: timedelta = timedelta(minutes=1)
+    """No retry waits longer; `timedelta(0)` retries at once."""
+    consumer_waits: bool = False
+    """On a broker that cannot hold a retry for its wait (Kafka, RabbitMQ, Redis), the consumer
+    waits it before it settles — holding the delivery and, on Kafka, its partition: keep
+    `max_retry_wait` below the broker's visibility timeout and `max.poll.interval.ms`. Off,
+    those brokers retry at once; Amazon SQS and NATS JetStream hold the wait either way."""
     identify: Identify = by_envelope_source
     """Who produced a message — what `producers=` and the inbox key read; `rabbit_user_id`
     where the broker vouches for it."""
@@ -534,7 +553,9 @@ class QueueWire(Wire[QueueBinding]):
             if self.inbox is not None and owner is not None:
                 await self.inbox.release(key, owner)
             kind = refined_failure_kind(error)
-            return refused(kind, failure_reason(error, kind))
+            return refused(kind, failure_reason(error, kind)).model_copy(
+                update={"retry_after": declared_retry_after(error)}
+            )
         if self.inbox is not None and owner is not None:
             await self.inbox.complete(key, message.body, owner)
         return Verdict(settlement=Settlement.ACK, attempts=attempts, command=name)
@@ -576,7 +597,12 @@ class QueueWire(Wire[QueueBinding]):
         envelope: Envelope,
     ) -> None:
         """1. Handled, replayed, skipped: ack.
-        2. Retry: nack, or a copy with the attempt counted then ack — nack when the copy fails.
+        2. Retry, after its wait (`backoff`) — where a wait is held:
+           2.1 a broker that holds a nacked delivery for a wait (`holds_retry`) is nacked with
+               it, and the consumer goes on at once;
+           2.2 elsewhere, at once — or after the wait passes here, when the consumer is asked
+               to wait (`consumer_waits`); then a nack, or a copy with the attempt counted then
+               ack — nack when the copy fails.
         3. Dead letter: reject (the broker's own), or a copy with the reason on
            `{channel}{suffix}` then ack — nack when the copy fails, so nothing is lost.
         """
@@ -600,10 +626,26 @@ class QueueWire(Wire[QueueBinding]):
                 f"(source {envelope.source!r}, id {envelope.id!r})"
             )
         if settlement == Settlement.RETRY:
+            options = self.options
+            held = self.retry_by == RetryBy.NACK and self.flavour.holds_retry
+            wait = timedelta(0)
+            if held or options.consumer_waits:
+                wait = backoff(
+                    verdict.attempts,
+                    verdict.retry_after,
+                    options.retry_backoff,
+                    options.max_retry_wait,
+                    options.retry_jitter,
+                )
             logger.warning(
-                f"queue: {verdict.command} on {channel} retried — {verdict.reason}, attempt "
-                f"{verdict.attempts}"
+                f"queue: {verdict.command} on {channel} retried in {wait.total_seconds():.1f}s — "
+                f"{verdict.reason}, attempt {verdict.attempts}"
             )
+            if held:
+                await cast(HeldDelivery, message).nack(delay=wait.total_seconds())
+                return
+            if wait > timedelta(0):
+                await asyncio.sleep(wait.total_seconds())
             if self.retry_by == RetryBy.NACK:
                 await message.nack()
                 return

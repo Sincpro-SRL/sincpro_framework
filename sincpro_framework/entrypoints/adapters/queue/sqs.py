@@ -22,6 +22,7 @@ raw delivery or not. What runs a delivery is the wire's; this is only how SQS is
 
 import asyncio
 import json
+import math
 import re
 from collections.abc import Callable, Mapping
 from datetime import timedelta
@@ -50,6 +51,7 @@ SQS = Flavour(
     retry_by=RetryBy.NACK,
     dead_letter_by=DeadLetterBy.NATIVE,
     faststream=False,
+    holds_retry=True,
 )
 
 
@@ -130,10 +132,11 @@ class SqsDelivery:
         """Settled: the message is deleted from its queue."""
         await self._call("delete_message")
 
-    async def nack(self) -> None:
-        """A retry: visible again at once (`VisibilityTimeout=0`), one more receive
-        counted."""
-        await self._call("change_message_visibility", VisibilityTimeout=0)
+    async def nack(self, delay: float | None = None) -> None:
+        """A retry: visible again once `delay` seconds pass — at once without one —, one more
+        receive counted. SQS holds it meanwhile, in whole seconds: a part of one is rounded up.
+        """
+        await self._call("change_message_visibility", VisibilityTimeout=math.ceil(delay or 0))
 
     async def reject(self) -> None:
         """Visible again: the queue's redrive policy moves it once its receives run out."""

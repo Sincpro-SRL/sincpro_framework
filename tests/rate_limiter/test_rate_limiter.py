@@ -20,6 +20,7 @@ from datetime import UTC, datetime, timedelta
 import pytest
 
 from sincpro_framework import CallNext, DataTransferObject, Feature, UseFramework, exceptions
+from sincpro_framework.circuit_breaker import CircuitBreaker, CircuitState
 from sincpro_framework.common.failures import refined_failure_kind, retry_after
 from sincpro_framework.context import InMemoryContexts
 from sincpro_framework.data_layer.store import InMemoryKeyValue, StoreUnavailable
@@ -358,3 +359,82 @@ def test_a_limiter_that_could_never_work_is_refused_when_built():
         RateLimiter("never", 1, per=timedelta(0))
     with pytest.raises(exceptions.ProgrammingError, match="negative"):
         RateLimiter("never", 1, per=timedelta(seconds=1), wait=timedelta(seconds=-1))
+
+
+# ── beside a circuit, and under load ───────────────────────────────────────────────────────
+
+
+def test_a_limiter_outside_a_circuit_never_opens_it(store, clock):
+    siat = limiter(store, clock, limit=1)
+    circuit = CircuitBreaker("siat-quota", failures=1, store=store, clock=clock.seconds)
+
+    def send() -> str:
+        with siat, circuit:  # the limiter first: what it refuses never reaches the circuit
+            return "sent"
+
+    assert send() == "sent"
+    with pytest.raises(RateLimited):
+        send()
+
+    assert circuit.state() is CircuitState.CLOSED
+
+
+def test_callers_that_wait_get_their_turns_in_order_and_none_is_refused():
+    siat = RateLimiter(
+        "siat-turns", 1, per=timedelta(milliseconds=50), wait=timedelta(seconds=5)
+    )
+    admitted: list[float] = []
+
+    def send(_: int) -> None:
+        siat.admit()
+        admitted.append(time.monotonic())
+
+    with ThreadPoolExecutor(max_workers=8) as callers:
+        list(callers.map(send, range(8)))
+
+    assert len(admitted) == 8
+    assert max(admitted) - min(admitted) >= 0.34  # one every 50ms: 7 turns after the first
+
+
+class Contended(InMemoryKeyValue):
+    """A key some other caller always writes first."""
+
+    def add(self, key: str, value: bytes, ttl: timedelta | None = None) -> bool:
+        return False
+
+    def replace(self, key, expected, value, ttl=None) -> bool:  # type: ignore[no-untyped-def]
+        return False
+
+
+def test_a_key_every_try_loses_refuses_the_call_rather_than_spin(clock):
+    purchases = limiter(Contended(clock.now), clock, limit=5)
+
+    with pytest.raises(RateLimited) as refused:
+        purchases.admit()
+
+    assert refused.value.retry_after == timedelta(seconds=1)
+
+
+def test_an_async_generator_waits_its_turn_without_holding_the_event_loop():
+    pages = RateLimiter(
+        "pages-async", 1, per=timedelta(milliseconds=100), wait=timedelta(seconds=2)
+    )
+    ticks: list[int] = []
+
+    @pages
+    async def read(number: int):  # type: ignore[no-untyped-def]
+        yield f"page {number}"
+
+    async def scenario() -> list[str]:
+        async def ticking() -> None:
+            while True:
+                ticks.append(1)
+                await asyncio.sleep(0.01)
+
+        ticker = asyncio.ensure_future(ticking())
+        read_pages = [one async for one in read(1)] + [one async for one in read(2)]
+        ticker.cancel()
+        return read_pages
+
+    assert asyncio.run(scenario()) == ["page 1", "page 2"]
+    assert len(ticks) > 1  # the loop ran while page 2 waited

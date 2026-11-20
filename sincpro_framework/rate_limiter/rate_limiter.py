@@ -15,23 +15,27 @@ of a key of the context — and the others refused, or made to wait their turn.
 
 **Refused or waited for.** Calls coming in — a buyer, a bot — are refused at once past the limit
 with `RateLimited`: `EXHAUSTED` on every wire, with the seconds until there is room as its
-`retry_after` — 429 and `Retry-After` over REST, run again later by a queue and by a pipeline's
-`Retry`. Calls going out to a dependency with a quota of its own — SIAT, a payment gateway — are
-better paced than failed: with `wait=` a call waits its turn, up to that long, and is refused only
-if its turn comes later; a coroutine waits without holding the event loop.
+`retry_after` — 429 and `Retry-After` over REST, run again after it by a pipeline's `Retry` and
+by a queue whose broker holds the wait. Calls going out to a dependency with a quota of its own —
+SIAT, a payment gateway — are better paced than failed: with `wait=` a call takes its turn, up to
+that far ahead, and waits for it — callers are admitted in the order they asked, and one is
+refused only if its turn comes later than it may wait; a coroutine waits without holding the
+event loop. Around a dependency the limiter goes outside its circuit (`with limiter, circuit:`):
+a call it refuses never reaches the circuit, which counts only what the dependency answered.
 
 **Exact, with one value per key.** GCRA — the generic cell rate algorithm of redis-cell, the token
 bucket Stripe limits with, kept as one number: the moment the next call is due. `limit` calls may
 come at once; after them, one every `per / limit`. An admitted call moves that moment on, written
 only if nobody wrote it meanwhile (`add`, then `replace` — what a lease writes with, so every store
-of the framework has it); a refused call writes nothing, a waiting call takes no place while it
-waits, and no edge between two windows lets in twice the limit. A count every caller shares is one
-key every replica compares and writes: under heavy concurrency writers retry — a ceiling for the
-whole service belongs at the edge (Kong); a limiter here is per caller, or per dependency.
+of the framework has it); a refused call writes nothing, and no edge between two windows lets in
+twice the limit. A count every caller shares is one key every replica compares and writes: under
+heavy concurrency writers retry — a ceiling for the whole service belongs at the edge (Kong); a
+limiter here is per caller, or per dependency. The moment is each replica's clock: replicas whose
+clocks drift apart let a little more through, as far as they drift — keep them on NTP.
 
 **Watched before it refuses.** `enforce=False` counts and reports the calls it would refuse —
-`sincpro.rate_limiter.refusals` with `sincpro.enforced="false"`, and a line in the log — and
-lets them through: how a limit is tried on real traffic before it is turned on.
+`sincpro.rate_limiter.refusals` with `sincpro.enforced="false"` — and lets them through: how a
+limit is tried on real traffic before it is turned on.
 
 **Where the counts live is the context's**, as for a circuit: at every call it reads where the
 running context stores its leases — the process's memory, or the Redis, Valkey, Memcached or
@@ -63,6 +67,9 @@ LEAST_RETRY_AFTER = timedelta(seconds=1)
 """The least `retry_after` a refused call is told — never to retry at once."""
 WITHOUT_KEY = "-"
 """Where the calls go whose context holds no value for `by`: they share one count."""
+CONTENDED = 64
+"""Tries at writing a turn on a key every one of them lost to another caller: so busy a key
+refuses the call for a second rather than spin."""
 MICROSECONDS = 1_000_000
 """Time is counted in whole microseconds: added in floating seconds since the epoch, a burst
 drifts by tenths of a microsecond, and a call due exactly now would be found due a moment later."""
@@ -165,22 +172,24 @@ class RateLimiter:
             return self._store
         return key_value_store_of(current_store())
 
-    def _attempt(self, give_up_at: float) -> float:
-        """One try at a place: 0 when admitted, the seconds to pause before the next try when
-        it may still wait, `RateLimited` when it may not.
+    def _reserve(self, give_up_at: float) -> float:
+        """This call's turn, taken: 0 when it is now, the seconds until it when the call may
+        wait that long — the turn is written, nobody else gets it —, `RateLimited` when not.
 
             limit 2 per 10s, both taken at 0s, asked at 4s
-                ->  due at 15s, admitted from 5s: refused, 1s to wait
+                wait=0    ->  RateLimited, its turn at 5s: 1s to wait
+                wait=5s   ->  1.0 — the turn at 5s is this call's
 
         1. The store did not answer a moment ago: admitted, uncounted.
         2. When the next call is due for this key — now when nothing is stored, or when it is
-           past —; this call moves it on by `per / limit`, and fits once that is within `per`.
-        3. Not yet: only watching (`enforce=False`) — reported and admitted; else the pause
-           until it fits, or refused — counted — when that is past `give_up_at`. Nothing is
-           written either way.
-        4. It fits: the new moment written, compared with what was read — another caller wrote
-           first, and it is read again.
-        Final: a store that stops answering admits the call and is bypassed a while.
+           past —; this call's turn moves it on by `per / limit`, and comes once that is
+           within `per` of now.
+        3. A turn later than now: only watching (`enforce=False`), admitted and counted on the
+           metric; after `give_up_at`, refused and counted. Nothing is written either way.
+        4. The turn written, compared with what was read — another caller wrote first, and it
+           is read again; a key every try lost to (`CONTENDED`) refuses the call for a second.
+        Final: the seconds until the turn; a store that stops answering admits the call and
+        is bypassed a while.
         """
         if self._bypass.is_open():
             return 0.0
@@ -188,31 +197,26 @@ class RateLimiter:
         key = f"{self.prefix}:{self.name}:{WITHOUT_KEY if value is None else value}"
         try:
             store = self.store()
-            while True:
+            for _ in range(CONTENDED):
                 seconds = self.clock()
                 now = round(seconds * MICROSECONDS)
                 held = store.get(key)
                 due = max(int(held) if held is not None else now, now) + self._interval
-                pause = (due - self._period - now) / MICROSECONDS
-                if pause > 0:
-                    if not self.enforce:
-                        metrics.emit(
-                            REFUSALS,
-                            1,
-                            {"sincpro.limiter": self.name, "sincpro.enforced": "false"},
-                        )
-                        logger.info(
-                            f"rate limit {self.name}: past its limit — let through, it only watches"
-                        )
-                        return 0.0
-                    if seconds + pause > give_up_at:
-                        metrics.emit(
-                            REFUSALS,
-                            1,
-                            {"sincpro.limiter": self.name, "sincpro.enforced": "true"},
-                        )
-                        raise RateLimited(self.name, timedelta(seconds=pause))
-                    return pause
+                pause = max(0.0, (due - self._period - now) / MICROSECONDS)
+                if pause > 0 and not self.enforce:
+                    metrics.emit(
+                        REFUSALS,
+                        1,
+                        {"sincpro.limiter": self.name, "sincpro.enforced": "false"},
+                    )
+                    return 0.0
+                if pause > 0 and seconds + pause > give_up_at:
+                    metrics.emit(
+                        REFUSALS,
+                        1,
+                        {"sincpro.limiter": self.name, "sincpro.enforced": "true"},
+                    )
+                    raise RateLimited(self.name, timedelta(seconds=pause))
                 written = str(due).encode()
                 lasts = timedelta(microseconds=due - now)
                 if held is None:
@@ -220,7 +224,7 @@ class RateLimiter:
                 else:
                     taken = store.replace(key, held, written, lasts)
                 if taken:
-                    return 0.0
+                    return pause
         except StoreUnavailable as error:
             self._bypass.trip()
             logger.warning(
@@ -228,23 +232,30 @@ class RateLimiter:
                 f"uncounted for {STORE_BYPASS.total_seconds():.0f}s"
             )
             return 0.0
+        if not self.enforce:
+            return 0.0
+        metrics.emit(REFUSALS, 1, {"sincpro.limiter": self.name, "sincpro.enforced": "true"})
+        raise RateLimited(self.name, LEAST_RETRY_AFTER)
 
     def admit(self) -> None:
         """Admit this call — at once, after waiting its turn up to `wait`, or `RateLimited`.
 
-        purchases.admit()   ->  None                                   # within the limit
-        purchases.admit()   ->  RateLimited("purchases", 1s)           # past it
-        siat.admit()        ->  None, after 0.1s waiting its turn      # 10 a second, wait=5s
+            purchases.admit()   ->  None                                   # within the limit
+            purchases.admit()   ->  RateLimited("purchases", 1s)           # past it
+            siat.admit()        ->  None, after 0.1s waiting its turn      # 10 a second, wait=5s
+
+        A call that waits took its turn first: callers are admitted in the order they asked.
         """
-        give_up_at = self.clock() + self.wait.total_seconds()
-        while (pause := self._attempt(give_up_at)) > 0:
+        pause = self._reserve(self.clock() + self.wait.total_seconds())
+        if pause > 0:
             self.sleep(pause)
 
     async def _admit_awaiting(self) -> None:
         """`admit` for a coroutine: its turn awaited, never held on the event loop; the store
-        is read synchronously, as a circuit reads it."""
-        give_up_at = self.clock() + self.wait.total_seconds()
-        while (pause := self._attempt(give_up_at)) > 0:
+        is read synchronously, as a circuit reads it. A coroutine cancelled while it waits
+        leaves its turn unused."""
+        pause = self._reserve(self.clock() + self.wait.total_seconds())
+        if pause > 0:
             await asyncio.sleep(pause)
 
     def call(self, function: Callable[..., Any], *args: Any, **kwargs: Any) -> Any:
@@ -270,7 +281,18 @@ class RateLimiter:
 
     def __call__(self, function: F) -> F:
         """A function, a method or a coroutine function admitted at each call — a coroutine
-        when it starts running, its turn awaited; a generator when it is created."""
+        when it starts running, an async generator at its first value, their turn awaited; a
+        generator when it is created."""
+        if inspect.isasyncgenfunction(function):
+
+            @functools.wraps(function)
+            async def admitted_generator(*args: Any, **kwargs: Any) -> Any:
+                await self._admit_awaiting()
+                async for value in function(*args, **kwargs):
+                    yield value
+
+            return cast(F, admitted_generator)
+
         if inspect.iscoroutinefunction(function):
 
             @functools.wraps(function)
