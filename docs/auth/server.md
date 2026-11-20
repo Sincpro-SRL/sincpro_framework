@@ -79,7 +79,7 @@ assert provider.authenticate(bearer(token(iss="https://elsewhere"))) is None   #
 | the claims | `iss` exact, `aud` names one of the audiences (an `Issuer` with none is a `ProgrammingError`), `exp`, `nbf`, `iat` with `leeway` (60 s), `required` present |
 | the kind of token | the mapping's `refused_types`: Keycloak's ID and refresh tokens are JWTs signed with the same keys |
 | the client | `authorized_parties`, when given: the `azp` allowed |
-| revocation | `revocations=`: the token, its session, its subject signed out everywhere — one read |
+| revocation | `revocations=`: the token, its session, its subject signed out everywhere — one read, which also brings the permission versions the resolvers key their cache by |
 
 A known issuer's token that fails is `Unauthenticated` with its reason; keys that cannot be
 fetched are `EndpointUnavailable` (503) — the caller's token did not fail.
@@ -142,13 +142,17 @@ except exceptions.Unauthenticated as refused:
 `until` is when the last token it covers expires: an entry lives no longer. `KeyValueRevocations`
 keeps them on the running context's store — Redis in production — under digested keys; a store
 that does not answer is refused (503) by default, or admitted with a warning
-(`on_unavailable="admit"`).
+(`on_unavailable="admit"`). One authentication reads the store once: the token, its session, its
+subject's and its tenant's permission versions in one `get_many`, and a `GrantResolver` on the
+same `Revocations` is answered from that read (`remembering_versions()`).
 
 ## Where to get a token
 
 A 401 says where to get a credential this service accepts — RFC 6750's `WWW-Authenticate`, with
 the reason of the refusal and, given a `ProtectedResource`, RFC 9728's metadata URL, which an MCP
-client follows to find the authorization server.
+client follows to find the authorization server. A caller that presented nothing gets no error
+code (RFC 6750 §3.1): there was no token to call invalid. FastAPI, gRPC (`www-authenticate` in the
+trailing metadata), JSON-RPC, REST and `IdentityMiddleware` answer the same challenge.
 
 ```python
 from sincpro_framework.auth import ProtectedResource
@@ -165,7 +169,10 @@ assert provider.challenge_for(exceptions.Unauthenticated("token expired")) == (
 
 Keycloak, Entra and Google sign with private keys and publish the public ones as a JWKS.
 `JwtProvider.from_issuer` finds the JWKS by OIDC discovery — on the first token, never when the
-service starts — and `Jwks` keeps it cached.
+service starts — and `Jwks` keeps it cached. Every component built without `http=` nor
+`discovery=` — this one, `IntrospectionProvider`, `ClientCredentials`, `TokenExchange`,
+`RefreshingToken`, `DeviceCode` — asks the process's one `OidcDiscovery`: an issuer's document is
+fetched once per process, not once per component.
 
 ```python
 from sincpro_framework.auth import PrivateKey
@@ -286,8 +293,8 @@ caller's: `EndpointUnavailable` (503), logged as an error.
 
 A bank, a payment gateway or GitHub proves it sent a request by signing its body with a secret
 both share. `SignatureProvider` reads the raw body (`needs_body`), so the wires — JSON-RPC, REST,
-FastAPI, `IdentityMiddleware` — hand it over as it came, only when a provider of the bus asks for
-it; the app still reads the whole body after.
+FastAPI, a queue's message, `IdentityMiddleware` — hand it over as it came, only when a provider
+of the bus asks for it; the app still reads the whole body after.
 
 ```python
 from sincpro_framework.auth import (
@@ -347,7 +354,9 @@ except exceptions.Unauthenticated as refused:
 
 The proof names the method and the URL — compared with `public_base_url`, never the Host header —
 when it was made (a minute, `max_age`), the token's hash and, with `replay`, is accepted once. A
-token naming `cnf.x5t#S256` is accepted only over that client certificate.
+server that demands a nonce answers `use_dpop_nonce` with a `DPoP-Nonce`: `DpopProver` learns it —
+from an API's 401 and from the token endpoint's 400 — and the request goes once more. A token
+naming `cnf.x5t#S256` is accepted only over that client certificate.
 `CertificateProvider(trust_domain="sincpro.bo")` authenticates the certificate itself — a SPIFFE
 workload (`spiffe://sincpro.bo/billing` → `service:billing`), PEM or DER, its chain checked against
 `trusted_roots` when the TLS server did not.

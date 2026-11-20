@@ -8,7 +8,7 @@ inheriting this class.
             return ["the-client-secret"]
 """
 
-from sincpro_framework.auth.domain.outbound import OutgoingRequest, TokenSource
+from sincpro_framework.auth import OutgoingRequest, TokenSource
 from sincpro_framework.exceptions import ServiceUnavailableError
 
 

@@ -74,9 +74,13 @@ class TokenSource(ABC):
 class Sealer(Protocol):
     """Seals what a shared store holds of a secret — a token cached on Redis — and opens it."""
 
-    def seal(self, plain: bytes) -> bytes: ...
+    def seal(self, plain: bytes) -> bytes:
+        """`plain` encrypted and authenticated — nothing about it readable without the key."""
+        ...
 
-    def open(self, sealed: bytes) -> bytes: ...
+    def open(self, sealed: bytes) -> bytes:
+        """What `seal` sealed — `ValueError` for what another key sealed, or was changed."""
+        ...
 
 
 class HeldGrant(DataTransferObject):

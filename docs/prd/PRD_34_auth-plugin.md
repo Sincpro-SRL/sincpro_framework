@@ -56,7 +56,7 @@ Nobody verifies Keycloak tokens, the corporate identity provider (`sincpro_auth`
    a password are looked up by their SHA-256; a log line shows at most eight characters of a
    fingerprint.
 7. **An outbound misconfiguration is never `Unauthenticated`** — the inbound caller would be told
-   to log in again, and loop. A token endpoint down is `TokenEndpointUnavailable` (503, with
+   to log in again, and loop. A token endpoint down is `EndpointUnavailable` (503, with
    `Retry-After`); a client the endpoint refuses is `CredentialsRejected` (500).
 8. **Every store** is a port with an in-memory adapter, a `KeyValueStore` adapter — the context's
    store, Redis in production — and a `Database*` adapter over a template table the project

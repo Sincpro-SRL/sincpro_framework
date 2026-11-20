@@ -74,7 +74,8 @@ class TokenEndpoint:
         1. POSTed form-encoded, authenticated as the client.
         2. 5xx, 429, or `temporarily_unavailable`: `EndpointUnavailable` with its Retry-After.
         3. `invalid_grant`: `GrantRejected`; any other refusal, or an answer without an
-           `access_token` of a known type: `CredentialsRejected`.
+           `access_token` of a known type: `CredentialsRejected` — carrying the `DPoP-Nonce`
+           the server demands, when it sent one.
         Final: the token, expiring `expires_in` after it arrived — five minutes when not said.
         """
         url = self.url
@@ -99,7 +100,7 @@ class TokenEndpoint:
                 if error == "invalid_grant"
                 else exceptions.CredentialsRejected
             )
-            if error not in ("authorization_pending", "slow_down"):
+            if error not in ("authorization_pending", "slow_down", "use_dpop_nonce"):
                 logger.warning(
                     "a token endpoint refused this service",
                     endpoint=target,
@@ -109,6 +110,7 @@ class TokenEndpoint:
                 target,
                 error or f"status {answer.status}",
                 str(said.get("error_description", "")),
+                answer.headers.get("dpop-nonce"),
             )
         token = said.get("access_token")
         token_type = str(said.get("token_type", "Bearer"))

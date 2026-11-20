@@ -17,10 +17,13 @@ from functools import partial
 
 from pydantic import ConfigDict
 
-from sincpro_framework.auth.adapters.outbound.client_credentials import endpoint_of
 from sincpro_framework.auth.domain import exceptions
 from sincpro_framework.auth.domain.http import ClientAuthentication, HttpClient, HttpRequest
-from sincpro_framework.auth.infrastructure.server_metadata import OidcDiscovery
+from sincpro_framework.auth.infrastructure.server_metadata import (
+    OidcDiscovery,
+    discovery_for,
+    located,
+)
 from sincpro_framework.auth.infrastructure.token_endpoint import IssuedToken, TokenEndpoint
 from sincpro_framework.auth.infrastructure.urllib_http import UrllibHttp
 from sincpro_framework.sincpro_abstractions import DataTransferObject
@@ -57,25 +60,24 @@ class DeviceCode:
     ) -> None:
         self.client = client
         self.show = show
+        self.discovery = discovery_for(http, discovery)
         self.http: HttpClient = http or UrllibHttp()
-        self.discovery = discovery or OidcDiscovery(http=self.http)
-        if device_endpoint is None and issuer is None:
-            raise exceptions.ProgrammingError(
-                "give device_endpoint=, or issuer= to discover it"
-            )
-        self._device = device_endpoint
+        self._device = located(
+            device_endpoint, issuer, self.discovery, "device_authorization_endpoint"
+        )
         self.issuer = issuer
         self.endpoint = TokenEndpoint(
-            endpoint_of(token_endpoint, issuer, self.discovery), client, self.http, now
+            located(token_endpoint, issuer, self.discovery, "token_endpoint"),
+            client,
+            self.http,
+            now,
         )
         self.scope = tuple(sorted(scope))
         self.sleep = sleep
 
     def _device_endpoint(self) -> str:
-        if self._device is not None:
-            return self._device
-        assert self.issuer is not None
-        return self.discovery.of(self.issuer).endpoint("device_authorization_endpoint")
+        """The device authorization endpoint — given, or discovered on the first call."""
+        return self._device() if callable(self._device) else self._device
 
     def authorize(self) -> IssuedToken:
         """The token, once the person consented.

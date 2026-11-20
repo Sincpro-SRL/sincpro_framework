@@ -26,7 +26,9 @@ class IdentityResolver(Protocol):
     """The port: the identity, resolved further — never `None`; a resolver that has nothing to
     add answers it as it came."""
 
-    def resolve(self, identity: Identity) -> Identity: ...
+    def resolve(self, identity: Identity) -> Identity:
+        """`identity` with what this resolver knows of it — roles, permissions, a tenant."""
+        ...
 
 
 def resolved(identity: Identity, resolvers: Iterable[IdentityResolver]) -> Identity:

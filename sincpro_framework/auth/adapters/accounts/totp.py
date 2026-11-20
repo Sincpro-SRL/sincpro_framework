@@ -88,19 +88,18 @@ class Totp:
         """The code of the current step."""
         return self.code_at(secret, int(self.clock() // self.period))
 
-    def _first_use(self, subject: str, step: int) -> bool:
-        """Whether `step` is later than the last step accepted for `subject` — and, when it is,
-        recorded as the last, by compare-and-set."""
-        assert self.replay is not None
+    def _first_use(self, replay: KeyValueStore, subject: str, step: int) -> bool:
+        """Whether `step` is later than the last step `replay` accepted for `subject` — and, when
+        it is, recorded as the last, by compare-and-set."""
         key = f"sincpro:auth:totp:{digest(subject)}"
         for _ in range(16):
-            held = self.replay.get(key)
+            held = replay.get(key)
             if held is not None and int(held) >= step:
                 return False
             written = str(step).encode()
-            if held is None and self.replay.add(key, written):
+            if held is None and replay.add(key, written):
                 return True
-            if held is not None and self.replay.replace(key, held, written):
+            if held is not None and replay.replace(key, held, written):
                 return True
         return False
 
@@ -113,6 +112,6 @@ class Totp:
         for step in range(current - self.window, current + self.window + 1):
             if hmac.compare_digest(self.code_at(secret, step), code):
                 if self.replay is not None and subject is not None:
-                    return self._first_use(subject, step)
+                    return self._first_use(self.replay, subject, step)
                 return True
         return False

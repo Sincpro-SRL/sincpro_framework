@@ -30,6 +30,8 @@ class _NoRedirects(urllib.request.HTTPRedirectHandler):
     def redirect_request(
         self, req: Any, fp: Any, code: int, msg: str, headers: Any, newurl: str
     ):
+        """Never followed: the 3xx is answered as it came — a redirect would resend a client's
+        credentials to another host."""
         return None
 
 

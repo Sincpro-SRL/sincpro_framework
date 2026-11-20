@@ -204,7 +204,9 @@ class BusGuard:
         if not self.access.strict:
             return None
         return (
-            exceptions.Unauthenticated(f"authenticate to run {command.__name__}")
+            exceptions.Unauthenticated(
+                f"authenticate to run {command.__name__}", anonymous=True
+            )
             if identity.is_anonymous
             else exceptions.PermissionDenied(
                 identity.subject, command.__name__, f"{command.__name__} declares no access"

@@ -49,6 +49,8 @@ class LoginAttempts:
         self._bypass = StoreBypass(timedelta(seconds=30), clock)
 
     def store(self) -> KeyValueStore:
+        """The store the failures are counted kept in — the one given, else the running
+        context's."""
         return self._store if self._store is not None else key_value_store_of(current_store())
 
     def _key(self, kind: str, key: str) -> str:

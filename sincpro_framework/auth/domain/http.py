@@ -153,7 +153,10 @@ class HttpClient(Protocol):
     """The port: send a request, answer what came back — any status. Raise
     `EndpointUnavailable` only when nothing usable answered."""
 
-    def send(self, request: HttpRequest) -> HttpAnswer: ...
+    def send(self, request: HttpRequest) -> HttpAnswer:
+        """What `request` answered — any status, the body read whole; `EndpointUnavailable`
+        when nothing answered: refused, timed out, or past the size allowed."""
+        ...
 
 
 class ClientAuthentication(ABC):

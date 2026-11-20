@@ -27,6 +27,7 @@ from sincpro_framework.auth import (
     Issuer,
     JwtProvider,
     KeyValueGrants,
+    KeyValueRevocations,
     Permission,
     PermissionDenied,
     Privilege,
@@ -276,3 +277,57 @@ def test_a_role_taken_away_holds_on_the_very_next_call() -> None:
     admin.set_level("user:ana", "bo", "invoicing", "billing.clerk")
     with pytest.raises(PermissionDenied):
         call()
+
+
+class CountedStore(InMemoryKeyValue):
+    """An in-memory store that counts its reads."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.reads = 0
+
+    def get_many(self, keys: list[str]) -> list[bytes | None]:
+        self.reads += 1
+        return super().get_many(keys)
+
+
+def test_the_revocation_check_and_the_resolver_share_one_read() -> None:
+    store, grants = CountedStore(), InMemoryGrants()
+    revocations = KeyValueRevocations(store)
+    admin = GrantAdministration(catalog, grants, revocations)
+    admin.set_level("user:ana", "bo", "invoicing", "billing.manager")
+    admin.entitle("bo", "e-invoicing")
+    provider = JwtProvider(
+        Issuer(
+            ISSUER,
+            audience="billing",
+            keys=SharedSecrets({"k": SECRET}),
+            mapping=ClaimMapping(tenant="tenant"),
+        ),
+        revocations=revocations,
+        resolvers=[
+            GrantResolver(catalog, grants, entitlements=True, revocations=revocations)
+        ],
+    )
+    token = jws.encode(
+        {"alg": "HS256", "kid": "k"},
+        {
+            "iss": ISSUER,
+            "aud": "billing",
+            "sub": "ana",
+            "tenant": "bo",
+            "jti": "t-1",
+            "exp": datetime.now(UTC).timestamp() + 600,
+        },
+        jws.HmacKey.of("k", SECRET).sign,
+    )
+    credentials = Credentials(transport="http", headers={"authorization": f"Bearer {token}"})
+    store.reads = 0
+    identity = provider.authenticate(credentials)
+    assert identity is not None and P.ISSUE in identity.permissions
+    assert store.reads == 1
+    admin.withdraw("bo", "e-invoicing")
+    store.reads = 0
+    identity = provider.authenticate(credentials)
+    assert identity is not None and P.ISSUE not in identity.permissions
+    assert store.reads == 1

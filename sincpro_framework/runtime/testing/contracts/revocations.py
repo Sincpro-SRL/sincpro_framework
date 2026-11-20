@@ -9,7 +9,7 @@ proves it by inheriting this class.
 import threading
 from datetime import UTC, datetime, timedelta
 
-from sincpro_framework.auth.domain.revocations import Revocations
+from sincpro_framework.auth import Revocations, remembering_versions
 
 HOUR = timedelta(hours=1)
 
@@ -24,6 +24,7 @@ class RevocationsContract:
         raise NotImplementedError("answer new, empty revocations")
 
     def _later(self) -> datetime:
+        """An hour from now — long enough for every entry a test writes to outlive it."""
         return datetime.now(UTC) + HOUR
 
     def test_nothing_is_revoked_at_first(self) -> None:
@@ -84,3 +85,22 @@ class RevocationsContract:
         assert sorted(answers) == list(range(1, self.racers + 1)), answers
         assert revocations.permission_version("user:1") == self.racers
         assert revocations.permission_version("user:2") == 0
+
+    def test_related_versions_are_read_with_the_state_and_remembered(self) -> None:
+        """`state(related=…)` answers the related subjects' versions with its own; inside
+        `remembering_versions()` they are answered again without another read."""
+        revocations = self.make_revocations()
+        revocations.bump_permissions("user:1")
+        revocations.bump_permissions("tenant:bo")
+        revocations.bump_permissions("tenant:bo")
+        state = revocations.state("user:1", related=["tenant:bo", "tenant:pe"])
+        assert state.permission_version == 1
+        assert state.versions == {"tenant:bo": 2, "tenant:pe": 0}
+        with remembering_versions():
+            revocations.state("user:1", related=["tenant:bo"])
+            revocations.bump_permissions("tenant:bo")
+            assert revocations.permission_versions("user:1", "tenant:bo") == {
+                "user:1": 1,
+                "tenant:bo": 2,
+            }
+        assert revocations.permission_version("tenant:bo") == 3

@@ -48,6 +48,7 @@ from sincpro_framework.auth.adapters.api_key_provider import (
     ApiKeyProvider,
     ApiKeyStore,
     InMemoryApiKeys,
+    digest_of,
 )
 from sincpro_framework.auth.adapters.client_auth import (
     ClientSecretBasic,
@@ -162,7 +163,11 @@ from sincpro_framework.auth.domain.permissions import (
 from sincpro_framework.auth.domain.policy import PolicyEngine
 from sincpro_framework.auth.domain.provider import AuthProvider
 from sincpro_framework.auth.domain.resolver import IdentityResolver
-from sincpro_framework.auth.domain.revocations import Revocations, RevocationState
+from sincpro_framework.auth.domain.revocations import (
+    Revocations,
+    RevocationState,
+    remembering_versions,
+)
 from sincpro_framework.auth.entrypoint.access_control import AccessControl, AccessDescription
 from sincpro_framework.auth.entrypoint.asgi import IdentityMiddleware
 from sincpro_framework.auth.entrypoint.outbound import (
@@ -303,7 +308,9 @@ __all__ = [
     "UrllibHttp",
     "WhenDenied",
     "call_with_credentials",
+    "digest_of",
     "httpx_auth",
+    "remembering_versions",
     "requests_auth",
     "security",
 ]

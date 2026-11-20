@@ -15,13 +15,14 @@ token revoking its family), RFC 8693 token exchange and RFC 8628 device authoriz
 """
 
 import base64
+import json
 import threading
 import time
 from collections.abc import Callable, Mapping
 from typing import Any
 from urllib.parse import parse_qsl, unquote
 
-from sincpro_framework.auth.domain.http import HttpAnswer, HttpRequest
+from sincpro_framework.auth import HttpAnswer, HttpRequest
 from sincpro_framework.runtime.testing.doubles.http import ScriptedHttp
 
 TOKEN_EXCHANGE = "urn:ietf:params:oauth:grant-type:token-exchange"
@@ -54,8 +55,13 @@ class FakeTokenEndpoint(ScriptedHttp):
         clients: Mapping[str, str] | None = None,
         expires_in: int | None = 300,
         delay: float = 0.0,
+        dpop_nonce: str | None = None,
     ) -> None:
+        """`clients` maps each client id to its secret; `expires_in` is what every token is
+        said to live (`None` says nothing); `delay` holds every token request that long — a
+        slow server, for races; `dpop_nonce`, when given, is demanded of every DPoP proof."""
         super().__init__()
+        self.dpop_nonce = dpop_nonce
         self.issuer = issuer
         self.token_endpoint = f"{issuer}/token"
         self.device_endpoint = f"{issuer}/device"
@@ -180,6 +186,16 @@ class FakeTokenEndpoint(ScriptedHttp):
             return self.answer({"error": "authorization_pending"}, status=400)
         return self.answer(self._issued(self._next("family")))
 
+    def _lacks_nonce(self, request: HttpRequest) -> bool:
+        """Whether a nonce is demanded and the request's DPoP proof does not carry it — the
+        proof's claims read, never verified: this is a test's server."""
+        proof = request.headers.get("dpop")
+        if self.dpop_nonce is None or proof is None:
+            return False
+        payload = proof.split(".")[1]
+        claims = json.loads(base64.urlsafe_b64decode(payload + "=" * (-len(payload) % 4)))
+        return claims.get("nonce") != self.dpop_nonce
+
     def _token(self, request: HttpRequest) -> HttpAnswer:
         """The token endpoint."""
         if self.delay:
@@ -194,6 +210,12 @@ class FakeTokenEndpoint(ScriptedHttp):
             return self.answer({"error": "invalid_client"}, status=401)
         with self._server_lock:
             self._grants.append(grant)
+        if self._lacks_nonce(request):
+            return self.answer(
+                {"error": "use_dpop_nonce"},
+                status=400,
+                headers={"dpop-nonce": self.dpop_nonce or ""},
+            )
         handlers: dict[str, Callable[[dict[str, str]], HttpAnswer]] = {
             "client_credentials": lambda _: self.answer(
                 {

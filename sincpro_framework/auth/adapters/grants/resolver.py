@@ -24,7 +24,7 @@ from fnmatch import fnmatchcase
 
 from sincpro_framework.auth.domain.grants import GrantCatalog, GrantSource, Held
 from sincpro_framework.auth.domain.identity import Identity
-from sincpro_framework.auth.domain.revocations import Revocations
+from sincpro_framework.auth.domain.revocations import Revocations, tenant_subject
 from sincpro_framework.data_layer.caching import Cache, CachePolicy, JsonCodec, TimeToLive
 
 
@@ -113,15 +113,15 @@ class GrantResolver:
         self._codec = JsonCodec(Held)
 
     def _versions(self, identity: Identity) -> tuple[int, int]:
-        """The subject's and the tenant's permission versions — 0 without revocations."""
+        """The subject's and the tenant's permission versions — 0 without revocations; the ones
+        the provider already read in this authentication, never read twice."""
         if self.revocations is None:
             return 0, 0
-        tenant = (
-            self.revocations.permission_version(f"tenant:{identity.tenant}")
-            if self.entitlements and identity.tenant
-            else 0
-        )
-        return self.revocations.permission_version(identity.subject), tenant
+        if not (self.entitlements and identity.tenant):
+            return self.revocations.permission_version(identity.subject), 0
+        tenant = tenant_subject(identity.tenant)
+        versions = self.revocations.permission_versions(identity.subject, tenant)
+        return versions[identity.subject], versions[tenant]
 
     def held(self, identity: Identity) -> Held:
         """What the source says `identity` holds — cached per subject, tenant and versions."""

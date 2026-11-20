@@ -449,7 +449,7 @@ class AccessControl[P: Permission]:
         if declaration.kind == "public" or identity.kind == IdentityKind.SYSTEM:
             return None
         if identity.is_anonymous:
-            return exceptions.Unauthenticated(f"authenticate to run {what}")
+            return exceptions.Unauthenticated(f"authenticate to run {what}", anonymous=True)
         for requirement in declaration.requirements:
             denied = self._denial(identity, requirement, resource, context, dto)
             if denied is not None:
@@ -477,7 +477,9 @@ class AccessControl[P: Permission]:
         if identity.kind == IdentityKind.SYSTEM:
             return
         if identity.is_anonymous:
-            raise exceptions.Unauthenticated(f"authenticate to {permission.value}")
+            raise exceptions.Unauthenticated(
+                f"authenticate to {permission.value}", anonymous=True
+            )
         denied = self._denial(identity, permission, resource, context_scopes.live())
         if denied is not None:
             raise denied

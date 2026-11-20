@@ -21,7 +21,7 @@ from collections.abc import Callable, Mapping
 from typing import Any, Self
 from urllib.parse import urlsplit, urlunsplit
 
-from sincpro_framework.auth.domain.http import HttpAnswer, HttpRequest
+from sincpro_framework.auth import HttpAnswer, HttpRequest
 
 type Scripted = HttpAnswer | Mapping[str, Any] | Callable[
     [HttpRequest], HttpAnswer

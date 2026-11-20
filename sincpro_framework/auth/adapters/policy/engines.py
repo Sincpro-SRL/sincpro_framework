@@ -51,6 +51,7 @@ class AuthZenEngine(PolicyEngine):
         resource: Any = None,
         context: Mapping[str, Any] | None = None,
     ) -> bool:
+        """One AuthZEN evaluation — allowed only when the PDP's `decision` is `true`."""
         said = posted(
             self.http,
             f"{self.base_url}/access/v1/evaluation",
@@ -71,6 +72,7 @@ class AuthZenEngine(PolicyEngine):
         resources: Sequence[Any],
         context: Mapping[str, Any] | None = None,
     ) -> list[bool]:
+        """One AuthZEN `evaluations` request — a decision per resource, in their order."""
         said = posted(
             self.http,
             f"{self.base_url}/access/v1/evaluations",
@@ -115,6 +117,8 @@ class OpaEngine(PolicyEngine):
         resource: Any = None,
         context: Mapping[str, Any] | None = None,
     ) -> bool:
+        """OPA's `/v1/data/<path>` asked with the input — allowed only on a `result` that is
+        `true`; an undefined one refuses."""
         said = posted(
             self.http,
             f"{self.base_url}/v1/data/{self.path}",
@@ -179,6 +183,7 @@ class OpenFgaEngine(PolicyEngine):
         resource: Any = None,
         context: Mapping[str, Any] | None = None,
     ) -> bool:
+        """One OpenFGA `check` of the permission's relation on the resource."""
         said = posted(
             self.http,
             f"{self.base_url}/check",
@@ -198,6 +203,7 @@ class OpenFgaEngine(PolicyEngine):
         resources: Sequence[Any],
         context: Mapping[str, Any] | None = None,
     ) -> list[bool]:
+        """One OpenFGA `batch-check`, a correlation id per resource — answered in their order."""
         said = posted(
             self.http,
             f"{self.base_url}/batch-check",

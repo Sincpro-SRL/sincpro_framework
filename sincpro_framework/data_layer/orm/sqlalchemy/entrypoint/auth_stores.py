@@ -21,9 +21,14 @@ from typing import Any
 from sqlalchemy import Table, delete, select, update
 from sqlalchemy.exc import IntegrityError
 
-from sincpro_framework.auth.adapters.api_key_provider import ApiKey, ApiKeyStore
-from sincpro_framework.auth.domain.accounts import RefreshRecord, RefreshTokens
-from sincpro_framework.auth.domain.grants import Assignment, GrantStore
+from sincpro_framework.auth import (
+    ApiKey,
+    ApiKeyStore,
+    Assignment,
+    GrantStore,
+    RefreshRecord,
+    RefreshTokens,
+)
 from sincpro_framework.data_layer.orm.sqlalchemy.infrastructure.database import Database
 
 
@@ -45,6 +50,7 @@ class DatabaseApiKeys(ApiKeyStore):
         self.table = table
 
     def find(self, digest: str) -> ApiKey | None:
+        """The row of `digest` — `None` when there is none."""
         row = self.table.c
         with self.database.session() as session:
             found = session.execute(select(self.table).where(row.digest == digest)).first()
@@ -61,6 +67,7 @@ class DatabaseApiKeys(ApiKeyStore):
         )
 
     def save(self, key: ApiKey) -> None:
+        """An `UPDATE` by its digest — an `INSERT` when it is new."""
         values = {
             "subject": key.subject,
             "tenant": key.tenant,
@@ -93,6 +100,7 @@ class DatabaseGrants(GrantStore):
         self._now = now
 
     def now(self) -> datetime:
+        """The moment an assignment's `valid_until` is judged against."""
         return self._now()
 
     def _assignment(self, found: Any) -> Assignment:
@@ -104,6 +112,8 @@ class DatabaseGrants(GrantStore):
         )
 
     def assign(self, assignment: Assignment) -> None:
+        """An `UPDATE` of its validity when the role was given already, else an `INSERT` — a
+        racing insert's row stands."""
         row = self.assignments.c
         tenant = assignment.tenant or ""
         with self.database.session() as session:
@@ -131,6 +141,7 @@ class DatabaseGrants(GrantStore):
                     pass
 
     def unassign(self, subject: str, tenant: str | None, role: str) -> None:
+        """The row deleted — nothing when there was none."""
         row = self.assignments.c
         with self.database.session() as session:
             session.execute(
@@ -142,6 +153,7 @@ class DatabaseGrants(GrantStore):
             )
 
     def assignments_of(self, subject: str, tenant: str | None) -> list[Assignment]:
+        """The subject's rows in `tenant` — no tenant kept as `""` — ordered by role."""
         row = self.assignments.c
         with self.database.session() as session:
             found = session.execute(
@@ -152,6 +164,7 @@ class DatabaseGrants(GrantStore):
         return [self._assignment(one) for one in found]
 
     def holders(self, role: str, tenant: str | None) -> list[Assignment]:
+        """The role's rows in `tenant`, ordered by subject."""
         row = self.assignments.c
         with self.database.session() as session:
             found = session.execute(
@@ -162,6 +175,7 @@ class DatabaseGrants(GrantStore):
         return [self._assignment(one) for one in found]
 
     def entitle(self, tenant: str, entitlement: str) -> None:
+        """An `INSERT` — a duplicate, refused by the key, is the same entitlement."""
         with self.database.session() as session:
             try:
                 with session.begin_nested():
@@ -174,6 +188,7 @@ class DatabaseGrants(GrantStore):
                 pass
 
     def withdraw(self, tenant: str, entitlement: str) -> None:
+        """The row deleted — nothing when there was none."""
         row = self.entitlements.c
         with self.database.session() as session:
             session.execute(
@@ -183,6 +198,7 @@ class DatabaseGrants(GrantStore):
             )
 
     def entitlements_of(self, tenant: str | None) -> frozenset[str]:
+        """The tenant's rows."""
         row = self.entitlements.c
         with self.database.session() as session:
             found = session.execute(
@@ -219,10 +235,12 @@ class DatabaseRefreshTokens(RefreshTokens):
         return record.model_copy(update={"rotated_at": _read(found.rotated_at)})
 
     def save(self, record: RefreshRecord) -> None:
+        """An `INSERT` — a digest is saved once."""
         with self.database.session() as session:
             session.execute(self.table.insert().values(**self._values(record)))
 
     def find(self, digest: str) -> RefreshRecord | None:
+        """The row of `digest` — `None` when unknown."""
         with self.database.session() as session:
             found = session.execute(
                 select(self.table).where(self.table.c.digest == digest)
@@ -230,6 +248,8 @@ class DatabaseRefreshTokens(RefreshTokens):
         return None if found is None else self._record(found)
 
     def rotate(self, digest: str, successor: RefreshRecord, at: datetime) -> bool:
+        """One conditional `UPDATE` of a row not rotated yet, and the successor inserted in
+        the same transaction — of racing rotations exactly one updates the row."""
         row = self.table.c
         with self.database.session() as session:
             done = session.execute(
@@ -243,6 +263,7 @@ class DatabaseRefreshTokens(RefreshTokens):
         return True
 
     def sessions_of(self, subject: str) -> list[RefreshRecord]:
+        """The subject's rows not rotated, and of them the ones still live — oldest first."""
         row = self.table.c
         now = self.now()
         with self.database.session() as session:

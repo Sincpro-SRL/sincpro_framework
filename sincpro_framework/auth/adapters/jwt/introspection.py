@@ -27,10 +27,18 @@ from sincpro_framework.auth.domain.http import ClientAuthentication, HttpClient,
 from sincpro_framework.auth.domain.identity import Credentials, Identity
 from sincpro_framework.auth.domain.provider import AuthProvider
 from sincpro_framework.auth.domain.resolver import IdentityResolver, resolved
-from sincpro_framework.auth.domain.revocations import Revocations
+from sincpro_framework.auth.domain.revocations import (
+    Revocations,
+    related_of,
+    remembering_versions,
+)
 from sincpro_framework.auth.infrastructure import jws
 from sincpro_framework.auth.infrastructure.digests import digest
-from sincpro_framework.auth.infrastructure.server_metadata import OidcDiscovery
+from sincpro_framework.auth.infrastructure.server_metadata import (
+    OidcDiscovery,
+    discovery_for,
+    located,
+)
 from sincpro_framework.auth.infrastructure.urllib_http import UrllibHttp
 from sincpro_framework.data_layer.caching import Cache, CachePolicy, JsonCodec, TimeToLive
 from sincpro_framework.sincpro_logger import logger
@@ -59,12 +67,7 @@ class IntrospectionProvider(AuthProvider):
     ) -> None:
         """`endpoint`, or `issuer` to discover it on the first token — one of them, or
         `ProgrammingError`; `audience`, when given, must be named by the answer's `aud`."""
-        if endpoint is None and issuer is None:
-            raise exceptions.ProgrammingError(
-                "IntrospectionProvider needs endpoint= or issuer="
-            )
         self.client = client
-        self._endpoint = endpoint
         self.issuer = issuer
         self.audiences = (
             None
@@ -74,8 +77,9 @@ class IntrospectionProvider(AuthProvider):
         self.mapping = mapping or ClaimMapping()
         self.resolvers = tuple(resolvers)
         self.revocations = revocations
+        self.discovery = discovery_for(http, discovery)
         self.http: HttpClient = http or UrllibHttp()
-        self.discovery = discovery or OidcDiscovery(http=self.http)
+        self._endpoint = located(endpoint, issuer, self.discovery, "introspection_endpoint")
         self.cache = cache or Cache(namespace="auth-introspection")
         self.inactive_for = inactive_for
         self.skip_jwts = skip_jwts
@@ -88,11 +92,8 @@ class IntrospectionProvider(AuthProvider):
 
     @property
     def endpoint(self) -> str:
-        """The introspection endpoint — discovered from the issuer on first use."""
-        if self._endpoint is None:
-            assert self.issuer is not None
-            self._endpoint = self.discovery.of(self.issuer).endpoint("introspection_endpoint")
-        return self._endpoint
+        """The introspection endpoint — given, or discovered from the issuer on first use."""
+        return self._endpoint() if callable(self._endpoint) else self._endpoint
 
     def security_scheme(self) -> dict[str, Any] | None:
         """HTTP bearer, an opaque token."""
@@ -181,11 +182,15 @@ class IntrospectionProvider(AuthProvider):
         self._checked(said)
         claims = {name: value for name, value in said.items() if name != "checked_at"}
         identity = self.mapping.identity(claims, provider=self.name)
-        if self.revocations is not None:
-            state = self.revocations.state(
-                identity.subject, identity.token_id, identity.session
-            )
-            refusal = state.refusal(jws.moment(claims, "iat"))
-            if refusal is not None:
-                raise exceptions.Unauthenticated(refusal)
-        return resolved(identity, self.resolvers)
+        with remembering_versions():
+            if self.revocations is not None:
+                state = self.revocations.state(
+                    identity.subject,
+                    identity.token_id,
+                    identity.session,
+                    related_of(identity),
+                )
+                refusal = state.refusal(jws.moment(claims, "iat"))
+                if refusal is not None:
+                    raise exceptions.Unauthenticated(refusal)
+            return resolved(identity, self.resolvers)

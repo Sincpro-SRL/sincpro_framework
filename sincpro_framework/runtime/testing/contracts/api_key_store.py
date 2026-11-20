@@ -8,7 +8,7 @@ table proves it by inheriting this class.
 
 from datetime import UTC, datetime, timedelta
 
-from sincpro_framework.auth.adapters.api_key_provider import ApiKey, ApiKeyStore, digest_of
+from sincpro_framework.auth import ApiKey, ApiKeyStore, digest_of
 
 
 class ApiKeyStoreContract:
@@ -19,6 +19,8 @@ class ApiKeyStoreContract:
         raise NotImplementedError("answer a new, empty ApiKeyStore")
 
     def test_an_issued_key_is_found_by_its_secret_and_never_kept_as_issued(self) -> None:
+        """An issued key is found by its secret's digest with what it grants, and its digest
+        is never the secret."""
         store = self.make_store()
         expires = datetime.now(UTC).replace(microsecond=0) + timedelta(days=30)
         secret = store.issue(
@@ -42,6 +44,7 @@ class ApiKeyStoreContract:
         assert store.find(digest_of("sk_unknown")) is None
 
     def test_a_revoked_key_is_kept_flagged(self) -> None:
+        """A revoked key is still found — flagged, so the provider refuses it."""
         store = self.make_store()
         secret = store.issue(ApiKey(subject="apikey:bot"))
         store.revoke(secret)

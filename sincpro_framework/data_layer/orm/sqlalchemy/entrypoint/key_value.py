@@ -60,6 +60,7 @@ class DatabaseKeyValue(KeyValueStore):
         )
 
     def get_many(self, keys: list[str]) -> list[bytes | None]:
+        """One `SELECT … WHERE key IN (…)` of the live rows, answered in the order of `keys`."""
         if not keys:
             return []
         row = self.table.c
@@ -73,6 +74,7 @@ class DatabaseKeyValue(KeyValueStore):
         return [found.get(key) for key in keys]
 
     def set(self, key: str, value: bytes, ttl: timedelta | None = None) -> None:
+        """An `UPDATE`, an `INSERT` when there was no row — again when a racing insert won."""
         row = self.table.c
         for _ in range(ATTEMPTS):
             try:
@@ -93,6 +95,8 @@ class DatabaseKeyValue(KeyValueStore):
                 continue
 
     def add(self, key: str, value: bytes, ttl: timedelta | None = None) -> bool:
+        """The expired row deleted, then an `INSERT` — the primary key refuses every racer but
+        one."""
         with self.database.session() as session:
             session.execute(delete(self.table).where(self._expired(key)))
             try:
@@ -107,6 +111,8 @@ class DatabaseKeyValue(KeyValueStore):
         return True
 
     def increment(self, key: str, ttl: timedelta | None = None) -> int:
+        """The live value read and written back on the condition it is unchanged — again when
+        raced; a missing or expired counter inserted at 1."""
         row = self.table.c
         for _ in range(ATTEMPTS):
             with self.database.session() as session:
@@ -139,10 +145,13 @@ class DatabaseKeyValue(KeyValueStore):
         raise RuntimeError(f"the counter {key} is contended past {ATTEMPTS} attempts")
 
     def delete(self, key: str) -> None:
+        """The row deleted — nothing when it is not there."""
         with self.database.session() as session:
             session.execute(delete(self.table).where(self.table.c.key == key))
 
     def take(self, key: str) -> bytes | None:
+        """The live value read, then deleted on the condition it still holds it — of many
+        racing, one deletes it."""
         row = self.table.c
         for _ in range(ATTEMPTS):
             with self.database.session() as session:
@@ -163,6 +172,8 @@ class DatabaseKeyValue(KeyValueStore):
     def replace(
         self, key: str, expected: bytes, value: bytes | None, ttl: timedelta | None = None
     ) -> bool:
+        """One conditional `UPDATE` — a `DELETE` for `None` — of the live row holding
+        `expected`."""
         row = self.table.c
         matching = (row.key == key) & (row.value == expected) & self._live()
         with self.database.session() as session:
@@ -177,6 +188,7 @@ class DatabaseKeyValue(KeyValueStore):
         return getattr(done, "rowcount", 0) == 1
 
     def touch(self, key: str, ttl: timedelta | None) -> bool:
+        """One conditional `UPDATE` of a live row's expiry — `False` when missing or expired."""
         row = self.table.c
         with self.database.session() as session:
             done = session.execute(
@@ -187,4 +199,5 @@ class DatabaseKeyValue(KeyValueStore):
         return getattr(done, "rowcount", 0) == 1
 
     def shared(self) -> bool:
+        """Always: every replica reads the same database."""
         return True

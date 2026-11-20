@@ -6,7 +6,7 @@ production, `DatabaseKeyValue` for a project that keeps it in its database.
     InMemoryRevocations()                                     one process: tests, a CLI
 
 Context: every key is a digest — `sincpro:auth:revoked:sid:<sha256>` — so neither a session id
-nor a subject (an email, often) lands in the store as written. `state` is one `get_many`. What a
+nor a subject (an email, often) lands in the store as written. `read` is one `get_many`. What a
 store that does not answer does is a choice the project makes: `"refuse"` (the default) lets
 `StoreUnavailable` through — every call answers 503 until it is back, nothing revoked is ever
 accepted —, `"admit"` treats the store as saying nothing was revoked, logs a warning and leaves
@@ -66,26 +66,35 @@ class KeyValueRevocations(Revocations):
         return left if left > timedelta(0) else None
 
     def revoke_token(self, token_id: str, until: datetime) -> None:
+        """`<prefix>:jti:<digest>`, living until `until` — nothing when it already passed."""
         if (ttl := self._ttl(until)) is not None:
             self.store().set(self._key("jti", token_id), REVOKED, ttl)
 
     def revoke_session(self, session: str, until: datetime) -> None:
+        """`<prefix>:sid:<digest>`, living until `until` — nothing when it already passed."""
         if (ttl := self._ttl(until)) is not None:
             self.store().set(self._key("sid", session), REVOKED, ttl)
 
     def revoke_subject(self, subject: str, until: datetime) -> None:
+        """`<prefix>:nbf:<digest>` holding this moment: what was issued before it is refused."""
         if (ttl := self._ttl(until)) is not None:
             moment = str(self.now().timestamp()).encode()
             self.store().set(self._key("nbf", subject), moment, ttl)
 
     def bump_permissions(self, subject: str) -> int:
+        """`<prefix>:pv:<digest>` incremented by the store — atomic on every replica."""
         return self.store().increment(self._key("pv", subject))
 
-    def _read(
-        self, subject: str, token_id: str | None, session: str | None
+    def _held(
+        self,
+        subject: str,
+        token_id: str | None,
+        session: str | None,
+        related: tuple[str, ...],
     ) -> RevocationState:
         """The state as the store holds it — one `get_many`."""
         keys = [self._key("nbf", subject), self._key("pv", subject)]
+        keys += [self._key("pv", one) for one in related]
         if token_id is not None:
             keys.append(self._key("jti", token_id))
         if session is not None:
@@ -93,6 +102,7 @@ class KeyValueRevocations(Revocations):
         found = dict(zip(keys, self.store().get_many(keys), strict=True))
         not_before = found[keys[0]]
         version = found[keys[1]]
+        versions = {one: found[self._key("pv", one)] for one in related}
         return RevocationState(
             token_revoked=token_id is not None
             and found[self._key("jti", token_id)] is not None,
@@ -102,10 +112,17 @@ class KeyValueRevocations(Revocations):
                 None if not_before is None else datetime.fromtimestamp(float(not_before), UTC)
             ),
             permission_version=0 if version is None else int(version),
+            versions={
+                one: 0 if held is None else int(held) for one, held in versions.items()
+            },
         )
 
-    def state(
-        self, subject: str, token_id: str | None = None, session: str | None = None
+    def read(
+        self,
+        subject: str,
+        token_id: str | None,
+        session: str | None,
+        related: tuple[str, ...],
     ) -> RevocationState:
         """Everything revoked about this credential — or, with `on_unavailable="admit"` and the
         store not answering, nothing: logged, and the store left alone for a while.
@@ -119,7 +136,7 @@ class KeyValueRevocations(Revocations):
         if self.on_unavailable == "admit" and self._bypass.is_open():
             return RevocationState()
         try:
-            return self._read(subject, token_id, session)
+            return self._held(subject, token_id, session, related)
         except StoreUnavailable:
             if self.on_unavailable == "refuse":
                 raise

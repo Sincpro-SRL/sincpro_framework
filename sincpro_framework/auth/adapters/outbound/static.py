@@ -34,6 +34,7 @@ class StaticToken(TokenSource):
         self.name = name
 
     def headers_for(self, request: OutgoingRequest) -> dict[str, str]:
+        """`<scheme> <token>` under `header` — the bare token when there is no scheme."""
         value = revealed(self._token)
         return {self.header: f"{self.scheme} {value}" if self.scheme else value}
 
@@ -63,6 +64,7 @@ class BasicCredentials(TokenSource):
         self.name = name
 
     def headers_for(self, request: OutgoingRequest) -> dict[str, str]:
+        """`Basic` with `username:password` in base64 (RFC 7617)."""
         pair = f"{self.username}:{revealed(self._password)}".encode()
         return {"authorization": f"Basic {base64.b64encode(pair).decode()}"}
 

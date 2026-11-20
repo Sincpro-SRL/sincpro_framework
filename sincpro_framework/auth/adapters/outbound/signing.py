@@ -34,6 +34,7 @@ class RequestSigner(TokenSource):
         self.clock = clock
 
     def headers_for(self, request: OutgoingRequest) -> dict[str, str]:
+        """The style's header, signing the request's body at this moment."""
         written = self.style.written(
             revealed(self._secret).encode(), request.body or b"", int(self.clock())
         )

@@ -41,6 +41,7 @@ class Resolving(AuthProvider):
         resource: Any = None,
         context: Mapping[str, Any] | None = None,
     ) -> bool:
+        """The wrapped provider's — resolvers change who is calling, never how it is judged."""
         return self.provider.has_permission(identity, permission, resource, context)
 
     def permitted(
@@ -50,29 +51,37 @@ class Resolving(AuthProvider):
         resources: Sequence[Any],
         context: Mapping[str, Any] | None = None,
     ) -> list[bool]:
+        """The wrapped provider's — resolvers change who is calling, never how it is judged."""
         return self.provider.permitted(identity, permission, resources, context)
 
     def refusing_any(
         self, identity: Identity, permissions: Sequence[str], reasons: Sequence[str]
     ) -> str | None:
+        """The wrapped provider's — resolvers change who is calling, never how it is judged."""
         return self.provider.refusing_any(identity, permissions, reasons)
 
     def scope(self, identity: Identity, aggregate: type) -> "Criteria | None":
+        """The wrapped provider's — resolvers change who is calling, never how it is judged."""
         return self.provider.scope(identity, aggregate)
 
     def security_scheme(self) -> dict[str, Any] | None:
+        """The wrapped provider's."""
         return self.provider.security_scheme()
 
     def challenge(self) -> str | None:
+        """The wrapped provider's."""
         return self.provider.challenge()
 
     def challenge_for(self, refusal: exceptions.Unauthenticated | None) -> str | None:
+        """The wrapped provider's."""
         return self.provider.challenge_for(refusal)
 
     def credentials_for(self, identity: Identity) -> Credentials | None:
+        """The wrapped provider's."""
         return self.provider.credentials_for(identity)
 
     def outbound_for(
         self, identity: Identity, audience: str | None = None
     ) -> Credentials | None:
+        """The wrapped provider's."""
         return self.provider.outbound_for(identity, audience)

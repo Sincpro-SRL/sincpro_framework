@@ -9,7 +9,7 @@ way proves it by inheriting this class.
 import threading
 from datetime import UTC, datetime, timedelta
 
-from sincpro_framework.auth.domain.accounts import RefreshRecord, RefreshTokens
+from sincpro_framework.auth import RefreshRecord, RefreshTokens
 
 
 def record(digest: str, family: str = "s-1", subject: str = "user:ana") -> RefreshRecord:
@@ -36,6 +36,7 @@ class RefreshTokensContract:
         raise NotImplementedError("answer a new, empty RefreshTokens")
 
     def test_a_saved_token_is_found_by_its_digest(self) -> None:
+        """A saved record is found by its digest, not rotated; an unknown digest is `None`."""
         store = self.make_store()
         store.save(record("d-1"))
         found = store.find("d-1")
@@ -43,6 +44,8 @@ class RefreshTokensContract:
         assert store.find("d-2") is None
 
     def test_rotating_marks_the_token_and_keeps_its_successor(self) -> None:
+        """Rotating marks the token and keeps its successor; a token rotated already is never
+        rotated again."""
         store = self.make_store()
         store.save(record("d-1"))
         at = datetime.now(UTC)
@@ -54,6 +57,7 @@ class RefreshTokensContract:
         assert store.find("d-3") is None
 
     def test_of_racing_rotations_exactly_one_wins(self) -> None:
+        """`racers` threads rotating one token at once: exactly one wins."""
         store = self.make_store()
         store.save(record("d-1"))
         barrier = threading.Barrier(self.racers)
@@ -71,6 +75,8 @@ class RefreshTokensContract:
         assert won.count(True) == 1, won
 
     def test_the_sessions_of_a_subject_are_its_live_tokens(self) -> None:
+        """The sessions of a subject are its tokens not rotated — another subject's are not
+        among them."""
         store = self.make_store()
         store.save(record("a-1", family="s-a"))
         store.save(record("b-1", family="s-b"))

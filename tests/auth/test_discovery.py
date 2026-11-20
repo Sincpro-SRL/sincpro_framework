@@ -6,8 +6,15 @@ from datetime import UTC, datetime, timedelta
 
 import pytest
 
-from sincpro_framework.auth import EndpointUnavailable, OidcDiscovery
+from sincpro_framework.auth import (
+    ClientCredentials,
+    ClientSecretBasic,
+    EndpointUnavailable,
+    IntrospectionProvider,
+    OidcDiscovery,
+)
 from sincpro_framework.auth.domain import exceptions
+from sincpro_framework.auth.infrastructure.server_metadata import discovery_for, located
 from sincpro_framework.data_layer.caching import Cache
 from sincpro_framework.runtime.testing import ManualClock, ScriptedHttp
 
@@ -72,3 +79,27 @@ def test_with_nothing_cached_a_server_down_is_unavailable() -> None:
     with pytest.raises(EndpointUnavailable) as raised:
         OidcDiscovery(http=http).of(ISSUER)
     assert raised.value.retry_after == timedelta(seconds=7)
+
+
+def test_components_built_on_the_defaults_share_the_process_discovery() -> None:
+    client = ClientSecretBasic("billing", "s3cret")
+    bank = ClientCredentials(client=client, issuer=ISSUER)
+    introspection = IntrospectionProvider(client, issuer=ISSUER)
+    assert bank.discovery is introspection.discovery is discovery_for(None, None)
+    http = ScriptedHttp({OIDC: DOCUMENT})
+    assert discovery_for(http, None).http is http
+    own = OidcDiscovery(http=http)
+    assert ClientCredentials(client=client, issuer=ISSUER, discovery=own).discovery is own
+
+
+def test_an_endpoint_is_given_or_discovered_on_its_first_use() -> None:
+    http = ScriptedHttp({OIDC: DOCUMENT})
+    discovery = OidcDiscovery(http=http)
+    assert located("https://given/token", None, discovery, "token_endpoint") == (
+        "https://given/token"
+    )
+    found = located(None, ISSUER, discovery, "introspection_endpoint")
+    assert callable(found) and http.sent == []
+    assert found() == f"{ISSUER}/introspect"
+    with pytest.raises(exceptions.ProgrammingError, match="no token_endpoint given"):
+        located(None, None, discovery, "token_endpoint")

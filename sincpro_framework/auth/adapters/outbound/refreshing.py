@@ -20,7 +20,6 @@ from datetime import UTC, datetime, timedelta
 from functools import partial
 from typing import Any
 
-from sincpro_framework.auth.adapters.outbound.client_credentials import endpoint_of
 from sincpro_framework.auth.domain import exceptions
 from sincpro_framework.auth.domain.http import ClientAuthentication, HttpClient
 from sincpro_framework.auth.domain.outbound import (
@@ -29,7 +28,11 @@ from sincpro_framework.auth.domain.outbound import (
     OutgoingRequest,
     TokenSource,
 )
-from sincpro_framework.auth.infrastructure.server_metadata import OidcDiscovery
+from sincpro_framework.auth.infrastructure.server_metadata import (
+    OidcDiscovery,
+    discovery_for,
+    located,
+)
 from sincpro_framework.auth.infrastructure.token_cache import bearer_of
 from sincpro_framework.auth.infrastructure.token_endpoint import IssuedToken, TokenEndpoint
 from sincpro_framework.auth.infrastructure.urllib_http import UrllibHttp
@@ -63,10 +66,13 @@ class RefreshingToken(TokenSource):
         self.client = client
         self.grants = grants
         self.key = key
+        self.discovery = discovery_for(http, discovery)
         self.http: HttpClient = http or UrllibHttp()
-        self.discovery = discovery or OidcDiscovery(http=self.http)
         self.endpoint = TokenEndpoint(
-            endpoint_of(token_endpoint, issuer, self.discovery), client, self.http, now
+            located(token_endpoint, issuer, self.discovery, "token_endpoint"),
+            client,
+            self.http,
+            now,
         )
         self.scope = tuple(sorted(scope))
         self._store = store
@@ -168,6 +174,8 @@ class RefreshingToken(TokenSource):
             lease.release()
 
     def headers_for(self, request: OutgoingRequest) -> dict[str, str]:
+        """`Bearer` with the access token held — refreshed first, by one caller across
+        replicas, when it is about to expire."""
         return {"authorization": f"Bearer {self._current().access_token}"}
 
     def invalidate(
@@ -188,4 +196,5 @@ class RefreshingToken(TokenSource):
         )
 
     def describe(self) -> dict[str, Any]:
+        """The key the grant is held under, and the client refreshing it."""
         return {**super().describe(), "key": self.key, "client_id": self.client.client_id}

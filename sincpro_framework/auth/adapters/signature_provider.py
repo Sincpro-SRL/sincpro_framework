@@ -59,6 +59,7 @@ class SignatureProvider(AuthProvider):
         self.clock = clock
 
     def security_scheme(self) -> dict[str, Any] | None:
+        """The signature header, as an API key in OpenAPI's terms — the nearest it has."""
         return {
             "type": "apiKey",
             "in": "header",

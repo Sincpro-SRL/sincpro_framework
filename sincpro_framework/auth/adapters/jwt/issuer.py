@@ -211,11 +211,13 @@ class TokenIssuer:
             scope=chosen,
         )
 
-    def _reused(self, record: RefreshRecord, now: datetime) -> exceptions.Unauthenticated:
-        """A refresh token used again: within `reuse_grace` a race of the same client — refused,
-        the session kept; past it a replay — the whole session revoked."""
-        assert record.rotated_at is not None
-        if now - record.rotated_at <= self.reuse_grace:
+    def _reused(
+        self, record: RefreshRecord, rotated_at: datetime, now: datetime
+    ) -> exceptions.Unauthenticated:
+        """A refresh token used again, `rotated_at` the moment it was first: within `reuse_grace`
+        a race of the same client — refused, the session kept; past it a replay — the whole
+        session revoked."""
+        if now - rotated_at <= self.reuse_grace:
             return exceptions.Unauthenticated("refresh token already used")
         logger.warning(
             "a refresh token was reused: its session is revoked",
@@ -250,14 +252,14 @@ class TokenIssuer:
             if refusal is not None:
                 raise exceptions.Unauthenticated(refusal)
         if record.rotated_at is not None:
-            raise self._reused(record, now)
+            raise self._reused(record, record.rotated_at, now)
         successor_token = random_token("rt_")
         successor = self._refresh_record(successor_token, record, now)
         if not self.refresh_tokens.rotate(record.digest, successor, now):
             again = self.refresh_tokens.find(record.digest)
             if again is None or again.rotated_at is None:
                 raise exceptions.Unauthenticated("unknown refresh token")
-            raise self._reused(again, now)
+            raise self._reused(again, again.rotated_at, now)
         identity = Identity(
             subject=record.subject,
             kind=IdentityKind(record.kind),

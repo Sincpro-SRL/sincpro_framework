@@ -23,6 +23,7 @@ from sincpro_framework.auth import (
     StaticProvider,
     security,
 )
+from sincpro_framework.ddd.criteria import Condition
 from sincpro_framework.runtime.testing import ScriptedHttp
 
 PDP = "https://pdp.internal"
@@ -132,7 +133,8 @@ def test_openfga_checks_relations_and_lists_what_may_be_read() -> None:
         False,
     ]
     scope = engine.scope(ANA, Invoice)
-    assert scope is not None and scope.selection.value == ["F-1", "F-7"]  # type: ignore[union-attr]
+    assert scope is not None and isinstance(scope.selection, Condition)
+    assert (scope.selection.field, scope.selection.value) == ("id", ["F-1", "F-7"])
     assert engine.scope(ANA, dict) is None
 
 
@@ -182,7 +184,8 @@ def test_an_engine_decides_beside_the_provider_whose_identities_it_judges() -> N
     as_ana = Credentials(transport="http", headers={"authorization": "Bearer ana"})
     as_bea = Credentials(transport="http", headers={"authorization": "Bearer bea"})
     with security.authenticated_as(billing, as_ana):
-        assert billing(CommandApprove(invoice="F-1"), Approved).by == "user:ana"  # type: ignore[union-attr]
+        approved = billing(CommandApprove(invoice="F-1"), Approved)
+    assert approved is not None and approved.by == "user:ana"
     with security.authenticated_as(billing, as_bea), pytest.raises(PermissionDenied):
         billing(CommandApprove(invoice="F-1"), Approved)
     assert provider.name == "sessions"

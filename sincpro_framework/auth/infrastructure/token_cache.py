@@ -42,9 +42,11 @@ class TokenCodec:
 
     @property
     def schema(self) -> str:
+        """The layout's name — a sealed one is another, so neither is read as the other."""
         return "issued-token-1" + ("-sealed" if self.seal else "")
 
     def encode(self, value: IssuedToken) -> bytes:
+        """The token as JSON, its secrets in clear — then sealed, when a sealer was given."""
         plain = json.dumps(
             {
                 **value.model_dump(mode="json", exclude={"access_token", "refresh_token"}),
@@ -57,6 +59,7 @@ class TokenCodec:
         return self.seal.seal(plain) if self.seal else plain
 
     def decode(self, raw: bytes) -> IssuedToken:
+        """The token back — opened first when it was sealed."""
         plain = self.seal.open(raw) if self.seal else raw
         return IssuedToken.model_validate(json.loads(plain))
 
@@ -69,10 +72,13 @@ class TokenStillGood(Validation[IssuedToken]):
         self.skew = skew
 
     def after(self, value: IssuedToken, before: str | None) -> str | None:
+        """The mark: when the token stops being handed out — `skew` before it expires, or half
+        its life when that is shorter."""
         life = value.expires_at - value.received_at
         return str((value.expires_at - min(self.skew, life / 2)).timestamp())
 
     def holds(self, mark: str) -> bool:
+        """Whether that moment has not come yet."""
         return self.now().timestamp() < float(mark)
 
 

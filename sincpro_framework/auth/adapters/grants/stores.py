@@ -37,24 +37,30 @@ class InMemoryGrants(GrantStore):
         self._lock = threading.Lock()
 
     def now(self) -> datetime:
+        """The moment an assignment's `valid_until` is judged against."""
         return self._now()
 
     def assign(self, assignment: Assignment) -> None:
+        """Kept under its subject, tenant and role — a role given again replaces the one
+        before, and its validity."""
         with self._lock:
             key = (assignment.subject, assignment.tenant)
             self._assigned.setdefault(key, {})[assignment.role] = assignment
 
     def unassign(self, subject: str, tenant: str | None, role: str) -> None:
+        """The role taken from `subject` in `tenant` — nothing when it was not given."""
         with self._lock:
             self._assigned.get((subject, tenant), {}).pop(role, None)
 
     def assignments_of(self, subject: str, tenant: str | None) -> list[Assignment]:
+        """What `subject` was given in `tenant`, ordered by role."""
         with self._lock:
             return sorted(
                 self._assigned.get((subject, tenant), {}).values(), key=lambda one: one.role
             )
 
     def holders(self, role: str, tenant: str | None) -> list[Assignment]:
+        """Who was given `role` in `tenant`, ordered by subject."""
         with self._lock:
             return sorted(
                 (
@@ -66,14 +72,17 @@ class InMemoryGrants(GrantStore):
             )
 
     def entitle(self, tenant: str, entitlement: str) -> None:
+        """`tenant` entitled to `entitlement` — again is the same."""
         with self._lock:
             self._entitled.setdefault(tenant, set()).add(entitlement)
 
     def withdraw(self, tenant: str, entitlement: str) -> None:
+        """The entitlement withdrawn from `tenant` — nothing when it had none."""
         with self._lock:
             self._entitled.get(tenant, set()).discard(entitlement)
 
     def entitlements_of(self, tenant: str | None) -> frozenset[str]:
+        """What `tenant` is entitled to."""
         with self._lock:
             return frozenset(self._entitled.get(tenant, set()))
 
@@ -93,6 +102,7 @@ class KeyValueGrants(GrantStore):
         self._now = now
 
     def now(self) -> datetime:
+        """The moment an assignment's `valid_until` is judged against."""
         return self._now()
 
     def store(self) -> KeyValueStore:
@@ -130,6 +140,8 @@ class KeyValueGrants(GrantStore):
         raise ServiceUnavailableError(f"grants under {key} are contended: try again")
 
     def assign(self, assignment: Assignment) -> None:
+        """Written twice, each by compare-and-set: under the subject's assignments and under
+        the role's holders — so both are read in one `get`."""
         record = assignment.model_dump(mode="json")
         self._update(
             self._assigned_key(assignment.subject, assignment.tenant),
@@ -143,6 +155,8 @@ class KeyValueGrants(GrantStore):
         )
 
     def unassign(self, subject: str, tenant: str | None, role: str) -> None:
+        """Dropped from the subject's assignments and from the role's holders, each by
+        compare-and-set."""
         self._update(
             self._assigned_key(subject, tenant),
             lambda records: [one for one in records if one["role"] != role],
@@ -153,6 +167,7 @@ class KeyValueGrants(GrantStore):
         )
 
     def assignments_of(self, subject: str, tenant: str | None) -> list[Assignment]:
+        """The subject's assignments in `tenant`, in one `get`, ordered by role."""
         found = [
             Assignment.model_validate(one)
             for one in self._read(self._assigned_key(subject, tenant))
@@ -160,6 +175,7 @@ class KeyValueGrants(GrantStore):
         return sorted(found, key=lambda one: one.role)
 
     def holders(self, role: str, tenant: str | None) -> list[Assignment]:
+        """The role's holders in `tenant`, in one `get`, ordered by subject."""
         found = [
             Assignment.model_validate(one)
             for one in self._read(self._holders_key(role, tenant))
@@ -167,6 +183,7 @@ class KeyValueGrants(GrantStore):
         return sorted(found, key=lambda one: one.subject)
 
     def entitle(self, tenant: str, entitlement: str) -> None:
+        """Added to the tenant's entitlements by compare-and-set — again is the same."""
         self._update(
             self._entitled_key(tenant),
             lambda records: [one for one in records if one["key"] != entitlement]
@@ -174,10 +191,12 @@ class KeyValueGrants(GrantStore):
         )
 
     def withdraw(self, tenant: str, entitlement: str) -> None:
+        """Removed from the tenant's entitlements by compare-and-set."""
         self._update(
             self._entitled_key(tenant),
             lambda records: [one for one in records if one["key"] != entitlement],
         )
 
     def entitlements_of(self, tenant: str | None) -> frozenset[str]:
+        """The tenant's entitlements, in one `get`."""
         return frozenset(one["key"] for one in self._read(self._entitled_key(tenant)))

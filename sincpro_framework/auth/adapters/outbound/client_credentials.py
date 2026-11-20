@@ -23,7 +23,11 @@ from sincpro_framework.auth.adapters.client_auth import ClientSecretBasic
 from sincpro_framework.auth.domain import exceptions
 from sincpro_framework.auth.domain.http import ClientAuthentication, HttpClient
 from sincpro_framework.auth.domain.outbound import OutgoingRequest, TokenSource
-from sincpro_framework.auth.infrastructure.server_metadata import OidcDiscovery
+from sincpro_framework.auth.infrastructure.server_metadata import (
+    OidcDiscovery,
+    discovery_for,
+    located,
+)
 from sincpro_framework.auth.infrastructure.token_cache import TokenCache, bearer_of
 from sincpro_framework.auth.infrastructure.token_endpoint import IssuedToken, TokenEndpoint
 from sincpro_framework.auth.infrastructure.urllib_http import UrllibHttp
@@ -41,17 +45,6 @@ def client_of(
     if client_id is None or client_secret is None:
         raise exceptions.ProgrammingError("give client=, or client_id= and client_secret=")
     return ClientSecretBasic(client_id, client_secret)
-
-
-def endpoint_of(
-    token_endpoint: str | None, issuer: str | None, discovery: OidcDiscovery
-) -> str | Callable[[], str]:
-    """The token endpoint given, else a function discovering it from `issuer`."""
-    if token_endpoint is not None:
-        return token_endpoint
-    if issuer is None:
-        raise exceptions.ProgrammingError("give token_endpoint=, or issuer= to discover it")
-    return lambda: discovery.of(issuer).endpoint("token_endpoint")
 
 
 class ClientCredentials(TokenSource):
@@ -76,10 +69,10 @@ class ClientCredentials(TokenSource):
         dpop: "DpopProver | None" = None,
     ) -> None:
         self.client = client_of(client, client_id, client_secret)
+        self.discovery = discovery_for(http, discovery)
         self.http: HttpClient = http or UrllibHttp()
-        self.discovery = discovery or OidcDiscovery(http=self.http)
         self.endpoint = TokenEndpoint(
-            endpoint_of(token_endpoint, issuer, self.discovery),
+            located(token_endpoint, issuer, self.discovery, "token_endpoint"),
             self.client,
             self.http,
             now,
@@ -104,18 +97,29 @@ class ClientCredentials(TokenSource):
             None if self.dpop is None else self.dpop.thumbprint,
         )
 
+    def _proved(self, dpop: "DpopProver", fields: list[tuple[str, str]]) -> IssuedToken:
+        """A DPoP-bound token: asked with a proof of `dpop`'s key — and asked once more, with
+        the nonce the server answered, when it demands one (RFC 9449 §8, `use_dpop_nonce`)."""
+        url = self.endpoint.url
+        try:
+            return self.endpoint.grant(fields, {"dpop": dpop.proof("POST", url)})
+        except exceptions.CredentialsRejected as refused:
+            if refused.error != "use_dpop_nonce" or not refused.dpop_nonce:
+                raise
+            dpop.learn(url, {"dpop-nonce": refused.dpop_nonce})
+            return self.endpoint.grant(fields, {"dpop": dpop.proof("POST", url)})
+
     def _fetched(self) -> IssuedToken:
-        """A new token from the endpoint."""
+        """A new token from the endpoint — proving the client's key when it holds one."""
         fields = [("grant_type", "client_credentials")]
         if self.scope:
             fields.append(("scope", " ".join(self.scope)))
         if self.audience:
             fields.append(("audience", self.audience))
         fields.extend(("resource", one) for one in self.resources)
-        headers = (
-            {} if self.dpop is None else {"dpop": self.dpop.proof("POST", self.endpoint.url)}
-        )
-        return self.endpoint.grant(fields, headers)
+        if self.dpop is not None:
+            return self._proved(self.dpop, fields)
+        return self.endpoint.grant(fields)
 
     def token(self) -> IssuedToken:
         """The current token — cached, fetched when there is none still good."""
@@ -139,12 +143,15 @@ class ClientCredentials(TokenSource):
         presented: Mapping[str, str],
         answer: Mapping[str, str] | None = None,
     ) -> bool:
+        """Whether asking again may succeed: a 401 bringing a new DPoP nonce — now learned; or
+        the token refused dropped from the cache (`TokenCache.refused`)."""
         if self.dpop is not None and answer and self.dpop.learn(request.url, answer):
             return True
         token = bearer_of(presented)
         return token is not None and self.cache.refused(self._key(), token)
 
     def describe(self) -> dict[str, Any]:
+        """The client, the scope and the audience — never a secret."""
         return {
             **super().describe(),
             "client_id": self.client.client_id,

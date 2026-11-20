@@ -23,7 +23,15 @@ from faststream.rabbit import RabbitBroker, TestRabbitBroker
 from faststream.redis import RedisBroker, TestRedisBroker
 
 from sincpro_framework import Feature, UseFramework, exceptions
-from sincpro_framework.auth import AccessControl, Permission
+from sincpro_framework.auth import (
+    AccessControl,
+    HexDigest,
+    OutgoingRequest,
+    Permission,
+    RequestSigner,
+    SignatureProvider,
+    security,
+)
 from sincpro_framework.data_layer.caching import (
     IdempotencyRecord,
     KeyValueRecords,
@@ -295,6 +303,49 @@ def test_an_auth_refusal_is_dead_lettered_and_logged_as_security(caplog):
     assert delivery.ran == []
     assert delivery.dead[0][DEAD_LETTER_KIND] in {"unauthenticated", "permission_denied"}
     assert delivery.dead[0][ATTEMPTS_HEADER] == "1"
+
+
+def test_a_message_signed_over_its_body_is_verified_and_a_tampered_one_refused():
+    class Can(Permission):
+        ISSUE = "billing.issue"
+
+    secret = "whsec-sales"
+    auth = AccessControl[Can](
+        providers=[
+            SignatureProvider(
+                {"2026-11": secret},
+                HexDigest("x-signature"),
+                subject="service:sales",
+                permissions={Can.ISSUE},
+            )
+        ]
+    )
+
+    def guarded(ran: list[str]) -> list[UseFramework]:
+        bus = UseFramework("billing", log_after_execution=False)
+
+        @bus.feature(CommandIssueInvoice)
+        @auth.requires(Can.ISSUE)
+        @queue.consumes(ISSUE_CHANNEL, producers=(SALES,))
+        class IssueInvoice(Feature):
+            def execute(self, dto: CommandIssueInvoice) -> None:
+                ran.append(security.identity.subject)
+
+        auth.on(bus)
+        return [bus]
+
+    body, channel, headers = issue(1)
+    signature = RequestSigner(secret, HexDigest("x-signature")).headers_for(
+        OutgoingRequest(url="queue://billing", body=body)
+    )
+    delivered = Delivery(KafkaBroker, TestKafkaBroker, buses=guarded)
+    delivered.run((body, channel, {**headers, **signature}))
+    assert delivered.ran == ["service:sales"]
+    other, _, other_headers = issue(2)
+    tampered = Delivery(KafkaBroker, TestKafkaBroker, buses=guarded)
+    tampered.run((other, channel, {**other_headers, **signature}))
+    assert tampered.ran == []
+    assert tampered.dead[0][DEAD_LETTER_KIND] == "unauthenticated"
 
 
 def test_an_expired_message_is_dead_lettered():

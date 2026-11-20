@@ -2,6 +2,7 @@
 every request (RFC 9449), or the client certificate of an mTLS connection (RFC 8705); a SPIFFE
 workload is its certificate; and what a shared store keeps of a secret is sealed."""
 
+import hashlib
 import time
 from datetime import UTC, datetime, timedelta
 
@@ -176,11 +177,27 @@ def test_a_client_proves_its_key_for_the_token_and_for_each_request() -> None:
     scheme, access = headers["authorization"].split()
     proof = jws.parse(headers["dpop"])
     assert scheme == "DPoP" and proof.claims["htu"] == f"{API}/qr"
-    assert proof.claims["ath"] == jws.encoded(
-        __import__("hashlib").sha256(access.encode()).digest()
-    )
+    assert proof.claims["ath"] == jws.encoded(hashlib.sha256(access.encode()).digest())
     assert bank.invalidate(request, headers, {"dpop-nonce": "n-1"})
     assert jws.parse(bank.headers_for(request)["dpop"]).claims["nonce"] == "n-1"
+
+
+def test_a_token_endpoint_demanding_a_nonce_is_asked_again_with_it() -> None:
+    server = FakeTokenEndpoint(clients={"billing": "s3cret"}, dpop_nonce="n-7")
+    prover = DpopProver()
+    bank = ClientCredentials(
+        client_id="billing",
+        client_secret="s3cret",
+        token_endpoint=server.token_endpoint,
+        http=server,
+        cache=TokenCache(InMemoryKeyValue()),
+        dpop=prover,
+    )
+    headers = bank.headers_for(OutgoingRequest(url=f"{API}/qr", method="POST"))
+    assert headers["authorization"].startswith("DPoP ")
+    assert server.count(server.token_endpoint) == 2
+    assert "nonce" not in jws.parse(server.sent[0].headers["dpop"]).claims
+    assert jws.parse(server.sent[1].headers["dpop"]).claims["nonce"] == "n-7"
 
 
 def certificate(

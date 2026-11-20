@@ -43,6 +43,9 @@ class HashedCredentials(CredentialVerifier):
         self.hasher = hasher
 
     def verify(self, username: str, password: str) -> Identity | None:
+        """The identity of `username` when `password` is its own — the hasher verifies a dummy
+        hash for a name it does not know, so a missing account answers as slowly as a wrong
+        password."""
         stored, identity = self.entries.get(username, (None, None))
         return identity if self.hasher.verify(stored, password) else None
 
@@ -72,9 +75,12 @@ class BasicProvider(AuthProvider):
         self._lock = threading.Lock()
 
     def security_scheme(self) -> dict[str, Any] | None:
+        """HTTP Basic (RFC 7617)."""
         return {"type": "http", "scheme": "basic"}
 
     def challenge(self) -> str | None:
+        """`Basic realm=…, charset="UTF-8"` — the prompt, and the password read as UTF-8 (RFC
+        7617 §2.1)."""
         return f'Basic realm="{self.realm}", charset="UTF-8"'
 
     def _pair(self, credentials: Credentials) -> tuple[str, str] | None:

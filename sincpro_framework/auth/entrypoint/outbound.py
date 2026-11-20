@@ -142,6 +142,8 @@ def httpx_auth(source: TokenSource, tenant: str | None = None) -> Any:
             return asked.model_copy(update={"tenant": tenant or asked.tenant})
 
         def auth_flow(self, request: Any) -> Generator[Any, Any, None]:
+            """httpx's hook: the source's headers set; a 401 the source invalidates sends the
+            request once more, with new ones."""
             asked = self._asked(request)
             headers = source.headers_for(asked)
             request.headers.update(headers)
@@ -153,6 +155,7 @@ def httpx_auth(source: TokenSource, tenant: str | None = None) -> Any:
                 yield request
 
         async def async_auth_flow(self, request: Any) -> AsyncGenerator[Any, Any]:
+            """The same, the source asked off the event loop."""
             asked = self._asked(request)
             headers = await asyncio.to_thread(source.headers_for, asked)
             request.headers.update(headers)

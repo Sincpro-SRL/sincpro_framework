@@ -60,6 +60,8 @@ class TokenSources(TokenSource):
         return found
 
     def headers_for(self, request: OutgoingRequest) -> dict[str, str]:
+        """The headers of the source of the tenant the request acts for — never another
+        tenant's."""
         return self.source_of(request.tenant).headers_for(request)
 
     def invalidate(
@@ -68,7 +70,9 @@ class TokenSources(TokenSource):
         presented: Mapping[str, str],
         answer: Mapping[str, str] | None = None,
     ) -> bool:
+        """Asked of the source of the request's tenant."""
         return self.source_of(request.tenant).invalidate(request, presented, answer)
 
     def describe(self) -> dict[str, Any]:
+        """How many tenants have a source in this process."""
         return {**super().describe(), "tenants": len(self._sources)}

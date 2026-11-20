@@ -23,7 +23,7 @@ from sincpro_framework.auth.domain import exceptions
 from sincpro_framework.auth.domain.http import HttpClient, HttpRequest, safe_url
 from sincpro_framework.auth.domain.keys import KeySource, VerificationKey
 from sincpro_framework.auth.infrastructure.jose_keys import ASYMMETRIC, PublicKey, fits
-from sincpro_framework.auth.infrastructure.server_metadata import OidcDiscovery
+from sincpro_framework.auth.infrastructure.server_metadata import OidcDiscovery, discovery_for
 from sincpro_framework.auth.infrastructure.urllib_http import UrllibHttp
 from sincpro_framework.data_layer.caching import (
     Cache,
@@ -144,7 +144,7 @@ class Jwks(KeySource):
     ) -> "Jwks":
         """The JWKS whose URL `issuer`'s discovery document publishes (`jwks_uri`), found on the
         first token."""
-        found = discovery or OidcDiscovery(http=http)
+        found = discovery_for(http, discovery)
         return cls(
             lambda: found.of(issuer).endpoint("jwks_uri"), algorithms, http=http, **options
         )

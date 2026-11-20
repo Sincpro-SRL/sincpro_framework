@@ -37,6 +37,8 @@ class OneTimeGrant(DataTransferObject):
     data: dict[str, str] = Field(default_factory=dict)
     issued_at: datetime
     expires_at: datetime
+    single_outstanding: bool = True
+    """Whether a newer token issued to the subject for the purpose voids this one."""
 
 
 class OneTimeTokens:
@@ -48,17 +50,22 @@ class OneTimeTokens:
         prefix: str = "sincpro:auth:once",
         clock: Callable[[], float] = time.time,
     ) -> None:
+        """`store` holds the tokens — the running context's when not given; `prefix` separates
+        their keys from others in it; `clock` is the time they expire by."""
         self._store = store
         self.prefix = prefix
         self.clock = clock
 
     def store(self) -> KeyValueStore:
+        """The store the tokens are kept in — the one given, else the running context's."""
         return self._store if self._store is not None else key_value_store_of(current_store())
 
     def _key(self, purpose: str, token: str) -> str:
+        """Where a token's grant is kept: under its purpose and its digest, never the token."""
         return f"{self.prefix}:{purpose}:{digest(token)}"
 
     def _latest_key(self, purpose: str, subject: str) -> str:
+        """Where the digest of the last token issued to `subject` for `purpose` is kept."""
         return f"{self.prefix}:latest:{purpose}:{digest(subject)}"
 
     def issue(
@@ -79,21 +86,18 @@ class OneTimeTokens:
             data=dict(data or {}),
             issued_at=datetime.fromtimestamp(now, UTC),
             expires_at=datetime.fromtimestamp(now + ttl.total_seconds(), UTC),
+            single_outstanding=single_outstanding,
         )
         store = self.store()
-        record = grant.model_dump_json().encode()
         if single_outstanding:
             store.set(self._latest_key(purpose, subject), digest(token).encode(), ttl)
-            record = b"1" + record
-        else:
-            record = b"0" + record
-        store.set(self._key(purpose, token), record, ttl)
+        store.set(self._key(purpose, token), grant.model_dump_json().encode(), ttl)
         return token
 
     def _grant(self, raw: bytes, purpose: str, token: str) -> OneTimeGrant | None:
         """The grant a stored record holds — `None` when a newer one voided it."""
-        single, grant = raw[:1] == b"1", OneTimeGrant.model_validate_json(raw[1:])
-        if single:
+        grant = OneTimeGrant.model_validate_json(raw)
+        if grant.single_outstanding:
             latest = self.store().get(self._latest_key(purpose, grant.subject))
             if latest is None or latest.decode() != digest(token):
                 return None

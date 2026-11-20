@@ -2,6 +2,7 @@
 and on Redis honour, racing on a file as replicas would on a server — and the token issuer whole
 on them."""
 
+import math
 import tempfile
 from datetime import UTC, datetime
 from pathlib import Path
@@ -61,7 +62,7 @@ class TestDatabaseKeyValue(KeyValueStoreContract):
         return DatabaseKeyValue(database(), key_values, now=self.clock.now)
 
     def expire(self, store: KeyValueStore, seconds: float) -> None:
-        self.clock.advance(seconds=seconds)  # type: ignore[arg-type]
+        self.clock.advance(seconds=math.ceil(seconds))
 
 
 class TestRevocationsOnADatabase(RevocationsContract):

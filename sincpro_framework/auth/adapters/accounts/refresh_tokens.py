@@ -29,14 +29,18 @@ class InMemoryRefreshTokens(RefreshTokens):
         self._lock = threading.Lock()
 
     def save(self, record: RefreshRecord) -> None:
+        """Kept by its digest, in this process."""
         with self._lock:
             self._records[record.digest] = record
 
     def find(self, digest: str) -> RefreshRecord | None:
+        """The record of `digest` — `None` when unknown."""
         with self._lock:
             return self._records.get(digest)
 
     def rotate(self, digest: str, successor: RefreshRecord, at: datetime) -> bool:
+        """Under one lock: the token marked rotated at `at` and its successor kept — `False`
+        when it is unknown or was rotated already."""
         with self._lock:
             held = self._records.get(digest)
             if held is None or held.rotated_at is not None:
@@ -46,6 +50,8 @@ class InMemoryRefreshTokens(RefreshTokens):
             return True
 
     def sessions_of(self, subject: str) -> list[RefreshRecord]:
+        """The subject's tokens not rotated, nor past their expiry or their session's end —
+        oldest first."""
         now = self.now()
         with self._lock:
             return sorted(
@@ -74,6 +80,7 @@ class KeyValueRefreshTokens(RefreshTokens):
         self.now = now
 
     def store(self) -> KeyValueStore:
+        """The store the tokens are kept in — the one given, else the running context's."""
         return self._store if self._store is not None else key_value_store_of(current_store())
 
     def _key(self, digest: str) -> str:
@@ -102,16 +109,21 @@ class KeyValueRefreshTokens(RefreshTokens):
         raise ServiceUnavailableError("refresh token sessions are contended: try again")
 
     def save(self, record: RefreshRecord) -> None:
+        """Under its digest, living until its session ends, and indexed under its subject by
+        compare-and-set."""
         self.store().set(
             self._key(record.digest), record.model_dump_json().encode(), self._ttl(record)
         )
         self._indexed(record)
 
     def find(self, digest: str) -> RefreshRecord | None:
+        """The record of `digest` — `None` when unknown or past its session."""
         raw = self.store().get(self._key(digest))
         return None if raw is None else RefreshRecord.model_validate_json(raw)
 
     def rotate(self, digest: str, successor: RefreshRecord, at: datetime) -> bool:
+        """Compare-and-set: the record marked rotated only if it still holds what was read —
+        of racing rotations one wins — and the successor saved after."""
         store = self.store()
         raw = store.get(self._key(digest))
         if raw is None:
@@ -126,6 +138,8 @@ class KeyValueRefreshTokens(RefreshTokens):
         return True
 
     def sessions_of(self, subject: str) -> list[RefreshRecord]:
+        """The subject's index read, and of its tokens the ones not rotated, nor past their
+        expiry or their session's end — oldest first."""
         raw = self.store().get(self._index_key(subject))
         if raw is None:
             return []

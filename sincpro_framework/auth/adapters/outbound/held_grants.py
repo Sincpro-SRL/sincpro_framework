@@ -24,10 +24,13 @@ class InMemoryHeldGrants(HeldGrants):
         self._lock = threading.Lock()
 
     def current(self, key: str) -> HeldGrant | None:
+        """The grant held under `key` — `None` when there is none."""
         with self._lock:
             return self._held.get(key)
 
     def replace(self, key: str, expected: HeldGrant | None, new: HeldGrant | None) -> bool:
+        """Under one lock: `new` written — `None` drops it — only when `expected` is what is
+        held."""
         with self._lock:
             if self._held.get(key) != expected:
                 return False
@@ -52,6 +55,7 @@ class KeyValueHeldGrants(HeldGrants):
         self.prefix = prefix
 
     def store(self) -> KeyValueStore:
+        """The store the grants are kept in — the one given, else the running context's."""
         return self._store if self._store is not None else key_value_store_of(current_store())
 
     def _key(self, key: str) -> str:
@@ -66,6 +70,7 @@ class KeyValueHeldGrants(HeldGrants):
         return HeldGrant.model_validate_json(plain)
 
     def current(self, key: str) -> HeldGrant | None:
+        """The grant held under `key`, opened when it was sealed — `None` when there is none."""
         raw = self.store().get(self._key(key))
         return None if raw is None else self._decoded(raw)
 

@@ -50,10 +50,14 @@ class AesGcmSealer:
         return base64.b64encode(secrets.token_bytes(32)).decode()
 
     def seal(self, plain: bytes) -> bytes:
+        """A version byte, a random 96-bit nonce and AES-GCM over `plain` — the version
+        authenticated with it."""
         nonce = secrets.token_bytes(12)
         return VERSION + nonce + self._aead.encrypt(nonce, plain, VERSION)
 
     def open(self, sealed: bytes) -> bytes:
+        """What `seal` sealed — `ValueError` for another version, another key, or a byte
+        changed."""
         if sealed[:1] != VERSION or len(sealed) < 13:
             raise ValueError("not a sealed value")
         try:

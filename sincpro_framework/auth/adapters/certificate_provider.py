@@ -59,6 +59,7 @@ class CertificateProvider(AuthProvider):
         self.clock = clock
 
     def security_scheme(self) -> dict[str, Any] | None:
+        """Mutual TLS — the client's certificate is its credential."""
         return {"type": "mutualTLS"}
 
     def _loaded(self, raw: bytes) -> Any:

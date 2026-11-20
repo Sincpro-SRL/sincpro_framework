@@ -53,9 +53,11 @@ class HexDigest(SignatureStyle):
         self.prefix = prefix
 
     def written(self, secret: bytes, body: bytes, timestamp: int) -> str:
+        """`<prefix><hex>` of the body's HMAC — the timestamp is not signed."""
         return f"{self.prefix}{hmac_sha256(secret, body).hex()}"
 
     def read(self, value: str) -> tuple[list[bytes], int | None]:
+        """The one signature after the prefix — none for a value without it, or not hex."""
         if not value.startswith(self.prefix):
             return [], None
         try:
@@ -64,6 +66,7 @@ class HexDigest(SignatureStyle):
             return [], None
 
     def covered(self, body: bytes, timestamp: int | None) -> bytes:
+        """The body alone."""
         return body
 
 
@@ -74,12 +77,16 @@ class TimestampedSignature(SignatureStyle):
         self.header = header.lower()
 
     def covered(self, body: bytes, timestamp: int | None) -> bytes:
+        """`<timestamp>.` and the body — the moment is signed with it."""
         return f"{timestamp}.".encode() + body
 
     def written(self, secret: bytes, body: bytes, timestamp: int) -> str:
+        """`t=<timestamp>,v1=<hex>`."""
         return f"t={timestamp},v1={hmac_sha256(secret, self.covered(body, timestamp)).hex()}"
 
     def read(self, value: str) -> tuple[list[bytes], int | None]:
+        """Every `v1=` signature and the `t=` timestamp — none for a value that does not
+        parse."""
         timestamp: int | None = None
         signatures: list[bytes] = []
         for part in value.split(","):

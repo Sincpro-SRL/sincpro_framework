@@ -30,6 +30,7 @@ class DecidedBy(AuthProvider):
         self.needs_body = provider.needs_body
 
     def authenticate(self, credentials: Credentials) -> Identity | None:
+        """Who is calling — the provider's answer."""
         return self.provider.authenticate(credentials)
 
     def has_permission(
@@ -39,6 +40,7 @@ class DecidedBy(AuthProvider):
         resource: Any = None,
         context: Mapping[str, Any] | None = None,
     ) -> bool:
+        """The engine's decision — the provider is not asked."""
         return self.engine.decide(identity, permission, resource, context)
 
     def permitted(
@@ -48,25 +50,33 @@ class DecidedBy(AuthProvider):
         resources: Sequence[Any],
         context: Mapping[str, Any] | None = None,
     ) -> list[bool]:
+        """The engine's decisions — in one request when it batches."""
         return self.engine.decide_many(identity, permission, resources, context)
 
     def scope(self, identity: Identity, aggregate: type) -> "Criteria | None":
+        """What the engine says the identity may read of `aggregate` — the provider's scope
+        when the engine has none."""
         found = self.engine.scope(identity, aggregate)
         return found if found is not None else self.provider.scope(identity, aggregate)
 
     def security_scheme(self) -> dict[str, Any] | None:
+        """The provider's — the engine decides permissions, nothing else."""
         return self.provider.security_scheme()
 
     def challenge(self) -> str | None:
+        """The provider's — the engine decides permissions, nothing else."""
         return self.provider.challenge()
 
     def challenge_for(self, refusal: exceptions.Unauthenticated | None) -> str | None:
+        """The provider's — the engine decides permissions, nothing else."""
         return self.provider.challenge_for(refusal)
 
     def credentials_for(self, identity: Identity) -> Credentials | None:
+        """The provider's — the engine decides permissions, nothing else."""
         return self.provider.credentials_for(identity)
 
     def outbound_for(
         self, identity: Identity, audience: str | None = None
     ) -> Credentials | None:
+        """The provider's — the engine decides permissions, nothing else."""
         return self.provider.outbound_for(identity, audience)

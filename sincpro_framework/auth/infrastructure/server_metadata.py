@@ -6,13 +6,17 @@ revocation and device endpoints — read once from its discovery document and ca
         ->  "https://auth.sincpro.com.bo/realms/sincpro/protocol/openid-connect/certs"
 
 Context: one component both halves share — `JwtProvider.from_issuer` finds the keys here,
-`ClientCredentials(issuer=…)` the token endpoint — so an issuer is discovered once per process.
+`ClientCredentials(issuer=…)` the token endpoint. Every component built without `http=` nor
+`discovery=` asks the process's own (`discovery_for`), so an issuer is discovered once per
+process, not once per component.
 OpenID Connect Discovery is tried first, RFC 8414 next. A document that names another issuer is
 refused (a mix-up attack: a server answering for another), never trusted. The document is cached
 an hour and, while the server is down, the last good one is served for a day (`FailSafe`) — an
 identity provider restarting never refuses every token.
 """
 
+import threading
+from collections.abc import Callable
 from datetime import timedelta
 from typing import Any
 from urllib.parse import urlsplit, urlunsplit
@@ -168,3 +172,41 @@ class OidcDiscovery:
     def forget(self, issuer: str) -> None:
         """Drop `issuer`'s cached document — the next call fetches it again."""
         self.cache.forget(("oidc-discovery", issuer), self._codec)
+
+
+_PROCESS_DISCOVERY: list[OidcDiscovery] = []
+_PROCESS_DISCOVERY_LOCK = threading.Lock()
+
+
+def discovery_for(http: HttpClient | None, discovery: OidcDiscovery | None) -> OidcDiscovery:
+    """The discovery a component asks: `discovery` when given; one through `http` when only that
+    was — a test's `ScriptedHttp`, a project's own client; else the process's, made on first use
+    and shared by every component built on the defaults.
+
+        discovery_for(None, None) is discovery_for(None, None)          ->  True
+        discovery_for(ScriptedHttp(...), None).http                     ->  that ScriptedHttp
+    """
+    if discovery is not None:
+        return discovery
+    if http is not None:
+        return OidcDiscovery(http=http)
+    with _PROCESS_DISCOVERY_LOCK:
+        if not _PROCESS_DISCOVERY:
+            _PROCESS_DISCOVERY.append(OidcDiscovery())
+        return _PROCESS_DISCOVERY[0]
+
+
+def located(
+    endpoint: str | None, issuer: str | None, discovery: OidcDiscovery, name: str
+) -> str | Callable[[], str]:
+    """The endpoint given; else a function discovering `name` from `issuer` on its first call —
+    never at construction; `ProgrammingError` with neither.
+
+        located(None, KEYCLOAK, discovery, "token_endpoint")()
+            ->  "https://auth.sincpro.com.bo/realms/sincpro/protocol/openid-connect/token"
+    """
+    if endpoint is not None:
+        return endpoint
+    if issuer is None:
+        raise exceptions.ProgrammingError(f"no {name} given, and no issuer= to discover it")
+    return lambda: discovery.of(issuer).endpoint(name)

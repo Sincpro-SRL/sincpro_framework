@@ -62,20 +62,27 @@ class AuthError(ClientError):
 
 class Unauthenticated(AuthError):
     """Who is calling is not known well enough. `step_up` names what the caller has to come back
-    with — MFA, for RFC 9470's challenge."""
+    with — MFA, for RFC 9470's challenge; `anonymous` says it presented nothing at all."""
 
     failure_kind = FailureKind.UNAUTHENTICATED
     http_status = 401
 
     def __init__(
-        self, reason: str, step_up: str | None = None, max_age: int | None = None
+        self,
+        reason: str,
+        step_up: str | None = None,
+        max_age: int | None = None,
+        anonymous: bool = False,
     ) -> None:
         """A refusal saying why — `"expired token"` — and, for a step-up, what to bring and,
-        in seconds, how recent the authentication must be."""
+        in seconds, how recent the authentication must be. `anonymous` when the caller
+        presented no credential: its challenge names no error (RFC 6750 §3.1) — there is no
+        token to call invalid."""
         super().__init__(reason)
         self.reason = reason
         self.step_up = step_up
         self.max_age = max_age
+        self.anonymous = anonymous
 
     def refusal_body(self) -> dict[str, Any]:
         """The kind and the reason, and `step_up` and `max_age` when named."""
@@ -152,13 +159,22 @@ class CredentialsRejected(ExternalServiceError):
         CredentialsRejected("https://auth.bank.bo/token", "invalid_client", "unknown client")
     """
 
-    def __init__(self, endpoint: str, error: str, description: str = "") -> None:
-        """What `endpoint` answered: its `error` code and, cut short, its `error_description`."""
+    def __init__(
+        self,
+        endpoint: str,
+        error: str,
+        description: str = "",
+        dpop_nonce: str | None = None,
+    ) -> None:
+        """What `endpoint` answered: its `error` code, cut short its `error_description`, and
+        the `DPoP-Nonce` it demands proofs carry from now on, when it sent one (RFC 9449 §8).
+        """
         clean = "".join(one for one in description if one.isprintable())[:200]
         super().__init__(f"{endpoint} refused: {error}" + (f" — {clean}" if clean else ""))
         self.endpoint = endpoint
         self.error = error
         self.description = clean
+        self.dpop_nonce = dpop_nonce
 
 
 class GrantRejected(CredentialsRejected):
@@ -173,6 +189,7 @@ class NoCredentialsFor(ClientError):
     failure_kind = FailureKind.PERMISSION_DENIED
 
     def __init__(self, tenant: str | None, source: str) -> None:
+        """`tenant`, the one the call acts for; `source`, the credentials it has none of."""
         super().__init__(f"tenant {tenant!r} has no credentials for {source}")
         self.tenant = tenant
         self.source = source

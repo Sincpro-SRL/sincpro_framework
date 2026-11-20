@@ -17,7 +17,7 @@ from datetime import datetime
 
 from sincpro_framework.auth.domain import exceptions
 from sincpro_framework.auth.domain.grants import Assignment, GrantCatalog, GrantStore
-from sincpro_framework.auth.domain.revocations import Revocations
+from sincpro_framework.auth.domain.revocations import Revocations, tenant_subject
 
 
 class GrantAdministration:
@@ -99,10 +99,10 @@ class GrantAdministration:
             raise exceptions.InvalidGrant(f"{entitlement} is not an entitlement")
         self.store.entitle(tenant, entitlement)
         if self.revocations is not None:
-            self.revocations.bump_permissions(f"tenant:{tenant}")
+            self.revocations.bump_permissions(tenant_subject(tenant))
 
     def withdraw(self, tenant: str, entitlement: str) -> None:
         """The tenant no longer has `entitlement`; its version bumped."""
         self.store.withdraw(tenant, entitlement)
         if self.revocations is not None:
-            self.revocations.bump_permissions(f"tenant:{tenant}")
+            self.revocations.bump_permissions(tenant_subject(tenant))

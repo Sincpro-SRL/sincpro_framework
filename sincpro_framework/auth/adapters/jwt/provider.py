@@ -32,7 +32,11 @@ from sincpro_framework.auth.domain.identity import Credentials, Identity
 from sincpro_framework.auth.domain.keys import KeySource
 from sincpro_framework.auth.domain.provider import AuthProvider
 from sincpro_framework.auth.domain.resolver import IdentityResolver, resolved
-from sincpro_framework.auth.domain.revocations import Revocations
+from sincpro_framework.auth.domain.revocations import (
+    Revocations,
+    related_of,
+    remembering_versions,
+)
 from sincpro_framework.auth.infrastructure import jws
 
 if TYPE_CHECKING:
@@ -178,9 +182,11 @@ class JwtProvider(AuthProvider):
     def challenge_for(self, refusal: exceptions.Unauthenticated | None) -> str | None:
         """`Bearer realm=…`, with `error="invalid_token"` and its reason for a token that
         failed — `insufficient_user_authentication` with `acr_values` and `max_age` for a
-        step-up (RFC 9470) — and the resource metadata URL when there is one (RFC 9728).
+        step-up (RFC 9470), no error at all for a caller that presented none (RFC 6750 §3.1) —
+        and the resource metadata URL when there is one (RFC 9728).
 
             Bearer realm="sincpro", error="invalid_token", error_description="token expired"
+            Bearer realm="sincpro"                                    nothing was presented
         """
         parts = [f'Bearer realm="{_quoted(self.realm)}"']
         if refusal is not None and refusal.step_up is not None:
@@ -189,7 +195,7 @@ class JwtProvider(AuthProvider):
             parts.append(f'acr_values="{_quoted(refusal.step_up)}"')
             if refusal.max_age is not None:
                 parts.append(f"max_age={refusal.max_age}")
-        elif refusal is not None and refusal.reason:
+        elif refusal is not None and refusal.reason and not refusal.anonymous:
             parts.append('error="invalid_token"')
             parts.append(f'error_description="{_quoted(refusal.reason)}"')
         if self.resource is not None:
@@ -199,6 +205,7 @@ class JwtProvider(AuthProvider):
         return ", ".join(parts)
 
     def challenge(self) -> str | None:
+        """The challenge of a call that presented nothing: `Bearer realm=…`, with no error."""
         return self.challenge_for(None)
 
     def _issuer_of(self, parsed: jws.Jws) -> Issuer | None:
@@ -236,11 +243,14 @@ class JwtProvider(AuthProvider):
 
     def _not_revoked(self, identity: Identity, parsed: jws.Jws) -> None:
         """`Unauthenticated` when the token, its session or every session of its subject was
-        revoked — one read of `revocations` — or when it carries permissions (`pv`) of a version
-        the subject's has moved past: they changed, the token must be refreshed."""
+        revoked — one read of `revocations`, which also reads the tenant's permission version for
+        the resolvers — or when it carries permissions (`pv`) of a version the subject's has moved
+        past: they changed, the token must be refreshed."""
         if self.revocations is None:
             return
-        state = self.revocations.state(identity.subject, identity.token_id, identity.session)
+        state = self.revocations.state(
+            identity.subject, identity.token_id, identity.session, related_of(identity)
+        )
         refusal = state.refusal(jws.moment(parsed.claims, "iat"))
         if refusal is not None:
             raise exceptions.Unauthenticated(refusal)
@@ -283,7 +293,8 @@ class JwtProvider(AuthProvider):
         2. An `iss` this provider does not trust: `None`.
         3. Verified against that issuer (`_verified`).
         4. Mapped to an identity; refused when revoked.
-        Final: the identity through every resolver.
+        Final: the identity through every resolver — which ask no permission version the
+        revocation check already read.
         """
         token = self.token_of(credentials)
         if token is None or not jws.looks_like_jws(token):
@@ -295,5 +306,6 @@ class JwtProvider(AuthProvider):
         self._verified(parsed, issuer)
         self._bound(credentials, token, parsed.claims)
         identity = issuer.mapping.identity(parsed.claims, provider=self.name)
-        self._not_revoked(identity, parsed)
-        return resolved(identity, self.resolvers)
+        with remembering_versions():
+            self._not_revoked(identity, parsed)
+            return resolved(identity, self.resolvers)

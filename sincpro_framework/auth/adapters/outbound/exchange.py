@@ -18,13 +18,16 @@ from datetime import UTC, datetime
 from functools import partial
 from typing import Any
 
-from sincpro_framework.auth.adapters.outbound.client_credentials import endpoint_of
 from sincpro_framework.auth.domain import exceptions
 from sincpro_framework.auth.domain.http import ClientAuthentication, HttpClient
 from sincpro_framework.auth.domain.outbound import OutgoingRequest, TokenSource
 from sincpro_framework.auth.infrastructure.digests import fingerprint
 from sincpro_framework.auth.infrastructure.security_context import presented_credential
-from sincpro_framework.auth.infrastructure.server_metadata import OidcDiscovery
+from sincpro_framework.auth.infrastructure.server_metadata import (
+    OidcDiscovery,
+    discovery_for,
+    located,
+)
 from sincpro_framework.auth.infrastructure.token_cache import TokenCache, bearer_of
 from sincpro_framework.auth.infrastructure.token_endpoint import IssuedToken, TokenEndpoint
 from sincpro_framework.auth.infrastructure.urllib_http import UrllibHttp
@@ -63,10 +66,13 @@ class TokenExchange(TokenSource):
         `actor`, when given, says which service acts (its token sent as `actor_token`)."""
         self.client = client
         self.audience = audience
+        self.discovery = discovery_for(http, discovery)
         self.http: HttpClient = http or UrllibHttp()
-        self.discovery = discovery or OidcDiscovery(http=self.http)
         self.endpoint = TokenEndpoint(
-            endpoint_of(token_endpoint, issuer, self.discovery), client, self.http, now
+            located(token_endpoint, issuer, self.discovery, "token_endpoint"),
+            client,
+            self.http,
+            now,
         )
         self.scope = tuple(sorted(scope))
         self.resources = tuple(sorted(resources))
@@ -122,6 +128,8 @@ class TokenExchange(TokenSource):
             ) from refused
 
     def headers_for(self, request: OutgoingRequest) -> dict[str, str]:
+        """`Bearer` with a token exchanged for the subject this call acts for — cached per
+        subject until it is about to expire."""
         subject = self._subject(request)
         issued = self.cache.token(
             self._key(subject[0]), lambda: self._exchanged(request, subject)
@@ -134,12 +142,15 @@ class TokenExchange(TokenSource):
         presented: Mapping[str, str],
         answer: Mapping[str, str] | None = None,
     ) -> bool:
+        """The token exchanged for this call's subject dropped when it is the one refused —
+        then asking again exchanges a new one."""
         token, subject = bearer_of(presented), self.subject(request)
         if token is None or subject is None:
             return False
         return self.cache.refused(self._key(subject[0]), token)
 
     def describe(self) -> dict[str, Any]:
+        """The audience the token is exchanged for, and the client exchanging it."""
         return {
             **super().describe(),
             "audience": self.audience,
