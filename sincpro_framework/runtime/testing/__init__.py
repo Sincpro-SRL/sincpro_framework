@@ -27,6 +27,7 @@ from .analysis.architecture import (
     layer_violations,
 )
 from .analysis.settings_scope import SettingsScopeViolation, settings_scope_violations
+from .contracts.api_key_store import ApiKeyStoreContract
 from .contracts.auth_provider import AuthProviderContract
 from .contracts.caching_strategies import CodecContract, EvictionContract, FreshnessContract
 from .contracts.exchange_rates import ExchangeRatesContract
@@ -34,6 +35,7 @@ from .contracts.grant_store import GrantStoreContract
 from .contracts.idempotency_records import IdempotencyRecordsContract
 from .contracts.key_value_store import KeyValueStoreContract
 from .contracts.object_store import ObjectStoreContract
+from .contracts.refresh_tokens import RefreshTokensContract
 from .contracts.revocations import RevocationsContract
 from .contracts.token_source import TokenSourceContract
 from .doubles.auth import RecordingProvider, granting
@@ -45,7 +47,9 @@ from .doubles.http import ScriptedHttp
 from .doubles.token_endpoint import FakeResource, FakeTokenEndpoint
 
 __all__ = [
+    "ApiKeyStoreContract",
     "AuthProviderContract",
+    "RefreshTokensContract",
     "CodecContract",
     "EvictionContract",
     "ExchangeRatesContract",

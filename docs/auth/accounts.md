@@ -212,3 +212,43 @@ assert basic.authenticate(
 A pair verified is remembered in this process for a minute — by an HMAC under a random key, never
 the pair — so a client sending it on every request does not pay a hash each time. Any
 `CredentialVerifier` of the project's — its own accounts table — stands in for `HashedCredentials`.
+
+## On the project's database
+
+A service with no Redis keeps what auth stores in tables of its own database — declared in its
+metadata and migrations like any other table, every store proven by the same contract as the
+ones in memory and on Redis.
+
+```python
+from sqlalchemy import MetaData
+
+from sincpro_framework.auth import KeyValueRevocations
+from sincpro_framework.data_layer.orm import (
+    Database,
+    DatabaseKeyValue,
+    DatabaseRefreshTokens,
+    template_table,
+)
+
+auth_metadata = MetaData()
+key_values = template_table.key_value_table("auth_key_value", auth_metadata)
+refresh_table = template_table.refresh_token_table("refresh_token", auth_metadata)
+database = Database("sqlite://")
+auth_metadata.create_all(database.engine)          # a real project runs its migrations
+
+on_database = TokenIssuer(
+    "https://colegio.bo",
+    audience="colegio",
+    keys=SigningKeys.hmac({"2026-09": "a token secret of thirty-two bytes!"}),
+    refresh_tokens=DatabaseRefreshTokens(database, refresh_table),
+    revocations=KeyValueRevocations(DatabaseKeyValue(database, key_values)),
+)
+assert on_database.issue(Identity.user("user:MFAQ0123")).refresh_token is not None
+```
+
+| Table (`template_table.…`) | Store |
+|---|---|
+| `key_value_table` | `DatabaseKeyValue` — any `KeyValueStore` user: revocations, `LoginAttempts`, `OneTimeTokens`, `Totp`'s replay, leases |
+| `api_key_table` | `DatabaseApiKeys` |
+| `grant_assignment_table`, `entitlement_table` | `DatabaseGrants` |
+| `refresh_token_table` | `DatabaseRefreshTokens` |
