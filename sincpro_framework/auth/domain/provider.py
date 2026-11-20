@@ -112,7 +112,21 @@ class AuthProvider(ABC):
         credential this provider accepts (RFC 9728 for MCP)."""
         return None
 
+    def challenge_for(self, refusal: exceptions.Unauthenticated | None) -> str | None:
+        """The `WWW-Authenticate` value for this very refusal — a step-up names what to come
+        back with (RFC 9470), an expired token says `invalid_token`. By default `challenge()`,
+        so a provider that only overrides that one answers as before."""
+        return self.challenge()
+
     def credentials_for(self, identity: Identity) -> Credentials | None:
         """What to send another service so it knows who this call acts for — a signed token,
         an exchanged one (RFC 8693). `None` when this provider does not issue any."""
         return None
+
+    def outbound_for(
+        self, identity: Identity, audience: str | None = None
+    ) -> Credentials | None:
+        """What to send the service named `audience` for a call acting as `identity` — a token
+        exchanged for that audience, say. By default `credentials_for(identity)`, whatever the
+        audience, so a provider that only overrides that one answers as before."""
+        return self.credentials_for(identity)

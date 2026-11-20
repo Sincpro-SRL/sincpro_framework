@@ -240,13 +240,18 @@ class AccessControl[P: Permission]:
                 return identity
         return Identity.anonymous()
 
-    def challenges(self) -> list[str]:
-        """The `WWW-Authenticate` values a 401 answers with, one per provider that has one."""
-        return [challenge for one in self.providers if (challenge := one.challenge())]
+    def challenges(self, refusal: exceptions.Unauthenticated | None = None) -> list[str]:
+        """The `WWW-Authenticate` values a 401 answers with, one per provider that has one —
+        for `refusal` when the wire knows it, so a step-up names what to come back with."""
+        return [
+            challenge for one in self.providers if (challenge := one.challenge_for(refusal))
+        ]
 
-    def credentials_for(self, identity: Identity | None = None) -> Credentials | None:
-        """What to send another service so it knows who this call acts for — asked of the
-        identity's provider first.
+    def credentials_for(
+        self, identity: Identity | None = None, audience: str | None = None
+    ) -> Credentials | None:
+        """What to send another service — `audience`, when named — so it knows who this call
+        acts for: asked of the identity's provider first (`outbound_for`).
 
             # acting as user:42, vouched for by "service-tokens"
             auth.credentials_for()
@@ -260,7 +265,7 @@ class AccessControl[P: Permission]:
         acting = identity or current_identity()
         own = self._provider_of(acting)
         for provider in (own, *(one for one in self.providers if one is not own)):
-            if provider is not None and (issued := provider.credentials_for(acting)):
+            if provider is not None and (issued := provider.outbound_for(acting, audience)):
                 return issued
         return None
 

@@ -21,6 +21,7 @@ from collections.abc import Generator, Iterable
 from contextlib import AbstractContextManager, contextmanager, nullcontext
 from typing import TYPE_CHECKING
 
+from sincpro_framework.auth.domain.exceptions import Unauthenticated
 from sincpro_framework.auth.domain.identity import Credentials, Identity
 from sincpro_framework.auth.entrypoint.access_control import AccessControl
 from sincpro_framework.auth.infrastructure.security_context import (
@@ -83,7 +84,9 @@ class SecurityContext:
         with as_identity(access.authenticate(credentials)) as identity:
             yield identity
 
-    def challenges(self, buses: Iterable["UseFramework"]) -> list[str]:
+    def challenges(
+        self, buses: Iterable["UseFramework"], refusal: Unauthenticated | None = None
+    ) -> list[str]:
         """Every `WWW-Authenticate` value the buses' providers answer a 401 with, once each.
 
             security.challenges([billing, sales])   # both guarded by AccessControl([jwt])
@@ -95,7 +98,7 @@ class SecurityContext:
         found: list[str] = []
         for bus in buses:
             access = AccessControl.of(bus)
-            for challenge in access.challenges() if access else ():
+            for challenge in access.challenges(refusal) if access else ():
                 if challenge not in found:
                     found.append(challenge)
         return found
@@ -120,7 +123,7 @@ class SecurityContext:
         if identity.is_anonymous:
             return {}
         for access in AccessControl.guarding(context):
-            issued = access.credentials_for(identity)
+            issued = access.credentials_for(identity, audience=context)
             if issued is not None:
                 return dict(issued.headers)
         return {}

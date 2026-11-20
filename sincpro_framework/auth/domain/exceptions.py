@@ -8,10 +8,16 @@ each — authenticate again. `PermissionDenied`, not `PermissionError`: Python's
 `OSError` about files, and a handler catching one would catch the other.
 """
 
+from datetime import timedelta
 from typing import Any
 
 from sincpro_framework.common.failures.problem import Problem
-from sincpro_framework.exceptions import ClientError, FailureKind, ProgrammingError
+from sincpro_framework.exceptions import (
+    ClientError,
+    FailureKind,
+    ProgrammingError,
+    ServiceUnavailableError,
+)
 
 
 class AuthError(ClientError):
@@ -95,3 +101,31 @@ class PermissionDenied(AuthError):
     def refusal_body(self) -> dict[str, Any]:
         """The kind and the reason, and the `requirement` that was missing."""
         return {**super().refusal_body(), "requirement": self.requirement}
+
+
+class EndpointUnavailable(ServiceUnavailableError):
+    """An endpoint auth depends on did not answer usefully — an identity provider's discovery,
+    its keys, its token or introspection endpoint, a policy engine: unreachable, past its time,
+    a server error, or an answer that cannot be read.
+
+    Context: never `Unauthenticated` — the caller's credentials did not fail, the service could
+    not check them — so every wire answers 503, with `Retry-After` when the endpoint asked for
+    one. `endpoint` is said without its query, userinfo or fragment: it may be logged.
+
+        EndpointUnavailable("https://auth.acme.bo/realms/a/protocol/openid-connect/certs",
+                            "answered 503", status=503, retry_after=timedelta(seconds=30))
+    """
+
+    def __init__(
+        self,
+        endpoint: str,
+        reason: str,
+        status: int | None = None,
+        retry_after: timedelta | None = None,
+    ) -> None:
+        """A failure of `endpoint`, saying why; `status` when it answered one."""
+        super().__init__(f"{endpoint} {reason}")
+        self.endpoint = endpoint
+        self.reason = reason
+        self.status = status
+        self.retry_after = retry_after

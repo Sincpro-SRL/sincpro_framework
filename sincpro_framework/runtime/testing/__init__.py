@@ -38,6 +38,7 @@ from .doubles.clock import ManualClock
 from .doubles.context import fresh_context
 from .doubles.dependencies import override_dependencies, unregistered_dependencies
 from .doubles.events import RecordingQueue
+from .doubles.http import ScriptedHttp
 
 __all__ = [
     "AuthProviderContract",
@@ -53,6 +54,7 @@ __all__ = [
     "ObjectStoreContract",
     "RecordingProvider",
     "RecordingQueue",
+    "ScriptedHttp",
     "SettingsScopeViolation",
     "fresh_context",
     "granting",
