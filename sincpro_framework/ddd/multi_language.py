@@ -20,7 +20,8 @@ from typing import Any, Self
 
 from pydantic import ConfigDict, RootModel, model_validator
 
-from sincpro_framework.context import ContextKey, use_context
+from sincpro_framework.context import use_context
+from sincpro_framework.context.domain.keys import language_of
 
 DEFAULT = "default"
 """The text every reader falls back to."""
@@ -123,9 +124,10 @@ class MultiLanguage(RootModel[dict[str, str]], Mapping[str, str]):
         return ""
 
     def __str__(self) -> str:
-        """The text in the language of the call — `ContextKey.LANG` in the context — else the
-        default: what a template, a log line and an f-string read."""
-        return self.in_(use_context().get(ContextKey.LANG))
+        """The text in the language of the call — `ContextKey.LANG` in the context, else the
+        first language the caller prefers — else the default: what a template, a log line and
+        an f-string read."""
+        return self.in_(language_of(use_context()))
 
     def __repr__(self) -> str:
         return f"MultiLanguage({self.root!r})"

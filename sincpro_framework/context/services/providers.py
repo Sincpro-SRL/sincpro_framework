@@ -7,6 +7,10 @@ that what a use case declared it needs is there.
 lacks something it `gives`; what it answers is written on that execution's node, so the executions
 it runs find it there and the provider is not asked again.
 
+**The call's language comes last.** When nothing set `lang` — the call did not carry it, no
+provider gave it, no level above holds it — it is the first language the caller prefers
+(`preferred_langs`, what an entrance read off `Accept-Language`). What a project says wins.
+
 **Required is a declaration.** A use case that declared keys is refused, before its handler, when one
 is missing — a call under the wrong tenant is the dangerous case. A use case that declared nothing is
 never checked.
@@ -16,6 +20,7 @@ from collections.abc import Sequence
 from types import MappingProxyType
 
 from sincpro_framework.context.domain import exceptions
+from sincpro_framework.context.domain.keys import ContextKey, language_of
 from sincpro_framework.context.domain.node import ContextNode
 from sincpro_framework.context.domain.providers import REQUIRES, ContextProvider
 
@@ -32,7 +37,9 @@ def prepare(node: ContextNode, handler: object, providers: Sequence[ContextProvi
        1.3 one lacking one of its `needs`, or whose every `gives` is already there, is
            skipped: a scope already holding a token never asks for it again;
        1.4 its answer, when it gave one, written on `node`.
-    2. The keys the handler declared with `requires_context` — read from its class first, so
+    2. No `lang` anywhere `node` sees, and languages the caller prefers: the first of them is
+       the call's `lang`, written on `node`.
+    3. The keys the handler declared with `requires_context` — read from its class first, so
        an instance and the class it was declared on answer the same.
     Final: refused with `ContextRequired` when one of them is missing; nothing declared,
        nothing checked.
@@ -51,6 +58,11 @@ def prepare(node: ContextNode, handler: object, providers: Sequence[ContextProvi
         answered = provider.function(MappingProxyType(seen))
         if answered:
             node.values.update(answered)
+    if (
+        node.holding(ContextKey.LANG) is None
+        and node.holding(ContextKey.PREFERRED_LANGS) is not None
+    ):
+        node.values.update({ContextKey.LANG: language_of(node.flattened())})
     required = tuple(getattr(type(handler), REQUIRES, ()) or getattr(handler, REQUIRES, ()))
     if required:
         absent = node.missing(required)

@@ -26,7 +26,7 @@ from typing import Any
 from sincpro_framework.auth import Credentials
 from sincpro_framework.common.failures import Problem, problem_of
 from sincpro_framework.common.naming import kebab
-from sincpro_framework.context import EntrypointKind
+from sincpro_framework.context import EntrypointKind, use_context
 from sincpro_framework.ddd.query import Query
 from sincpro_framework.entrypoints.adapters.rest import exceptions
 from sincpro_framework.entrypoints.domain.layers import Scalar
@@ -245,7 +245,8 @@ def call_route(
 
     1. The use case's `call`, inside the context and as whoever the credentials say — a REST
        entrypoint.
-    2. A failure answered by its kind (`failure_answer`) under `error`.
+    2. A failure answered by its kind (`failure_answer`) under `error`, told inside the
+       context the request carried — in its language.
     Final: a 500 is logged here unless a bus already reported it; the body never says why.
     """
     try:
@@ -253,7 +254,8 @@ def call_route(
             dict(payload), context, credentials, EntrypointKind.REST
         )
     except Exception as error:
-        status, body = failure_answer(error)
+        with use_context().scoped(context):
+            status, body = failure_answer(error)
         if status == 500 and not process.was_reported(error):
             logger.exception("REST %s failed", route.path)
         return status, {"error": body}

@@ -51,6 +51,12 @@ problem.errors        # the fields that did not validate, each a JSON pointer
 problem.extensions    # what the error disclosed besides: a missing permission, a step-up
 ```
 
+The title and the kind's guidance are told in the language of the call (`TITLE_OF`,
+`GUIDANCE_OF`: a default and `es`) — its `lang`, else the first of its `Accept-Language` — on
+REST, JSON-RPC and gRPC, each telling a failure inside the context the request carried
+([languages](../ddd/languages.md#2-the-language-of-a-call-190)). `detail` is the error's own
+message, as it was written.
+
 | Kind | `next_step` | Status |
 |---|---|---|
 | `invalid` | `fix_request` | 422 |

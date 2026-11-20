@@ -32,6 +32,7 @@ from starlette.responses import JSONResponse
 
 from sincpro_framework.auth import security
 from sincpro_framework.common import failures
+from sincpro_framework.context import context_propagation, use_context
 from sincpro_framework.entrypoints.adapters.fastapi import exceptions
 from sincpro_framework.entrypoints.adapters.fastapi.contracts import (
     contracted_document,
@@ -142,7 +143,7 @@ def _answer(body: dict[str, Any], headers: Mapping[str, str] | None = None) -> J
     )
 
 
-def problem_of(request: Request, error: Exception) -> JSONResponse:
+def _answered(request: Request, error: Exception) -> JSONResponse:
     """The answer to `error`, raised anywhere a request is served.
 
         problem_of(request, InvoiceNotFound("F-9 does not exist"))
@@ -220,6 +221,20 @@ def problem_of(request: Request, error: Exception) -> JSONResponse:
     if problem.kind == exceptions.FailureKind.INTERNAL and not process.was_reported(error):
         logger.exception("REST %s %s failed", request.method, request.url.path)
     return _answer(_body(request, problem), headers)
+
+
+def problem_of(request: Request, error: Exception) -> JSONResponse:
+    """The answer to `error` (`_answered`), told inside the context the request carried — in
+    its language: the `lang` it carried, else the first of its `Accept-Language`.
+
+        problem_of(request, InvoiceNotFound("F-9"))    Accept-Language: es
+        ->  404 {"title": "No encontrado", "guidance": "Lo que la solicitud nombra no existe…"}
+
+    Context: a failure is answered here, after the call's context closed, so the request's is
+    read again.
+    """
+    with use_context().scoped(context_propagation.extract(dict(request.headers))):
+        return _answered(request, error)
 
 
 type Receive = Callable[[], Awaitable[MutableMapping[str, Any]]]
