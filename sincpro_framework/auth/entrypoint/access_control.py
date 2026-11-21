@@ -29,7 +29,10 @@ from datetime import timedelta
 from typing import TYPE_CHECKING, Any, ClassVar
 from weakref import WeakKeyDictionary, WeakSet
 
+from sincpro_framework.auth.adapters.added_requirements import KeyValueAddedRequirements
 from sincpro_framework.auth.domain import exceptions
+from sincpro_framework.auth.domain.added_requirements import AddedRequirementStore
+from sincpro_framework.auth.domain.administration import AdministrationPolicy
 from sincpro_framework.auth.domain.events import SUBJECT, AccessRefused, EventPublisher
 from sincpro_framework.auth.domain.identity import Credentials, Identity, IdentityKind
 from sincpro_framework.auth.domain.permissions import (
@@ -44,8 +47,10 @@ from sincpro_framework.auth.domain.permissions import (
     RoleRequirement,
     Rule,
     WhenDenied,
+    command_name,
 )
 from sincpro_framework.auth.domain.provider import AuthProvider
+from sincpro_framework.auth.entrypoint.runtime_requirements import RuntimeRequirements
 from sincpro_framework.auth.infrastructure.announcing import announce
 from sincpro_framework.auth.infrastructure.security_context import current_identity
 from sincpro_framework.auth.services.guard import (
@@ -62,6 +67,10 @@ from sincpro_framework.sincpro_logger import logger
 if TYPE_CHECKING:
     from sincpro_framework.ddd.criteria import Criteria
     from sincpro_framework.use_bus import UseFramework
+
+
+RUNTIME_CHECK = "requirements added at runtime"
+"""The name `describe()` and a refusal give the check of `runtime`."""
 
 
 class AccessDescription(DataTransferObject):
@@ -106,11 +115,18 @@ class AccessControl[P: Permission]:
         enabled: bool = True,
         clock: Callable[[], float] = time.time,
         publisher: EventPublisher | None = None,
+        runtime: bool | AddedRequirementStore = False,
+        administration: AdministrationPolicy | None = None,
     ) -> None:
         """`providers` are tried in order to authenticate a call; `enabled=False` checks
         nothing — a local environment, a test that is not about access. `enabled` and `clock`
         are named, never positional: a positional `False` once meant `strict`, and must not turn
-        every check off. `publisher` is told every refused call (`AccessRefused`).
+        every check off. `publisher` is told every refused call (`AccessRefused`) and every
+        requirement added or released at runtime.
+
+        `runtime=True` lets administrators require more of a use case without a deploy —
+        `auth.runtime` — kept on the context's store, or on the `AddedRequirementStore` given;
+        `administration` bounds who may (`BoundedAdministration()` when not given).
 
             AccessControl(providers=jwt).providers            ->  (jwt,)
             AccessControl(providers=[jwt, api_keys]).providers  ->  (jwt, api_keys)
@@ -127,6 +143,15 @@ class AccessControl[P: Permission]:
         self.declarations = Declarations()
         self.checks: list[Rule] = []
         """What `every_call` registered — asked on every call of every bus guarded."""
+        self._runtime: RuntimeRequirements | None = None
+        if runtime:
+            self._runtime = RuntimeRequirements(
+                self,
+                KeyValueAddedRequirements() if runtime is True else runtime,
+                policy=administration,
+                publisher=publisher,
+            )
+            self.every_call(self._runtime.check, name=RUNTIME_CHECK)
         self._buses: WeakSet["UseFramework"] = WeakSet()
         """Every bus guarded — those given to `on` and the generations made of them."""
         self._guards: "WeakKeyDictionary[UseFramework, BusGuard]" = WeakKeyDictionary()
@@ -286,6 +311,20 @@ class AccessControl[P: Permission]:
                 "a rule is not named 'open' — that names a use case that declares nothing"
             )
         return Rule(name, check)
+
+    @property
+    def runtime(self) -> RuntimeRequirements:
+        """What administrators require of a use case at runtime, beside its code's declaration
+        — `require`, `release`, `required` — asked on every call as the `every_call` check
+        `requirements added at runtime`. Only with `AccessControl(runtime=True)`.
+
+            auth.runtime.require(CommandRefund, BillingPermission.APPROVE, tenant="bo")
+        """
+        if self._runtime is None:
+            raise exceptions.ProgrammingError(
+                "requirements are added at runtime with AccessControl(runtime=True)"
+            )
+        return self._runtime
 
     def every_call[F: Callable[[AccessCall], bool]](
         self, check: F | None = None, *, name: str | None = None
@@ -510,7 +549,14 @@ class AccessControl[P: Permission]:
                 f"holds no {' or '.join(requirement.roles)}",
             )
         if isinstance(requirement, Rule):
-            call = AccessCall(identity, what, dto, resource, dict(context or {}))
+            call = AccessCall(
+                identity,
+                what,
+                dto,
+                resource,
+                dict(context or {}),
+                "" if dto is None else command_name(type(dto)),
+            )
             return self._ruled(requirement, call)
         if isinstance(requirement, ByField):
             chosen = requirement.every() if dto is None else requirement.chosen(dto)
@@ -622,13 +668,18 @@ class AccessControl[P: Permission]:
             raise denied
 
     def every_call_refusal(
-        self, identity: Identity, what: str, dto: Any, context: Mapping[str, Any]
+        self,
+        identity: Identity,
+        what: str,
+        dto: Any,
+        context: Mapping[str, Any],
+        command: str = "",
     ) -> exceptions.AuthError | None:
         """Why one of the `every_call` checks refuses this call — `None` when every one lets it
         through, or the system acts. What the guard asks after the declaration."""
         if identity.kind == IdentityKind.SYSTEM:
             return None
-        call = AccessCall(identity, what, dto, None, dict(context))
+        call = AccessCall(identity, what, dto, None, dict(context), command)
         for check in self.checks:
             refused = self._ruled(check, call)
             if refused is not None:
@@ -775,7 +826,8 @@ class AccessControl[P: Permission]:
 
     def using(self, providers: AuthProvider | Sequence[AuthProvider]) -> "AccessControl[P]":
         """This object with other providers — the same declarations, `enabled` and publisher, a
-        copy of the `every_call` checks (one added to either is the other's no more):
+        copy of the `every_call` checks (one added to either is the other's no more), the
+        requirements added at runtime judged by the copy:
         what a test puts on a `fresh()` bus, so the rules of production are checked against
         providers of its own.
 
@@ -787,6 +839,12 @@ class AccessControl[P: Permission]:
         )
         other.declarations = self.declarations
         other.checks = list(self.checks)
+        if self._runtime is not None:
+            other._runtime = self._runtime.judged_by(other)
+            other.checks = [
+                Rule(one.name, other._runtime.check) if one.name == RUNTIME_CHECK else one
+                for one in other.checks
+            ]
         return other
 
     def on(
@@ -844,10 +902,15 @@ class AccessControl[P: Permission]:
         declared: dict[str, AccessDeclaration | None] = {}
         for bus in list(self._buses):
             for command, handler in bus.handlers().items():
-                declared[f"{command.__module__}.{command.__qualname__}"] = (
-                    self.declarations.of(handler, bus.replaced_for(command))
+                declared[command_name(command)] = self.declarations.of(
+                    handler, bus.replaced_for(command)
                 )
         return declared
+
+    def guarded_use_cases(self) -> set[str]:
+        """The dotted name of every Command of every bus this object guards — what a screen
+        offers to require more of."""
+        return set(self._use_cases())
 
     def requirements_of(
         self, cls: type, bus: "UseFramework | None" = None

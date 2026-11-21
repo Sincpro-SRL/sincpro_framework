@@ -3,6 +3,7 @@ implying the one below, disjoint roles never held together, entitlements a tenan
 that keep only what was assigned; a resolver that turns token roles and assignments into
 permissions, narrowed by scopes — and a role taken away holding on the very next call."""
 
+from collections.abc import Iterator
 from datetime import UTC, datetime, timedelta
 
 import fakeredis
@@ -25,7 +26,6 @@ from sincpro_framework.auth.grants import (
     Assignment,
     Category,
     Entitlement,
-    GrantAdministration,
     GrantCatalog,
     GrantResolver,
     GrantStore,
@@ -37,6 +37,7 @@ from sincpro_framework.auth.grants import (
     RolePermissions,
     ScopeCeiling,
 )
+from sincpro_framework.auth.grants.services.administration import GrantAdministration
 from sincpro_framework.auth.infrastructure import jws
 from sincpro_framework.auth.server import (
     ClaimMapping,
@@ -48,6 +49,13 @@ from sincpro_framework.data_layer.caching import Cache
 from sincpro_framework.data_layer.store import InMemoryKeyValue
 from sincpro_framework.data_layer.store.adapters.redis import RedisKeyValue
 from sincpro_framework.runtime.testing import GrantStoreContract, ManualClock
+
+
+@pytest.fixture(autouse=True)
+def as_the_platform() -> Iterator[None]:
+    """The platform administers here — the bound on whoever administers has its own tests."""
+    with security.as_system("the platform administers"):
+        yield
 
 
 class P(Permission):

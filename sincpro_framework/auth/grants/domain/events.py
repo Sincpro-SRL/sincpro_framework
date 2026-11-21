@@ -1,14 +1,15 @@
-"""What changed in who holds which — every assignment and entitlement `GrantAdministration`
+"""What changed in who holds which — every assignment, entitlement and role defined `Grants`
 writes, published when it was given a publisher.
 
-    admin = GrantAdministration(catalog, grants, revocations, publisher=audit)
-    admin.assign("user:ana", "bo", "billing.manager")
+    grants = Grants(catalog, publisher=audit)
+    grants.assign("user:ana", "billing.manager", tenant="bo")
         ->  RoleAssigned(entity_id="user:ana", tenant="bo", role="billing.manager",
                          actor="user:admin")
 """
 
 from dataclasses import dataclass, field
 from datetime import datetime
+from typing import Any
 
 from sincpro_framework.auth.domain.events import AuthEvent
 from sincpro_framework.ddd.events import DeliverableEventMixin
@@ -75,3 +76,56 @@ class EntitlementWithdrawn(DeliverableEventMixin, AuthEvent):
         default_factory=lambda: {"default": "Entitlement withdrawn", "es": "Se deshabilitó"}
     )
     entitlement: str = ""
+
+
+ROLE = "auth.role"
+"""The `entity_type` of a fact about a role defined at runtime — `entity_id` its key."""
+
+
+@dataclass(kw_only=True)
+class RoleDefined(DeliverableEventMixin, AuthEvent):
+    """A role defined at runtime — new: its whole shape."""
+
+    name = "auth.role.v1.defined"
+    label: dict[str, str] = field(
+        default_factory=lambda: {"default": "Role defined", "es": "Se definió un rol"}
+    )
+    tenant: str | None = None
+    """The tenant it exists for — `None`: every tenant."""
+    role_name: str = ""
+    grants: list[str] = field(default_factory=list)
+    implies: list[str] = field(default_factory=list)
+    privilege: str | None = None
+    sequence: int = 0
+    disjoint: list[str] = field(default_factory=list)
+
+
+@dataclass(kw_only=True)
+class RoleChanged(DeliverableEventMixin, AuthEvent):
+    """A role defined at runtime changed — its whole shape now, and before."""
+
+    name = "auth.role.v1.changed"
+    label: dict[str, str] = field(
+        default_factory=lambda: {"default": "Role changed", "es": "Se cambió un rol"}
+    )
+    tenant: str | None = None
+    """The tenant it exists for — `None`: every tenant."""
+    role_name: str = ""
+    grants: list[str] = field(default_factory=list)
+    implies: list[str] = field(default_factory=list)
+    privilege: str | None = None
+    sequence: int = 0
+    disjoint: list[str] = field(default_factory=list)
+    previous: dict[str, Any] = field(default_factory=dict)
+    """What it was: `role_name`, `grants`, `implies`, `privilege`, `sequence`, `disjoint`."""
+
+
+@dataclass(kw_only=True)
+class RoleRemoved(DeliverableEventMixin, AuthEvent):
+    """A role defined at runtime removed — its holders' assignments grant nothing from now."""
+
+    name = "auth.role.v1.removed"
+    label: dict[str, str] = field(
+        default_factory=lambda: {"default": "Role removed", "es": "Se eliminó un rol"}
+    )
+    tenant: str | None = None

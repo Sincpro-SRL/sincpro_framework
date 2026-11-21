@@ -53,3 +53,38 @@ class AccessRefused(DeliverableEventMixin, AuthEvent):
     requirement: str = ""
     """What was not met — empty when nobody was known."""
     tenant: str | None = None
+
+
+USE_CASE = "auth.use_case"
+"""The `entity_type` of a fact about a use case — `entity_id` its Command's dotted name."""
+
+
+@dataclass(kw_only=True)
+class RequirementAdded(DeliverableEventMixin, AuthEvent):
+    """A use case requires more from now on — what was added at runtime, as it now stands."""
+
+    name = "auth.requirement.v1.added"
+    label: dict[str, str] = field(
+        default_factory=lambda: {
+            "default": "Requirement added",
+            "es": "Se agregó un requisito",
+        }
+    )
+    tenant: str | None = None
+    """The tenant it holds for — `None`: every tenant."""
+    permissions: list[str] = field(default_factory=list)
+    roles: list[str] = field(default_factory=list)
+
+
+@dataclass(kw_only=True)
+class RequirementRemoved(DeliverableEventMixin, AuthEvent):
+    """What was added at runtime to a use case removed — its code's declaration holds alone."""
+
+    name = "auth.requirement.v1.removed"
+    label: dict[str, str] = field(
+        default_factory=lambda: {
+            "default": "Requirement removed",
+            "es": "Se quitó un requisito",
+        }
+    )
+    tenant: str | None = None

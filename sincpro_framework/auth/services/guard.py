@@ -17,7 +17,11 @@ from weakref import WeakKeyDictionary, WeakValueDictionary
 
 from sincpro_framework.auth.domain import exceptions
 from sincpro_framework.auth.domain.identity import Identity, IdentityKind
-from sincpro_framework.auth.domain.permissions import AccessDeclaration, WhenDenied
+from sincpro_framework.auth.domain.permissions import (
+    AccessDeclaration,
+    WhenDenied,
+    command_name,
+)
 from sincpro_framework.auth.infrastructure.security_context import (
     _access_in_play,
     current_identity,
@@ -131,7 +135,12 @@ class Access(Protocol):
         ...
 
     def every_call_refusal(
-        self, identity: Identity, what: str, dto: Any, context: Mapping[str, Any]
+        self,
+        identity: Identity,
+        what: str,
+        dto: Any,
+        context: Mapping[str, Any],
+        command: str = "",
     ) -> exceptions.AuthError | None:
         """Why one of the `every_call` checks refuses this call — `None` when none does."""
         ...
@@ -221,7 +230,9 @@ class BusGuard:
             )
             if refused is not None:
                 return refused
-        return self.access.every_call_refusal(identity, command.__name__, dto, context)
+        return self.access.every_call_refusal(
+            identity, command.__name__, dto, context, command_name(command)
+        )
 
     def __call__(self, dto: Any, call_next: Callable[[Any], Any]) -> Any:
         """Decide whether the identity in play may run the use case `dto` enters, and run it.
@@ -257,7 +268,7 @@ class BusGuard:
                 )
                 return None
         intercepted = self.access.every_call_refusal(
-            identity, command.__name__, dto, bus_context
+            identity, command.__name__, dto, bus_context, command_name(command)
         )
         if intercepted is not None:
             logger.warning(

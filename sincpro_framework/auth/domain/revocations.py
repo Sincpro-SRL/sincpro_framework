@@ -40,10 +40,19 @@ def tenant_subject(tenant: str) -> str:
     return f"tenant:{tenant}"
 
 
+EVERY_TENANT = tenant_subject("*")
+"""The subject whose permission version every tenant shares — bumped when a role every tenant
+shares is changed or removed."""
+
+
 def related_of(identity: Identity) -> tuple[str, ...]:
     """The subjects whose permission versions a credential's check reads with its own: its
-    tenant's, when it has one."""
-    return (tenant_subject(identity.tenant),) if identity.tenant else ()
+    tenant's, when it has one, and every tenant's."""
+    return (
+        (tenant_subject(identity.tenant), EVERY_TENANT)
+        if identity.tenant
+        else (EVERY_TENANT,)
+    )
 
 
 @contextmanager
@@ -75,7 +84,15 @@ class RevocationState(DataTransferObject):
     to the second, as a JWT's `iat` is."""
     permission_version: int = 0
     versions: dict[str, int] = Field(default_factory=dict)
-    """The permission versions of the related subjects read with it — a tenant's."""
+    """The permission versions of the related subjects read with it — a tenant's, every
+    tenant's."""
+
+    @property
+    def permission_epoch(self) -> int:
+        """The subject's permission version and its related subjects', summed — what a token
+        carrying permissions carries (`pv`): any of them moving refuses it. They only grow, so
+        the sum moves whenever one does."""
+        return self.permission_version + sum(self.versions.values())
 
     def refusal(self, issued_at: datetime | None) -> str | None:
         """Why a credential issued at `issued_at` is no longer good — `None` when it is.
@@ -175,3 +192,9 @@ class Revocations(ABC):
     def permission_version(self, subject: str) -> int:
         """The permission version of `subject` — 0 before any change."""
         return self.permission_versions(subject)[subject]
+
+    def permission_epoch(self, identity: Identity) -> int:
+        """What a token carrying `identity`'s permissions carries (`pv`): its version, its
+        tenant's and every tenant's, summed — as `RevocationState.permission_epoch` reads it.
+        """
+        return sum(self.permission_versions(identity.subject, *related_of(identity)).values())
