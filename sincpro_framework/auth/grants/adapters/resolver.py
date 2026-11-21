@@ -154,7 +154,7 @@ class GrantResolver:
             self.role_mapping.mapped(identity.roles) if self.role_mapping else identity.roles
         )
         held = self.held(identity)
-        catalog = self.catalog.current()
+        catalog = self.catalog.current(identity.tenant)
         roles = catalog.closure(from_token | held.roles)
         granted = identity.permissions | catalog.permissions_of(roles)
         permissions = granted

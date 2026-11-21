@@ -38,6 +38,7 @@ from sincpro_framework.auth.adapters.revocations import (
     InMemoryRevocations,
     KeyValueRevocations,
 )
+from sincpro_framework.auth.domain.administration import AdministrationBounds
 from sincpro_framework.auth.domain.events import (
     AccessRefused,
     AuthEvent,
@@ -107,6 +108,7 @@ __all__ = [
     "AccessDeclaration",
     "AccessDescription",
     "AccessRefused",
+    "AdministrationBounds",
     "AnyOf",
     "Assurance",
     "AssuranceRequirement",

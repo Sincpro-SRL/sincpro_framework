@@ -161,11 +161,11 @@ def _every_role(roots: Iterable[Role]) -> dict[str, Role]:
 
 
 class CatalogSource(Protocol):
-    """What answers the catalog in effect — a `GrantCatalog` itself, or a `LiveCatalog` with
-    the roles defined at runtime beside it."""
+    """What answers the catalog in effect for a tenant — a `GrantCatalog` itself, or a
+    `LiveCatalog` with the roles defined at runtime beside it."""
 
-    def current(self) -> "GrantCatalog":
-        """The catalog to resolve and to check a change against, now."""
+    def current(self, tenant: str | None = None) -> "GrantCatalog":
+        """The catalog to resolve `tenant`'s identities and check its changes against, now."""
         ...
 
 
@@ -216,9 +216,9 @@ class GrantCatalog:
                 pending.extend(one.key for one in self.roles[current].implies)
         return frozenset(held)
 
-    def current(self) -> "GrantCatalog":
-        """Itself — a catalog of code is in effect as declared; a `LiveCatalog` answers the one
-        with the roles defined at runtime."""
+    def current(self, tenant: str | None = None) -> "GrantCatalog":
+        """Itself, for every tenant — a catalog of code is in effect as declared; a
+        `LiveCatalog` answers the one with the roles defined at runtime."""
         return self
 
     def role(self, key: str) -> Role:

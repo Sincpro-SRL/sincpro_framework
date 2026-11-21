@@ -89,6 +89,8 @@ class RoleDefined(DeliverableEventMixin, AuthEvent):
     label: dict[str, str] = field(
         default_factory=lambda: {"default": "Role defined", "es": "Se definió un rol"}
     )
+    tenant: str | None = None
+    """The tenant it exists for — `None`: every tenant."""
     role_name: str = ""
     grants: list[str] = field(default_factory=list)
     implies: list[str] = field(default_factory=list)
@@ -103,6 +105,8 @@ class RoleChanged(DeliverableEventMixin, AuthEvent):
     label: dict[str, str] = field(
         default_factory=lambda: {"default": "Role changed", "es": "Se cambió un rol"}
     )
+    tenant: str | None = None
+    """The tenant it exists for — `None`: every tenant."""
     role_name: str = ""
     grants: list[str] = field(default_factory=list)
     implies: list[str] = field(default_factory=list)
@@ -117,3 +121,4 @@ class RoleRemoved(DeliverableEventMixin, AuthEvent):
     label: dict[str, str] = field(
         default_factory=lambda: {"default": "Role removed", "es": "Se eliminó un rol"}
     )
+    tenant: str | None = None
