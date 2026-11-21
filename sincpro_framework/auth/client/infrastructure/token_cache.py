@@ -34,7 +34,7 @@ from sincpro_framework.data_layer.store import KeyValueStore
 
 
 class TokenCodec:
-    """An `TokenResponse` as the bytes a shared store holds — the secrets' real values, which
+    """A `TokenResponse` as the bytes a shared store holds — the secrets' real values, which
     pydantic's JSON would mask, sealed when a `Sealer` is given."""
 
     def __init__(self, seal: Sealer | None = None) -> None:

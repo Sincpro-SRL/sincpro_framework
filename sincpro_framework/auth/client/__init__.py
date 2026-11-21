@@ -71,7 +71,6 @@ from sincpro_framework.auth.client.infrastructure.token_endpoint import (
 )
 
 __all__ = [
-    "AesGcmSealer",
     "ApiKeyHeader",
     "BasicCredentials",
     "ClientCredentials",
@@ -80,15 +79,12 @@ __all__ = [
     "ClientSecretPost",
     "DeviceCode",
     "DevicePrompt",
-    "DpopProver",
     "HeldGrant",
     "HeldGrants",
     "InMemoryHeldGrants",
-    "TokenResponse",
     "KeyValueHeldGrants",
     "OutgoingRequest",
     "PresentingProvider",
-    "PrivateKeyJwt",
     "PublicClient",
     "RefreshingToken",
     "RequestSigner",
@@ -97,12 +93,14 @@ __all__ = [
     "TokenCache",
     "TokenEndpoint",
     "TokenExchange",
+    "TokenResponse",
     "TokenSource",
     "TokenSources",
     "call_with_credentials",
     "httpx_auth",
     "requests_auth",
 ]
+"""Every name loaded with the package; the `[jwt]` extra's are in `_LAZY`, imported on first use."""
 
 _LAZY = {
     "AesGcmSealer": "sincpro_framework.auth.client.infrastructure.sealing",

@@ -128,8 +128,6 @@ __all__ = [
     "PasswordRejected",
     "Permission",
     "PermissionDenied",
-    "PrivateKey",
-    "PublicKey",
     "Revocations",
     "RevocationState",
     "RoleRequirement",
@@ -144,6 +142,7 @@ __all__ = [
     "remembering_versions",
     "security",
 ]
+"""Every name loaded with the package; the `[jwt]` extra's are in `_LAZY`, imported on first use."""
 
 _LAZY = {
     "PrivateKey": "sincpro_framework.auth.infrastructure.jose_keys",

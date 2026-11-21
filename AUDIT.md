@@ -151,7 +151,7 @@ bring this review to **11 reproduced runtime defects**. None was fixed in this t
   The HTTP adapter does not automatically retry the command.
 
 6. **P2 [type-error] A malformed service token raises AttributeError, not Unauthenticated.**
-  [ServiceTokenProvider._claims](sincpro_framework/auth/adapters/service_token_provider.py#L98)
+  [ServiceTokenProvider._claims](sincpro_framework/auth/server/adapters/service_tokens.py#L109)
   assumes decoded JSON is an object. Synthetic token `W10.e30.x` decodes its header to a
   list and raised `AttributeError` before signature validation. This is error handling,
   **not a demonstrated authentication bypass**.

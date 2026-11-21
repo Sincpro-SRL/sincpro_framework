@@ -34,14 +34,18 @@
 | Door | Job | Depends on |
 |---|---|---|
 | `sincpro_framework.auth` | the contract: `AccessControl` and its requirements, `Identity` / `Credentials`, the ports (`AuthProvider`, `IdentityResolver`, `HttpClient`, `ClientAuthentication`), `security`, the ASGI middleware, every auth error, and what the doors share — revocations, discovery, JOSE keys, HMAC signature styles | nothing of `auth` |
-| `sincpro_framework.auth.server` | verify what arrives: `JwtProvider` and bearer tokens (introspection, DPoP proofs, the protected resource), API keys, service tokens, webhook signatures, HTTP Basic, mTLS, policy engines | the root |
+| `sincpro_framework.auth.server` | verify what arrives: `JwtProvider` and bearer tokens (introspection, DPoP proofs, the protected resource), API keys, service tokens, webhook signatures, mTLS, policy engines | the root |
 | `sincpro_framework.auth.client` | present what goes out: `TokenSource` and every source (static, client credentials, per tenant, refreshing, exchange, device code, request signing, DPoP), the client's authentication to a token endpoint, `call_with_credentials`, `requests_auth`, `httpx_auth` | the root |
 | `sincpro_framework.auth.grants` | roles and groups the Odoo 20 way: the catalog, assignments, the resolver, administration | the root |
-| `sincpro_framework.auth.accounts` | accounts a service manages itself: passwords, lockout, one-time links, TOTP, the token issuer and its keys | the root, the server (the issuer verifies what it issued with a `JwtProvider`; `HashedCredentials` is the server's `CredentialVerifier`) |
+| `sincpro_framework.auth.accounts` | accounts a service manages itself: passwords, lockout, HTTP Basic against them (`BasicProvider` over the `CredentialVerifier` port), one-time links, TOTP, the token issuer and its keys | the root, the server (the issuer verifies what it issued with a `JwtProvider`) |
 
 The root never imports a door, so no door is loaded by `import sincpro_framework.auth`. The
 architecture test states the direction, and `test_core_without_extras` holds that no door loads
 PyJWT until a `[jwt]` name is asked for.
+
+HTTP Basic is the accounts': `BasicProvider` verifies a username and a password against the
+project's own accounts (`CredentialVerifier`) and locks a guessed one with `LoginAttempts`. In the
+server it would make the server depend on accounts while accounts depend on the server.
 
 ## Between services
 

@@ -65,7 +65,7 @@ def test_every_public_name_has_one_door() -> None:
     }
     held: dict[str, list[str]] = {}
     for door, module in doors.items():
-        for name in module.__all__:
+        for name in [*module.__all__, *getattr(module, "_LAZY", {})]:
             held.setdefault(name, []).append(door)
     assert {name: where for name, where in held.items() if len(where) > 1} == {}
 
@@ -80,4 +80,15 @@ def test_a_name_is_defined_inside_the_door_that_exports_it() -> None:
                 f"sincpro_framework.auth.{door}"
             )
         }
-        assert outside == {}, door
+        lazy_outside = {
+            name: where
+            for name, where in getattr(module, "_LAZY", {}).items()
+            if not where.startswith(f"sincpro_framework.auth.{door}")
+        }
+        assert outside == {} and lazy_outside == {}, door
+
+
+@pytest.mark.parametrize("door", ("", *DOORS))
+def test_a_star_import_needs_no_extra(door: str) -> None:
+    module = importlib.import_module("sincpro_framework.auth" + (f".{door}" if door else ""))
+    assert set(getattr(module, "_LAZY", {})).isdisjoint(module.__all__)
