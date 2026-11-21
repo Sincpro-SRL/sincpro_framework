@@ -24,7 +24,7 @@ too. An entitlement gates permissions behind what a tenant bought: without it, a
 gates is never granted, whoever holds the role.
 """
 
-from collections.abc import Iterable
+from collections.abc import Iterable, Mapping
 from collections.abc import Set as AbstractSet
 from dataclasses import dataclass, field
 from functools import lru_cache
@@ -160,12 +160,28 @@ def _every_role(roots: Iterable[Role]) -> dict[str, Role]:
     return found
 
 
+@dataclass(frozen=True)
+class Composition:
+    """A tenant's catalog as composed: the catalog in effect, the roles defined at runtime left
+    out with why, and the keys the tenant defines itself."""
+
+    catalog: "GrantCatalog"
+    problems: Mapping[str, str] = field(default_factory=dict)
+    own: frozenset[str] = frozenset()
+    """The keys defined for exactly this tenant — its own roles."""
+
+
 class CatalogSource(Protocol):
     """What answers the catalog in effect for a tenant — a `GrantCatalog` itself, or a
     `LiveCatalog` with the roles defined at runtime beside it."""
 
     def current(self, tenant: str | None = None) -> "GrantCatalog":
-        """The catalog to resolve `tenant`'s identities and check its changes against, now."""
+        """The catalog to resolve `tenant`'s identities with — what a replica holds now."""
+        ...
+
+    def latest(self, tenant: str | None = None) -> Composition:
+        """The tenant's catalog read from the source now — what an administration checks a
+        change against."""
         ...
 
 
@@ -220,6 +236,10 @@ class GrantCatalog:
         """Itself, for every tenant — a catalog of code is in effect as declared; a
         `LiveCatalog` answers the one with the roles defined at runtime."""
         return self
+
+    def latest(self, tenant: str | None = None) -> Composition:
+        """Itself, with nothing defined at runtime."""
+        return Composition(catalog=self)
 
     def role(self, key: str) -> Role:
         """The role `key` — `InvalidGrant` when the catalog does not declare it."""

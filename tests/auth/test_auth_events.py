@@ -78,8 +78,13 @@ approver = Role(
     sequence=20,
 )
 catalog = GrantCatalog([approver], entitlements=[Entitlement("payments", gates={P.APPROVE})])
-ADMIN = Identity.user("user:admin", tenant="bo", permissions={P.READ, P.APPROVE})
-"""The administrator of tenant bo, holding what its roles give."""
+ADMIN = Identity.user(
+    "user:admin",
+    tenant="bo",
+    roles={"billing.approver", "billing.clerk"},
+    permissions={P.READ, P.APPROVE},
+)
+"""The administrator of tenant bo — it holds what it gives."""
 
 
 def test_every_grant_written_is_published_by_whom_and_on_whom() -> None:

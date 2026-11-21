@@ -92,23 +92,31 @@ with security.as_system("the platform opens tenant bo"):
 
 assert grants.held("user:ana", "bo").roles == {"billing.manager", "billing.approver"}
 
-bo_admin = Identity.user("user:root-bo", tenant="bo", permissions={BillingPermission.READ})
+bo_admin = Identity.user(
+    "user:root-bo", tenant="bo", roles={"billing.clerk"}, permissions={BillingPermission.READ},
+)                                                   # bo's administrator: a clerk
 with security.as_identity(bo_admin):
-    admin.assign("user:bea", "bo", "billing.clerk")          # it holds what a clerk is given
+    admin.assign("user:bea", "bo", "billing.clerk")          # it holds the role it gives
     try:
         admin.assign("user:bea", "bo", "billing.manager")    # a manager issues; it does not
     except PermissionDenied as refused:
         assert "which user:root-bo does not hold" in str(refused)
 ```
 
-**Who administers is bounded** (`AdministrationBounds`, on by default). The system and a
-`superadmin` permission's holders may do anything. Anyone else may act only in their own tenant,
-and may only give what they hold themselves: a role whose permissions they lack is never theirs
-to assign. What every tenant shares — entitlements, roles of every tenant — is the platform's.
-Nobody known administers nothing: a seed or a migration runs `security.as_system(reason)`.
-`GrantAdministration(..., bounds=AdministrationBounds(superadmin="platform.grants.manage"))` names
-the platform's own administrators; `AdministrationBounds(enforced=False)` trusts whoever
-administers, as Odoo trusts its access-rights group.
+**Who administers is bounded** — `GrantAdministration(..., policy=…)`, an
+`AdministrationPolicy`; `BoundedAdministration()` by default:
+
+| Who acts | May |
+|---|---|
+| the system (`security.as_system`), a holder of `BoundedAdministration(superadmin=…)` | anything, in any tenant, and what every tenant shares |
+| anyone else known | only in their own tenant, never on themselves, and only give — or take away — a role they hold, or one their tenant defined from what they hold |
+| nobody known | nothing: a seed or a migration runs `security.as_system(reason)` |
+
+Entitlements — what a tenant bought — are the platform's. Giving is judged by roles, not only
+permissions: a role that grants nothing may still be what `auth.role(...)` asks for. Whoever may
+give a role may take it away, so a weaker administrator never strips a stronger one.
+`TrustedAdministration()` trusts whoever is known, as Odoo trusts its access-rights group; a
+project with rules of its own implements `AdministrationPolicy`.
 
 | Store | Where | Proven by |
 |---|---|---|
@@ -165,6 +173,7 @@ What a subject holds is cached per subject, tenant and permission version: every
 provider — `JwtProvider(..., resolvers=[resolver])`, or `Resolving(provider, resolver)` for one of
 the project's — never to `AccessControl`: a service token or an API key arrives resolved.
 
+
 ## Roles defined at runtime
 
 An administrator adds a role from a screen — a reviewer, an external auditor — without a deploy:
@@ -174,29 +183,32 @@ It sits beside the roles of the code in a `LiveCatalog`, the catalog in effect, 
 `DatabaseKeyValue` for the project's own database, `InMemoryRoleDefinitions` in a test.
 
 ```python
-from sincpro_framework.auth.grants import KeyValueRoleDefinitions, LiveCatalog, RoleDefinition
+from sincpro_framework.auth.grants import (
+    KeyValueRoleDefinitions, LiveCatalog, RoleAdministration, RoleDefinition,
+)
 from sincpro_framework.data_layer.store import InMemoryKeyValue
 
 live = LiveCatalog(catalog, KeyValueRoleDefinitions(InMemoryKeyValue()), permissions=BillingPermission)
-runtime_admin = GrantAdministration(live, grants, revocations)
+roles = RoleAdministration(live, grants, revocations)          # defines, removes
+live_admin = GrantAdministration(live, grants, revocations)    # assigns, as before
 
 with security.as_system("the platform adds a role every tenant has"):
-    runtime_admin.define_role(RoleDefinition(
+    roles.define(RoleDefinition(
         key="billing.reviewer", name="Reviewer", grants=frozenset({BillingPermission.READ}),
     ))
     try:
-        runtime_admin.define_role(RoleDefinition(key="billing.clerk", name="Clerk, renamed"))
+        roles.define(RoleDefinition(key="billing.clerk", name="Clerk, renamed"))
     except InvalidGrant as refused:
         assert "declared in code" in str(refused)
 
-with security.as_identity(bo_admin):                  # tenant bo's administrator, its own role
-    runtime_admin.define_role(RoleDefinition(
-        key="cash.viewer", tenant="bo", grants=frozenset({BillingPermission.READ}),
+with security.as_identity(bo_admin):            # tenant bo's administrator, its own role
+    roles.define(RoleDefinition(
+        key="cash.viewer", tenant="bo", implies=frozenset({"billing.clerk"}),
     ))
-    runtime_admin.assign("user:bea", "bo", "cash.viewer")
+    live_admin.assign("user:carla", "bo", "cash.viewer")
 
-bea = GrantResolver(live, grants).resolve(Identity.user("user:bea", tenant="bo"))
-assert bea.permissions == {BillingPermission.READ}
+carla = GrantResolver(live, grants).resolve(Identity.user("user:carla", tenant="bo"))
+assert carla.permissions == {BillingPermission.READ}
 assert "cash.viewer" in live.current("bo").roles and "cash.viewer" not in live.current("pe").roles
 assert [one.key for one in live.defined()] == ["billing.reviewer"]   # every tenant's
 assert [one.key for one in live.defined("bo")] == ["cash.viewer"]   # bo's own
@@ -206,15 +218,18 @@ assert [one.key for one in live.defined("bo")] == ["cash.viewer"]   # bo's own
 |---|---|
 | It only adds: a role the code declares is never redefined, and a defined role grants only permissions the code declares (`permissions=`, every value of the project's `Permission` classes) | a role of the code changes in code, reviewed with the use cases that require what it grants; a permission no code checks protects nothing |
 | It is checked by the catalog's own rules: what it implies and its privilege exist, no cycle, disjoint roles, a level implying the one below | the catalog in effect holds exactly as one declared in code would |
-| `define_role` replaces one defined before; `remove_role` refuses one another implies — its holders keep an assignment that grants nothing | a screen edits in place, and a removal never breaks another role silently |
-| Two administrators writing at once: one document, written over the version it was read at, read again and retried | neither change is lost |
-| Every replica reads a tenant's versions at most once a `check_every` (a second) and builds its catalog again only when one moved — each scope its own document | a role defined holds within a second everywhere, for small reads, and one tenant's change never makes a replica read another's |
-| A defined role that no longer builds — the code dropped what it implies — grants nothing, the others still do; `live.problems(tenant)` lists which and why, and each is logged. A store that does not answer leaves the last catalog in effect | a broken definition never grants more than before, nor takes away what the others give |
-| A tenant's role exists for that tenant alone, and is named apart from the roles every tenant shares; it may imply the code's, every tenant's and its tenant's own | one customer's roles never reach another |
-| Defining and assigning are bounded like every administration: a tenant's administrator defines only for its tenant, and only what it holds | whoever may define a role cannot give themselves what they lack |
+| A change is checked inside the write, against the scope stored now — never a replica's cached catalog; two administrators over one version: one wins, the other is checked again | a role cannot be made to imply what was defined a moment ago elsewhere, unseen |
+| Defining is bounded like assigning: in its own tenant only, implying only roles who acts may give, granting only what it holds; changing or removing a role is taking it away, so only who may give it does | whoever may define a role cannot give themselves, nor strip from others, more than they hold |
+| A role already assigned keeps its shape — what it implies, its privilege, level and disjoint roles; a role every tenant shares never changes shape | its holders never hold together what `assign` refuses |
+| A tenant's role exists for that tenant alone, never named like one every tenant shares; one every tenant shares defined later with its name is shadowed there — the tenant's own is in effect | one customer's holders never get what nobody assigned them |
+| A removed key is retired in its scope, never defined again; a tenant's role removed takes its assignments with it | assignments left behind never come back to life |
+| Every replica reads a tenant's versions at most once a `check_every` (a second), one caller per tenant, never holding back another, and composes again only when one moved | a role defined holds within a second everywhere, for small reads; a slow tenant slows nobody else |
+| A defined role that no longer builds grants nothing, the others still do; `live.problems(tenant)` lists which and why — a tenant role implying one every tenant shares that was removed among them | a broken definition never grants more than before, nor takes away what the others give |
+| A store that does not answer leaves the last catalog composed in effect — a tenant never composed is the code's until it answers | an outage never grants more, and keeps what was granted |
 
 `GrantResolver` and `GrantAdministration` take the `LiveCatalog` where they took the catalog; each
-identity resolves in its tenant's catalog. `live.current(tenant).describe()` is the whole catalog
-for that tenant's administration screen, `live.defined(tenant)` the roles it may edit, and
-`live.problems(tenant)` the ones to fix. With a publisher, every change is published:
-`RoleDefined`, `RoleChanged`, `RoleRemoved`.
+identity resolves in its tenant's catalog. `RoleAdministration` defines and removes. A screen
+shows `live.current(tenant).describe()` — the whole catalog of the tenant — `live.defined(tenant)`
+the roles it may edit, and `live.problems(tenant)` the ones to fix. With a publisher, every change
+is published: `RoleDefined`, `RoleChanged`, `RoleRemoved`, and the `RoleUnassigned` of a
+removal.

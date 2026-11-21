@@ -10,13 +10,8 @@ one is kept.
 """
 
 import threading
-from collections.abc import Sequence
 
-from sincpro_framework.auth.grants.domain.definitions import (
-    DefinedRoles,
-    RoleDefinition,
-    RoleDefinitions,
-)
+from sincpro_framework.auth.grants.domain.definitions import DefinedRoles, RoleDefinitions
 from sincpro_framework.auth.infrastructure.documents import KeyValueDocument
 from sincpro_framework.data_layer.store import KeyValueStore
 
@@ -32,16 +27,12 @@ class InMemoryRoleDefinitions(RoleDefinitions):
         """What the scope defines now."""
         return self._defined.get(tenant, DefinedRoles())
 
-    def write(
-        self, tenant: str | None, expected_version: int, roles: Sequence[RoleDefinition]
-    ) -> bool:
-        """The scope's next version — when nobody wrote it since `expected_version`."""
+    def write(self, tenant: str | None, document: DefinedRoles) -> bool:
+        """`document` — when nobody wrote the scope since the version before it."""
         with self._lock:
-            if self.read(tenant).version != expected_version:
+            if self.read(tenant).version != document.version - 1:
                 return False
-            self._defined[tenant] = DefinedRoles(
-                version=expected_version + 1, roles=tuple(roles)
-            )
+            self._defined[tenant] = document
             return True
 
 
@@ -64,10 +55,6 @@ class KeyValueRoleDefinitions(RoleDefinitions):
         """The scope's document — `DefinedRoles()` while none was written."""
         return self._document(tenant).read()
 
-    def write(
-        self, tenant: str | None, expected_version: int, roles: Sequence[RoleDefinition]
-    ) -> bool:
-        """The scope's next version, over the one read — compare-and-swap."""
-        return self._document(tenant).write(
-            expected_version, DefinedRoles(version=expected_version + 1, roles=tuple(roles))
-        )
+    def write(self, tenant: str | None, document: DefinedRoles) -> bool:
+        """`document`, over the version before it — compare-and-swap."""
+        return self._document(tenant).write(document.version - 1, document)

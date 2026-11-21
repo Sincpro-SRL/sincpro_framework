@@ -41,6 +41,7 @@ from sincpro_framework.auth.grants.domain.catalog import (
     CatalogDescription,
     CatalogSource,
     Category,
+    Composition,
     Entitlement,
     GrantCatalog,
     Privilege,
@@ -62,12 +63,14 @@ from sincpro_framework.auth.grants.domain.events import (
     TenantEntitled,
 )
 from sincpro_framework.auth.grants.services.administration import GrantAdministration
+from sincpro_framework.auth.grants.services.role_administration import RoleAdministration
 
 __all__ = [
     "Assignment",
     "CatalogDescription",
     "CatalogSource",
     "Category",
+    "Composition",
     "DefinedRoles",
     "Entitlement",
     "EntitlementWithdrawn",
@@ -85,6 +88,7 @@ __all__ = [
     "LiveCatalog",
     "Privilege",
     "Role",
+    "RoleAdministration",
     "RoleAssigned",
     "RoleChanged",
     "RoleDefined",
