@@ -53,8 +53,9 @@ class AnyOf:
 
 @dataclass(frozen=True)
 class ByField:
-    """Met as the permission the Command's own `field` names — `auth.by_field(...)`: what a
-    use case needs depends on what it was asked.
+    """Met as the requirement the Command's own `field` names — `auth.by_field(...)`: what a
+    use case needs depends on what it was asked. Each value names any requirement — a
+    permission, a role, a rule, an `any_of`.
 
         ByField("direction", (("inbound", RECEIVE), ("outbound", PAY)))
             CommandRegisterPayment(direction="outbound")   ->  needs PAY
@@ -62,9 +63,9 @@ class ByField:
     """
 
     field: str
-    permissions: tuple[tuple[object, Permission | AnyOf], ...]
+    permissions: "tuple[tuple[object, Requirement], ...]"
 
-    def chosen(self, dto: object) -> "Permission | AnyOf | None":
+    def chosen(self, dto: object) -> "Requirement | None":
         """The requirement `dto`'s field names — `None` when its value names none."""
         value = getattr(dto, self.field, None)
         return next((needed for one, needed in self.permissions if one == value), None)

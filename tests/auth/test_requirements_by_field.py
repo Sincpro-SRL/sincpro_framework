@@ -73,7 +73,7 @@ def test_a_value_it_names_no_permission_for_is_refused():
     bus, _ = finance()
 
     with security.as_identity(CASHIER), pytest.raises(
-        exceptions.PermissionDenied, match="names no permission"
+        exceptions.PermissionDenied, match="names no requirement"
     ):
         bus(CommandRegisterPayment(direction=Direction.INTERNAL, amount=5))
 

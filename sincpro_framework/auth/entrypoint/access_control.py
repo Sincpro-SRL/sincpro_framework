@@ -192,7 +192,7 @@ class AccessControl[P: Permission]:
         The class is returned as it was, its declaration stored in `declarations`.
         """
         if not requirements:
-            raise exceptions.ProgrammingError("requires() names at least one permission")
+            raise exceptions.ProgrammingError("requires() names at least one requirement")
 
         def declared[T: type](cls: T) -> T:
             return self.declarations.add(
@@ -201,17 +201,18 @@ class AccessControl[P: Permission]:
 
         return declared
 
-    def by_field(self, field: str, permissions: Mapping[Any, P | AnyOf]) -> ByField:
+    def by_field(self, field: str, permissions: Mapping[Any, P | Requirement]) -> ByField:
         """A requirement the Command's own `field` chooses — for `requires`: a value it does not
         name is refused; asked with no Command (`may_run`, a catalog), it is one among them.
+        A value may name any requirement: a permission, a role, a rule, an `any_of`.
 
             @auth.requires(auth.by_field("direction", {
                 Direction.INBOUND: FinancePermission.RECEIVE,
-                Direction.OUTBOUND: FinancePermission.PAY,
+                Direction.OUTBOUND: auth.any_of(FinancePermission.PAY, own_payment),
             }))
         """
         if not permissions:
-            raise exceptions.ProgrammingError("by_field() names at least one permission")
+            raise exceptions.ProgrammingError("by_field() names at least one requirement")
         return ByField(field, tuple(permissions.items()))
 
     def assurance(
@@ -503,9 +504,9 @@ class AccessControl[P: Permission]:
                 return exceptions.PermissionDenied(
                     identity.subject,
                     str(requirement),
-                    f"{requirement.field}={value!r} names no permission",
+                    f"{requirement.field}={value!r} names no requirement",
                 )
-            return self._denial(identity, chosen, resource, context)
+            return self._denial(identity, chosen, resource, context, dto, what)
         if not isinstance(requirement, AnyOf):
             return self._has(identity, requirement.value, resource, context)
         denials = [
@@ -564,17 +565,30 @@ class AccessControl[P: Permission]:
                 return denied
         return None
 
+    def _refused_in_play(
+        self, requirement: P | Requirement, resource: Any
+    ) -> exceptions.AuthError | None:
+        """What `allows` and `check` decide for the identity in play — as the guard would: the
+        system passes, nobody is refused before any provider or rule is asked, then the
+        requirement's own refusal."""
+        identity = current_identity()
+        if identity.kind == IdentityKind.SYSTEM:
+            return None
+        if identity.is_anonymous:
+            return exceptions.Unauthenticated(
+                f"authenticate to {requirement}", anonymous=True
+            )
+        return self._denial(identity, requirement, resource, context_scopes.live())
+
     def allows(self, requirement: P | Requirement, resource: Any = None) -> bool:
         """Whether the identity in play meets `requirement` — a permission, a role, a rule,
         `any_of`… — on `resource`, when given. What a handler asks before an optional step.
+        Nobody meets none: a rule is never asked for an anonymous caller, as in `requires`.
 
             self.auth.allows(BillingPermission.READ_CREDIT)
             self.auth.allows(self.auth.role("billing.manager"))
         """
-        identity = current_identity()
-        if identity.kind == IdentityKind.SYSTEM:
-            return True
-        return self._denial(identity, requirement, resource, context_scopes.live()) is None
+        return self._refused_in_play(requirement, resource) is None
 
     def has_role(self, *roles: str) -> bool:
         """Whether the identity in play holds one of `roles` — `allows(role(...))`, said short."""
@@ -589,12 +603,7 @@ class AccessControl[P: Permission]:
 
         The system passes without asking any provider.
         """
-        identity = current_identity()
-        if identity.kind == IdentityKind.SYSTEM:
-            return
-        if identity.is_anonymous:
-            raise exceptions.Unauthenticated(f"authenticate to {requirement}", anonymous=True)
-        denied = self._denial(identity, requirement, resource, context_scopes.live())
+        denied = self._refused_in_play(requirement, resource)
         if denied is not None:
             raise denied
 
@@ -655,7 +664,9 @@ class AccessControl[P: Permission]:
         if identity.kind == IdentityKind.SYSTEM:
             return None
         if identity.is_anonymous:
-            raise exceptions.Unauthenticated(f"authenticate to read {aggregate.__name__}")
+            raise exceptions.Unauthenticated(
+                f"authenticate to read {aggregate.__name__}", anonymous=True
+            )
         provider = self._provider_of(identity)
         return None if provider is None else provider.scope(identity, aggregate)
 

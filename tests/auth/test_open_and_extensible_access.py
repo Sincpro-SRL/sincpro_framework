@@ -284,9 +284,7 @@ def test_a_refusal_of_the_projects_own_without_a_reason_is_still_worded() -> Non
 
 def test_by_field_with_no_command_keeps_roles_and_rules_among_its_options() -> None:
     auth = AccessControl[P]()
-    chosen = auth.by_field(
-        "number", {"in": auth.any_of(auth.role("billing.clerk")), "out": P.APPROVE}
-    )
+    chosen = auth.by_field("number", {"in": auth.role("billing.clerk"), "out": P.APPROVE})
     with security.as_identity(BEA):
         assert auth.allows(chosen)
 
@@ -298,3 +296,40 @@ def test_open_is_no_rules_name_and_a_test_copy_never_adds_checks_to_production()
     copy = auth.using([])
     copy.every_call(lambda call: False, name="the test's own")
     assert auth.checks == [] and [one.name for one in copy.checks] == ["the test's own"]
+
+
+def test_by_field_hands_the_command_to_the_rule_it_chooses() -> None:
+    auth = AccessControl[P]()
+    bus = UseFramework("by-field-rule", log_after_execution=False)
+    own_invoice = auth.rule(
+        "its own invoice", lambda call: call.dto.owner == call.identity.subject
+    )
+
+    @bus.feature(QueryInvoice)
+    @auth.requires(
+        auth.by_field("number", {"F-1": auth.any_of(own_invoice), "F-2": own_invoice})
+    )
+    class ReadInvoice(Feature):
+        def execute(self, dto: QueryInvoice) -> Answer:
+            return Answer(by=security.identity.subject)
+
+    auth.on(bus)
+    assert run(bus, QueryInvoice(number="F-1", owner="user:ana"), ANA).by == "user:ana"
+    assert run(bus, QueryInvoice(number="F-2", owner="user:ana"), ANA).by == "user:ana"
+    with pytest.raises(PermissionDenied, match="its own invoice does not hold"):
+        run(bus, QueryInvoice(number="F-2", owner="user:bea"), ANA)
+
+
+def test_nobody_meets_no_requirement_by_hand_as_the_guard_decides() -> None:
+    class Invoice:
+        pass
+
+    auth = AccessControl[P]()
+    always = auth.rule("always", lambda call: True)
+    assert not auth.allows(always)
+    with pytest.raises(Unauthenticated) as refused:
+        auth.check(always)
+    assert refused.value.anonymous
+    with pytest.raises(Unauthenticated) as unscoped:
+        auth.scope_of(Invoice)
+    assert unscoped.value.anonymous
