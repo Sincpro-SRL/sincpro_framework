@@ -15,7 +15,8 @@ from fastapi import APIRouter, Depends, FastAPI
 from fastapi.testclient import TestClient
 
 from sincpro_framework import DataTransferObject, Feature, UseFramework, exceptions
-from sincpro_framework.auth import AccessControl, Identity, Permission, StaticProvider
+from sincpro_framework.auth import AccessControl, Identity, Permission
+from sincpro_framework.auth.server import StaticProvider
 from sincpro_framework.ddd.query import Query
 from sincpro_framework.entrypoints import FastApiGateway, Profile
 from sincpro_framework.entrypoints.adapters.fastapi import (

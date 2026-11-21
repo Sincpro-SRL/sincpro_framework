@@ -10,18 +10,20 @@ import pytest
 from sincpro_framework import DataTransferObject, Feature, UseFramework
 from sincpro_framework.auth import (
     AccessControl,
-    AuthZenEngine,
     Credentials,
-    DecidedBy,
     EndpointUnavailable,
     HttpRequest,
     Identity,
-    OpaEngine,
-    OpenFgaEngine,
     Permission,
     PermissionDenied,
-    StaticProvider,
     security,
+)
+from sincpro_framework.auth.server import (
+    AuthZenEngine,
+    DecidedBy,
+    OpaEngine,
+    OpenFgaEngine,
+    StaticProvider,
 )
 from sincpro_framework.ddd.criteria import Condition
 from sincpro_framework.runtime.testing import ScriptedHttp

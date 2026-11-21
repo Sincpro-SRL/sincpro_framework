@@ -24,21 +24,23 @@ from starlette.testclient import TestClient
 from sincpro_framework import DataTransferObject, Feature, UseFramework
 from sincpro_framework.auth import (
     AccessControl,
-    ApiKey,
-    ApiKeyProvider,
     AuthProvider,
     Credentials,
     Identity,
     IdentityKind,
     IdentityMiddleware,
-    InMemoryApiKeys,
     Permission,
-    ServiceTokenProvider,
-    StaticProvider,
     security,
 )
-from sincpro_framework.auth.adapters.service_token_provider import HEADER
 from sincpro_framework.auth.domain import exceptions
+from sincpro_framework.auth.server import (
+    ApiKey,
+    ApiKeyProvider,
+    InMemoryApiKeys,
+    ServiceTokenProvider,
+    StaticProvider,
+)
+from sincpro_framework.auth.server.adapters.service_tokens import HEADER
 from sincpro_framework.common.serialization import rebuilt
 from sincpro_framework.entrypoints import GrpcGateway, RpcGateway
 from sincpro_framework.entrypoints.adapters.grpc.wire import (

@@ -8,20 +8,17 @@ from typing import Any
 
 import pytest
 
-from sincpro_framework.auth import (
-    ClaimMapping,
-    Credentials,
-    DpopProofs,
-    EndpointUnavailable,
-    Issuer,
-    JwtProvider,
-    PrivateKey,
-    PublicKey,
-    PublicKeys,
-)
-from sincpro_framework.auth.adapters.jwt.jwks import Jwks
+from sincpro_framework.auth import Credentials, EndpointUnavailable, PrivateKey, PublicKey
 from sincpro_framework.auth.domain import exceptions
 from sincpro_framework.auth.infrastructure import jws
+from sincpro_framework.auth.server import (
+    ClaimMapping,
+    DpopProofs,
+    Issuer,
+    JwtProvider,
+    PublicKeys,
+)
+from sincpro_framework.auth.server.adapters.bearer_tokens.jwks import Jwks
 from sincpro_framework.runtime.testing import ScriptedHttp
 
 ISSUER = "https://auth.acme.bo/realms/acme"

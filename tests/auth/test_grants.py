@@ -11,35 +11,34 @@ import pytest
 from sincpro_framework import DataTransferObject, Feature, UseFramework
 from sincpro_framework.auth import (
     AccessControl,
+    Credentials,
+    Identity,
+    InMemoryRevocations,
+    InvalidGrant,
+    KeyValueRevocations,
+    Permission,
+    PermissionDenied,
+    security,
+)
+from sincpro_framework.auth.domain import exceptions
+from sincpro_framework.auth.grants import (
     Assignment,
     Category,
-    ClaimMapping,
-    Credentials,
     Entitlement,
     GrantAdministration,
     GrantCatalog,
     GrantResolver,
     GrantStore,
-    Identity,
     InMemoryGrants,
-    InMemoryRevocations,
-    InvalidGrant,
-    Issuer,
-    JwtProvider,
     KeyValueGrants,
-    KeyValueRevocations,
-    Permission,
-    PermissionDenied,
     Privilege,
     Role,
     RoleMapping,
     RolePermissions,
     ScopeCeiling,
-    SharedSecrets,
-    security,
 )
-from sincpro_framework.auth.domain import exceptions
 from sincpro_framework.auth.infrastructure import jws
+from sincpro_framework.auth.server import ClaimMapping, Issuer, JwtProvider, SharedSecrets
 from sincpro_framework.data_layer.caching import Cache
 from sincpro_framework.data_layer.store import InMemoryKeyValue
 from sincpro_framework.data_layer.store.adapters.redis import RedisKeyValue

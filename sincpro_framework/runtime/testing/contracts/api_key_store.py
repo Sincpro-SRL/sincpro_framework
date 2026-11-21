@@ -8,7 +8,7 @@ table proves it by inheriting this class.
 
 from datetime import UTC, datetime, timedelta
 
-from sincpro_framework.auth import ApiKey, ApiKeyStore, digest_of
+from sincpro_framework.auth.server import ApiKey, ApiKeyStore, digest_of
 
 
 class ApiKeyStoreContract:

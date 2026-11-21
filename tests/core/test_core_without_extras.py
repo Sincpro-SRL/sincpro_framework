@@ -191,15 +191,17 @@ import asyncio
 
 from sincpro_framework.auth import (
     AccessControl,
-    ApiKey,
-    ApiKeyProvider,
     Credentials,
     IdentityMiddleware,
-    InMemoryApiKeys,
     Permission,
     PermissionDenied,
-    ServiceTokenProvider,
     security,
+)
+from sincpro_framework.auth.server import (
+    ApiKey,
+    ApiKeyProvider,
+    InMemoryApiKeys,
+    ServiceTokenProvider,
 )
 from sincpro_framework.runtime.testing import AuthProviderContract, granting
 
@@ -236,17 +238,24 @@ with granting():
         raise AssertionError("a guarded use case ran for an identity that lacks its permission")
 
 try:
-    from sincpro_framework.auth import Jwks
+    from sincpro_framework.auth.server import Jwks
 except ImportError as error:
     assert "sincpro-framework[jwt]" in str(error), error
 else:
     raise AssertionError("Jwks imported without PyJWT")
 
-from sincpro_framework.auth import Issuer, JwtProvider, SharedSecrets
+from sincpro_framework.auth.server import Issuer, JwtProvider, SharedSecrets
+import sincpro_framework.auth.accounts  # no extra loaded by a door
+import sincpro_framework.auth.grants
 
 JwtProvider(Issuer("core", audience="core", keys=SharedSecrets({"k": "a secret of 32 bytes or more!!"})))
 
-from sincpro_framework.auth import ClientCredentials, OutgoingRequest, TokenCache, call_with_credentials
+from sincpro_framework.auth.client import (
+    ClientCredentials,
+    OutgoingRequest,
+    TokenCache,
+    call_with_credentials,
+)
 from sincpro_framework.data_layer.store import InMemoryKeyValue as _Memory
 from sincpro_framework.runtime.testing import FakeTokenEndpoint
 

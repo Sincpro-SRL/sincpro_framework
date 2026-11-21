@@ -14,17 +14,14 @@ from sincpro_framework.auth import (
     AccessCall,
     AccessControl,
     AuthError,
-    Category,
-    GrantCatalog,
     Identity,
     Permission,
     PermissionDenied,
-    Privilege,
-    Role,
     Unauthenticated,
     WhenDenied,
     security,
 )
+from sincpro_framework.auth.grants import Category, GrantCatalog, Privilege, Role
 
 
 class P(Permission):

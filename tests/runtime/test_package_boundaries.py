@@ -25,6 +25,10 @@ FRAMEWORK = Path(__file__).parents[2] / "sincpro_framework"
 
 LAYERED = {
     "auth": "auth",
+    "auth.accounts": "auth.accounts",
+    "auth.client": "auth.client",
+    "auth.grants": "auth.grants",
+    "auth.server": "auth.server",
     "context": "context",
     "data_layer.caching": "data_layer.caching",
     "data_layer.object_storage": "data_layer.object_storage",

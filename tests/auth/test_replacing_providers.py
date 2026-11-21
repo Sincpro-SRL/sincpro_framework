@@ -16,10 +16,10 @@ from sincpro_framework.auth import (
     Identity,
     IdentityMiddleware,
     Permission,
-    StaticProvider,
     security,
 )
 from sincpro_framework.auth.domain import exceptions
+from sincpro_framework.auth.server import StaticProvider
 from sincpro_framework.exceptions import ProgrammingError, ServiceUnavailableError
 from sincpro_framework.runtime.testing import AuthProviderContract
 

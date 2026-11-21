@@ -11,7 +11,7 @@ logout and revocation. Every block on this page runs, in order, in
 ## Passwords
 
 ```python
-from sincpro_framework.auth import PasswordHasher, ScryptCost
+from sincpro_framework.auth.accounts import PasswordHasher, ScryptCost
 
 hasher = PasswordHasher(scheme="scrypt", scrypt=ScryptCost(ln=12))   # ln=15 in production
 stored = hasher.hash("correct horse battery")
@@ -34,7 +34,7 @@ assert PasswordHasher(scheme="scrypt").needs_rehash(stored)      # the cost rose
 ```python
 from datetime import timedelta
 
-from sincpro_framework.auth import LoginAttempts
+from sincpro_framework.auth.accounts import LoginAttempts
 from sincpro_framework.data_layer.store import InMemoryKeyValue
 from sincpro_framework.rate_limiter import RateLimited
 
@@ -117,15 +117,8 @@ and takes them back. Its `provider()` is the `JwtProvider` that accepts them —
 revocations on every call.
 
 ```python
-from sincpro_framework.auth import (
-    AccessControl,
-    Assurance,
-    Credentials,
-    InMemoryRefreshTokens,
-    InMemoryRevocations,
-    SigningKeys,
-    TokenIssuer,
-)
+from sincpro_framework.auth import AccessControl, Assurance, Credentials, InMemoryRevocations
+from sincpro_framework.auth.accounts import InMemoryRefreshTokens, SigningKeys, TokenIssuer
 
 sessions = TokenIssuer(
     "https://colegio.bo",
@@ -166,7 +159,7 @@ except Unauthenticated as refused:
 ## Links that work once, and a second factor
 
 ```python
-from sincpro_framework.auth import OneTimeTokens, Totp
+from sincpro_framework.auth.accounts import OneTimeTokens, Totp
 
 links = OneTimeTokens(InMemoryKeyValue())                  # the context's store in production
 reset = links.issue("password-reset", "user:MFAQ0123", ttl=timedelta(minutes=30))
@@ -197,7 +190,8 @@ the identity's `assurance` says `otp` — what a [step-up](server.md#step-up-how
 ```python
 import base64
 
-from sincpro_framework.auth import BasicProvider, Credentials, HashedCredentials
+from sincpro_framework.auth import Credentials
+from sincpro_framework.auth.accounts import BasicProvider, HashedCredentials
 
 service_accounts = HashedCredentials(
     {"reports": (hasher.hash("reports secret"), Identity.service("reports"))}, hasher

@@ -20,7 +20,12 @@ URL, so a token for one API is never sent to another.
 ## Static credentials
 
 ```python
-from sincpro_framework.auth import ApiKeyHeader, BasicCredentials, OutgoingRequest, StaticToken
+from sincpro_framework.auth.client import (
+    ApiKeyHeader,
+    BasicCredentials,
+    OutgoingRequest,
+    StaticToken,
+)
 
 request = OutgoingRequest(url="https://pilotosiatservicios.impuestos.gob.bo/v2/x", method="POST")
 siat = StaticToken("the-siat-token", header="apikey", scheme="TokenApi")
@@ -35,7 +40,7 @@ is made; no `repr` shows it.
 ## Client credentials: a token for this service, shared
 
 ```python
-from sincpro_framework.auth import ClientCredentials, TokenCache, call_with_credentials
+from sincpro_framework.auth.client import call_with_credentials, ClientCredentials, TokenCache
 from sincpro_framework.data_layer.store import InMemoryKeyValue
 from sincpro_framework.runtime.testing import FakeTokenEndpoint
 
@@ -78,7 +83,7 @@ import httpx
 transport = httpx.MockTransport(
     lambda r: httpx.Response(200 if server.accepts(r.headers["authorization"].split()[1]) else 401)
 )
-from sincpro_framework.auth import httpx_auth
+from sincpro_framework.auth.client import httpx_auth
 
 with httpx.Client(transport=transport, auth=httpx_auth(bank)) as client:
     assert client.get("https://api.bank.bo/qr").status_code == 200
@@ -91,7 +96,8 @@ loop. Neither library is imported until its hook is asked for.
 ## A credential per tenant — never another's
 
 ```python
-from sincpro_framework.auth import Identity, NoCredentialsFor, TokenSources, security
+from sincpro_framework.auth import Identity, NoCredentialsFor, security
+from sincpro_framework.auth.client import TokenSources
 
 siat_by_tenant = TokenSources({
     "bo-001": StaticToken("token-of-001", header="apikey", scheme="TokenApi"),
@@ -121,14 +127,9 @@ change to its transports.
 
 ```python
 from sincpro_framework import DataTransferObject, Feature, UseFramework
-from sincpro_framework.auth import (
-    AccessControl,
-    ClientSecretBasic,
-    Credentials,
-    PresentingProvider,
-    StaticProvider,
-    TokenExchange,
-)
+from sincpro_framework.auth import AccessControl, Credentials
+from sincpro_framework.auth.client import ClientSecretBasic, PresentingProvider, TokenExchange
+from sincpro_framework.auth.server import StaticProvider
 
 orders_token = TokenExchange(
     ClientSecretBasic("billing", "s3cret"),
@@ -180,7 +181,12 @@ the lease — and it is stored by compare-and-set: a server that rotates refresh
 one used twice (and revokes the grant for it). `invalid_grant` drops the grant: `GrantRejected`, consent to be given again.
 
 ```python
-from sincpro_framework.auth import DeviceCode, InMemoryHeldGrants, PublicClient, RefreshingToken
+from sincpro_framework.auth.client import (
+    DeviceCode,
+    InMemoryHeldGrants,
+    PublicClient,
+    RefreshingToken,
+)
 
 device_server = FakeTokenEndpoint("https://auth.sincpro.dev", clients={"sincpro-cli": ""})
 shown = []

@@ -41,7 +41,15 @@ from collections.abc import Mapping
 from typing import Any
 
 from sincpro_framework import ApplicationService, DataTransferObject, Feature, UseFramework
-from sincpro_framework.auth import AccessControl, AuthProvider, Credentials, Identity, Permission, WhenDenied, security
+from sincpro_framework.auth import (
+    AccessControl,
+    AuthProvider,
+    Credentials,
+    Identity,
+    Permission,
+    WhenDenied,
+    security,
+)
 from sincpro_framework.auth.domain import exceptions
 
 
@@ -515,7 +523,12 @@ A guarded bus needs nothing more on its entrypoints: each builds `Credentials` f
 the bus's `AccessControl` authenticates them, and the use case runs as that identity.
 
 ```python
-from sincpro_framework.auth import ApiKey, ApiKeyProvider, InMemoryApiKeys, ServiceTokenProvider
+from sincpro_framework.auth.server import (
+    ApiKey,
+    ApiKeyProvider,
+    InMemoryApiKeys,
+    ServiceTokenProvider,
+)
 from sincpro_framework.entrypoints.domain.surface import Exposure
 from sincpro_framework.entrypoints import RpcGateway
 

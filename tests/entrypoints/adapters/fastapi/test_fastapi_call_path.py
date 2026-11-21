@@ -19,13 +19,8 @@ from fastapi.testclient import TestClient
 from pydantic import model_validator
 
 from sincpro_framework import DataTransferObject, Feature, UseFramework, exceptions
-from sincpro_framework.auth import (
-    AccessControl,
-    Identity,
-    Permission,
-    StaticProvider,
-    security,
-)
+from sincpro_framework.auth import AccessControl, Identity, Permission, security
+from sincpro_framework.auth.server import StaticProvider
 from sincpro_framework.data_layer.caching import Idempotency
 from sincpro_framework.data_layer.caching.domain import exceptions as caching_exceptions
 from sincpro_framework.data_layer.store import InMemoryKeyValue

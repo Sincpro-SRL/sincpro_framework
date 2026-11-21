@@ -179,7 +179,14 @@ Silent ones first — the runtime says nothing.
 ## Permissions and a provider
 
 ```python
-from sincpro_framework.auth import AccessControl, AuthProvider, Credentials, Identity, Permission, WhenDenied
+from sincpro_framework.auth import (
+    AccessControl,
+    AuthProvider,
+    Credentials,
+    Identity,
+    Permission,
+    WhenDenied,
+)
 from sincpro_framework.auth.domain import exceptions
 
 

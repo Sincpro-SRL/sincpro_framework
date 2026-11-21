@@ -18,7 +18,8 @@ from starlette.routing import Mount
 from starlette.testclient import TestClient
 
 from sincpro_framework import ApplicationService, DataTransferObject, Feature, UseFramework
-from sincpro_framework.auth import AccessControl, Identity, Permission, StaticProvider
+from sincpro_framework.auth import AccessControl, Identity, Permission
+from sincpro_framework.auth.server import StaticProvider
 from sincpro_framework.common.naming import kebab
 from sincpro_framework.ddd import exceptions
 from sincpro_framework.ddd.query import Query

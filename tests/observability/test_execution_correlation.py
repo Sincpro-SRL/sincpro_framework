@@ -23,10 +23,7 @@ from sincpro_framework import (
     UseFramework,
     exceptions,
 )
-from sincpro_framework.auth import (
-    Identity,
-    security,
-)
+from sincpro_framework.auth import Identity, security
 from sincpro_framework.context import ContextKey
 from sincpro_framework.observability.metrics import InMemoryRecorder, field_path, metrics
 from sincpro_framework.observability.tracing.attributes import traces

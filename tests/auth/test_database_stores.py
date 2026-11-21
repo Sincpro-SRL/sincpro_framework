@@ -11,17 +11,15 @@ import pytest
 from sqlalchemy import MetaData
 
 from sincpro_framework.auth import (
-    ApiKeyStore,
     Credentials,
-    GrantStore,
     Identity,
     KeyValueRevocations,
-    RefreshTokens,
     Revocations,
-    SigningKeys,
-    TokenIssuer,
     Unauthenticated,
 )
+from sincpro_framework.auth.accounts import RefreshTokens, SigningKeys, TokenIssuer
+from sincpro_framework.auth.grants import GrantStore
+from sincpro_framework.auth.server import ApiKeyStore
 from sincpro_framework.data_layer.orm import (
     Database,
     DatabaseApiKeys,

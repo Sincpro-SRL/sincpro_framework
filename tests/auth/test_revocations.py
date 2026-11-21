@@ -8,7 +8,7 @@ from datetime import UTC, datetime, timedelta
 import fakeredis
 import pytest
 
-from sincpro_framework.auth.adapters.key_value_revocations import (
+from sincpro_framework.auth.adapters.revocations import (
     InMemoryRevocations,
     KeyValueRevocations,
 )

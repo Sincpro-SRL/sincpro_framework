@@ -70,7 +70,8 @@ dependency of the project):
 ```python
 import jwt                                            # the project's dependency
 
-from sincpro_framework.auth import AuthProvider, Credentials, Identity, RolePermissions
+from sincpro_framework.auth import AuthProvider, Credentials, Identity
+from sincpro_framework.auth.grants import RolePermissions
 
 from sincpro_framework.auth.domain import exceptions
 

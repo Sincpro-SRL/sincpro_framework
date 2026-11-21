@@ -26,13 +26,8 @@ from sincpro_framework import (
     entrypoints,
     exceptions,
 )
-from sincpro_framework.auth import (
-    AccessControl,
-    Identity,
-    Permission,
-    StaticProvider,
-    security,
-)
+from sincpro_framework.auth import AccessControl, Identity, Permission, security
+from sincpro_framework.auth.server import StaticProvider
 from sincpro_framework.context import ContextKey
 from sincpro_framework.context.domain.execution import CHAIN_KEYS
 from sincpro_framework.entrypoints import GrpcGateway, bus_call

@@ -21,7 +21,8 @@ from sincpro_framework import (
     UseFramework,
     exceptions,
 )
-from sincpro_framework.auth import AccessControl, Identity, Permission, StaticProvider
+from sincpro_framework.auth import AccessControl, Identity, Permission
+from sincpro_framework.auth.server import StaticProvider
 from sincpro_framework.data_layer.caching import Idempotency
 from sincpro_framework.data_layer.store import InMemoryKeyValue
 from sincpro_framework.ddd import Query

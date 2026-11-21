@@ -21,13 +21,8 @@ against what the token says about itself.
 ```python
 import time
 
-from sincpro_framework.auth import (
-    ClaimMapping,
-    Credentials,
-    Issuer,
-    JwtProvider,
-    SharedSecrets,
-)
+from sincpro_framework.auth import Credentials
+from sincpro_framework.auth.server import ClaimMapping, Issuer, JwtProvider, SharedSecrets
 from sincpro_framework.auth.domain import exceptions
 from sincpro_framework.auth.infrastructure import jws
 
@@ -108,7 +103,8 @@ One provider trusts several issuers — Keycloak for people, this service's own 
 ```python
 from datetime import UTC, datetime, timedelta
 
-from sincpro_framework.auth import InMemoryRevocations, Permission, RolePermissions
+from sincpro_framework.auth import InMemoryRevocations, Permission
+from sincpro_framework.auth.grants import RolePermissions
 
 
 class BillingPermission(Permission):
@@ -156,7 +152,7 @@ code (RFC 6750 §3.1): there was no token to call invalid. FastAPI, gRPC (`www-a
 trailing metadata), JSON-RPC, REST and `IdentityMiddleware` answer the same challenge.
 
 ```python
-from sincpro_framework.auth import ProtectedResource
+from sincpro_framework.auth.server import ProtectedResource
 
 resource = ProtectedResource("https://billing.sincpro.com.bo/mcp", authorization_servers=[KEYCLOAK])
 provider = JwtProvider(keycloak, resource=resource, realm="billing")
@@ -290,7 +286,8 @@ caches every answer by the token's SHA-256 — never the token — and never pas
 stream of requests. A JWT is left to `JwtProvider`.
 
 ```python
-from sincpro_framework.auth import ClientSecretBasic, IntrospectionProvider
+from sincpro_framework.auth.client import ClientSecretBasic
+from sincpro_framework.auth.server import IntrospectionProvider
 
 introspect = f"{KEYCLOAK}/protocol/openid-connect/token/introspect"
 http = ScriptedHttp({f"POST {introspect}": {"active": True, "sub": "4c1d", "aud": "billing-api",
@@ -317,13 +314,9 @@ FastAPI, a queue's message, `IdentityMiddleware` — hand it over as it came, on
 of the bus asks for it; the app still reads the whole body after.
 
 ```python
-from sincpro_framework.auth import (
-    HexDigest,
-    OutgoingRequest,
-    RequestSigner,
-    SignatureProvider,
-    TimestampedSignature,
-)
+from sincpro_framework.auth import HexDigest, TimestampedSignature
+from sincpro_framework.auth.client import OutgoingRequest, RequestSigner
+from sincpro_framework.auth.server import SignatureProvider
 from sincpro_framework.data_layer.store import InMemoryKeyValue
 
 gateway = SignatureProvider(
@@ -350,7 +343,8 @@ A token that leaks from a log or a proxy is of no use when it is bound: to a key
 on every request (DPoP, RFC 9449), or to the client certificate of its mTLS connection (RFC 8705).
 
 ```python
-from sincpro_framework.auth import DpopProofs, DpopProver
+from sincpro_framework.auth.client import DpopProver
+from sincpro_framework.auth.server import DpopProofs
 
 client_key = DpopProver()                                      # the client's — ClientCredentials(dpop=…)
 bound = jws.encode(
@@ -389,7 +383,7 @@ in OpenID AuthZEN's terms: a subject, an action, a resource, a context. `Decided
 provider's name and answers `has_permission`, `permitted` and `scope` from the engine.
 
 ```python
-from sincpro_framework.auth import AuthZenEngine, DecidedBy, OpaEngine, OpenFgaEngine
+from sincpro_framework.auth.server import AuthZenEngine, DecidedBy, OpaEngine, OpenFgaEngine
 
 pdp = ScriptedHttp({"POST https://pdp.internal/access/v1/evaluation": {"decision": True}})
 decided = DecidedBy(provider, AuthZenEngine("https://pdp.internal", http=pdp))
