@@ -112,9 +112,9 @@ def stock() -> UseFramework:
 def wires(*buses: UseFramework) -> list[Any]:
     """One gateway per wire over `buses` — the ones that need no extra to list their surface."""
     return [
-        RpcGateway(list(buses), unguarded=True),
-        GrpcGateway(list(buses), unguarded=True),
-        McpGateway(list(buses), unguarded=True),
+        RpcGateway(list(buses)),
+        GrpcGateway(list(buses)),
+        McpGateway(list(buses)),
     ]
 
 
@@ -266,10 +266,8 @@ def _issues_with(field: str | None) -> UseFramework:
 
 
 def test_adding_a_field_changes_only_the_models_and_the_version():
-    before = client_contracts(RpcGateway([_issues_with(None)], unguarded=True))["tracker"]
-    after = client_contracts(RpcGateway([_issues_with("priority")], unguarded=True))[
-        "tracker"
-    ]
+    before = client_contracts(RpcGateway([_issues_with(None)]))["tracker"]
+    after = client_contracts(RpcGateway([_issues_with("priority")]))["tracker"]
 
     assert "priority" in after["models"]["Issue"]["properties"]
     assert before["models"] != after["models"] and before["version"] != after["version"]
@@ -286,9 +284,7 @@ def test_a_rest_binding_names_the_full_path_and_the_fields_its_names_take():
     from sincpro_framework.entrypoints import FastApiGateway
 
     bus = tracker()
-    gateway = FastApiGateway([bus], unguarded=True).group(
-        bus, prefix="/tracker", version="v2"
-    )
+    gateway = FastApiGateway([bus]).group(bus, prefix="/tracker", version="v2")
 
     rest_bindings = client_contracts(gateway)["tracker"]["bindings"]["rest"]
 
@@ -309,9 +305,9 @@ def test_changing_a_route_changes_only_the_bindings():
     pytest.importorskip("fastapi")
     from sincpro_framework.entrypoints import FastApiGateway
 
-    before = client_contracts(FastApiGateway([tracker()], unguarded=True))["tracker"]
+    before = client_contracts(FastApiGateway([tracker()]))["tracker"]
     after = client_contracts(
-        FastApiGateway([tracker()], unguarded=True).override(
+        FastApiGateway([tracker()]).override(
             CommandMoveIssue, path="/issues/{issue_id}/relocate"
         )
     )["tracker"]
@@ -399,7 +395,7 @@ def test_a_subscriber_changes_nothing_in_a_contract_not_asked_for_events():
 
 def test_a_contract_says_the_contexts_own_name_and_the_alias_it_is_published_under(tmp_path):
     bus = tracker()  # named "tracker"; published as "issues", as forge publishes "project"
-    gateways = [RpcGateway({"issues": bus}, unguarded=True)]
+    gateways = [RpcGateway({"issues": bus})]
 
     [contract] = client_contracts(gateways).values()
     written = export_client_contract(gateways, tmp_path)
@@ -411,8 +407,8 @@ def test_a_contract_says_the_contexts_own_name_and_the_alias_it_is_published_und
 
 def test_an_alias_that_names_two_bounded_contexts_is_refused():
     gateways = [
-        RpcGateway({"desk": tracker()}, unguarded=True),
-        RpcGateway({"desk": stock()}, unguarded=True),
+        RpcGateway({"desk": tracker()}),
+        RpcGateway({"desk": stock()}),
     ]
 
     with pytest.raises(

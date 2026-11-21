@@ -11,7 +11,7 @@ may not).
 | `Permission` | `auth/domain/permissions.py` | the `StrEnum` base a bounded context extends with its permissions |
 | `Credentials` → `Identity` | `auth/domain/identity.py` | what the caller presented, and who they turned out to be |
 | `AuthProvider` | `auth/domain/provider.py` | **the contract**: authenticate, and answer about permissions |
-| `AccessControl` | `auth/entrypoint/access_control.py` | the declarations (`requires`, `authenticated`, `public`) and the checks; `AccessControl.of(bus)` is the one guarding a bus |
+| `AccessControl` | `auth/entrypoint/access_control.py` | the declarations (`requires`, `authenticated`), what `requires` takes besides a permission (`role`, `rule`, `any_of`, `by_field`, `assurance`), the checks asked on every call (`every_call`) and by hand (`check`, `allows`, `has_role`, `scope_of`); `AccessControl.of(bus)` is the one guarding a bus |
 | the guard | `auth/services/guard.py` | what runs around a use case and before a hook |
 | `security` | `auth/entrypoint/security.py` | who the execution acts as (`identity`, `as_identity`, `as_system`), and what every entrypoint hands auth (`authenticated_as`, `challenges`, `identity_headers`) |
 | `StaticProvider`, `RolePermissions`, `ApiKeyProvider`, `ServiceTokenProvider` | `auth/adapters/` | what the framework ships; any class honouring the contract stands beside them |
@@ -19,8 +19,9 @@ may not).
 | `Credentials.from_asgi`, `Credentials.from_headers`, `AuthError.refusal_body`, `AuthError.http_status` | `auth/domain/` | credentials out of a request, and the refusal every entrypoint answers |
 
 Nothing is forced: a use case or hook that declares nothing is not checked, and a bus with no
-`AccessControl` runs as before. JSON-RPC, gRPC, MCP and a context hosted for another service
-authenticate by themselves when the bus is guarded — see [Entrypoints](#entrypoints-authenticate-by-themselves).
+`AccessControl` runs as before. Every wire — REST, FastAPI, JSON-RPC, gRPC, MCP, a queue (a
+Lambda fed by SQS included), an ASGI app of the project's and a context hosted for another
+service — authenticates by itself when the bus is guarded — see [Entrypoints](#entrypoints-authenticate-by-themselves).
 
 **The rest of the plugin** — every page runs the same way:
 
@@ -201,7 +202,8 @@ auth.on(billing)
   retried answer is never given without asking — and injects `auth` in the handlers, typed like
   any dependency. The decorators only mark classes, in any order around `@billing.feature`.
 - `@auth.requires(A, B)` and stacked `requires` are *and*; `auth.any_of(A, B)` is *or*;
-  `@auth.authenticated` is anybody authenticated; `@auth.public` is anybody.
+  `@auth.authenticated` is anybody authenticated. A use case that declares nothing is open —
+  anybody, anonymous included; `@entrypoints.internal` keeps one off every entrypoint.
 - `self.auth.allows(...)` asks before an optional step; `self.auth.check(permission, resource)`
   decides on the loaded resource, which no interceptor can see — the provider gets it.
 - `auth.by_field("direction", {Direction.INBOUND: P.RECEIVE, Direction.OUTBOUND: P.PAY})` in
@@ -209,6 +211,88 @@ auth.on(billing)
   refused; asked with no Command (a catalog), it is one among them.
 - A provider words the refusal of a whole `any_of` with `refusing_any(identity, permissions,
   reasons)`; without it, each reason is joined with "and".
+
+## Roles, rules, and a check on every call
+
+`requires` takes more than a permission: `auth.role(...)` is Odoo's `groups=` — met by one of the
+roles named, read off the closure a `GrantResolver` gives, so a manager holds the clerk role its
+level implies — and `auth.rule(name, check)` is whatever the project decides, asked with the call
+(`AccessCall`: the identity, the use case, the Command, the resource and the execution's
+context). `@auth.every_call` is an interceptor of the project's own: asked on every use case of
+every bus guarded, open or declared, before it runs. In a handler `self.auth` answers the same
+terms: `allows(...)` and `check(...)` take any requirement, `has_role(...)` a role.
+
+```python
+from sincpro_framework.auth import AccessCall, Identity, PermissionDenied, security
+
+
+class LedgerPermission(Permission):
+    READ = "ledger.entry.read"
+
+
+class QueryEntry(DataTransferObject):
+    number: str
+    owner: str
+
+
+class CommandClose(DataTransferObject):
+    period: str
+
+
+class Done(DataTransferObject):
+    by: str
+
+
+ledger = UseFramework("ledger", log_after_execution=False)
+ledger_auth = AccessControl[LedgerPermission]()
+suspended_tenants = {"pe"}
+own_entry = ledger_auth.rule("its own entry", lambda call: call.dto.owner == call.identity.subject)
+
+
+@ledger_auth.every_call
+def tenant_active(call: AccessCall) -> bool:
+    return call.context.get("tenant_id") not in suspended_tenants
+
+
+@ledger.feature(QueryEntry)
+@ledger_auth.requires(LedgerPermission.READ, own_entry)
+class ReadEntry(Feature):
+    def execute(self, dto: QueryEntry) -> Done:
+        return Done(by=security.identity.subject)
+
+
+@ledger.feature(CommandClose)
+@ledger_auth.requires(ledger_auth.role("ledger.manager", "ledger.admin"))
+class Close(Feature):
+    def execute(self, dto: CommandClose) -> Done:
+        return Done(by=self.auth.identity.subject if self.auth.has_role("ledger.admin") else "a manager")
+
+
+ledger_auth.on(ledger)
+ana = Identity.user("user:ana", roles={"ledger.manager"}, permissions={LedgerPermission.READ})
+with ledger.context({"tenant_id": "bo"}), security.as_identity(ana):
+    assert ledger(QueryEntry(number="E-1", owner="user:ana"), Done).by == "user:ana"
+    assert ledger(CommandClose(period="2026-11"), Done).by == "a manager"
+    try:
+        ledger(QueryEntry(number="E-2", owner="user:bea"), Done)
+    except PermissionDenied as refused:
+        assert refused.reason == "its own entry does not hold"
+with ledger.context({"tenant_id": "pe"}), security.as_identity(ana):
+    try:
+        ledger(QueryEntry(number="E-1", owner="user:ana"), Done)
+    except PermissionDenied as refused:
+        assert refused.reason == "tenant_active does not hold"
+assert ledger_auth.describe().every_call == ["tenant_active"]
+```
+
+| | |
+|---|---|
+| `auth.role(*roles)` | met by one of them — the identity's roles, their closure once a `GrantResolver` resolved them; a role whose grants the token's scopes or the tenant's entitlements cut is not held ([grants](grants.md#resolved-per-call)) |
+| `auth.any_of(...)` | one among any requirements, asked in order: the first that holds grants it, none after it is asked — `auth.any_of(auth.role("admin"), auth.rule("its owner", is_owner))` |
+| `auth.rule(name, check)` | `check(AccessCall) -> bool`; refused, `PermissionDenied` names the rule; the check may raise an `AuthError` of its own — a step-up, `Unauthenticated`. Asked with no Command — `may_run` for a catalog, `allows`, a hook — a check that fails reading one is refused: write `call.dto is None or …` for a rule a catalog may list. `open` is not a rule's name |
+| `any_of` with a step-up | when no member holds and one is a step-up (`Unauthenticated`), that one answers: authenticating again may meet it |
+| `@auth.every_call` / `auth.every_call(check, name=…)` | asked on every use case, open or declared — a suspended tenant, maintenance, an IP allow-list read from the context; the system passes; `describe()` lists them. Asked by `may_run` with no Command, as a rule is: a check that fails reading one hides every use case from a catalog — read the context, or write `call.dto is None or …` |
+| `self.auth.allows(r)` / `check(r)` / `has_role(...)` / `identity` | the same requirements, asked by a handler before an optional step |
 
 ## Asking without running
 
@@ -309,27 +393,26 @@ assert auth.authenticate(Credentials(transport="http")).is_anonymous
   (`bus.context_provider(gives=["user_id"])`) or a scope that names it wins: the identity is
   only what fills it when nothing else did.
 
-## Skipping, strict, disabled, the system
+## Open, skipping, disabled, the system
 
 ```python
 with security.as_system("cron: close cash registers"):
     billing(CommandCreditReport(customer="c-1"))
 
-strict = AccessControl[BillingPermission](providers=[keys], strict=True)
 unchecked = AccessControl[BillingPermission](enabled=False)
 ```
 
 | Situation | What happens |
 |---|---|
-| a use case or hook declares nothing | not checked |
-| `strict=True` | a use case entered from outside that declares nothing is refused; a nested one inherits |
+| a use case or hook declares nothing | open: it runs for anybody, entered from outside or nested; the gateways log each one they publish open, and the manifest and OpenAPI say `open` |
+| a use case that must not be reached from outside | `@entrypoints.internal`: on no entrypoint |
 | `enabled=False` | nothing is checked; `on(...)` warns once |
 | `when_denied=WhenDenied.SKIP` | a use case answers `None`, a hook's moment is left out — logged |
 | `security.as_system(reason)` | every requirement is met; the reason is logged |
 | a `replaces=` handler or hook that declares nothing | inherits the declaration of the one it replaces |
 | one bus that must not be guarded | no `auth.on(bus)` for it |
 | a new generation of the bus — `fresh()`, the runtime registry | guarded as the bus it came from, resolving its own handlers |
-| a `fresh()` bus checked by other providers — a test's | `auth.using(providers=[...]).on(fresh, replaces=auth)`: the same declarations, `strict` and `enabled`; its guard and its `auth` in the place of the original's, on every bus made of it too |
+| a `fresh()` bus checked by other providers — a test's | `auth.using(providers=[...]).on(fresh, replaces=auth)`: the same declarations and `enabled`; its guard and its `auth` in the place of the original's, on every bus made of it too |
 
 ## Hooks
 
@@ -415,14 +498,14 @@ class TestTenantKeys(AuthProviderContract):
 | a provider of mine to behave | inherit `AuthProviderContract`; `make_provider_whose_backend_is_down()` checks it says so as `ServiceUnavailableError` |
 | production's rules on a `fresh()` bus, with fake tokens | `auth.using(providers=[StaticProvider({...})]).on(test, replaces=auth)` |
 | what a use case requires | `auth.requirements_of(CommandIssueInvoice)` |
-| a declaration that never runs, or what strict refuses | `assert auth.verify() == []` — it builds no bus and closes no collection |
+| a declaration that never runs | `assert auth.verify() == []` — it builds no bus and closes no collection |
 
 ## What it says about itself
 
 ```python
 described = auth.describe()
 assert described.use_cases[f"{__name__}.CommandIssueInvoice"] == "billing.invoice.issue"
-assert described.use_cases[f"{__name__}.CommandPrice"] == "unchecked"
+assert described.use_cases[f"{__name__}.CommandPrice"] == "open"
 assert auth.verify() == []
 ```
 
@@ -459,16 +542,22 @@ assert refused["error"]["data"]["kind"] == "unauthenticated"
 
 | Entrypoint | Credentials from | A refusal is |
 |---|---|---|
+| REST (`RestGateway`) | headers, cookies, query, method, target; the raw body when a provider verifies a signature | 401 with `WWW-Authenticate`, 403; the body's `error` carries `kind`, `reason` and the `requirement` not met |
+| FastAPI (`FastApiGateway`) | the same, read off the request; the body only when a provider of the process verifies one | an `application/problem+json` 401 with `WWW-Authenticate`, or 403, with `kind` and `reason`; OpenAPI declares both on what requires something or when `every_call` checks |
 | JSON-RPC (`RpcGateway`) | headers, cookies, query, method, target | a single call: HTTP 401 with `WWW-Authenticate`; `-32001` / `-32003` with `data.kind`, `data.reason`, `data.requirement` |
 | gRPC (`GrpcGateway`) | metadata, the mTLS client certificate | `UNAUTHENTICATED` / `PERMISSION_DENIED`, with `sp-auth-refusal` and `www-authenticate` in the trailing metadata |
 | MCP (`Entrypoint`, `McpGateway`) | the HTTP request of the tool call; with `auth=`, FastMCP's own bearer check first | a tool error; with `auth=`, FastMCP's 401 and — given `base_url` — the resource metadata (RFC 9728) |
+| A queue (`QueueGateway`, `sqs_handler` on Lambda) | the message's headers; its raw body when a provider verifies a signature | dead-lettered, never retried, its `sincpro-dead-letter-kind` header `unauthenticated` or `permission_denied` |
 | An ASGI app of the project's | `IdentityMiddleware(app, access=auth)` | 401 with `WWW-Authenticate`, 403 with the reason |
 | A context hosted for another service | the caller's `ServiceTokenProvider` token | the refusal raised on the caller as itself |
+| A cron, a script, a migration | nothing — nobody presents anything | runs as anonymous: an open use case runs, one that requires something is refused; the job opens `security.as_system(reason)` (or `as_identity`) to act as someone |
 
 - **A call to another service** carries who it acts for: the calling process's provider issues a
   short JWT (`ServiceTokenProvider.credentials_for`) in its own header, and the host verifies it
   with the same keys. Only subject, kind, tenant and permissions travel — never the claims — and
   the request context it sends is never read for identity. The system does not cross services.
+  Replicas' clocks may differ by `leeway_seconds` (5): a token signed a moment "ahead" by another
+  replica, or a moment past its minute, is still accepted.
 - **A bus nobody guards** is left alone by every entrypoint: nothing is authenticated, the
   identity is what the host opened.
 - **Nothing here needs an extra**: `security`, `Credentials` and the middleware are the standard library;

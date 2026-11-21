@@ -67,8 +67,8 @@ api.add(billing, exclude=[CommandReconcile])
 **every** reason at once; `verify()` answers the list without raising. Refused, among others:
 `@internal` with a binding; a path `{field}` that is not a Command field; a `location` field not a
 response field; `GET` on a non-`Query`; a hint against a fact (`mcp(read_only=True)` on a Command);
-a reserved name; a deprecation past its sunset; a published use case on a guarded bus that declares
-no access.
+a reserved name; a deprecation past its sunset. Never access: a published use case that declares
+nothing is open, logged as such and marked `open` in the manifest and OpenAPI.
 
 ## Inventory and the facade
 

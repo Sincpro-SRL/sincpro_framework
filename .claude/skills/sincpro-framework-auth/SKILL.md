@@ -1,6 +1,6 @@
 ---
 name: sincpro-framework-auth
-description: Guard a sincpro_framework service — declare permissions on use cases and hooks (@auth.requires, @auth.authenticated, @auth.public, auth.assurance, when_denied=SKIP), verify what arrives (JwtProvider for Keycloak/Entra/Google, introspection, API keys, webhook signatures, DPoP, mTLS, policy engines), resolve roles into permissions (GrantCatalog, GrantResolver, revocations), present what goes out (TokenSource — client credentials, token exchange, refresh, per tenant), and manage accounts (PasswordHasher, LoginAttempts, OneTimeTokens, Totp, TokenIssuer). Use whenever a task adds authorization, an identity, a token, a login, a role, or a call to another API that needs credentials.
+description: Guard a sincpro_framework service — declare permissions on use cases and hooks (@auth.requires, @auth.authenticated, auth.assurance, when_denied=SKIP; open when nothing is declared), verify what arrives (JwtProvider for Keycloak/Entra/Google, introspection, API keys, webhook signatures, DPoP, mTLS, policy engines), resolve roles into permissions (GrantCatalog, GrantResolver, revocations), present what goes out (TokenSource — client credentials, token exchange, refresh, per tenant), and manage accounts (PasswordHasher, LoginAttempts, OneTimeTokens, Totp, TokenIssuer). Use whenever a task adds authorization, an identity, a token, a login, a role, or a call to another API that needs credentials.
 ---
 
 # sincpro-framework-auth
@@ -16,9 +16,8 @@ tells the caller: `Unauthenticated` or `PermissionDenied`. This skill stands alo
 - **Problem it solves:** one place, next to the use case, that says who may run it, held on every
   path into the bus — so an RPC method, a cron and a nested call cannot disagree.
 - **The framework facilitates; security decisions are the service's.** Which provider, how a token
-  is verified, which keys exist, what is public, how strict to be: the project chooses. Nothing is
-  forced — a use case/hook that declares nothing is not checked, and a bus with no `AccessControl`
-  checks nothing.
+  is verified, which keys exist, what is open: the project chooses. Nothing is forced — a use
+  case/hook that declares nothing is open, and a bus with no `AccessControl` checks nothing.
 - **It is not** a login screen nor a user table — those are the IdP's or the project's own entity —
   nor field masking (#305). It ships the building blocks a self-managed project needs (hashing,
   lockout, one-time links, TOTP, `TokenIssuer`) and verifies what an IdP issues (`JwtProvider`).
@@ -44,13 +43,16 @@ Every name below imports from `sincpro_framework.auth` unless the Import column 
 | `ServiceTokenProvider` | service-to-service HS256 JWT, stdlib only, header `x-sp-service-token` | adapter | same |
 | `RolePermissions` | roles → permissions, with implied roles | adapter (helper) | same |
 | `AccessControl[P]` | holds providers + declarations, decides, `on(bus)` wires the guard; `AccessControl.of(bus)` the one guarding a bus | registry | same |
-| `@auth.requires(...)` / `@auth.authenticated` / `@auth.public` | mark a Feature, ApplicationService or Hook | decorator | methods of `AccessControl` |
-| `auth.any_of(A, B)` → `AnyOf` | one among several | function / DTO | same |
+| `@auth.requires(...)` / `@auth.authenticated` | restrict a Feature, ApplicationService or Hook — undeclared is open | decorator | methods of `AccessControl` |
+| `auth.any_of(A, B)` → `AnyOf` | one among several — permissions, roles, rules mixed ("its owner, or an admin") | function / DTO | same |
+| `auth.role(*roles)` → `RoleRequirement` | Odoo's `groups=`: one of the roles held, read off their closure | function / DTO | same |
+| `auth.rule(name, check)` → `Rule` / `AccessCall` | a requirement of the project's own: `check(call) -> bool` with the identity, use case, Command, resource and the execution's context | function / DTO | same |
+| `@auth.every_call` | an interceptor of the project's own, asked on every use case of every guarded bus — open or declared | decorator | same |
 | `WhenDenied.RAISE` / `.SKIP` | refuse, or answer `None` and log | setting | same |
-| `strict=` / `enabled=` | refuse undeclared use cases entered from outside / check nothing | setting | `AccessControl(...)` |
-| `self.auth.allows` / `check` / `permitted` / `scope_of` | in-handler decisions on a loaded resource | function | injected `auth` |
+| `enabled=` | `False` checks nothing | setting | `AccessControl(...)` |
+| `self.auth.allows` / `check` / `has_role` / `identity` / `permitted` / `scope_of` | in-handler decisions — `allows`/`check` take any requirement (permission, role, rule, `any_of`) | function | injected `auth` |
 | `security.identity` / `security.as_identity` / `security.as_system` | who the execution acts as (a `ContextVar`) | facade | `security` |
-| `AuthError` → `Unauthenticated` (401) / `PermissionDenied` (403) | the two refusals, `ClientError`s; `.http_status`, `.refusal_body()` | DTO (exception) | same |
+| `AuthError` → `Unauthenticated` (401) / `PermissionDenied` (403) | the two refusals, `ClientError`s; `.http_status`, `.refusal_body()` (`anonymous: true` when nothing was presented); `refusal_from(body)` rebuilds one from an answer | DTO (exception) | same |
 | `IdentityMiddleware` | ASGI middleware for a project's own app | adapter | same |
 | `Credentials.from_asgi` / `Credentials.from_headers` / `security.authenticated_as` / `security.challenges` / `security.identity_headers` | what an entrypoint does | classmethod / facade | same |
 | `describe()` / `verify()` / `requirements_of()` | introspection, test-time checks | function | `AccessControl` methods |
@@ -58,10 +60,10 @@ Every name below imports from `sincpro_framework.auth` unless the Import column 
 | `Jwks` / `PublicKeys` / `JwtProvider.from_issuer` | public keys by OIDC discovery, cached, rotated — `[jwt]`, imported on first use | adapter | same |
 | `IntrospectionProvider` | opaque tokens (RFC 7662), cached by digest | adapter | same |
 | `SignatureProvider` / `RequestSigner` / `HexDigest` / `TimestampedSignature` | webhook HMAC in and out | adapter | same |
-| `BasicProvider` / `CertificateProvider` / `DpopProofs` | HTTP Basic; mTLS + SPIFFE (`[jwt]`); DPoP proofs (`[jwt]`) | adapter | same |
+| `BasicProvider` / `CertificateProvider` / `DpopProofs` | HTTP Basic; mTLS + SPIFFE (`[jwt]`; with `trust_domain`, SPIFFE IDs only — never a bare CN); DPoP proofs (`[jwt]`) | adapter | same |
 | `GrantCatalog` / `Category` / `Privilege` / `Role` / `Entitlement` | roles in code, Odoo 20's shape: implies, exclusive levels, disjoint, `describe()` | domain | same |
 | `GrantStore` (`InMemoryGrants`, `KeyValueGrants`, `DatabaseGrants`) / `GrantAdministration` / `GrantResolver` / `RoleMapping` / `ScopeCeiling` | who holds which role per tenant; checked changes; resolved per call | port / adapter / service | same (`DatabaseGrants`: `data_layer.orm`) |
-| `Revocations` (`KeyValueRevocations`) | a token, a session, a subject signed out, a permission version | port / adapter | same |
+| `Revocations` (`KeyValueRevocations`) / `remembering_versions()` | a token, a session, a subject signed out (to the second, as `iat`), a permission version — one read per authentication inside `remembering_versions()` | port / adapter / function | same |
 | `auth.assurance(acr=, methods=, max_age=)` | step-up requirement (RFC 9470) | requirement | `AccessControl` method |
 | `TokenSource` / `StaticToken` / `ApiKeyHeader` / `BasicCredentials` / `ClientCredentials` / `TokenSources` | what an outgoing request presents | port / adapter | same |
 | `TokenExchange` + `PresentingProvider` / `RefreshingToken` + `HeldGrants` / `DeviceCode` / `DpopProver` | act for the caller (RFC 8693); hold consent; RFC 8628; DPoP client | adapter | same |
@@ -72,8 +74,8 @@ Every name below imports from `sincpro_framework.auth` unless the Import column 
 
 Look-alikes: `auth.Identity` is **who calls**; `observability.ObservabilityIdentity` is **who the
 service is** (release, version). `PermissionDenied` is not Python's `PermissionError` (an `OSError`).
-`auth.AccessDeclaration` is what a use case declared about who may call it. `@auth.public` admits anybody;
-`@auth.authenticated` anybody *known*. `security.as_system(reason)` passes every check for one block;
+`auth.AccessDeclaration` is what a use case declared about who may call it. Declaring nothing admits
+anybody (`open`); `@auth.authenticated` anybody *known*. `security.as_system(reason)` passes every check for one block;
 `enabled=False` turns the whole `AccessControl` off.
 
 ## Architecture
@@ -129,14 +131,14 @@ request ─► entrypoint ─► Credentials ─► AccessControl.authenticate �
 
 Silent ones first — the runtime says nothing.
 
-- **Leaving a use case undeclared on a non-strict bus.** It runs for anybody, anonymous included.
-  Declare every use case; in production use `AccessControl(..., strict=True)`; assert
-  `auth.verify() == []` in a test. (Gateways refuse an undeclared *published* use case, not a
-  nested, cron or internal one.)
+- **Forgetting to restrict a use case that must be.** Undeclared is open — it runs for anybody,
+  anonymous included, and nothing refuses the build. Read the gateway's log of what it publishes
+  open (or `manifest()` / `auth.describe()`, where it says `open`) and assert it in a test;
+  `@entrypoints.internal` for what must not be reached from outside.
 - **Putting the identity in `bus.context({...})` or `self.context`.** Ignored — the guard reads only
   `security.as_identity`. Open `security.as_identity(...)` or let the entrypoint do it.
 - **A provider answering `None` for a credential of its own kind that fails.** The caller becomes
-  anonymous and every public/undeclared use case runs. `None` means "not my kind"; a bad token of
+  anonymous and every open use case runs. `None` means "not my kind"; a bad token of
   your kind raises `Unauthenticated`.
 - **`@auth.requires` on a Hook without `auth.on(hooks)`** (or on a use case of a bus never given to
   `auth.on`). Never checked; only `auth.verify()` reports it.
@@ -156,7 +158,15 @@ Silent ones first — the runtime says nothing.
 - **Resolvers on `AccessControl`.** They belong to a provider (`resolvers=` or `Resolving`): a
   service token or an API key arrives resolved, a global resolver grants twice.
 - **Permissions frozen in a self-issued token.** `TokenIssuer` resolves them per call by default;
-  a role taken away needs `GrantAdministration` (it bumps the version) to hold at once.
+  a role taken away needs `GrantAdministration` (it bumps the version) to hold at once. With
+  `embed_permissions=True` and refresh tokens, give the issuer `resolvers=`: a refresh resolves
+  the permissions again (without them the issuer refuses to be built).
+- **A provider of the project's that checks revocations, then resolves grants.** Two reads of the
+  store per call. Open `remembering_versions()` around both, as `JwtProvider` does: the resolver's
+  permission versions come from the revocation check's one read.
+- **A wire of the project's answering a 401 from a JSON body with `security.challenges(buses)`.**
+  The refusal is lost: an expired token or a step-up gets a bare `Bearer`. Pass
+  `refusal_from(body)` as the refusal.
 - **A `TokenSource` in a use case, or a token in the context.** The context travels to other
   services; a source belongs to the adapter that calls the API (`dependencies.py`).
 - **An outbound misconfiguration raised as `Unauthenticated`.** The inbound caller would log in
@@ -224,7 +234,10 @@ auth.on(billing)                                     # before any gateway
 
 - The decorators only mark classes, in any order around `@billing.feature`; the marks are read at
   first run, so a handler registered after `auth.on(...)` is guarded too.
-- `@auth.requires(A, B)` and stacked `requires` are *and*; `auth.any_of(A, B)` is *or*.
+- `@auth.requires(A, B)` and stacked `requires` are *and*; `auth.any_of(A, B)` is *or*;
+  `auth.role(...)` is a group; `auth.rule(name, check)` is anything else, decided with the call
+  and its context. A rule that must hold for every use case is `@auth.every_call`, not a
+  `requires` repeated on each.
 - `self.auth.check(permission, resource)` decides on the loaded resource (no interceptor can see
   it — the provider gets it); `self.auth.permitted(permission, resources)` answers a batch.
 - A nested use case that declares something is checked again; one that declares nothing inherits
@@ -269,7 +282,7 @@ moment. The gate holds on every copy or combination of the `Hooks`.
 
 | Situation | What happens |
 |---|---|
-| a use case/hook declares nothing | not checked (strict: refused when entered from outside) |
+| a use case/hook declares nothing | open — it runs for anybody |
 | `enabled=False` | nothing is checked; `on(...)` logs a warning |
 | `WhenDenied.SKIP` | a use case answers `None`, a hook's moment is left out — logged |
 | `security.as_system(reason)` | every requirement is met; the reason is logged |

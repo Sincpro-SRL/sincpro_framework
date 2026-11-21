@@ -84,7 +84,7 @@ def _binding(gateway: Gateway, command: type) -> Any:
 
 
 def test_declared_is_the_default_and_publishes_only_what_is_bound():
-    gateway = RestSurface([_billing()], unguarded=True)
+    gateway = RestSurface([_billing()])
 
     assert gateway.exposure == Exposure.DECLARED
     assert _commands(gateway) == ["CommandIssueInvoice"]
@@ -93,7 +93,7 @@ def test_declared_is_the_default_and_publishes_only_what_is_bound():
 
 def test_catalog_publishes_every_use_case_and_logs_each_one():
     with capture_logs() as logs:
-        gateway = RestSurface([_billing()], exposure=Exposure.CATALOG, unguarded=True)
+        gateway = RestSurface([_billing()], exposure=Exposure.CATALOG)
         published = _commands(gateway)
 
     assert published == ["CommandIssueInvoice", "QueryInvoice"]
@@ -103,7 +103,7 @@ def test_catalog_publishes_every_use_case_and_logs_each_one():
 
 
 def test_catalog_lets_a_binding_shape_an_operation():
-    gateway = RestSurface([_billing()], exposure=Exposure.CATALOG, unguarded=True)
+    gateway = RestSurface([_billing()], exposure=Exposure.CATALOG)
 
     assert _binding(gateway, CommandIssueInvoice).status == 201
     assert _binding(gateway, QueryInvoice) == RestBinding()
@@ -122,7 +122,7 @@ def test_a_gateway_that_names_no_wire_keeps_the_catalog_of_prd_12():
 
 
 def test_internal_is_published_by_no_mode():
-    gateway = RestSurface([_billing()], exposure=Exposure.CATALOG, unguarded=True)
+    gateway = RestSurface([_billing()], exposure=Exposure.CATALOG)
 
     assert "CommandReconcile" not in _commands(gateway)
 
@@ -131,16 +131,14 @@ def test_internal_is_published_by_no_mode():
 
 
 def test_exclude_beats_a_bind():
-    gateway = RestSurface(unguarded=True).add(_billing(), exclude=[CommandIssueInvoice])
+    gateway = RestSurface().add(_billing(), exclude=[CommandIssueInvoice])
     gateway.bind(CommandIssueInvoice, RestBinding(method="POST", path="/elsewhere"))
 
     assert _commands(gateway) == []
 
 
 def test_include_only_narrows_in_declared_mode():
-    gateway = RestSurface(unguarded=True).add(
-        _billing(), include=[CommandIssueInvoice, QueryInvoice]
-    )
+    gateway = RestSurface().add(_billing(), include=[CommandIssueInvoice, QueryInvoice])
 
     assert _commands(gateway) == ["CommandIssueInvoice"]
 
@@ -148,7 +146,7 @@ def test_include_only_narrows_in_declared_mode():
 def test_a_catalog_narrowed_after_the_surface_resolved_is_seen():
     """The gateway keeps its resolved surface; a catalog narrowed later must not leave a use
     case published that it no longer lets go."""
-    gateway = RestSurface(unguarded=True).add(_billing())
+    gateway = RestSurface().add(_billing())
     assert _commands(gateway) == ["CommandIssueInvoice"]
 
     gateway.catalogs["billing"].exclude(CommandIssueInvoice)
@@ -160,7 +158,7 @@ def test_a_use_case_registered_on_the_bus_after_the_surface_resolved_is_seen():
     """The bus answers it from the next execution; the gateway publishes it from the next read
     of its surface — nothing serves a stale catalog."""
     bus = _billing()
-    gateway = RestSurface(unguarded=True).add(bus)
+    gateway = RestSurface().add(bus)
     assert _commands(gateway) == ["CommandIssueInvoice"]
 
     @bus.feature(CommandArchive)
@@ -182,15 +180,15 @@ def test_a_wiring_error_is_still_raised_where_the_bus_is_mounted():
         return call_next(dto)
 
     with pytest.raises(exceptions.UnknownDTOToExecute, match="lost.*CommandArchive"):
-        RestSurface(unguarded=True).add(bus)
+        RestSurface().add(bus)
 
 
 def test_bind_publishes_an_unbound_use_case_keyed_by_its_command_or_handler():
     bus = _billing()
-    by_command = RestSurface([bus], unguarded=True).bind(
+    by_command = RestSurface([bus]).bind(
         QueryInvoice, RestBinding(method="GET", path="/invoices/{invoice_id}")
     )
-    by_handler = RestSurface([bus], unguarded=True).bind(
+    by_handler = RestSurface([bus]).bind(
         bus.handler_of(QueryInvoice) or QueryInvoice,
         RestBinding(path="/invoices/{invoice_id}"),
     )
@@ -200,7 +198,7 @@ def test_bind_publishes_an_unbound_use_case_keyed_by_its_command_or_handler():
 
 
 def test_override_merges_field_by_field_over_the_decorator_and_the_last_call_wins():
-    gateway = RestSurface([_billing()], unguarded=True)
+    gateway = RestSurface([_billing()])
     gateway.override(CommandIssueInvoice, status=202)
     gateway.override(CommandIssueInvoice, summary="Emitir", status=200)
 
@@ -211,7 +209,7 @@ def test_override_merges_field_by_field_over_the_decorator_and_the_last_call_win
 
 
 def test_bind_merges_only_the_fields_it_says_over_the_decorator():
-    gateway = RestSurface([_billing()], unguarded=True)
+    gateway = RestSurface([_billing()])
     gateway.bind(CommandIssueInvoice, RestBinding(path="/v2/invoices"))
 
     binding = _binding(gateway, CommandIssueInvoice)
@@ -220,7 +218,7 @@ def test_bind_merges_only_the_fields_it_says_over_the_decorator():
 
 
 def test_override_alone_does_not_publish_in_declared_mode():
-    gateway = RestSurface([_billing()], unguarded=True).override(QueryInvoice, status=200)
+    gateway = RestSurface([_billing()]).override(QueryInvoice, status=200)
 
     with pytest.raises(
         exceptions.ProgrammingError, match="override shapes a binding, bind publishes one"
@@ -229,7 +227,7 @@ def test_override_alone_does_not_publish_in_declared_mode():
 
 
 def test_override_and_bind_are_checked_against_the_gateway_wire():
-    gateway = RestSurface([_billing()], unguarded=True)
+    gateway = RestSurface([_billing()])
 
     with pytest.raises(exceptions.ProgrammingError, match="has no stauts"):
         gateway.override(CommandIssueInvoice, stauts=201)
@@ -283,7 +281,7 @@ def _cli_billing() -> UseFramework:
 
 
 def test_the_group_is_the_context_convention_and_the_binding_wins_on_scalars():
-    gateway = Gateway([_cli_billing()], port=CliWire(), unguarded=True)
+    gateway = Gateway([_cli_billing()], port=CliWire())
     gateway.group("cli-billing", prefix="fact", tags=("billing",))
 
     issue = _binding(gateway, CommandIssueInvoice)
@@ -296,7 +294,7 @@ def test_the_group_is_the_context_convention_and_the_binding_wins_on_scalars():
 
 def test_a_group_is_data_every_wire_reads():
     bus = _billing()
-    gateway = RestSurface({"facturacion": bus}, unguarded=True)
+    gateway = RestSurface({"facturacion": bus})
     gateway.group(
         bus, prefix="/billing", tags=("billing",), version="v1", package="billing.v1"
     )
@@ -314,7 +312,7 @@ def test_a_group_is_data_every_wire_reads():
 
 
 def test_a_group_for_a_bus_not_on_the_gateway_is_refused():
-    gateway = RestSurface([_billing()], unguarded=True)
+    gateway = RestSurface([_billing()])
 
     with pytest.raises(exceptions.ProgrammingError, match="add it first"):
         gateway.group(_billing("sales"), prefix="/ventas")

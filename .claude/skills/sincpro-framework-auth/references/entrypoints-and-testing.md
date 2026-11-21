@@ -16,9 +16,10 @@ identity is what the host opened.
 | A project's own ASGI app | `IdentityMiddleware(app, access=auth)` | 401 with `WWW-Authenticate`, 403 with the reason |
 | A context hosted for another service | the caller's `ServiceTokenProvider` token | the refusal raised on the caller |
 
-- **Gateway build rule:** a published use case on a guarded bus must declare something
-  (`@auth.requires`, `@auth.authenticated` or `@auth.public`), or the gateway build fails. A bus
-  with no `AccessControl` needs `unguarded=True` on the gateway.
+- **Open by default:** a published use case that declares nothing is open — anybody may call it;
+  `@auth.authenticated` / `@auth.requires` restrict it, `@entrypoints.internal` keeps it off every
+  wire. A gateway never refuses to build over access; it logs each use case it publishes open, and
+  the manifest and OpenAPI say `open`.
 - **Order:** `auth.on(bus)` before any gateway — a gateway reads the bus's `AccessControl` when
   it is built, so one built earlier sees an unguarded bus. On a bus already executed, `auth.on`
   guards from the next execution; until then nothing is checked.
@@ -40,8 +41,8 @@ identity is what the host opened.
 | what the provider was asked | `RecordingProvider(real_or_none)` → `.asked` |
 | a provider of mine to behave | inherit `AuthProviderContract` |
 | what a use case requires | `auth.requirements_of(CommandIssueInvoice)` |
-| a declaration that never runs / what strict refuses | `assert auth.verify() == []` — builds no bus |
-| the whole map | `auth.describe()` → `AccessDescription` (`use_cases`: declaration or `unchecked`) |
+| a declaration that never runs | `assert auth.verify() == []` — builds no bus |
+| the whole map | `auth.describe()` → `AccessDescription` (`use_cases`: declaration or `open`) |
 
 Test through the bus with an identity open — never by calling `execute` directly, which skips the
 guard.

@@ -151,7 +151,7 @@ def _instance(name: str, with_app_service: bool = False) -> UseFramework:
 
 
 def _gateway(buses: dict[str, UseFramework] | None = None, **kwargs: Any) -> GrpcGateway:
-    return GrpcGateway(buses, exposure=Exposure.CATALOG, unguarded=True, **kwargs)
+    return GrpcGateway(buses, exposure=Exposure.CATALOG, **kwargs)
 
 
 @pytest.fixture

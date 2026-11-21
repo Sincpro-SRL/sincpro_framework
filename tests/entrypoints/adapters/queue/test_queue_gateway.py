@@ -110,9 +110,7 @@ def _channels(gateway: QueueGateway) -> dict[str, str]:
 def test_declared_consumes_its_declared_commands_and_hears_every_registered_event():
     """Registering a Feature for a DomainEvent already says the context hears it — no second
     declaration. A Command is consumed only from the channel it declares."""
-    gateway = QueueGateway(
-        KafkaBroker(), [billing_bus([]), accounting_bus([])], unguarded=True
-    )
+    gateway = QueueGateway(KafkaBroker(), [billing_bus([]), accounting_bus([])])
 
     published = _channels(gateway)
 
@@ -124,10 +122,9 @@ def test_declared_consumes_its_declared_commands_and_hears_every_registered_even
     }
 
 
-def test_an_event_hears_without_access_or_unguarded_declarations():
-    """The fallback access rule guards what an outsider makes this process do — a Command. An
-    event reacts to what already happened: neither a guarded nor an unguarded context has to
-    declare anything to hear it."""
+def test_an_event_is_heard_whatever_its_context_declares():
+    """An event reacts to what already happened: a context with or without an AccessControl
+    hears it with nothing declared."""
 
     class Can(Permission):
         BOOK = "accounting.book"
@@ -145,7 +142,6 @@ def test_catalog_hears_every_event_but_never_consumes_an_undeclared_command():
         KafkaBroker(),
         [billing_bus([]), accounting_bus([])],
         exposure=Exposure.CATALOG,
-        unguarded=True,
     )
 
     published = _channels(gateway)
@@ -160,7 +156,7 @@ def test_catalog_hears_every_event_but_never_consumes_an_undeclared_command():
 
 def test_a_group_prefixes_the_channels_and_names_the_consumer_group():
     broker = KafkaBroker()
-    gateway = QueueGateway(broker, [billing_bus([]), accounting_bus([])], unguarded=True)
+    gateway = QueueGateway(broker, [billing_bus([]), accounting_bus([])])
     gateway.group("billing", prefix="staging.")
     gateway.group("accounting", prefix="staging.", namespace="ledger")
 
@@ -174,7 +170,7 @@ def test_a_group_prefixes_the_channels_and_names_the_consumer_group():
 
 
 def test_the_manifest_carries_the_binding():
-    gateway = QueueGateway(KafkaBroker(), [billing_bus([])], unguarded=True)
+    gateway = QueueGateway(KafkaBroker(), [billing_bus([])])
 
     (entry,) = gateway.manifest()
 
@@ -191,7 +187,6 @@ def test_two_handlers_on_one_command_channel_are_refused():
     gateway = QueueGateway(
         KafkaBroker(),
         {"billing": billing_bus([]), "copy": billing_bus([], "copy")},
-        unguarded=True,
     )
 
     problems = "\n".join(gateway.verify())
@@ -205,9 +200,7 @@ def test_two_handlers_on_one_command_channel_are_refused():
 
 
 def test_a_command_channel_that_also_carries_events_is_refused():
-    gateway = QueueGateway(
-        KafkaBroker(), [billing_bus([]), accounting_bus([])], unguarded=True
-    )
+    gateway = QueueGateway(KafkaBroker(), [billing_bus([]), accounting_bus([])])
     gateway.override(InvoiceIssued, channel=ISSUE_CHANNEL)
 
     assert any("also carries events" in one for one in gateway.verify())
@@ -219,7 +212,6 @@ def test_two_contexts_hearing_one_event_in_one_group_share_one_subscription():
     gateway = QueueGateway(
         KafkaBroker(),
         {"accounting": accounting_bus([]), "again": accounting_bus([], "again")},
-        unguarded=True,
     )
 
     assert gateway.verify() == []
@@ -229,9 +221,9 @@ def test_two_contexts_hearing_one_event_in_one_group_share_one_subscription():
     ]
 
 
-def test_a_consumer_says_who_may_send_it():
-    """The PRD_14 fallback rule on a queue: `producers=` or the bus's AccessControl — an
-    unguarded bus without either is refused unless the gateway is told."""
+def test_a_consumer_without_producers_or_access_is_consumed_open():
+    """`producers=` is a filter a consumer may add, never a condition to be consumed: one
+    with neither it nor an AccessControl is open — anyone sending to its channel runs it."""
     no_producers = UseFramework("open", log_after_execution=False)
 
     @no_producers.feature(CommandReconcile)
@@ -239,24 +231,24 @@ def test_a_consumer_says_who_may_send_it():
     class Reconcile(Feature):
         def execute(self, dto: CommandReconcile) -> None: ...
 
-    refused = QueueGateway(KafkaBroker(), [no_producers]).verify()
-    with_producers = QueueGateway(KafkaBroker(), [billing_bus([])]).verify()
+    gateway = QueueGateway(KafkaBroker(), [no_producers])
 
-    assert any("declare producers=" in one for one in refused)
-    assert with_producers == []
+    assert gateway.verify() == []
+    assert [one.access for one in gateway.manifest()] == ["open"]
+    assert QueueGateway(KafkaBroker(), [billing_bus([])]).verify() == []
 
 
-def test_a_guarded_consumer_that_declares_no_access_is_refused():
+def test_a_guarded_consumer_that_declares_no_access_is_open():
     class Can(Permission):
         ISSUE = "billing.issue"
 
     auth = AccessControl[Can]()
     bus = billing_bus([])
     auth.on(bus)
+    gateway = QueueGateway(KafkaBroker(), [bus])
 
-    assert any(
-        "declares neither" in one for one in QueueGateway(KafkaBroker(), [bus]).verify()
-    )
+    assert gateway.verify() == []
+    assert {one.access for one in gateway.manifest()} == {"open"}
 
 
 def test_a_time_limit_past_the_inbox_claim_is_refused():
@@ -291,7 +283,7 @@ def test_a_port_is_a_queue_wire_and_brings_its_own_broker():
 @pytest.mark.parametrize("broker_cls", [KafkaBroker, RabbitBroker])
 def test_every_subscription_settles_manually(broker_cls):
     broker = broker_cls()
-    QueueGateway(broker, [billing_bus([]), accounting_bus([])], unguarded=True).build()
+    QueueGateway(broker, [billing_bus([]), accounting_bus([])]).build()
 
     assert len(broker.subscribers) == 3  # the Command and both events it hears
     assert all(one.ack_policy is AckPolicy.MANUAL for one in broker.subscribers)
@@ -320,7 +312,7 @@ def test_kafka_subscriptions_join_their_consumer_group_with_their_workers():
 
 def test_asyncapi_lists_every_subscription_it_built():
     gateway = QueueGateway(
-        KafkaBroker(), [billing_bus([]), accounting_bus([])], title="billing", unguarded=True
+        KafkaBroker(), [billing_bus([]), accounting_bus([])], title="billing"
     )
     gateway.build()
 

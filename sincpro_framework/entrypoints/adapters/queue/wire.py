@@ -63,7 +63,6 @@ from sincpro_framework.observability.tracing.propagation import within_trace
 from sincpro_framework.sincpro_abstractions import DataTransferObject
 from sincpro_framework.sincpro_logger import logger
 
-UNGUARDED = "unguarded"
 QUEUE_DELIVERIES = Instrument(
     name="sincpro.queue.deliveries",
     kind=InstrumentKind.COUNTER,
@@ -303,7 +302,7 @@ class QueueWire(Wire[QueueBinding]):
         3. `retry_by` and `dead_letter_by`: the options', else the flavour's.
         4. An `Inbox` over the options' records, claim and retention times — none when
            `inbox=None`.
-        Final: not unguarded until the gateway says so; nothing subscribed yet.
+        Final: nothing subscribed yet.
         """
         self.broker = broker
         self.options = options or QueueOptions()
@@ -320,8 +319,6 @@ class QueueWire(Wire[QueueBinding]):
                 self.options.inbox, self.options.in_progress_for, self.options.keep_for
             )
         )
-        self.unguarded = False
-        """Set by the gateway: its buses have no AccessControl on purpose."""
         self.subscriptions: list[Subscription] | None = None
 
     # derive / validate / build — the Wire port
@@ -337,30 +334,6 @@ class QueueWire(Wire[QueueBinding]):
         """A queue operation is named by its channel — the manifest's `name`."""
         return channel_of(resolved)
 
-    def _access_problem(self, resolved: Resolved[QueueBinding]) -> str | None:
-        """The fallback rule on a queue: a Command says who may send it — `producers=`, or
-        what the use case declares to its bus's AccessControl. An event is exempt: it reacts
-        to what already happened, and the bus's own guard still runs on it."""
-        if resolved.binding.kind == "hears":
-            return None
-        operation = resolved.operation
-        where = f"{operation.command.__name__} (queue)"
-        if operation.access is None:
-            return (
-                f"{where}: published on a bus guarded by AccessControl, but declares neither "
-                "@auth.requires nor @auth.public — say who may send it"
-            )
-        if (
-            operation.access == UNGUARDED
-            and not self.unguarded
-            and not resolved.binding.producers
-        ):
-            return (
-                f"{where}: its bus '{operation.bus.name}' has no AccessControl — declare "
-                "producers=, guard it, or tell the gateway unguarded=True"
-            )
-        return None
-
     def validate(self, surface: Sequence[Resolved[QueueBinding]]) -> list[str]:
         """Every reason the surface cannot be served on the broker — empty when it can.
 
@@ -372,7 +345,7 @@ class QueueWire(Wire[QueueBinding]):
             ->  ["queue: time_limit 0:10:00 is not below the inbox's in_progress_for ..."]
 
         1. The time limit stays below the inbox's claim.
-        2. Every binding says who may send it; attempts and concurrency are positive.
+        2. Attempts and concurrency are positive.
         3. Final: one command channel has exactly one handler, and carries no events. An
            event heard by several contexts in one group is one subscription running them all.
         """
@@ -387,9 +360,6 @@ class QueueWire(Wire[QueueBinding]):
         heard: set[str] = set()
         for one in surface:
             command = one.operation.command.__name__
-            problem = self._access_problem(one)
-            if problem:
-                problems.append(problem)
             binding = one.binding
             for field in ("max_attempts", "concurrency"):
                 value = getattr(binding, field)

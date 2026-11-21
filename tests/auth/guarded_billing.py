@@ -56,13 +56,13 @@ class Quote(Feature):
 """
 
 
-PUBLIC_TAX = """
+TAX_FOR_ANYONE_SIGNED_IN = """
 from sincpro_framework import Feature
 
 from tests.auth.guarded_billing import CommandComputeTax, ResponseComputeTax, auth
 
 
-@auth.public
+@auth.authenticated
 class ComputeTaxForEveryone(Feature):
     def execute(self, dto: CommandComputeTax) -> ResponseComputeTax:
         return ResponseComputeTax(tax=0)

@@ -41,7 +41,7 @@ def tracker() -> UseFramework:
 
 
 def test_the_served_contract_is_byte_for_byte_what_the_export_writes(tmp_path):
-    gateway = RpcGateway([tracker()], unguarded=True)
+    gateway = RpcGateway([tracker()])
     client = TestClient(gateway.app())
 
     served = client.get("/client-contract/tracker.json")
@@ -54,7 +54,7 @@ def test_the_served_contract_is_byte_for_byte_what_the_export_writes(tmp_path):
 
 
 def test_a_client_that_holds_the_contract_is_answered_304():
-    client = TestClient(RpcGateway([tracker()], unguarded=True).app())
+    client = TestClient(RpcGateway([tracker()]).app())
     first = client.get("/client-contract/tracker.json")
 
     again = client.get(
@@ -70,7 +70,7 @@ def test_a_client_that_holds_the_contract_is_answered_304():
 
 def test_a_use_case_registered_while_it_runs_changes_the_contract_and_its_tag():
     bus = tracker()
-    client = TestClient(RpcGateway([bus], unguarded=True).app())
+    client = TestClient(RpcGateway([bus]).app())
     before = client.get("/client-contract/tracker.json")
 
     @bus.feature(CommandReopenIssue)
@@ -90,7 +90,7 @@ def test_a_use_case_registered_while_it_runs_changes_the_contract_and_its_tag():
 
 
 def test_a_context_it_does_not_serve_is_a_404_problem_and_a_none_path_serves_nothing():
-    gateway = RpcGateway([tracker()], unguarded=True)
+    gateway = RpcGateway([tracker()])
 
     missing = TestClient(gateway.app()).get("/client-contract/nowhere.json")
     unserved = TestClient(gateway.app(contract_path=None)).get(
@@ -115,7 +115,7 @@ def test_the_fastapi_gateway_serves_it_too_out_of_its_openapi_document(tmp_path)
         def execute(self, dto: CommandCloseIssue) -> None:
             return None
 
-    gateway = FastApiGateway([bus], unguarded=True)
+    gateway = FastApiGateway([bus])
     client = TestClient(gateway.app())
 
     served = client.get("/client-contract/desk.json")
@@ -131,7 +131,7 @@ def test_the_fastapi_gateway_serves_it_too_out_of_its_openapi_document(tmp_path)
 
 
 def test_the_live_contract_is_named_by_the_alias_the_gateway_publishes():
-    client = TestClient(RpcGateway({"issues": tracker()}, unguarded=True).app())
+    client = TestClient(RpcGateway({"issues": tracker()}).app())
 
     served = client.get("/client-contract/issues.json")
 

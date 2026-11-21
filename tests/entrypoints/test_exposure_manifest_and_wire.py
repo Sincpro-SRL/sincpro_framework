@@ -59,7 +59,6 @@ def _guarded_billing() -> tuple[UseFramework, AccessControl[BillingPermission]]:
             return ResponseIssueInvoice(number="F-1")
 
     @bus.feature(QueryInvoice)
-    @auth.public
     @rest.get(
         "/invoices/{invoice_id}",
         deprecated=Deprecation(
@@ -112,7 +111,7 @@ def test_the_manifest_is_the_surface_as_frozen_json_safe_data_in_a_stable_order(
             "name": "QueryInvoice",
             "kind": "features.query",
             "method": "GET",
-            "access": "public",
+            "access": "open",
             "deprecated": True,
             "sunset": "2099-01-01",
             "replacement": "manifest-billing.CommandIssueInvoice",
@@ -133,8 +132,8 @@ def test_the_manifest_is_the_surface_as_frozen_json_safe_data_in_a_stable_order(
         manifest[0].name = "renamed"  # type: ignore[misc]
 
 
-def test_an_unguarded_surface_says_so_in_its_manifest():
-    bus = UseFramework("unguarded-manifest", log_after_execution=False)
+def test_a_surface_nobody_guards_says_it_is_open_in_its_manifest():
+    bus = UseFramework("open-manifest", log_after_execution=False)
 
     @bus.feature(CommandIssueInvoice)
     @rest.post("/invoices")
@@ -142,9 +141,9 @@ def test_an_unguarded_surface_says_so_in_its_manifest():
         def execute(self, dto: CommandIssueInvoice) -> ResponseIssueInvoice:
             return ResponseIssueInvoice(number="F-1")
 
-    (entry,) = RestSurface([bus], unguarded=True).manifest()
+    (entry,) = RestSurface([bus]).manifest()
 
-    assert entry.access == "unguarded"
+    assert entry.access == "open"
 
 
 # --- a wire of the project's ----------------------------------------------------------------
@@ -255,13 +254,13 @@ def _documents() -> UseFramework:
 
 
 def test_a_wire_that_carries_bytes_publishes_a_bytes_command():
-    cli = Gateway([_documents()], port=BinaryCliWire(), unguarded=True).build()
+    cli = Gateway([_documents()], port=BinaryCliWire()).build()
 
     assert cli("documents store", content=b"%PDF-1.7") == {"size_bytes": 8}
 
 
 def test_a_wire_of_json_only_refuses_a_bytes_command_bound_on_it():
-    gateway = Gateway([_documents()], port=CliWire(), unguarded=True)
+    gateway = Gateway([_documents()], port=CliWire())
 
     assert gateway.verify() == [
         "CommandStoreDocument (cli): bound, but it has a bytes field and this cli wire carries "

@@ -108,7 +108,7 @@ def test_every_base_says_its_own_kind_and_a_subclass_may_say_another() -> None:
 
 
 def _rpc_catalog() -> RpcGateway:
-    return RpcGateway({"billing": _billing()}, exposure=Exposure.CATALOG, unguarded=True)
+    return RpcGateway({"billing": _billing()}, exposure=Exposure.CATALOG)
 
 
 @pytest.mark.parametrize(
@@ -145,7 +145,7 @@ def test_json_rpc_answers_each_kind_with_its_code(
 
 @pytest.fixture
 def grpc_call() -> Iterator[Any]:
-    gateway = GrpcGateway({"billing": _billing()}, exposure=Exposure.CATALOG, unguarded=True)
+    gateway = GrpcGateway({"billing": _billing()}, exposure=Exposure.CATALOG)
     server = gateway.server(max_workers=2)
     port = server.add_insecure_port("127.0.0.1:0")
     server.start()
@@ -224,7 +224,7 @@ def test_narrowing_a_catalog_lets_what_it_kept_go() -> None:
     assert [one.dto for one in catalog.get_scalar_use_cases()] == [CommandFail]
     catalog.exclude(CommandFail)
     assert catalog.get_scalar_use_cases() == []
-    narrowed = RpcGateway(exposure=Exposure.CATALOG, unguarded=True)
+    narrowed = RpcGateway(exposure=Exposure.CATALOG)
     narrowed.add("billing", _billing(), exclude=[CommandFail])
     assert "billing.fail" not in narrowed.methods()
 

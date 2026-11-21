@@ -36,8 +36,8 @@ class IssueInvoice(Feature): ...
 ```
 
 - **Every registered event is heard**; a Command is never consumed without a declaration.
-- A Command must say who may send it: `producers=`, an `@auth.requires`/`@auth.public` on a guarded
-  bus, or `unguarded=True`.
+- A Command is open to any sender unless its use case declares `@auth.authenticated` /
+  `@auth.requires`; `producers=` is an optional filter of who may produce it.
 - The build refuses two handlers on one channel, a channel carrying both commands and events,
   `max_attempts`/`concurrency` below 1, `time_limit` not below the inbox's `in_progress_for`.
 
@@ -95,7 +95,7 @@ boundary — on RabbitMQ use `QueueOptions(identify=rabbit_user_id)`.
 
 | | |
 |---|---|
-| `QueueGateway(broker, buses, options=, exposure=, unguarded=, port=)` | `wire = "queue"` |
+| `QueueGateway(broker, buses, options=, exposure=, port=)` | `wire = "queue"` |
 | `gateway.build()` / `consume(message, as_=, decode=, channel=)` | subscriptions / full control (answers a `Verdict`) |
 | `gateway.surface()`, `verify()`, `manifest()`, `asyncapi()` | the surface; AsyncAPI 3.0 |
 | `QueueOptions(inbox, max_attempts, retry_by, dead_letter_by, dead_letter_suffix, time_limit, in_progress_for, keep_for, expires_after, identify, subscription_of)` | how the wire settles |

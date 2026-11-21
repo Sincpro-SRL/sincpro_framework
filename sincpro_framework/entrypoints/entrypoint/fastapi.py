@@ -69,7 +69,6 @@ class FastApiGateway(Gateway):
         version: str = "1.0.0",
         profile: Profile = Profile.RESOURCE,
         exposure: Exposure | None = None,
-        unguarded: bool = False,
     ) -> None:
         """`Profile.RPC` publishes the catalog unless `exposure` says otherwise. Every route
         runs on its bus's async threads (`docs/core/async-threads.md`)."""
@@ -81,7 +80,6 @@ class FastApiGateway(Gateway):
             title,
             version,
             exposure=mode,
-            unguarded=unguarded,
             port=self._wire,
         )
 

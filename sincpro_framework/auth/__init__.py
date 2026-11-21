@@ -19,9 +19,9 @@ decided by providers, applied by a guard; and what this service presents when it
 acts as, the JWS core and the standard library's HTTP client, `services/` the guard and what is
 discovered of an authorization server, and `entrypoint/` `AccessControl` (the declarations and
 the checks), `security` (who acts, and the door every wire hands auth what a caller presented)
-and the middleware for an ASGI app of the project's (`asgi`). JSON-RPC, gRPC, MCP and
-`remote_execution` authenticate by themselves when the bus is guarded. See `docs/auth/README.md`
-and PRD_34 for the whole catalog.
+and the middleware for an ASGI app of the project's (`asgi`). REST, FastAPI, JSON-RPC, gRPC,
+MCP, a queue and `remote_execution` authenticate by themselves when the bus is guarded. See
+`docs/auth/README.md` and PRD_34 for the whole catalog.
 
 The `[jwt]` extra's names — `Jwks`, `PublicKeys`, `PublicKey`, `PrivateKey`, `PrivateKeyJwt`,
 `DpopProofs`, `DpopProver`, `CertificateProvider`, `AesGcmSealer` — are imported when
@@ -154,11 +154,15 @@ from sincpro_framework.auth.domain.outbound import (
     TokenSource,
 )
 from sincpro_framework.auth.domain.permissions import (
+    OPEN,
+    AccessCall,
     AccessDeclaration,
     AnyOf,
     AssuranceRequirement,
     ByField,
     Permission,
+    RoleRequirement,
+    Rule,
     WhenDenied,
 )
 from sincpro_framework.auth.domain.policy import PolicyEngine
@@ -192,6 +196,8 @@ from sincpro_framework.auth.infrastructure.urllib_http import UrllibHttp
 from sincpro_framework.auth.services.grant_administration import GrantAdministration
 
 __all__ = [
+    "OPEN",
+    "AccessCall",
     "AccessControl",
     "AccessDeclaration",
     "AccessDescription",
@@ -286,6 +292,8 @@ __all__ = [
     "Role",
     "RoleMapping",
     "RolePermissions",
+    "RoleRequirement",
+    "Rule",
     "ScopeCeiling",
     "ScryptCost",
     "Sealer",

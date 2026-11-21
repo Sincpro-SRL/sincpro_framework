@@ -207,6 +207,10 @@ What the framework can prove, it derives; a declaration **MUST NOT** contradict 
 | a deprecation past its sunset | `sunset` earlier than today — it forces the removal |
 | an override or bind for a Command no bus of the gateway answers | |
 
+> Superseded by #309: the access row no longer applies — `@auth.public` and `unguarded=` are gone,
+> a use case that declares nothing is published open (logged, `open` in the manifest), and access
+> is decided by the bus's `AccessControl` alone.
+
 A binding for a wire that no gateway of the process builds **SHOULD** warn, and **MUST** fail with
 `strict=True` (the default in CI).
 
@@ -316,6 +320,9 @@ and logs what it publishes, so an automatic surface is never a surprise.
 Being on a wire (a binding) and being allowed (`@auth.requires` / `@auth.public`) are separate
 declarations, as in Encore. The fallback rule joins them at the build: an operation that is
 reachable **MUST** say who may call it.
+
+> Superseded by #309: the two axes stay separate and the fallback rule is gone — reachable and
+> undeclared is open; `@auth.authenticated` / `@auth.requires` restrict, `@internal` hides.
 
 ### Decorators are data; the composition has the last word
 

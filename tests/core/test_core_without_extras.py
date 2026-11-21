@@ -416,9 +416,9 @@ class RestSurface(Gateway):
     wire = "rest"
 
 
-surface = RestSurface([exposed], unguarded=True)
+surface = RestSurface([exposed])
 assert [entry.command.rsplit(".", 1)[-1] for entry in surface.manifest()] == ["CommandCharge"]
-catalog = RestSurface([exposed], exposure=Exposure.CATALOG, unguarded=True)
+catalog = RestSurface([exposed], exposure=Exposure.CATALOG)
 assert "CommandSecret" not in str(catalog.manifest())
 assert refined_failure_kind(PermissionDenied("a", "b", "c")) == FailureKind.PERMISSION_DENIED
 
@@ -462,9 +462,9 @@ from sincpro_framework.entrypoints import McpGateway
 from sincpro_framework.entrypoints import RpcGateway
 
 for gateway, serve, extra in (
-    (GrpcGateway([exposed], unguarded=True), "server", "grpc"),
-    (RpcGateway([exposed], unguarded=True), "app", "rpc"),
-    (McpGateway([exposed], unguarded=True), "server", "mcp"),
+    (GrpcGateway([exposed]), "server", "grpc"),
+    (RpcGateway([exposed]), "app", "rpc"),
+    (McpGateway([exposed]), "server", "mcp"),
 ):
     try:
         getattr(gateway, serve)()

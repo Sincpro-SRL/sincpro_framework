@@ -22,6 +22,7 @@ from sincpro_framework import (
     exceptions,
 )
 from sincpro_framework.auth import (
+    OPEN,
     AccessControl,
     AuthProvider,
     Credentials,
@@ -124,7 +125,6 @@ def _billing(auth: AccessControl[BillingPermission]) -> UseFramework:
             return Answer(by="price")
 
     @billing.feature(CommandHealth)
-    @auth.public
     class Health(Feature):
         def execute(self, dto: CommandHealth) -> Answer:
             return Answer()
@@ -201,16 +201,16 @@ def test_public_needs_nobody_and_authenticated_needs_anybody(billing: UseFramewo
 # Skipping
 
 
-def test_what_declares_nothing_is_not_checked(billing: UseFramework) -> None:
+def test_what_declares_nothing_is_open(billing: UseFramework) -> None:
     assert _by(billing(CommandPrice())) == "price"
 
 
-def test_a_strict_bus_refuses_what_declares_nothing_entered_from_outside() -> None:
-    billing = _billing(AccessControl[BillingPermission](strict=True))
+def test_what_declares_nothing_runs_for_anyone_entered_from_outside() -> None:
+    billing = _billing(AccessControl[BillingPermission]())
     with security.as_identity(ACCOUNTANT):
-        with pytest.raises(auth_exceptions.PermissionDenied):
-            billing(CommandPrice())
+        assert _by(billing(CommandPrice())) == "price"
         billing(CommandHealth())
+    assert _by(billing(CommandPrice())) == "price"
 
 
 def test_disabled_checks_nothing() -> None:
@@ -247,7 +247,7 @@ def test_the_system_meets_every_requirement(billing: UseFramework) -> None:
 def test_an_orchestration_is_decided_once_and_nested_use_cases_inherit(
     billing: UseFramework,
 ) -> None:
-    strict = _billing(AccessControl[BillingPermission](strict=True))
+    strict = _billing(AccessControl[BillingPermission]())
     with security.as_identity(ACCOUNTANT):
         assert _by(billing(CommandCheckout())) == "user:1"
         assert _by(strict(CommandCheckout())) == "user:1"
@@ -342,17 +342,6 @@ def test_who_acts_follows_the_execution_into_a_thread(billing: UseFramework) -> 
         worker.start()
         worker.join()
     assert seen == ["user:1"]
-
-
-def test_declared_both_public_and_required_is_refused(
-    auth: AccessControl[BillingPermission],
-) -> None:
-    with pytest.raises(exceptions.ProgrammingError):
-
-        @auth.public
-        @auth.requires(BillingPermission.READ_INVOICES)
-        class Both(Feature):
-            def execute(self, dto: Any) -> None: ...
 
 
 # Providers
@@ -540,8 +529,8 @@ def test_a_hook_that_skips_when_denied_leaves_its_moment_out() -> None:
 # What it says about itself
 
 
-def test_verify_names_a_declaration_that_never_runs_and_what_strict_refuses() -> None:
-    auth = AccessControl[BillingPermission](strict=True)
+def test_verify_names_a_declaration_that_never_runs() -> None:
+    auth = AccessControl[BillingPermission]()
     billing = _billing(auth)
 
     @auth.requires(BillingPermission.AUDIT)
@@ -550,7 +539,7 @@ def test_verify_names_a_declaration_that_never_runs_and_what_strict_refuses() ->
 
     problems = auth.verify()
     assert any("NeverRegistered" in one for one in problems)
-    assert any("CommandPrice" in one and "strict" in one for one in problems)
+    assert not any("CommandPrice" in one for one in problems)  # open is no problem
     assert billing is not None
 
 
@@ -562,8 +551,8 @@ def test_describe_and_requirements_of_say_what_each_use_case_declared(
         name.rsplit(".", 1)[-1]: needed for name, needed in described.use_cases.items()
     }
     assert by_command["CommandIssueInvoice"] == "billing.invoice.issue"
-    assert by_command["CommandHealth"] == "public"
-    assert by_command["CommandPrice"] == "unchecked"
+    assert by_command["CommandHealth"] == OPEN
+    assert by_command["CommandPrice"] == OPEN
     assert by_command["CommandCreditReport"] == "billing.credit.read (else skipped)"
     declared = auth.requirements_of(CommandIssueInvoice)
     assert declared is not None and declared.requirements == (
@@ -676,10 +665,9 @@ def test_describing_and_verifying_build_nothing_and_close_nothing() -> None:
     )
 
 
-def test_nobody_calling_a_strict_bus_is_asked_to_authenticate() -> None:
-    billing = _billing(AccessControl[BillingPermission](strict=True))
-    with pytest.raises(auth_exceptions.Unauthenticated):
-        billing(CommandPrice())
+def test_nobody_calling_what_declares_nothing_runs_it() -> None:
+    billing = _billing(AccessControl[BillingPermission]())
+    assert _by(billing(CommandPrice())) == "price"
 
 
 # The system, a disabled control, and what a wiring mistake raises

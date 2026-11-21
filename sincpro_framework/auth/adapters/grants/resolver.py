@@ -143,16 +143,24 @@ class GrantResolver:
         2. The roles the source assigns, unioned.
         3. Their closure, and what it grants — beside what the token itself carried.
         4. Gated by the tenant's entitlements, when asked and the source keeps them.
-        Final: narrowed by the scope ceiling, when there is one.
+        5. Narrowed by the scope ceiling, when there is one.
+        Final: when 4 or 5 took a permission away, only the roles whose every grant is left —
+        `auth.role(...)` never admits a client, or a tenant, the permissions refuse: a reports
+        app scoped to `billing:read` acts as a clerk, never as the manager its person is.
         """
         from_token = (
             self.role_mapping.mapped(identity.roles) if self.role_mapping else identity.roles
         )
         held = self.held(identity)
         roles = self.catalog.closure(from_token | held.roles)
-        permissions = identity.permissions | self.catalog.permissions_of(roles)
+        granted = identity.permissions | self.catalog.permissions_of(roles)
+        permissions = granted
         if self.entitlements and held.entitlements is not None:
             permissions = self.catalog.gated(permissions, held.entitlements)
         if self.scope_ceiling is not None:
             permissions = self.scope_ceiling.narrowed(permissions, identity)
+        if permissions != granted:
+            roles = frozenset(
+                one for one in roles if self.catalog.permissions_of({one}) <= permissions
+            )
         return identity.model_copy(update={"roles": roles, "permissions": permissions})

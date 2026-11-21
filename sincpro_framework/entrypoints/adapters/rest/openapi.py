@@ -12,7 +12,7 @@ import copy
 from collections.abc import Iterable, Mapping
 from typing import Any
 
-from sincpro_framework.auth import AccessControl
+from sincpro_framework.auth import OPEN, AccessControl
 from sincpro_framework.ddd.metamodel import contract_of
 from sincpro_framework.entrypoints.adapters.rest.routing import RestRoute, is_plain
 from sincpro_framework.introspection.entity_tags import only_reads, role_of
@@ -114,23 +114,29 @@ def operation_security(bus: Any, dto: type) -> dict[str, Any]:
         operation_security(billing, CommandIssueInvoice)    # @auth.requires("invoice.issue")
         ->  {"security": [{"static": []}], "x-sincpro-requires": ["invoice.issue"],
              "x-sincpro-when-denied": "raise"}
-        operation_security(billing, QueryHealth)            # @auth.public
-        ->  {"security": []}
-        operation_security(<unguarded bus>, CommandIssueInvoice)   ->  {}
+        operation_security(billing, QueryHealth)            # nothing declared
+        ->  {"security": [], "x-sincpro-access": "open"}
+        operation_security(billing, QueryHealth)            # … and an `every_call` check
+        ->  {"security": [{}, {"static": []}], "x-sincpro-access": "open"}
+        operation_security(<a bus with no AccessControl>, CommandIssueInvoice)
+        ->  {"security": [], "x-sincpro-access": "open"}
 
-    1. An unguarded bus: nothing to say.
-    2. Nothing declared for the DTO: nothing; declared public: an empty `security`.
+    1. A bus with no `AccessControl`: open — an empty `security` says no credential is asked,
+       and `x-sincpro-access` says so plainly.
+    2. Nothing declared for the DTO: open too; when an `every_call` check may still refuse,
+       a credential is optional — `{}` beside each scheme — not unasked.
     3. Otherwise one requirement per provider that has a security scheme.
     Final: a `requires` declaration also says its requirements and what happens when they
     are denied.
     """
     access = AccessControl.of(bus)
     if access is None:
-        return {}
+        return {"security": [], "x-sincpro-access": OPEN}
     declaration = access.requirements_of(dto)
-    if declaration is None or declaration.kind == "public":
-        return {"security": []} if declaration is not None else {}
     schemes = [one.name for one in access.providers if one.security_scheme() is not None]
+    if declaration is None:
+        optional = [{}, *({name: []} for name in schemes)] if access.checks else []
+        return {"security": optional, "x-sincpro-access": OPEN}
     described: dict[str, Any] = {"security": [{name: []} for name in schemes]}
     if declaration.kind == "requires":
         described["x-sincpro-requires"] = [str(one) for one in declaration.requirements]

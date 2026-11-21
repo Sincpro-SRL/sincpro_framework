@@ -53,7 +53,7 @@ def _bus(name: str) -> UseFramework:
 
 def _rpc_catalog(bus: UseFramework) -> RpcGateway:
     """Every use case of `bus` published, under `{namespace}.{operation}` (PRD_15 §4)."""
-    return RpcGateway({"pay": bus}, exposure=Exposure.CATALOG, unguarded=True)
+    return RpcGateway({"pay": bus}, exposure=Exposure.CATALOG)
 
 
 def test_routes_returns_starlette_route_objects_not_an_app():
@@ -179,7 +179,7 @@ def test_app_with_no_arguments_still_works_exactly_as_before():
 
 
 def test_handlers_returns_generic_rpc_handlers_with_no_server():
-    gateway = GrpcGateway({"pay": _bus("pay")}, exposure=Exposure.CATALOG, unguarded=True)
+    gateway = GrpcGateway({"pay": _bus("pay")}, exposure=Exposure.CATALOG)
     handlers = gateway.handlers()
 
     # pay.v1.PayService + sincpro.Introspection + grpc.health.v1.Health (on by default) — and
@@ -212,7 +212,6 @@ def per_bus_policy_client() -> Iterator[GrpcClient]:
     gateway = GrpcGateway(
         {"public": _bus("public"), "internal": _bus("internal")},
         exposure=Exposure.CATALOG,
-        unguarded=True,
     )
     server = gateway.server(interceptors=[_DenyInternalWithoutToken()], reflection=False)
     port = server.add_insecure_port("127.0.0.1:0")
@@ -247,7 +246,7 @@ def test_a_caller_builds_its_own_grpc_server_from_handlers():
     """
     from concurrent import futures
 
-    gateway = GrpcGateway({"pay": _bus("pay")}, exposure=Exposure.CATALOG, unguarded=True)
+    gateway = GrpcGateway({"pay": _bus("pay")}, exposure=Exposure.CATALOG)
     server = grpc.server(futures.ThreadPoolExecutor(max_workers=2))
     server.add_generic_rpc_handlers(gateway.handlers())
     port = server.add_insecure_port("127.0.0.1:0")

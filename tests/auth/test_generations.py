@@ -19,7 +19,7 @@ from sincpro_framework.runtime.runtime_use_cases import (
 )
 from sincpro_framework.runtime.testing import granting
 from tests.auth.guarded_billing import (
-    PUBLIC_TAX,
+    TAX_FOR_ANYONE_SIGNED_IN,
     BillingPermission,
     CommandComputeTax,
     ResponseComputeTax,
@@ -62,11 +62,16 @@ def test_the_use_cases_in_code_stay_guarded_on_a_new_generation() -> None:
 def test_a_stored_replacement_holds_to_its_own_declaration() -> None:
     registry = _registry(
         RuntimeUseCase(
-            name="tax", source=PUBLIC_TAX, replaces="tests.auth.guarded_billing.ComputeTax"
+            name="tax",
+            source=TAX_FOR_ANYONE_SIGNED_IN,
+            replaces="tests.auth.guarded_billing.ComputeTax",
         )
     )
-    answer = registry.current(CommandComputeTax(amount=100), ResponseComputeTax)
+    with granting():  # signed in, without the TAX the replaced use case required
+        answer = registry.current(CommandComputeTax(amount=100), ResponseComputeTax)
     assert answer is not None and answer.tax == 0
+    with pytest.raises(exceptions.Unauthenticated):
+        registry.current(CommandComputeTax(amount=100), ResponseComputeTax)
 
 
 def test_a_new_version_declares_anew_and_never_adds_to_the_last() -> None:
@@ -82,8 +87,8 @@ def test_a_new_version_declares_anew_and_never_adds_to_the_last() -> None:
     )
     with granting(BillingPermission.QUOTE_V2):
         assert registry.execute(QUOTE, {"amount": 1}).total == 2
-    registry.put(RuntimeUseCase(name="quote", source=quote("@auth.public"), version=3))
-    assert registry.execute(QUOTE, {"amount": 1}).total == 2
+    registry.put(RuntimeUseCase(name="quote", source=quote(""), version=3))
+    assert registry.execute(QUOTE, {"amount": 1}).total == 2  # declares nothing: open
 
 
 def test_checking_a_draft_leaves_the_version_in_force_as_it_was() -> None:

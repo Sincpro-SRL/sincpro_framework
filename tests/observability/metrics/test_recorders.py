@@ -163,9 +163,7 @@ def test_the_fastapi_gateway_serves_the_scrape_when_prometheus_records(prometheu
     from sincpro_framework.entrypoints import Exposure, FastApiGateway
 
     bus = _billing()
-    client = TestClient(
-        FastApiGateway([bus], exposure=Exposure.CATALOG, unguarded=True).app()
-    )
+    client = TestClient(FastApiGateway([bus], exposure=Exposure.CATALOG).app())
     client.post(
         "/billing/issue-invoice", json={"customer_id": "c", "currency": "USD", "total": "1"}
     )
@@ -185,7 +183,7 @@ def test_no_scrape_route_when_nothing_is_scraped():
     from sincpro_framework.entrypoints import Exposure, FastApiGateway
 
     with metrics.using(InMemoryRecorder()):
-        app = FastApiGateway([_billing()], exposure=Exposure.CATALOG, unguarded=True).app()
+        app = FastApiGateway([_billing()], exposure=Exposure.CATALOG).app()
 
     assert TestClient(app).get("/metrics").status_code == 404
 

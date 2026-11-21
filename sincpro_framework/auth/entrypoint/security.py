@@ -1,6 +1,6 @@
 """`security`: who the execution acts as, and the one door every wire goes through to hand auth
-what a caller presented — so JSON-RPC, gRPC, MCP, an ASGI app of the project's and a call to
-another service all authenticate the same way.
+what a caller presented — so REST, FastAPI, JSON-RPC, gRPC, MCP, a queue, an ASGI app of the
+project's and a call to another service all authenticate the same way.
 
     security.identity                                       # who acts, never None
     with security.as_identity(Identity.user("user:42")):    # what a test opens to be someone

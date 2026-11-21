@@ -91,7 +91,6 @@ def gateway_on_sqs(ran: list[str]) -> SqsBroker:
         broker,
         [billing_bus(ran), accounting_bus(ran)],
         options=QueueOptions(max_retry_wait=timedelta(0)),
-        unguarded=True,
     ).build()
     return broker
 
@@ -129,7 +128,6 @@ def test_sqs_holds_a_retry_for_its_wait_and_the_consumer_never_waits():
         broker,
         [billing_bus(ran)],
         options=QueueOptions(retry_jitter=False),
-        unguarded=True,
     ).build()
     issue(0)  # the database went away: a retry, a second's wait
 
@@ -163,7 +161,7 @@ def test_an_event_published_to_sns_is_fanned_out_and_heard():
     )["Attributes"]["QueueArn"]
     sns.subscribe(TopicArn=topic, Protocol="sqs", Endpoint=queue_arn)
     broker = SqsBroker(wait=timedelta(0))
-    QueueGateway(broker, [accounting_bus(heard)], unguarded=True).build()
+    QueueGateway(broker, [accounting_bus(heard)]).build()
 
     Publisher(SnsQueue(topic, source="urn:svc:billing")).publish(InvoiceIssued(number="F-1"))
     polled(broker)
@@ -206,7 +204,7 @@ def test_an_event_routed_by_eventbridge_is_heard():
     )
     events.put_targets(Rule="issued", Targets=[{"Id": "accounting", "Arn": queue_arn}])
     broker = SqsBroker(wait=timedelta(0))
-    QueueGateway(broker, [accounting_bus(heard)], unguarded=True).build()
+    QueueGateway(broker, [accounting_bus(heard)]).build()
 
     Publisher(EventBridgeQueue(source="billing")).publish(InvoiceIssued(number="F-4"))
     polled(broker)
@@ -218,7 +216,7 @@ def test_an_event_sent_to_sqs_is_heard_once_by_its_own_id():
     heard: list[str] = []
     queue_url = a_queue(queue_name(InvoiceIssued.name))
     broker = SqsBroker(wait=timedelta(0))
-    QueueGateway(broker, [accounting_bus(heard)], unguarded=True).build()
+    QueueGateway(broker, [accounting_bus(heard)]).build()
     event = InvoiceIssued(number="F-5")
 
     SqsQueue(queue_url).put(event)
@@ -232,7 +230,7 @@ def test_a_channel_may_be_read_from_the_queue_the_project_names():
     ran: list[str] = []
     url = a_queue("billing-issue-prod")
     broker = SqsBroker(wait=timedelta(0), queues={ISSUE_CHANNEL: url})
-    QueueGateway(broker, [billing_bus(ran)], unguarded=True).build()
+    QueueGateway(broker, [billing_bus(ran)]).build()
     command = CommandIssueInvoice(customer_id=7, amount=9)
     boto3.client("sqs").send_message(
         QueueUrl=url,

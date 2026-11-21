@@ -57,7 +57,7 @@ def _client(bus: UseFramework):
 
     from sincpro_framework.entrypoints import FastApiGateway
 
-    return TestClient(FastApiGateway([bus], unguarded=True).app())
+    return TestClient(FastApiGateway([bus]).app())
 
 
 def test_a_delete_route_answers_204_with_no_body_and_the_record_is_gone():

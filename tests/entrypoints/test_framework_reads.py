@@ -94,7 +94,7 @@ def _fastapi():
 def test_a_get_bound_as_get_answers_the_record_read_from_the_url():
     gateway_type, client_type = _fastapi()
     bus, stored = tracker()
-    client = client_type(gateway_type([bus], unguarded=True).app())
+    client = client_type(gateway_type([bus]).app())
 
     answered = client.get(f"/tracker/issues/{stored.id}")
 
@@ -105,9 +105,7 @@ def test_a_get_bound_as_get_answers_the_record_read_from_the_url():
 def test_a_get_bound_as_get_is_published_as_a_read_its_criteria_a_json_parameter():
     gateway_type, client_type = _fastapi()
     bus, _ = tracker()
-    document = (
-        client_type(gateway_type([bus], unguarded=True).app()).get("/openapi.json").json()
-    )
+    document = client_type(gateway_type([bus]).app()).get("/openapi.json").json()
 
     read = document["paths"]["/tracker/issues/{id}"]["get"]
     parameters = {one["name"]: one for one in read["parameters"]}
@@ -120,7 +118,7 @@ def test_a_get_bound_as_get_is_published_as_a_read_its_criteria_a_json_parameter
 def test_a_preview_stays_post_is_published_as_a_read_and_asks_no_idempotency_key():
     gateway_type, client_type = _fastapi()
     bus, _ = tracker()
-    client = client_type(gateway_type([bus], unguarded=True).app())
+    client = client_type(gateway_type([bus]).app())
     preview = client.get("/openapi.json").json()["paths"]["/tracker/issues/preview"]["post"]
 
     answered = client.post("/tracker/issues/preview", json={"values": {"title": "Draft"}})
@@ -136,18 +134,15 @@ def test_a_read_nobody_binds_as_get_is_served_as_it_was():
     gateway_type, _ = _fastapi()
     bus, _ = tracker()
 
-    derived = {
-        entry.command: entry.method
-        for entry in gateway_type([bus], unguarded=True).manifest()
-    }
+    derived = {entry.command: entry.method for entry in gateway_type([bus]).manifest()}
 
     assert derived["tracker.QueryReadIssue"] == "POST"  # no route moves
 
 
 def test_every_wire_publishes_the_framework_reads_as_reads():
     bus, _ = tracker()
-    mcp_gateway = McpGateway([bus], unguarded=True)
-    rpc_gateway = RpcGateway([bus], unguarded=True)
+    mcp_gateway = McpGateway([bus])
+    rpc_gateway = RpcGateway([bus])
 
     tools = {entry.command: entry.binding for entry in mcp_gateway.manifest()}
     kinds = {entry.command: entry.kind for entry in rpc_gateway.manifest()}
@@ -162,9 +157,7 @@ def test_json_rpc_publishes_a_get_as_idempotent():
 
     bus, _ = tracker()
     [resolved] = [
-        one
-        for one in RpcGateway([bus], unguarded=True).surface()
-        if one.operation.command is QueryGetIssue
+        one for one in RpcGateway([bus]).surface() if one.operation.command is QueryGetIssue
     ]
 
     assert resolved.operation.reads and not resolved.operation.is_query  # no `Query`, a read
@@ -184,7 +177,7 @@ def test_running_a_read_once_is_refused_like_on_a_query():
         pass
 
     with pytest.raises(exceptions.ProgrammingError, match="@idempotency.once on a read"):
-        RpcGateway([bus], unguarded=True).manifest()
+        RpcGateway([bus]).manifest()
 
 
 # --- a read of the project's own -------------------------------------------------------------
@@ -231,7 +224,7 @@ def ledger() -> UseFramework:
 
 def test_a_read_of_the_project_bound_as_get_answers_from_the_url():
     gateway_type, client_type = _fastapi()
-    client = client_type(gateway_type([ledger()], unguarded=True).app())
+    client = client_type(gateway_type([ledger()]).app())
 
     answered = client.get("/ledger/balances/A-1?currency=USD")
 
@@ -242,16 +235,10 @@ def test_a_read_of_the_project_bound_as_get_answers_from_the_url():
 def test_a_read_of_the_project_is_published_as_a_read_on_every_wire():
     gateway_type, client_type = _fastapi()
     bus = ledger()
-    document = (
-        client_type(gateway_type([bus], unguarded=True).app()).get("/openapi.json").json()
-    )
+    document = client_type(gateway_type([bus]).app()).get("/openapi.json").json()
     read = document["paths"]["/ledger/balances/{account_id}"]["get"]
-    tools = {
-        entry.command: entry.binding for entry in McpGateway([bus], unguarded=True).manifest()
-    }
-    kinds = {
-        entry.command: entry.kind for entry in RpcGateway([bus], unguarded=True).manifest()
-    }
+    tools = {entry.command: entry.binding for entry in McpGateway([bus]).manifest()}
+    kinds = {entry.command: entry.kind for entry in RpcGateway([bus]).manifest()}
 
     assert read["x-sincpro-query"] is True
     assert "Idempotency-Key" not in {one["name"] for one in read.get("parameters", [])}
@@ -264,9 +251,6 @@ def test_a_read_of_the_project_is_published_as_a_read_on_every_wire():
 def test_a_read_of_the_project_bound_with_no_verb_stays_post():
     gateway_type, _ = _fastapi()
 
-    derived = {
-        entry.command: entry.method
-        for entry in gateway_type([ledger()], unguarded=True).manifest()
-    }
+    derived = {entry.command: entry.method for entry in gateway_type([ledger()]).manifest()}
 
     assert derived["ledger.QueryCashBalanceDerived"] == "POST"  # only a `Query` derives `GET`

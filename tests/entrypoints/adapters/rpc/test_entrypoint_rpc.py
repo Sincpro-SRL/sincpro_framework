@@ -1,6 +1,6 @@
 """entrypoint_rpc: JSON-RPC 2.0 methods `{namespace}.{operation}`, context, OpenRPC discover.
 
-These buses publish their whole catalog (`Exposure.CATALOG`, `unguarded=True`): what is
+These buses publish their whole catalog (`Exposure.CATALOG`), none of them guarded: what is
 protected here is the protocol and the naming, the same in either mode; declared exposure has
 its own tests (test_jsonrpc_naming.py)."""
 
@@ -19,7 +19,7 @@ from sincpro_framework.exceptions import FailureKind
 
 
 def catalog_gateway(instances: Buses | None = None, **options: Any) -> RpcGateway:
-    return RpcGateway(instances, exposure=Exposure.CATALOG, unguarded=True, **options)
+    return RpcGateway(instances, exposure=Exposure.CATALOG, **options)
 
 
 def rpc_object(payload: dict[str, Any] | list[Any] | None) -> dict[str, Any]:
