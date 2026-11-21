@@ -74,6 +74,7 @@ names its door: `auth.server` verifies what arrives, `auth.client` presents what
 | `TokenExchange` + `PresentingProvider` / `RefreshingToken` + `HeldGrants` / `DeviceCode` / `DpopProver` | act for the caller (RFC 8693); hold consent; RFC 8628; DPoP client | adapter | `sincpro_framework.auth.client` |
 | `call_with_credentials` / `requests_auth` / `httpx_auth` | send, and once more after a 401 | function | `sincpro_framework.auth.client` |
 | `PasswordHasher` / `LoginAttempts` / `OneTimeTokens` / `Totp` / `TokenIssuer` / `SigningKeys` | accounts the service manages itself | adapter | `sincpro_framework.auth.accounts` |
+| `AuthEvent` / `AccessRefused` / `EventPublisher` | the audit trail: `publisher=` on `AccessControl`, `GrantAdministration`, `TokenIssuer`, `LoginAttempts`, `OneTimeTokens` publishes versioned `DomainEvent`s through the framework's `Publisher` — grants' `RoleAssigned`…, accounts' `SignedIn`, `RefreshTokenReused`, `AccountLocked`… | DTO (event) / port | events of a door from that door |
 | `ScriptedHttp` / `FakeTokenEndpoint` / `TokenSourceContract` / `RevocationsContract` / `GrantStoreContract` / `RefreshTokensContract` / `ApiKeyStoreContract` | test doubles and contracts | double / contract | `sincpro_framework.runtime.testing` |
 | `granting` / `RecordingProvider` / `AuthProviderContract` | test helpers | function / adapter / port | `sincpro_framework.runtime.testing` |
 

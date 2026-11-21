@@ -20,7 +20,13 @@ from datetime import UTC, datetime, timedelta
 
 from pydantic import ConfigDict, Field
 
+from sincpro_framework.auth.accounts.domain.events import (
+    OneTimeTokenIssued,
+    OneTimeTokenRedeemed,
+)
 from sincpro_framework.auth.domain import exceptions
+from sincpro_framework.auth.domain.events import SUBJECT, EventPublisher
+from sincpro_framework.auth.infrastructure.announcing import announce
 from sincpro_framework.auth.infrastructure.digests import digest, random_token
 from sincpro_framework.context.entrypoint.resolution import current_store, key_value_store_of
 from sincpro_framework.data_layer.store import KeyValueStore
@@ -49,12 +55,15 @@ class OneTimeTokens:
         store: KeyValueStore | None = None,
         prefix: str = "sincpro:auth:once",
         clock: Callable[[], float] = time.time,
+        publisher: EventPublisher | None = None,
     ) -> None:
         """`store` holds the tokens — the running context's when not given; `prefix` separates
-        their keys from others in it; `clock` is the time they expire by."""
+        their keys from others in it; `clock` is the time they expire by; `publisher` is told
+        each one issued and redeemed — its purpose, never the token."""
         self._store = store
         self.prefix = prefix
         self.clock = clock
+        self.publisher = publisher
 
     def store(self) -> KeyValueStore:
         """The store the tokens are kept in — the one given, else the running context's."""
@@ -92,6 +101,10 @@ class OneTimeTokens:
         if single_outstanding:
             store.set(self._latest_key(purpose, subject), digest(token).encode(), ttl)
         store.set(self._key(purpose, token), grant.model_dump_json().encode(), ttl)
+        announce(
+            self.publisher,
+            OneTimeTokenIssued(entity_type=SUBJECT, entity_id=subject, purpose=purpose),
+        )
         return token
 
     def _grant(self, raw: bytes, purpose: str, token: str) -> OneTimeGrant | None:
@@ -121,6 +134,12 @@ class OneTimeTokens:
         grant = self._grant(raw, purpose, token)
         if grant is None:
             raise exceptions.Unauthenticated("a newer link was sent")
+        announce(
+            self.publisher,
+            OneTimeTokenRedeemed(
+                entity_type=SUBJECT, entity_id=grant.subject, purpose=purpose
+            ),
+        )
         return grant
 
     def void(self, purpose: str, subject: str) -> None:

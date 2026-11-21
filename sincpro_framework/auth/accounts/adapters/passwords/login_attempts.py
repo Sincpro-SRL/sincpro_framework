@@ -19,6 +19,9 @@ import time
 from collections.abc import Callable
 from datetime import timedelta
 
+from sincpro_framework.auth.accounts.domain.events import AccountLocked
+from sincpro_framework.auth.domain.events import SUBJECT, EventPublisher
+from sincpro_framework.auth.infrastructure.announcing import announce
 from sincpro_framework.auth.infrastructure.digests import digest
 from sincpro_framework.context.entrypoint.resolution import current_store, key_value_store_of
 from sincpro_framework.data_layer.store import KeyValueStore, StoreBypass, StoreUnavailable
@@ -37,9 +40,11 @@ class LoginAttempts:
         lock_for: timedelta = timedelta(minutes=15),
         prefix: str = "sincpro:auth:login",
         clock: Callable[[], float] = time.time,
+        publisher: EventPublisher | None = None,
     ) -> None:
         """`window` is how long failures are counted from the last one; `lock_for` how long the
-        lock lasts once `max_failures` is reached."""
+        lock lasts once `max_failures` is reached; `publisher` is told every lock
+        (`AccountLocked`)."""
         self._store = store
         self.max_failures = max_failures
         self.window = window
@@ -47,6 +52,7 @@ class LoginAttempts:
         self.prefix = prefix
         self.clock = clock
         self._bypass = StoreBypass(timedelta(seconds=30), clock)
+        self.publisher = publisher
 
     def store(self) -> KeyValueStore:
         """The store the failures are counted kept in — the one given, else the running
@@ -93,10 +99,18 @@ class LoginAttempts:
             until = self.clock() + self.lock_for.total_seconds()
             store.set(self._key("lock", key), str(until).encode(), self.lock_for)
             store.delete(self._key("failures", key))
-            return self.lock_for
         except StoreUnavailable:
             self._unavailable()
             return None
+        announce(
+            self.publisher,
+            AccountLocked(
+                entity_type=SUBJECT,
+                entity_id=key,
+                locked_seconds=int(self.lock_for.total_seconds()),
+            ),
+        )
+        return self.lock_for
 
     def succeeded(self, key: str) -> None:
         """The count of `key` starts over."""

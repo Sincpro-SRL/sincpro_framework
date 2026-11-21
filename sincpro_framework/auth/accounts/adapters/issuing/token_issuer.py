@@ -28,12 +28,20 @@ from typing import Any
 from pydantic import ConfigDict, SecretStr
 
 from sincpro_framework.auth.accounts.adapters.issuing.signing_keys import SigningKeys
+from sincpro_framework.auth.accounts.domain.events import (
+    RefreshTokenReused,
+    SignedIn,
+    SignedOut,
+    SignedOutEverywhere,
+)
 from sincpro_framework.auth.accounts.domain.refresh_tokens import RefreshRecord, RefreshTokens
 from sincpro_framework.auth.domain import exceptions
+from sincpro_framework.auth.domain.events import SUBJECT, EventPublisher
 from sincpro_framework.auth.domain.identity import Assurance, Identity, IdentityKind
 from sincpro_framework.auth.domain.resolver import IdentityResolver, resolved
 from sincpro_framework.auth.domain.revocations import Revocations
 from sincpro_framework.auth.infrastructure import jws
+from sincpro_framework.auth.infrastructure.announcing import announce
 from sincpro_framework.auth.infrastructure.digests import digest, random_token
 from sincpro_framework.auth.server import ClaimMapping, ClaimTest, JwtProvider, TrustedIssuer
 from sincpro_framework.sincpro_abstractions import DataTransferObject
@@ -98,6 +106,7 @@ class TokenIssuer:
         embed_permissions: bool = False,
         resolvers: Sequence[IdentityResolver] = (),
         clock: Callable[[], float] = time.time,
+        publisher: EventPublisher | None = None,
     ) -> None:
         """`embed_permissions` puts the permissions in the access token with the subject's
         permission version — for a verifier that resolves nothing; a version bumped refuses it.
@@ -122,6 +131,7 @@ class TokenIssuer:
         self.embed_permissions = embed_permissions
         self.resolvers = tuple(resolvers)
         self.clock = clock
+        self.publisher = publisher
 
     def _now(self) -> datetime:
         """This moment, by `clock`."""
@@ -217,6 +227,18 @@ class TokenIssuer:
                 session_ends=now + self.at_most,
             )
             self.refresh_tokens.save(first)
+        announce(
+            self.publisher,
+            SignedIn(
+                entity_type=SUBJECT,
+                entity_id=identity.subject,
+                tenant=identity.tenant,
+                session=session,
+                client=client,
+                methods=sorted(how.methods),
+                scopes=sorted(chosen),
+            ),
+        )
         return IssuedTokens(
             access_token=SecretStr(access),
             refresh_token=SecretStr(refresh) if refresh else None,
@@ -240,6 +262,12 @@ class TokenIssuer:
         )
         if self.revocations is not None:
             self.revocations.revoke_session(record.family, record.session_ends)
+        announce(
+            self.publisher,
+            RefreshTokenReused(
+                entity_type=SUBJECT, entity_id=record.subject, session=record.family
+            ),
+        )
         return exceptions.Unauthenticated("refresh token reused: the session was revoked")
 
     def refresh(self, refresh_token: str) -> IssuedTokens:
@@ -315,6 +343,12 @@ class TokenIssuer:
             record = self.refresh_tokens.find(digest(token))
             if record is not None:
                 revocations.revoke_session(record.family, record.session_ends)
+                announce(
+                    self.publisher,
+                    SignedOut(
+                        entity_type=SUBJECT, entity_id=record.subject, session=record.family
+                    ),
+                )
             return
         try:
             parsed = jws.parse(token)
@@ -329,6 +363,14 @@ class TokenIssuer:
         session = parsed.claims.get("sid")
         if isinstance(session, str):
             revocations.revoke_session(session, self._now() + self.at_most)
+            announce(
+                self.publisher,
+                SignedOut(
+                    entity_type=SUBJECT,
+                    entity_id=str(parsed.claims.get("sub", "")),
+                    session=session,
+                ),
+            )
 
     def sessions_of(self, subject: str) -> list[RefreshRecord]:
         """The sessions `subject` is signed in on."""
@@ -345,6 +387,10 @@ class TokenIssuer:
         revocations.revoke_subject(subject, self._now() + self.at_most)
         for record in self.sessions_of(subject):
             revocations.revoke_session(record.family, record.session_ends)
+        announce(
+            self.publisher,
+            SignedOutEverywhere(entity_type=SUBJECT, entity_id=subject),
+        )
 
     def provider(
         self, resolvers: Sequence[IdentityResolver] = (), name: str = "sessions"

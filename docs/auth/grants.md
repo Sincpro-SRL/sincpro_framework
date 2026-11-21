@@ -96,6 +96,12 @@ assert grants.held("user:ana", "bo").roles == {"billing.manager", "billing.appro
 | `KeyValueGrants` | the running context's `KeyValueStore` — Redis; compare-and-set, so two administrators never lose each other's role | `GrantStoreContract` |
 | `DatabaseGrants` | a table of the project's (`data_layer.orm`) | `GrantStoreContract` |
 
+**Every change is published** when `GrantAdministration(..., publisher=…)` is given one:
+`RoleAssigned`, `RoleUnassigned`, `LevelChanged`, `TenantEntitled`, `EntitlementWithdrawn` — who
+it is about, what changed, and `actor`, the administrator who did it. Together they are the
+audit trail an ISO 27001 or SOC 2 review asks for: who gave whom access, and when
+([the audit trail](README.md#an-audit-trail-what-auth-publishes)).
+
 ## Resolved per call
 
 `GrantResolver` runs where a provider authenticates: the token's roles mapped to the catalog's,

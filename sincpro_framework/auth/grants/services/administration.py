@@ -1,7 +1,7 @@
 """`GrantAdministration`: giving and taking roles and entitlements, checked against the catalog —
 what an administration screen or a use case of the project calls.
 
-    admin = GrantAdministration(catalog, grants, revocations)
+    admin = GrantAdministration(catalog, grants, revocations, publisher=audit)
     admin.set_level("user:ana", "bo", "invoicing", "billing.manager")   one level per privilege
     admin.assign("user:ana", "bo", "auditor", valid_until=friday)       temporary access
     admin.unassign("user:ana", "bo", "auditor")
@@ -10,26 +10,41 @@ what an administration screen or a use case of the project calls.
 Context: every change bumps the permission version it touches — the subject's for a role, the
 tenant's for an entitlement — so the next call on any replica resolves anew. A role the catalog
 does not declare, two roles never held together, two levels of one privilege: `InvalidGrant`
-(400), nothing written.
+(400), nothing written. Every change written is published — `RoleAssigned`, `RoleUnassigned`,
+`LevelChanged`, `TenantEntitled`, `EntitlementWithdrawn` — when a publisher was given.
 """
 
 from datetime import datetime
 
 from sincpro_framework.auth.domain import exceptions
+from sincpro_framework.auth.domain.events import SUBJECT, TENANT, EventPublisher
 from sincpro_framework.auth.domain.revocations import Revocations, tenant_subject
 from sincpro_framework.auth.grants.domain.assignments import Assignment, GrantStore
 from sincpro_framework.auth.grants.domain.catalog import GrantCatalog
+from sincpro_framework.auth.grants.domain.events import (
+    EntitlementWithdrawn,
+    LevelChanged,
+    RoleAssigned,
+    RoleUnassigned,
+    TenantEntitled,
+)
+from sincpro_framework.auth.infrastructure.announcing import announce
 
 
 class GrantAdministration:
     """Assignments and entitlements, written to `store` once the catalog allows them."""
 
     def __init__(
-        self, catalog: GrantCatalog, store: GrantStore, revocations: Revocations | None = None
+        self,
+        catalog: GrantCatalog,
+        store: GrantStore,
+        revocations: Revocations | None = None,
+        publisher: EventPublisher | None = None,
     ) -> None:
         self.catalog = catalog
         self.store = store
         self.revocations = revocations
+        self.publisher = publisher
 
     def _in_force(self, subject: str, tenant: str | None) -> set[str]:
         """The roles assigned to `subject` in `tenant` and in force now."""
@@ -66,11 +81,25 @@ class GrantAdministration:
             Assignment(subject=subject, tenant=tenant, role=role, valid_until=valid_until)
         )
         self._changed(subject)
+        announce(
+            self.publisher,
+            RoleAssigned(
+                entity_type=SUBJECT,
+                entity_id=subject,
+                tenant=tenant,
+                role=role,
+                valid_until=valid_until,
+            ),
+        )
 
     def unassign(self, subject: str, tenant: str | None, role: str) -> None:
         """Take `role` back; the subject's version bumped."""
         self.store.unassign(subject, tenant, role)
         self._changed(subject)
+        announce(
+            self.publisher,
+            RoleUnassigned(entity_type=SUBJECT, entity_id=subject, tenant=tenant, role=role),
+        )
 
     def set_level(
         self, subject: str, tenant: str | None, privilege: str, role: str | None
@@ -93,6 +122,16 @@ class GrantAdministration:
         if role is not None:
             self.store.assign(Assignment(subject=subject, tenant=tenant, role=role))
         self._changed(subject)
+        announce(
+            self.publisher,
+            LevelChanged(
+                entity_type=SUBJECT,
+                entity_id=subject,
+                tenant=tenant,
+                privilege=privilege,
+                level=role,
+            ),
+        )
 
     def entitle(self, tenant: str, entitlement: str) -> None:
         """The tenant has `entitlement`; its version bumped."""
@@ -101,9 +140,19 @@ class GrantAdministration:
         self.store.entitle(tenant, entitlement)
         if self.revocations is not None:
             self.revocations.bump_permissions(tenant_subject(tenant))
+        announce(
+            self.publisher,
+            TenantEntitled(entity_type=TENANT, entity_id=tenant, entitlement=entitlement),
+        )
 
     def withdraw(self, tenant: str, entitlement: str) -> None:
         """The tenant no longer has `entitlement`; its version bumped."""
         self.store.withdraw(tenant, entitlement)
         if self.revocations is not None:
             self.revocations.bump_permissions(tenant_subject(tenant))
+        announce(
+            self.publisher,
+            EntitlementWithdrawn(
+                entity_type=TENANT, entity_id=tenant, entitlement=entitlement
+            ),
+        )

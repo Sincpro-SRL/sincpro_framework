@@ -38,6 +38,11 @@ from sincpro_framework.auth.adapters.revocations import (
     InMemoryRevocations,
     KeyValueRevocations,
 )
+from sincpro_framework.auth.domain.events import (
+    AccessRefused,
+    AuthEvent,
+    EventPublisher,
+)
 from sincpro_framework.auth.domain.exceptions import (
     AuthError,
     CredentialsRejected,
@@ -101,16 +106,19 @@ __all__ = [
     "AccessControl",
     "AccessDeclaration",
     "AccessDescription",
+    "AccessRefused",
     "AnyOf",
     "Assurance",
     "AssuranceRequirement",
     "AuthError",
+    "AuthEvent",
     "AuthProvider",
     "ByField",
     "ClientAuthentication",
     "Credentials",
     "CredentialsRejected",
     "EndpointUnavailable",
+    "EventPublisher",
     "GrantRejected",
     "HexDigest",
     "HttpAnswer",
