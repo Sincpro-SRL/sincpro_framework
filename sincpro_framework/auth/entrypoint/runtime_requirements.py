@@ -82,7 +82,7 @@ class Judging(Protocol):
         ...
 
 
-Scoped = dict[str, list[AddedRequirement]]
+Scoped = dict[str, list[Requirement]]
 """What holds for a tenant, by Command: every tenant's and its own."""
 
 
@@ -164,15 +164,6 @@ class RuntimeRequirements:
         own = AddedRequirements() if tenant is None else self.store.read(tenant)
         return fingerprint(shared, own), (shared.requirements, own.requirements)
 
-    @staticmethod
-    def _scoped(content: tuple[Iterable[AddedRequirement], ...]) -> Scoped:
-        """What every tenant and the tenant require, by Command."""
-        by_command: Scoped = {}
-        for requirements in content:
-            for one in requirements:
-                by_command.setdefault(one.command, []).append(one)
-        return by_command
-
     def _requirements(self, added: AddedRequirement) -> list[Requirement]:
         """`added` as `requires` takes it: every permission — one this replica does not know
         never met, and logged — and one of the roles."""
@@ -182,7 +173,10 @@ class RuntimeRequirements:
             member = known.get(value)
             if member is None:
                 logger.warning(
-                    f"{added.command} requires {value}, which this service does not know"
+                    "a requirement added at runtime names a permission this service does not "
+                    "know: never met",
+                    command=added.command,
+                    permission=value,
                 )
                 required.append(_unknown(value))
             else:
@@ -191,14 +185,25 @@ class RuntimeRequirements:
             required.append(RoleRequirement(tuple(sorted(added.roles))))
         return required
 
+    def _scoped(self, content: tuple[Iterable[AddedRequirement], ...]) -> Scoped:
+        """What every tenant and the tenant require, by Command, as `requires` takes it.
+
+        Context: converted once per read of the store — never on each call — so a permission
+        this replica does not know is logged once per change, not on every request.
+        """
+        by_command: Scoped = {}
+        for requirements in content:
+            for one in requirements:
+                by_command.setdefault(one.command, []).extend(self._requirements(one))
+        return by_command
+
     def check(self, call: AccessCall) -> bool:
         """The `every_call` check: what is required of `call.command` for the caller's tenant,
         judged as `requires` judges — its refusal raised, so it names what was missing; the
         store's error raised for a tenant never read while it does not answer."""
-        added = self._held.get(call.identity.tenant).get(call.command, [])
-        if not added:
+        required = self._held.get(call.identity.tenant).get(call.command, [])
+        if not required:
             return True
-        required = [one for each in added for one in self._requirements(each)]
         refused = self.access.refusal(
             call.identity,
             AccessDeclaration("requires", tuple(required)),

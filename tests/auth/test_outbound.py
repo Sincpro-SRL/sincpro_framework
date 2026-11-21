@@ -188,8 +188,9 @@ def test_credentials_per_tenant_are_never_another_tenants() -> None:
     with security.as_identity(Identity.user("user:ana", tenant="pe")):
         answer = call_with_credentials(sources, API, lambda headers: headers)
     assert answer == {"authorization": "Bearer pe-token"}
-    with pytest.raises(NoCredentialsFor):
+    with pytest.raises(exceptions.PermissionDenied) as refused:
         sources.headers_for(API.model_copy(update={"tenant": "cl"}))
+    assert isinstance(refused.value, NoCredentialsFor) and refused.value.tenant == "cl"
     with pytest.raises(exceptions.ProgrammingError, match="names no tenant"):
         sources.headers_for(API)
     resolved = TokenSources(

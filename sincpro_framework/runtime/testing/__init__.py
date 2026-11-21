@@ -38,7 +38,7 @@ from .contracts.object_store import ObjectStoreContract
 from .contracts.refresh_tokens import RefreshTokensContract
 from .contracts.revocations import RevocationsContract
 from .contracts.token_source import TokenSourceContract
-from .doubles.auth import RecordingProvider, granting
+from .doubles.auth import RecordingProvider, granting, signed_token
 from .doubles.clock import ManualClock
 from .doubles.context import fresh_context
 from .doubles.dependencies import override_dependencies, unregistered_dependencies
@@ -71,6 +71,7 @@ __all__ = [
     "SettingsScopeViolation",
     "fresh_context",
     "granting",
+    "signed_token",
     "import_cycles",
     "layer_violations",
     "override_dependencies",
