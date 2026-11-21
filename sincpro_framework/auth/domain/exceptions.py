@@ -1,8 +1,16 @@
-"""What an auth refusal raises, whoever refused: two answers, one base.
+"""What auth raises, by the layer that failed — the framework's own bases, so every wire answers
+each kind without knowing auth:
 
-Context: `ClientError`s — the caller is not known, or may not do this — so every entrypoint tells
-the caller why — "you may not issue invoices"
-is the answer, not the inside of the process. Two, not a taxonomy: a missing, invalid, expired or
+    AuthError            Unauthenticated (401) · PermissionDenied (403), NoCredentialsFor
+                         the caller: not known well enough, or may not do this
+    ClientError          InvalidGrant · ConcurrentChange (409) · PasswordRejected
+                         what an administrator or a form asked cannot be taken as it came
+    ExternalServiceError CredentialsRejected, GrantRejected — another server refused us
+    ServiceUnavailable   EndpointUnavailable (503) — an endpoint auth depends on is down
+
+
+Context: an `AuthError` is the caller's, so every entrypoint tells it why — "you may not issue
+invoices" is the answer, not the inside of the process. Two, not a taxonomy: a missing, invalid, expired or
 revoked credential is `Unauthenticated` with its `reason`, because the caller does the same for
 each — authenticate again. `PermissionDenied`, not `PermissionError`: Python's builtin is an
 `OSError` about files, and a handler catching one would catch the other.
@@ -218,15 +226,15 @@ class GrantRejected(CredentialsRejected):
     grant is dropped, and consent must be given again."""
 
 
-class NoCredentialsFor(ClientError):
+class NoCredentialsFor(PermissionDenied):
     """The tenant this call acts for has no credentials for the API it asked — never answered
-    with another tenant's (403)."""
-
-    failure_kind = FailureKind.PERMISSION_DENIED
+    with another tenant's (403): a `PermissionDenied`, caught as one."""
 
     def __init__(self, tenant: str | None, source: str) -> None:
         """`tenant`, the one the call acts for; `source`, the credentials it has none of."""
-        super().__init__(f"tenant {tenant!r} has no credentials for {source}")
+        super().__init__(
+            f"tenant:{tenant}", source, f"tenant {tenant!r} has no credentials for {source}"
+        )
         self.tenant = tenant
         self.source = source
 

@@ -107,6 +107,22 @@ def test_with_nothing_cached_an_issuer_down_is_unavailable_never_a_refusal() -> 
         provider(http).authenticate(bearer(mint(RS)))
 
 
+def test_a_forged_key_id_while_the_issuer_is_down_never_drops_the_cached_keys() -> None:
+    """The incident: one token with an invented `kid` during an outage threw the cached key set
+    away, and every valid token of the service answered 503 until the issuer came back."""
+    clock = Clock()
+    http = ScriptedHttp({JWKS: {"keys": [RS.jwk()]}})
+    jwt = provider(http, clock)
+    assert jwt.authenticate(bearer(mint(RS))) is not None
+    http.route(JWKS, EndpointUnavailable(JWKS, "could not be reached"))
+    clock.now += 31
+    forged = PrivateKey.generate("RS256", key_id="forged")
+    with pytest.raises(exceptions.Unauthenticated, match="does not publish"):
+        jwt.authenticate(bearer(mint(forged)))
+    assert http.count(JWKS) == 2
+    assert jwt.authenticate(bearer(mint(RS))) is not None
+
+
 def test_a_published_private_key_and_a_key_for_encryption_are_left_out() -> None:
     leaked = {**ES.jwk(), "d": "private", "kid": "es-1"}
     encrypting = {**RS.jwk(), "use": "enc"}

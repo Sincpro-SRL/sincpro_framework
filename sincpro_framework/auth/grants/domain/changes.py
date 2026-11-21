@@ -5,8 +5,8 @@ beside the bound every administration keeps.
     def owners_give_admin(change: GrantChange) -> bool:
         return change.role != "billing.admin" or "billing.owner" in change.actor.roles
 
-Context: a rule is asked after the bound (`AdministrationPolicy`) let the change through, and
-only restricts: answering `False` refuses it (`PermissionDenied` naming the rule); raising an
+Context: a rule is asked before the bound (`AdministrationPolicy`), which is asked under the
+tenant's lease; both must let the change through, so a rule only restricts: answering `False` refuses it (`PermissionDenied` naming the rule); raising an
 `AuthError` of its own answers otherwise. The system is never asked about.
 """
 

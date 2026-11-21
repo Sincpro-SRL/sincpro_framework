@@ -7,14 +7,20 @@
     ...
     assert ("has_permission", "user:1", "billing.invoice.issue") in recording.asked
 
+    signed_token({"iss": KEYCLOAK, "sub": "4c1d", "exp": …}, secret=SECRET, kid="2026-09")
+
 Nothing here imports pytest.
 """
 
 from collections.abc import Generator, Mapping
 from contextlib import contextmanager
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from sincpro_framework.auth import AuthProvider, Credentials, Identity, security
+from sincpro_framework.auth.infrastructure import jws
+
+if TYPE_CHECKING:
+    from sincpro_framework.auth import PrivateKey
 
 
 @contextmanager
@@ -26,6 +32,27 @@ def granting(
         Identity.user(subject, tenant=tenant, permissions=permissions)
     ) as identity:
         yield identity
+
+
+def signed_token(
+    claims: Mapping[str, Any],
+    *,
+    key: "PrivateKey | None" = None,
+    secret: str | None = None,
+    kid: str | None = None,
+) -> str:
+    """A compact JWS of `claims` as an issuer would sign it — by its `key` (its algorithm and
+    key id), or HS256 by a `secret` shared under `kid` (`SharedSecrets({kid: secret})`).
+
+        signed_token({"iss": KEYCLOAK, "sub": "4c1d", "exp": now + 300}, key=signing)
+        signed_token({"iss": "billing", "sub": "ana"}, secret=SECRET, kid="own")
+    """
+    if key is not None:
+        header = {"alg": key.algorithm, "kid": key.key_id}
+        return jws.encode({k: v for k, v in header.items() if v}, claims, key.sign)
+    if secret is None or kid is None:
+        raise ValueError("signed_token signs by a key, or by a secret under a kid")
+    return jws.encode({"alg": "HS256", "kid": kid}, claims, jws.HmacKey.of(kid, secret).sign)
 
 
 class RecordingProvider(AuthProvider):

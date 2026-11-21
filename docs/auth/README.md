@@ -34,7 +34,7 @@ The root never imports a door; `server`, `client` and `grants` build on the root
 | `AccessControl` | the declarations (`requires`, `authenticated`), what `requires` takes besides a permission (`role`, `rule`, `any_of`, `by_field`, `assurance`), the checks asked on every call (`every_call`) and by hand (`check`, `allows`, `has_role`, `scope_of`); `AccessControl.of(bus)` is the one guarding a bus |
 | `security` | who the execution acts as (`identity`, `as_identity`, `as_system`), and what every entrypoint hands auth (`authenticated_as`, `challenges`, `identity_headers`) |
 | `IdentityMiddleware` | an ASGI app of the project's — FastAPI, Starlette — acting as its requests |
-| `AuthError` and its kinds | `Unauthenticated`, `PermissionDenied`, and the refusals of the doors (`EndpointUnavailable`, `CredentialsRejected`, `InvalidGrant`, …) — caught from one place |
+| `AuthError` and its kinds | the caller's: `Unauthenticated` (401), `PermissionDenied` (403, `NoCredentialsFor` among them) — caught from one place. The doors' other failures keep the framework base of their layer, which every wire already answers: `ClientError` (`InvalidGrant`, `ConcurrentChange` 409, `PasswordRejected`), `ExternalServiceError` (`CredentialsRejected`, `GrantRejected`), `ServiceUnavailableError` (`EndpointUnavailable`, 503) |
 | shared by the doors | `Revocations` (`InMemoryRevocations`, `KeyValueRevocations`), `HttpClient` / `UrllibHttp`, `OidcDiscovery`, `ClientAuthentication`, `PublicKey` / `PrivateKey` (`[jwt]`), `HexDigest` / `TimestampedSignature` |
 
 Nothing is forced: a use case or hook that declares nothing is not checked, and a bus with no
@@ -60,7 +60,7 @@ from sincpro_framework.auth import (
     WhenDenied,
     security,
 )
-from sincpro_framework.auth.domain import exceptions
+from sincpro_framework.auth import PermissionDenied, Unauthenticated
 
 
 class BillingPermission(Permission):
@@ -100,7 +100,7 @@ class TenantKeys(AuthProvider):
         if key is None:
             return None                                  # not mine: the next provider is tried
         if key not in self.keys:
-            raise exceptions.Unauthenticated("unknown key")         # mine, and it fails
+            raise Unauthenticated("unknown key")         # mine, and it fails
         return Identity.user(self.keys[key], tenant="bo")
 
     def has_permission(
@@ -111,7 +111,7 @@ class TenantKeys(AuthProvider):
         context: Mapping[str, Any] | None = None,
     ) -> bool:
         if resource is not None and getattr(resource, "amount", 0) > 10_000:
-            raise exceptions.PermissionDenied(identity.subject, permission, "above the approval limit")
+            raise PermissionDenied(identity.subject, permission, "above the approval limit")
         return (identity.subject, permission) in self.grants
 
 
@@ -385,12 +385,12 @@ with security.as_identity(called_with("k-accountant")):
 with security.as_identity(called_with("k-clerk")):
     try:
         billing(CommandIssueInvoice(total=10))
-    except exceptions.PermissionDenied as refused:
+    except PermissionDenied as refused:
         assert refused.requirement == BillingPermission.ISSUE_INVOICE
 
 try:
     billing(CommandIssueInvoice(total=10))
-except exceptions.Unauthenticated:
+except Unauthenticated:
     pass
 
 assert auth.authenticate(Credentials(transport="http")).is_anonymous
@@ -405,11 +405,13 @@ assert auth.authenticate(Credentials(transport="http")).is_anonymous
 - Who acts is a `ContextVar` of its own, never a key of `bus.context(...)` — the context is a
   dict anyone writes, so an identity stored there could be forged by writing it. It follows the
   execution into every bus it calls and into `thread_context()`.
-- On a guarded bus, the identity let in — unless anonymous — is the execution's `user_id` when
-  nothing said one, so every fact a use case records names it as `actor` (and an
-  `AuditedMixin` record as `created_by`). A provider of the project's that gives `user_id`
-  (`bus.context_provider(gives=["user_id"])`) or a scope that names it wins: the identity is
-  only what fills it when nothing else did.
+- On a guarded bus, who acts and where are the identity's — never what the caller's headers
+  carried (`baggage`, `sincpro-context`). `user_id` unsaid is its subject, and a person's subject
+  replaces one the caller carried, so every fact a use case records names it as `actor` (and an
+  `AuditedMixin` record as `created_by`). An identity of a tenant fills `tenant_id`, and a call
+  that carried another tenant is refused (`PermissionDenied`): `context["tenant_id"]`, a draft, a
+  cached answer and an idempotent write are owned as verified. Code, a provider of the project's
+  (`bus.context_provider(gives=["user_id"])`) and a scope still say what they say.
 
 ## Open, skipping, disabled, the system
 
@@ -466,7 +468,7 @@ with security.as_identity(called_with("k-accountant")):
 with security.as_identity(called_with("k-clerk")):
     try:
         invoices.save(Invoice(total=1))
-    except exceptions.PermissionDenied:
+    except PermissionDenied:
         pass
 ```
 
@@ -558,7 +560,7 @@ audited_auth.on(audited)
 with security.as_identity(Identity.user("user:ana", tenant="bo")):
     try:
         audited(CommandIssueInvoice(total=1))
-    except exceptions.PermissionDenied:
+    except PermissionDenied:
         pass
 
 (refused,) = audit_trail
@@ -624,7 +626,7 @@ with security.as_system("support raises the bar for refunds in bo"):
 with security.as_identity(clerk):
     try:
         payments(CommandRefund(total=10), Answer)
-    except exceptions.PermissionDenied as refused:
+    except PermissionDenied as refused:
         assert "billing.payment.approve" in str(refused)
 with security.as_identity(clerk.model_copy(update={"tenant": "pe"})):
     assert payments(CommandRefund(total=10), Answer).by == "user:ana"   # pe: the code's alone
