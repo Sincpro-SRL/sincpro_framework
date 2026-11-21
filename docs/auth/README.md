@@ -11,7 +11,7 @@ may not).
 | `Permission` | `auth/domain/permissions.py` | the `StrEnum` base a bounded context extends with its permissions |
 | `Credentials` → `Identity` | `auth/domain/identity.py` | what the caller presented, and who they turned out to be |
 | `AuthProvider` | `auth/domain/provider.py` | **the contract**: authenticate, and answer about permissions |
-| `AccessControl` | `auth/entrypoint/access_control.py` | the declarations (`requires`, `authenticated`, `public`) and the checks; `AccessControl.of(bus)` is the one guarding a bus |
+| `AccessControl` | `auth/entrypoint/access_control.py` | the declarations (`requires`, `authenticated`), what `requires` takes besides a permission (`role`, `rule`, `any_of`, `by_field`, `assurance`), the checks asked on every call (`every_call`) and by hand (`check`, `allows`, `has_role`, `scope_of`); `AccessControl.of(bus)` is the one guarding a bus |
 | the guard | `auth/services/guard.py` | what runs around a use case and before a hook |
 | `security` | `auth/entrypoint/security.py` | who the execution acts as (`identity`, `as_identity`, `as_system`), and what every entrypoint hands auth (`authenticated_as`, `challenges`, `identity_headers`) |
 | `StaticProvider`, `RolePermissions`, `ApiKeyProvider`, `ServiceTokenProvider` | `auth/adapters/` | what the framework ships; any class honouring the contract stands beside them |
@@ -19,8 +19,9 @@ may not).
 | `Credentials.from_asgi`, `Credentials.from_headers`, `AuthError.refusal_body`, `AuthError.http_status` | `auth/domain/` | credentials out of a request, and the refusal every entrypoint answers |
 
 Nothing is forced: a use case or hook that declares nothing is not checked, and a bus with no
-`AccessControl` runs as before. JSON-RPC, gRPC, MCP and a context hosted for another service
-authenticate by themselves when the bus is guarded — see [Entrypoints](#entrypoints-authenticate-by-themselves).
+`AccessControl` runs as before. Every wire — REST, FastAPI, JSON-RPC, gRPC, MCP, a queue (a
+Lambda fed by SQS included), an ASGI app of the project's and a context hosted for another
+service — authenticates by itself when the bus is guarded — see [Entrypoints](#entrypoints-authenticate-by-themselves).
 
 **The rest of the plugin** — every page runs the same way:
 
@@ -541,11 +542,15 @@ assert refused["error"]["data"]["kind"] == "unauthenticated"
 
 | Entrypoint | Credentials from | A refusal is |
 |---|---|---|
+| REST (`RestGateway`) | headers, cookies, query, method, target; the raw body when a provider verifies a signature | 401 with `WWW-Authenticate`, 403; the body's `error` carries `kind`, `reason` and the `requirement` not met |
+| FastAPI (`FastApiGateway`) | the same, read off the request; the body only when a provider of the process verifies one | an `application/problem+json` 401 with `WWW-Authenticate`, or 403, with `kind` and `reason`; OpenAPI declares both on what requires something or when `every_call` checks |
 | JSON-RPC (`RpcGateway`) | headers, cookies, query, method, target | a single call: HTTP 401 with `WWW-Authenticate`; `-32001` / `-32003` with `data.kind`, `data.reason`, `data.requirement` |
 | gRPC (`GrpcGateway`) | metadata, the mTLS client certificate | `UNAUTHENTICATED` / `PERMISSION_DENIED`, with `sp-auth-refusal` and `www-authenticate` in the trailing metadata |
 | MCP (`Entrypoint`, `McpGateway`) | the HTTP request of the tool call; with `auth=`, FastMCP's own bearer check first | a tool error; with `auth=`, FastMCP's 401 and — given `base_url` — the resource metadata (RFC 9728) |
+| A queue (`QueueGateway`, `sqs_handler` on Lambda) | the message's headers; its raw body when a provider verifies a signature | dead-lettered, never retried, its `sincpro-dead-letter-kind` header `unauthenticated` or `permission_denied` |
 | An ASGI app of the project's | `IdentityMiddleware(app, access=auth)` | 401 with `WWW-Authenticate`, 403 with the reason |
 | A context hosted for another service | the caller's `ServiceTokenProvider` token | the refusal raised on the caller as itself |
+| A cron, a script, a migration | nothing — nobody presents anything | runs as anonymous: an open use case runs, one that requires something is refused; the job opens `security.as_system(reason)` (or `as_identity`) to act as someone |
 
 - **A call to another service** carries who it acts for: the calling process's provider issues a
   short JWT (`ServiceTokenProvider.credentials_for`) in its own header, and the host verifies it

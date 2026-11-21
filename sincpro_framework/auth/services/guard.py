@@ -57,7 +57,7 @@ class Declarations:
         1. Nothing held yet: the declaration as given.
         2. Two `requires`: their requirements joined — refused when they disagree on
            `when_denied`.
-        3. Any other pair (`public` and `requires`, twice `authenticated`): refused.
+        3. Any other pair (`authenticated` and `requires`, twice `authenticated`): refused.
         Final: stored by the class and by its dotted name; `cls` is answered unchanged.
         """
         held = self._by_class.get(cls)

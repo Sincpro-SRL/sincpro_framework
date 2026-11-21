@@ -138,7 +138,7 @@ Silent ones first — the runtime says nothing.
 - **Putting the identity in `bus.context({...})` or `self.context`.** Ignored — the guard reads only
   `security.as_identity`. Open `security.as_identity(...)` or let the entrypoint do it.
 - **A provider answering `None` for a credential of its own kind that fails.** The caller becomes
-  anonymous and every public/undeclared use case runs. `None` means "not my kind"; a bad token of
+  anonymous and every open use case runs. `None` means "not my kind"; a bad token of
   your kind raises `Unauthenticated`.
 - **`@auth.requires` on a Hook without `auth.on(hooks)`** (or on a use case of a bus never given to
   `auth.on`). Never checked; only `auth.verify()` reports it.

@@ -1,6 +1,6 @@
 """entrypoint_rpc: JSON-RPC 2.0 methods `{namespace}.{operation}`, context, OpenRPC discover.
 
-These buses publish their whole catalog (`Exposure.CATALOG`, `unguarded=True`): what is
+These buses publish their whole catalog (`Exposure.CATALOG`), none of them guarded: what is
 protected here is the protocol and the naming, the same in either mode; declared exposure has
 its own tests (test_jsonrpc_naming.py)."""
 
