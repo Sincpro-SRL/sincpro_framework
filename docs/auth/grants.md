@@ -1,4 +1,7 @@
-# Grants — roles declared in code, held per tenant, resolved per call
+# Grants — `sincpro_framework.auth.grants`
+
+**Door**: `from sincpro_framework.auth.grants import …` — folder `auth/grants/`. Roles declared in
+code, held per tenant, resolved per call.
 
 A use case requires a `Permission` ([the overview](README.md)). Who holds it comes from roles:
 the ones a token carries, the ones this service assigned. This page is the catalog of roles —
@@ -14,14 +17,8 @@ to expire.
 ## The catalog
 
 ```python
-from sincpro_framework.auth import (
-    Category,
-    Entitlement,
-    GrantCatalog,
-    Permission,
-    Privilege,
-    Role,
-)
+from sincpro_framework.auth import Permission
+from sincpro_framework.auth.grants import Category, Entitlement, GrantCatalog, Privilege, Role
 
 
 class BillingPermission(Permission):
@@ -74,12 +71,8 @@ against the catalog and bumps the subject's permission version.
 ```python
 from datetime import UTC, datetime, timedelta
 
-from sincpro_framework.auth import (
-    GrantAdministration,
-    InMemoryGrants,
-    InMemoryRevocations,
-    InvalidGrant,
-)
+from sincpro_framework.auth import InMemoryRevocations, InvalidGrant
+from sincpro_framework.auth.grants import GrantAdministration, InMemoryGrants
 
 grants = InMemoryGrants()                         # KeyValueGrants() / DatabaseGrants in production
 revocations = InMemoryRevocations()               # KeyValueRevocations() in production
@@ -112,7 +105,8 @@ or the scopes take a permission away, the roles that grant it go too, so `auth.r
 admits what the permissions refuse.
 
 ```python
-from sincpro_framework.auth import GrantResolver, Identity, RoleMapping, ScopeCeiling
+from sincpro_framework.auth import Identity
+from sincpro_framework.auth.grants import GrantResolver, RoleMapping, ScopeCeiling
 
 resolver = GrantResolver(
     catalog,

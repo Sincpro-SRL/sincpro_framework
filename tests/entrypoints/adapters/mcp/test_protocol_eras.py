@@ -19,13 +19,8 @@ from typing import Any
 import pytest
 
 from sincpro_framework import DataTransferObject, Feature, UseFramework
-from sincpro_framework.auth import (
-    AccessControl,
-    Identity,
-    Permission,
-    StaticProvider,
-    security,
-)
+from sincpro_framework.auth import AccessControl, Identity, Permission, security
+from sincpro_framework.auth.server import StaticProvider
 from sincpro_framework.entrypoints import McpGateway
 from sincpro_framework.entrypoints.entrypoint.decorators import mcp
 

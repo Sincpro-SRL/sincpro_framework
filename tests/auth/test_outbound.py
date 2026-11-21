@@ -14,14 +14,17 @@ import pytest
 import requests
 
 from sincpro_framework.auth import (
-    ApiKeyHeader,
-    BasicCredentials,
-    ClientCredentials,
-    ClientSecretPost,
     CredentialsRejected,
     EndpointUnavailable,
     Identity,
     NoCredentialsFor,
+    security,
+)
+from sincpro_framework.auth.client import (
+    ApiKeyHeader,
+    BasicCredentials,
+    ClientCredentials,
+    ClientSecretPost,
     OutgoingRequest,
     StaticToken,
     TokenCache,
@@ -30,7 +33,6 @@ from sincpro_framework.auth import (
     call_with_credentials,
     httpx_auth,
     requests_auth,
-    security,
 )
 from sincpro_framework.auth.domain import exceptions
 from sincpro_framework.data_layer.store import InMemoryKeyValue

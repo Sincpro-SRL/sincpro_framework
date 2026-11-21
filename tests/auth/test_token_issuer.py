@@ -14,19 +14,19 @@ from sincpro_framework.auth import (
     Credentials,
     Identity,
     IdentityKind,
-    InMemoryRefreshTokens,
     InMemoryRevocations,
-    IssuedTokens,
-    Issuer,
-    JwtProvider,
-    KeyValueRefreshTokens,
     PrivateKey,
-    PublicKeys,
+)
+from sincpro_framework.auth.accounts import (
+    InMemoryRefreshTokens,
+    IssuedTokens,
+    KeyValueRefreshTokens,
     RefreshTokens,
     SigningKeys,
     TokenIssuer,
 )
 from sincpro_framework.auth.domain import exceptions
+from sincpro_framework.auth.server import JwtProvider, PublicKeys, TrustedIssuer
 from sincpro_framework.data_layer.store import InMemoryKeyValue
 from sincpro_framework.data_layer.store.adapters.redis import RedisKeyValue
 from sincpro_framework.runtime.testing.contracts.refresh_tokens import RefreshTokensContract
@@ -224,7 +224,7 @@ def test_other_services_verify_with_the_published_keys() -> None:
     tokens = sessions.issue(ANA)
     published = PublicKeys(sessions.jwks()["keys"])
     elsewhere = JwtProvider(
-        Issuer(
+        TrustedIssuer(
             "https://colegio.bo",
             audience="colegio",
             keys=published,

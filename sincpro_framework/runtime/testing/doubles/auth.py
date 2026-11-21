@@ -14,12 +14,7 @@ from collections.abc import Generator, Mapping
 from contextlib import contextmanager
 from typing import Any
 
-from sincpro_framework.auth import (
-    AuthProvider,
-    Credentials,
-    Identity,
-    security,
-)
+from sincpro_framework.auth import AuthProvider, Credentials, Identity, security
 
 
 @contextmanager

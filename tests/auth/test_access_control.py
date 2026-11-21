@@ -28,12 +28,12 @@ from sincpro_framework.auth import (
     Credentials,
     Identity,
     Permission,
-    RolePermissions,
-    StaticProvider,
     WhenDenied,
     security,
 )
 from sincpro_framework.auth.domain import exceptions as auth_exceptions
+from sincpro_framework.auth.grants import RolePermissions
+from sincpro_framework.auth.server import StaticProvider
 from sincpro_framework.data_layer.repositories import MemoryRepository
 from sincpro_framework.ddd import Condition, Criteria, Entity
 from sincpro_framework.ddd.repositories.hooks import Hook, Hooks

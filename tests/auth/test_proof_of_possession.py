@@ -12,23 +12,25 @@ from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import ec
 from cryptography.x509.oid import ExtendedKeyUsageOID, NameOID
 
-from sincpro_framework.auth import (
+from sincpro_framework.auth import Credentials
+from sincpro_framework.auth.client import (
     AesGcmSealer,
-    CertificateProvider,
     ClientCredentials,
-    Credentials,
-    DpopProofs,
     DpopProver,
     HeldGrant,
-    Issuer,
-    JwtProvider,
     KeyValueHeldGrants,
     OutgoingRequest,
-    SharedSecrets,
     TokenCache,
 )
 from sincpro_framework.auth.domain import exceptions
 from sincpro_framework.auth.infrastructure import jws
+from sincpro_framework.auth.server import (
+    CertificateProvider,
+    DpopProofs,
+    JwtProvider,
+    SharedSecrets,
+    TrustedIssuer,
+)
 from sincpro_framework.data_layer.store import InMemoryKeyValue
 from sincpro_framework.runtime.testing import FakeTokenEndpoint
 
@@ -49,7 +51,7 @@ def token(**claims) -> str:
 
 def resource(**options) -> JwtProvider:
     return JwtProvider(
-        Issuer("colegio", audience="api", keys=SharedSecrets({"k": SECRET})),
+        TrustedIssuer("colegio", audience="api", keys=SharedSecrets({"k": SECRET})),
         dpop=DpopProofs(API, **options),
         realm="api",
     )
@@ -146,7 +148,7 @@ def test_required_proofs_refuse_a_plain_bearer_and_a_bound_token_needs_proofs_ch
     with pytest.raises(exceptions.Unauthenticated, match="must be sent as DPoP"):
         resource(required=True).authenticate(plain)
     unchecked = JwtProvider(
-        Issuer("colegio", audience="api", keys=SharedSecrets({"k": SECRET}))
+        TrustedIssuer("colegio", audience="api", keys=SharedSecrets({"k": SECRET}))
     )
     bound = Credentials(
         transport="http", headers={"authorization": f"Bearer {token(cnf={'jkt': 'x'})}"}
@@ -300,7 +302,7 @@ def test_a_certificate_of_another_domain_root_or_time_is_refused() -> None:
 def test_a_token_bound_to_a_certificate_needs_that_certificate() -> None:
     bound = token(cnf={"x5t#S256": jws.certificate_thumbprint(pem(WORKLOAD[0]))})
     provider = JwtProvider(
-        Issuer("colegio", audience="api", keys=SharedSecrets({"k": SECRET}))
+        TrustedIssuer("colegio", audience="api", keys=SharedSecrets({"k": SECRET}))
     )
     over = lambda cert: Credentials(  # noqa: E731
         transport="http",

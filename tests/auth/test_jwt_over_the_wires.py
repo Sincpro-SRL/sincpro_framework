@@ -12,7 +12,9 @@ from fastapi.testclient import TestClient
 from google.protobuf.struct_pb2 import Struct
 
 from sincpro_framework import DataTransferObject, Feature, UseFramework, entrypoints
-from sincpro_framework.auth import AccessControl, JwtProvider, RolePermissions, security
+from sincpro_framework.auth import AccessControl, security
+from sincpro_framework.auth.grants import RolePermissions
+from sincpro_framework.auth.server import JwtProvider
 from sincpro_framework.entrypoints import FastApiGateway, GrpcGateway, RestGateway, RpcGateway
 from sincpro_framework.entrypoints.adapters.grpc.wire import (
     scalar_to_struct,

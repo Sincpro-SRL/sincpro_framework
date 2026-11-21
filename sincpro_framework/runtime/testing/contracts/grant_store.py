@@ -9,7 +9,7 @@ way proves it by inheriting this class.
 import threading
 from datetime import UTC, datetime, timedelta
 
-from sincpro_framework.auth import Assignment, GrantStore
+from sincpro_framework.auth.grants import Assignment, GrantStore
 
 
 class GrantStoreContract:

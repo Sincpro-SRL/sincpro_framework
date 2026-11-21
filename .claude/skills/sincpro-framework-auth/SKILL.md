@@ -9,7 +9,7 @@ A use case or a hook declares the permission it requires; a provider says who is
 they hold it; the guard applies the declaration **however** the use case is reached — an entrypoint,
 a cron, another bus, an ApplicationService. A refusal is one of two errors every entrypoint already
 tells the caller: `Unauthenticated` or `PermissionDenied`. This skill stands alone; the long form is
-`docs/auth/README.md`, PRD_11 and PRD_34 in the framework repo.
+`docs/auth/README.md`, PRD_11, PRD_34 and PRD_35 in the framework repo.
 
 ## Context
 
@@ -29,7 +29,9 @@ tells the caller: `Unauthenticated` or `PermissionDenied`. This skill stands alo
 
 ## Abstractions
 
-Every name below imports from `sincpro_framework.auth` unless the Import column says otherwise.
+Every name below imports from `sincpro_framework.auth` — the contract — unless the Import column
+names its door: `auth.server` verifies what arrives, `auth.client` presents what goes out,
+`auth.grants` holds roles, `auth.accounts` the service's own accounts. One name, one door.
 
 | Term | What it is | Kind | Import |
 |---|---|---|---|
@@ -38,10 +40,10 @@ Every name below imports from `sincpro_framework.auth` unless the Import column 
 | `Identity` | who the caller turned out to be: subject, kind, tenant, permissions, roles, provider | DTO | same |
 | `IdentityKind` | `user` · `service` · `system` · `anonymous` | DTO (enum) | same |
 | `AuthProvider` | the one contract: `authenticate` (+ optional `has_permission`, `scope`, …) | port | same |
-| `StaticProvider` | fixed bearer tokens → identities (tests, local) | adapter | same |
-| `ApiKeyProvider` / `ApiKeyStore` / `InMemoryApiKeys` / `ApiKey` | keys stored by SHA-256; store is the port | adapter / port / adapter / DTO | same |
-| `ServiceTokenProvider` | service-to-service HS256 JWT, stdlib only, header `x-sp-service-token` | adapter | same |
-| `RolePermissions` | roles → permissions, with implied roles | adapter (helper) | same |
+| `StaticProvider` | fixed bearer tokens → identities (tests, local) | adapter | `sincpro_framework.auth.server` |
+| `ApiKeyProvider` / `ApiKeyStore` / `InMemoryApiKeys` / `ApiKey` | keys stored by SHA-256; store is the port | adapter / port / adapter / DTO | `sincpro_framework.auth.server` |
+| `ServiceTokenProvider` | service-to-service HS256 JWT, stdlib only, header `x-sp-service-token` | adapter | `sincpro_framework.auth.server` |
+| `RolePermissions` | roles → permissions, with implied roles | adapter (helper) | `sincpro_framework.auth.grants` |
 | `AccessControl[P]` | holds providers + declarations, decides, `on(bus)` wires the guard; `AccessControl.of(bus)` the one guarding a bus | registry | same |
 | `@auth.requires(...)` / `@auth.authenticated` | restrict a Feature, ApplicationService or Hook — undeclared is open | decorator | methods of `AccessControl` |
 | `auth.any_of(A, B)` → `AnyOf` | one among several — permissions, roles, rules mixed ("its owner, or an admin") | function / DTO | same |
@@ -56,19 +58,22 @@ Every name below imports from `sincpro_framework.auth` unless the Import column 
 | `IdentityMiddleware` | ASGI middleware for a project's own app | adapter | same |
 | `Credentials.from_asgi` / `Credentials.from_headers` / `security.authenticated_as` / `security.challenges` / `security.identity_headers` | what an entrypoint does | classmethod / facade | same |
 | `describe()` / `verify()` / `requirements_of()` | introspection, test-time checks | function | `AccessControl` methods |
-| `JwtProvider` / `Issuer` / `ClaimMapping.keycloak()` / `.entra()` / `.google()` / `SharedSecrets` | bearer JWTs of the issuers trusted; claims → identity; HMAC keys (stdlib) | adapter / config | same |
-| `Jwks` / `PublicKeys` / `JwtProvider.from_issuer` | public keys by OIDC discovery, cached, rotated — `[jwt]`, imported on first use | adapter | same |
-| `IntrospectionProvider` | opaque tokens (RFC 7662), cached by digest | adapter | same |
-| `SignatureProvider` / `RequestSigner` / `HexDigest` / `TimestampedSignature` | webhook HMAC in and out | adapter | same |
-| `BasicProvider` / `CertificateProvider` / `DpopProofs` | HTTP Basic; mTLS + SPIFFE (`[jwt]`; with `trust_domain`, SPIFFE IDs only — never a bare CN); DPoP proofs (`[jwt]`) | adapter | same |
-| `GrantCatalog` / `Category` / `Privilege` / `Role` / `Entitlement` | roles in code, Odoo 20's shape: implies, exclusive levels, disjoint, `describe()` | domain | same |
-| `GrantStore` (`InMemoryGrants`, `KeyValueGrants`, `DatabaseGrants`) / `GrantAdministration` / `GrantResolver` / `RoleMapping` / `ScopeCeiling` | who holds which role per tenant; checked changes; resolved per call | port / adapter / service | same (`DatabaseGrants`: `data_layer.orm`) |
+| `JwtProvider` / `TrustedIssuer` / `ClaimMapping.keycloak()` / `.entra()` / `.google()` / `SharedSecrets` | bearer JWTs of the issuers trusted; claims → identity; HMAC keys (stdlib) | adapter / config | `sincpro_framework.auth.server` |
+| `Jwks` / `PublicKeys` / `JwtProvider.from_issuer` | public keys by OIDC discovery, cached, rotated — `[jwt]`, imported on first use | adapter | `sincpro_framework.auth.server` |
+| `IntrospectionProvider` | opaque tokens (RFC 7662), cached by digest | adapter | `sincpro_framework.auth.server` |
+| `SignatureProvider` | a webhook signed with HMAC, verified | adapter | `sincpro_framework.auth.server` |
+| `RequestSigner` | a request this service signs | adapter | `sincpro_framework.auth.client` |
+| `HexDigest` / `TimestampedSignature` | the HMAC styles both sides share | config | same |
+| `CertificateProvider` / `DpopProofs` | mTLS + SPIFFE (`[jwt]`; with `trust_domain`, SPIFFE IDs only — never a bare CN); DPoP proofs (`[jwt]`) | adapter | `sincpro_framework.auth.server` |
+| `BasicProvider` / `CredentialVerifier` / `HashedCredentials` | HTTP Basic against the service's own accounts | adapter / port | `sincpro_framework.auth.accounts` |
+| `GrantCatalog` / `Category` / `Privilege` / `Role` / `Entitlement` | roles in code, Odoo 20's shape: implies, exclusive levels, disjoint, `describe()` | domain | `sincpro_framework.auth.grants` |
+| `GrantStore` (`InMemoryGrants`, `KeyValueGrants`, `DatabaseGrants`) / `GrantAdministration` / `GrantResolver` / `RoleMapping` / `ScopeCeiling` | who holds which role per tenant; checked changes; resolved per call | port / adapter / service | `sincpro_framework.auth.grants` (`DatabaseGrants`: `data_layer.orm`) |
 | `Revocations` (`KeyValueRevocations`) / `remembering_versions()` | a token, a session, a subject signed out (to the second, as `iat`), a permission version — one read per authentication inside `remembering_versions()` | port / adapter / function | same |
 | `auth.assurance(acr=, methods=, max_age=)` | step-up requirement (RFC 9470) | requirement | `AccessControl` method |
-| `TokenSource` / `StaticToken` / `ApiKeyHeader` / `BasicCredentials` / `ClientCredentials` / `TokenSources` | what an outgoing request presents | port / adapter | same |
-| `TokenExchange` + `PresentingProvider` / `RefreshingToken` + `HeldGrants` / `DeviceCode` / `DpopProver` | act for the caller (RFC 8693); hold consent; RFC 8628; DPoP client | adapter | same |
-| `call_with_credentials` / `requests_auth` / `httpx_auth` | send, and once more after a 401 | function | same |
-| `PasswordHasher` / `LoginAttempts` / `OneTimeTokens` / `Totp` / `TokenIssuer` / `SigningKeys` | accounts the service manages itself | adapter | same |
+| `TokenSource` / `StaticToken` / `ApiKeyHeader` / `BasicCredentials` / `ClientCredentials` / `TokenSources` | what an outgoing request presents | port / adapter | `sincpro_framework.auth.client` |
+| `TokenExchange` + `PresentingProvider` / `RefreshingToken` + `HeldGrants` / `DeviceCode` / `DpopProver` | act for the caller (RFC 8693); hold consent; RFC 8628; DPoP client | adapter | `sincpro_framework.auth.client` |
+| `call_with_credentials` / `requests_auth` / `httpx_auth` | send, and once more after a 401 | function | `sincpro_framework.auth.client` |
+| `PasswordHasher` / `LoginAttempts` / `OneTimeTokens` / `Totp` / `TokenIssuer` / `SigningKeys` | accounts the service manages itself | adapter | `sincpro_framework.auth.accounts` |
 | `ScriptedHttp` / `FakeTokenEndpoint` / `TokenSourceContract` / `RevocationsContract` / `GrantStoreContract` / `RefreshTokensContract` / `ApiKeyStoreContract` | test doubles and contracts | double / contract | `sincpro_framework.runtime.testing` |
 | `granting` / `RecordingProvider` / `AuthProviderContract` | test helpers | function / adapter / port | `sincpro_framework.runtime.testing` |
 
@@ -82,11 +87,23 @@ anybody (`open`); `@auth.authenticated` anybody *known*. `security.as_system(rea
 
 **Inside the framework** — package `sincpro_framework/auth/`, standard library only:
 
-- `domain/` the vocabulary and the `AuthProvider` port; `adapters/` the shipped providers (all
-  stdlib — `ServiceTokenProvider` signs with `hmac`); `infrastructure/security_context.py` the
-  identity `ContextVar`; `services/guard.py` the bus interceptor (`BusGuard`, outermost) and the
-  hook gate (`HookGuard`, via `Hooks.gate`); `entrypoint/access_control.py` declarations and
-  decisions; `entrypoint/security.py` (`security`) + `entrypoint/asgi.py` what entrypoints call.
+- One folder per job, each its own door (PRD_35):
+
+  ```
+  auth/            the contract — domain/ (Identity, AuthProvider, permissions, errors, revocations),
+                   entrypoint/ (AccessControl, security, asgi), services/guard.py (BusGuard, HookGuard),
+                   infrastructure/ (the identity ContextVar, jws, JOSE keys, HTTP, discovery)
+  auth/server/     verify what arrives — adapters/bearer_tokens/ (JwtProvider, introspection, DPoP
+                   proofs), api_keys, service_tokens, webhook_signatures, certificates, policy/
+  auth/client/     present what goes out — domain/ (TokenSource), adapters/ (every source),
+                   infrastructure/ (token endpoint, token cache), entrypoint/ (call_with_credentials)
+  auth/grants/     roles — domain/ (catalog, assignments), adapters/ (resolver, stores), services/
+  auth/accounts/   the service's own accounts — adapters/passwords/ (hasher, lockout, HTTP Basic),
+                   adapters/issuing/ (TokenIssuer, SigningKeys, refresh tokens), one-time tokens, TOTP
+  ```
+
+  The root never imports a door; `server`, `client`, `grants` build on the root alone, `accounts`
+  on the root and the server (`tests/auth/test_doors.py`).
 - HS256 and HMAC, scrypt, TOTP and the HTTP client (`UrllibHttp`) are the standard library;
   asymmetric JOSE (RS/PS/ES/EdDSA, JWKS, DPoP, mTLS, AES-GCM) is the `[jwt]` extra (PyJWT +
   cryptography), argon2 the `[argon2]` one. PyJWT only signs and verifies: claims are always
@@ -120,7 +137,7 @@ request ─► entrypoint ─► Credentials ─► AccessControl.authenticate �
                                               │  none recognizes → Identity.anonymous()
                                               ▼
                          security.as_identity(identity) ─► bus(dto) ─► BusGuard (outermost interceptor)
-                                              │  declaration of the handler: public / authenticated / requires
+                                              │  declaration of the handler: open / authenticated / requires
                                               │  requires → identity's provider.has_permission(...)
                                               ▼
                          other interceptors ─► execute() ─► self.auth.check(perm, resource)
@@ -153,7 +170,7 @@ Silent ones first — the runtime says nothing.
   consumers, with a reason that is logged.
 - **A handwritten FastAPI route calling `bus(dto)`.** No credentials reach the bus. Use the gateway,
   or wrap the app in `IdentityMiddleware(app, access=auth)`.
-- **An `Issuer` with no audience, or a mapping that forgets Keycloak's `typ`.** The first is refused
+- **A `TrustedIssuer` with no audience, or a mapping that forgets Keycloak's `typ`.** The first is refused
   at construction; use `ClaimMapping.keycloak(...)`, which refuses ID and refresh tokens.
 - **Resolvers on `AccessControl`.** They belong to a provider (`resolvers=` or `Resolving`): a
   service token or an API key arrives resolved, a global resolver grants twice.
@@ -179,7 +196,14 @@ Silent ones first — the runtime says nothing.
 ## Permissions and a provider
 
 ```python
-from sincpro_framework.auth import AccessControl, AuthProvider, Credentials, Identity, Permission, WhenDenied
+from sincpro_framework.auth import (
+    AccessControl,
+    AuthProvider,
+    Credentials,
+    Identity,
+    Permission,
+    WhenDenied,
+)
 from sincpro_framework.auth.domain import exceptions
 
 

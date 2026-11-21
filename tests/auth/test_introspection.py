@@ -10,18 +10,16 @@ import pytest
 
 from sincpro_framework.auth import (
     AuthProvider,
-    ClaimMapping,
-    ClientSecretBasic,
     Credentials,
     EndpointUnavailable,
     HttpRequest,
-    IntrospectionProvider,
     PrivateKey,
-    PrivateKeyJwt,
     PublicKey,
 )
+from sincpro_framework.auth.client import ClientSecretBasic, PrivateKeyJwt
 from sincpro_framework.auth.domain import exceptions
 from sincpro_framework.auth.infrastructure import jws
+from sincpro_framework.auth.server import ClaimMapping, IntrospectionProvider
 from sincpro_framework.data_layer.caching import Cache
 from sincpro_framework.data_layer.store import InMemoryKeyValue
 from sincpro_framework.runtime.testing import AuthProviderContract, ManualClock, ScriptedHttp

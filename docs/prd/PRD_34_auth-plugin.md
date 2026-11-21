@@ -1,5 +1,7 @@
 # PRD_34: The auth plugin — verify what arrives, present what goes out, manage accounts
 
+- **Layout superseded by** [PRD_35](PRD_35_auth-doors.md) (#312): one door per job —
+  `auth.server`, `auth.client`, `auth.grants`, `auth.accounts`; `Issuer` is `TrustedIssuer`.
 - **Status**: built on `feat/304-auth-plugin` (#304), documented in [docs/auth](../auth/README.md)
   — `server.md`, `grants.md`, `client.md`, `accounts.md`, every page executed by the docs test.
   Record rules applied by the framework's reads and field access by permission are #305.

@@ -10,27 +10,29 @@ import pytest
 from sincpro_framework import DataTransferObject, Feature, UseFramework
 from sincpro_framework.auth import (
     AccessControl,
-    ClientSecretBasic,
     Credentials,
+    GrantRejected,
+    Identity,
+    security,
+)
+from sincpro_framework.auth.client import (
+    ClientSecretBasic,
     DeviceCode,
     DevicePrompt,
-    GrantRejected,
     HeldGrant,
-    Identity,
     InMemoryHeldGrants,
     KeyValueHeldGrants,
     OutgoingRequest,
     PresentingProvider,
     PublicClient,
     RefreshingToken,
-    StaticProvider,
     TokenCache,
     TokenExchange,
-    security,
 )
+from sincpro_framework.auth.client.infrastructure.token_endpoint import TokenEndpoint
 from sincpro_framework.auth.domain import exceptions
 from sincpro_framework.auth.infrastructure.security_context import presenting
-from sincpro_framework.auth.infrastructure.token_endpoint import TokenEndpoint
+from sincpro_framework.auth.server import StaticProvider
 from sincpro_framework.data_layer.store import InMemoryKeyValue, Leases
 from sincpro_framework.runtime.testing import FakeTokenEndpoint, ManualClock
 

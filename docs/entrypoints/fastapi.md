@@ -91,7 +91,8 @@ from fastapi import APIRouter, Depends, FastAPI
 from fastapi.testclient import TestClient
 
 from sincpro_framework import DataTransferObject, Feature, UseFramework
-from sincpro_framework.auth import AccessControl, Identity, Permission, StaticProvider
+from sincpro_framework.auth import AccessControl, Identity, Permission
+from sincpro_framework.auth.server import StaticProvider
 from sincpro_framework.ddd import exceptions as ddd_exceptions
 from sincpro_framework import exceptions
 from sincpro_framework.ddd.query import Query

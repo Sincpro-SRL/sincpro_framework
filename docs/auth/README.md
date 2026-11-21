@@ -6,31 +6,41 @@ entrypoint, a cron, another bus, an ApplicationService. A refusal is one of two 
 entrypoint already tells the caller: `Unauthenticated` (who are you?) or `PermissionDenied` (you
 may not).
 
-| Piece | Where | What it is |
-|---|---|---|
-| `Permission` | `auth/domain/permissions.py` | the `StrEnum` base a bounded context extends with its permissions |
-| `Credentials` → `Identity` | `auth/domain/identity.py` | what the caller presented, and who they turned out to be |
-| `AuthProvider` | `auth/domain/provider.py` | **the contract**: authenticate, and answer about permissions |
-| `AccessControl` | `auth/entrypoint/access_control.py` | the declarations (`requires`, `authenticated`), what `requires` takes besides a permission (`role`, `rule`, `any_of`, `by_field`, `assurance`), the checks asked on every call (`every_call`) and by hand (`check`, `allows`, `has_role`, `scope_of`); `AccessControl.of(bus)` is the one guarding a bus |
-| the guard | `auth/services/guard.py` | what runs around a use case and before a hook |
-| `security` | `auth/entrypoint/security.py` | who the execution acts as (`identity`, `as_identity`, `as_system`), and what every entrypoint hands auth (`authenticated_as`, `challenges`, `identity_headers`) |
-| `StaticProvider`, `RolePermissions`, `ApiKeyProvider`, `ServiceTokenProvider` | `auth/adapters/` | what the framework ships; any class honouring the contract stands beside them |
-| `IdentityMiddleware` | `auth/entrypoint/asgi.py` | an ASGI app of the project's — FastAPI, Starlette — acting as its requests |
-| `Credentials.from_asgi`, `Credentials.from_headers`, `AuthError.refusal_body`, `AuthError.http_status` | `auth/domain/` | credentials out of a request, and the refusal every entrypoint answers |
+## One door per job
+
+The plugin is one folder per job, each its own door and its own page. The import says which side
+a name is on: `auth.server.JwtProvider` verifies a token that arrives, `auth.client.ClientCredentials`
+presents one that goes out.
+
+| Door | Folder | Job | Page | Extra |
+|---|---|---|---|---|
+| `sincpro_framework.auth` | `auth/` | **the contract** — what a use case declares and asks, who calls, the ports a project implements, every error, and what the doors share | this page | — |
+| `sincpro_framework.auth.server` | `auth/server/` | verify what arrives: `JwtProvider` (Keycloak, Entra, Google, several issuers, JWKS by discovery), introspection (RFC 7662), API keys, service tokens, webhook signatures, DPoP proofs (RFC 9449), mTLS and SPIFFE, policy engines (AuthZEN, OPA, OpenFGA) | [Verifying what arrives](server.md) | asymmetric keys, DPoP, mTLS: `[jwt]` |
+| `sincpro_framework.auth.client` | `auth/client/` | present what goes out: static credentials, client credentials shared by every replica, a credential per tenant, token exchange (RFC 8693), refresh tokens held and rotated, device code (RFC 8628), request signing, `call_with_credentials`, `requests`/`httpx` hooks | [Presenting what goes out](client.md) | `private_key_jwt`, DPoP: `[jwt]` |
+| `sincpro_framework.auth.grants` | `auth/grants/` | roles declared in code the Odoo 20 way — categories, privileges, exclusive levels, disjoint roles, entitlements — assignments per tenant, resolved per call | [Grants](grants.md) | — |
+| `sincpro_framework.auth.accounts` | `auth/accounts/` | accounts the service manages itself: password hashing, lockout, HTTP Basic, one-time links, TOTP, the token issuer with refresh rotation and logout | [Accounts](accounts.md) | argon2: `[argon2]` |
+
+The root never imports a door; `server`, `client` and `grants` build on the root alone, and
+`accounts` on the root and the server (its issuer verifies what it issued with a `JwtProvider`).
+`tests/auth/test_doors.py` holds it.
+
+**In the root** — the rest of this page:
+
+| Piece | What it is |
+|---|---|
+| `Permission` | the `StrEnum` base a bounded context extends with its permissions |
+| `Credentials` → `Identity` | what the caller presented, and who they turned out to be |
+| `AuthProvider`, `IdentityResolver` | **the contract**: authenticate, and answer about permissions; resolve what an identity holds |
+| `AccessControl` | the declarations (`requires`, `authenticated`), what `requires` takes besides a permission (`role`, `rule`, `any_of`, `by_field`, `assurance`), the checks asked on every call (`every_call`) and by hand (`check`, `allows`, `has_role`, `scope_of`); `AccessControl.of(bus)` is the one guarding a bus |
+| `security` | who the execution acts as (`identity`, `as_identity`, `as_system`), and what every entrypoint hands auth (`authenticated_as`, `challenges`, `identity_headers`) |
+| `IdentityMiddleware` | an ASGI app of the project's — FastAPI, Starlette — acting as its requests |
+| `AuthError` and its kinds | `Unauthenticated`, `PermissionDenied`, and the refusals of the doors (`EndpointUnavailable`, `CredentialsRejected`, `InvalidGrant`, …) — caught from one place |
+| shared by the doors | `Revocations` (`InMemoryRevocations`, `KeyValueRevocations`), `HttpClient` / `UrllibHttp`, `OidcDiscovery`, `ClientAuthentication`, `PublicKey` / `PrivateKey` (`[jwt]`), `HexDigest` / `TimestampedSignature` |
 
 Nothing is forced: a use case or hook that declares nothing is not checked, and a bus with no
 `AccessControl` runs as before. Every wire — REST, FastAPI, JSON-RPC, gRPC, MCP, a queue (a
 Lambda fed by SQS included), an ASGI app of the project's and a context hosted for another
 service — authenticates by itself when the bus is guarded — see [Entrypoints](#entrypoints-authenticate-by-themselves).
-
-**The rest of the plugin** — every page runs the same way:
-
-| Page | What it covers | Extra |
-|---|---|---|
-| [Verifying what arrives](server.md) | `JwtProvider` (Keycloak, Entra, Google, several issuers, JWKS by discovery), revocations, step-up (RFC 9470), introspection (RFC 7662), webhook signatures, DPoP (RFC 9449), mTLS and SPIFFE, policy engines (AuthZEN, OPA, OpenFGA) | asymmetric keys, DPoP, mTLS: `[jwt]` |
-| [Grants](grants.md) | roles declared in code the Odoo 20 way — categories, privileges, exclusive levels, disjoint roles, entitlements — assignments per tenant, resolved per call, a role taken away holding at once | — |
-| [Presenting what goes out](client.md) | token sources: static credentials, client credentials shared by every replica, a credential per tenant, token exchange (RFC 8693), refresh tokens held and rotated, device code (RFC 8628), `requests`/`httpx` hooks | `private_key_jwt`, DPoP: `[jwt]` |
-| [Accounts the service manages itself](accounts.md) | password hashing, lockout, HTTP Basic, one-time links, TOTP, the token issuer with refresh rotation and logout, all of it on the project's database | argon2: `[argon2]` |
 
 Every block on this page runs, in order, in `tests/docs/test_persistence_guide.py`.
 
@@ -41,7 +51,15 @@ from collections.abc import Mapping
 from typing import Any
 
 from sincpro_framework import ApplicationService, DataTransferObject, Feature, UseFramework
-from sincpro_framework.auth import AccessControl, AuthProvider, Credentials, Identity, Permission, WhenDenied, security
+from sincpro_framework.auth import (
+    AccessControl,
+    AuthProvider,
+    Credentials,
+    Identity,
+    Permission,
+    WhenDenied,
+    security,
+)
 from sincpro_framework.auth.domain import exceptions
 
 
@@ -515,7 +533,12 @@ A guarded bus needs nothing more on its entrypoints: each builds `Credentials` f
 the bus's `AccessControl` authenticates them, and the use case runs as that identity.
 
 ```python
-from sincpro_framework.auth import ApiKey, ApiKeyProvider, InMemoryApiKeys, ServiceTokenProvider
+from sincpro_framework.auth.server import (
+    ApiKey,
+    ApiKeyProvider,
+    InMemoryApiKeys,
+    ServiceTokenProvider,
+)
 from sincpro_framework.entrypoints.domain.surface import Exposure
 from sincpro_framework.entrypoints import RpcGateway
 

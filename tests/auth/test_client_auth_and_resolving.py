@@ -9,19 +9,20 @@ from pydantic import SecretStr
 from sincpro_framework.auth import (
     AccessControl,
     AuthProvider,
-    ClientSecretBasic,
-    ClientSecretJwt,
-    ClientSecretPost,
     Credentials,
     Identity,
     Permission,
-    PublicClient,
-    Resolving,
-    RolePermissions,
-    StaticProvider,
 )
-from sincpro_framework.auth.adapters.client_auth import CLIENT_ASSERTION_TYPE
+from sincpro_framework.auth.client import (
+    ClientSecretBasic,
+    ClientSecretJwt,
+    ClientSecretPost,
+    PublicClient,
+)
+from sincpro_framework.auth.client.adapters.client_authentication import CLIENT_ASSERTION_TYPE
+from sincpro_framework.auth.grants import RolePermissions
 from sincpro_framework.auth.infrastructure import jws
+from sincpro_framework.auth.server import Resolving, StaticProvider
 
 ENDPOINT = "https://auth.acme.bo/token"
 

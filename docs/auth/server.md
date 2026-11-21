@@ -1,4 +1,7 @@
-# Verifying what arrives — the providers
+# Verifying what arrives — `sincpro_framework.auth.server`
+
+**Door**: `from sincpro_framework.auth.server import …` — folder `auth/server/`. Everything here
+verifies a credential that arrives; what goes out is [`auth.client`](client.md).
 
 [The overview](README.md) says how a use case declares what it requires and how a provider
 answers. This page is the providers the framework ships for what a caller presents, and what
@@ -13,7 +16,7 @@ each checks. Every block on this page runs, in order, in `tests/docs/test_persis
 
 ## JWTs: the issuers a service trusts
 
-An `Issuer` is one identity provider this service trusts: its `iss`, the audience its tokens must
+A `TrustedIssuer` is one identity provider this service trusts: its `iss`, the audience its tokens must
 name, where its keys are, how its claims read. `JwtProvider` routes a token by its `iss` — read
 before it is verified, only to route — and checks everything else against that issuer, never
 against what the token says about itself.
@@ -21,20 +24,15 @@ against what the token says about itself.
 ```python
 import time
 
-from sincpro_framework.auth import (
-    ClaimMapping,
-    Credentials,
-    Issuer,
-    JwtProvider,
-    SharedSecrets,
-)
+from sincpro_framework.auth import Credentials
+from sincpro_framework.auth.server import ClaimMapping, JwtProvider, SharedSecrets, TrustedIssuer
 from sincpro_framework.auth.domain import exceptions
 from sincpro_framework.auth.infrastructure import jws
 
 KEYCLOAK = "https://auth.sincpro.com.bo/realms/sincpro"
 SECRET = "a shared secret of thirty-two by!"
 
-keycloak = Issuer(
+keycloak = TrustedIssuer(
     KEYCLOAK,
     audience="billing-api",
     keys=SharedSecrets({"2026-09": SECRET}),       # in production: Jwks(...) — below
@@ -74,9 +72,9 @@ assert provider.authenticate(bearer(token(iss="https://elsewhere"))) is None   #
 | Checked | How |
 |---|---|
 | the issuer | the `iss` names one this provider trusts; another is `None`, the next provider's |
-| the algorithm | one the issuer's keys verify — never `none`, never HMAC for public keys nor the reverse (checked when the `Issuer` is built) |
+| the algorithm | one the issuer's keys verify — never `none`, never HMAC for public keys nor the reverse (checked when the `TrustedIssuer` is built) |
 | the key | the issuer's, by `kid`; a `jwk`, `jku` or `x5u` in the header is ignored; a `crit` header is refused |
-| the claims | `iss` exact, `aud` names one of the audiences (an `Issuer` with none is a `ProgrammingError`), `exp`, `nbf`, `iat` with `leeway` (60 s), `required` present |
+| the claims | `iss` exact, `aud` names one of the audiences (a `TrustedIssuer` with none is a `ProgrammingError`), `exp`, `nbf`, `iat` with `leeway` (60 s), `required` present |
 | the kind of token | the mapping's `refused_types`: Keycloak's ID and refresh tokens are JWTs signed with the same keys |
 | the client | `authorized_parties`, when given: the `azp` allowed |
 | revocation | `revocations=`: the token, its session, its subject signed out everywhere — one read, which also brings the permission versions the resolvers key their cache by |
@@ -108,7 +106,8 @@ One provider trusts several issuers — Keycloak for people, this service's own 
 ```python
 from datetime import UTC, datetime, timedelta
 
-from sincpro_framework.auth import InMemoryRevocations, Permission, RolePermissions
+from sincpro_framework.auth import InMemoryRevocations, Permission
+from sincpro_framework.auth.grants import RolePermissions
 
 
 class BillingPermission(Permission):
@@ -116,7 +115,7 @@ class BillingPermission(Permission):
 
 
 revocations = InMemoryRevocations()               # KeyValueRevocations() in production
-own = Issuer("billing", audience="billing", keys=SharedSecrets({"own": SECRET}))
+own = TrustedIssuer("billing", audience="billing", keys=SharedSecrets({"own": SECRET}))
 provider = JwtProvider(
     [keycloak, own],
     resolvers=[RolePermissions({"accountant": {BillingPermission.ISSUE_INVOICE}})],
@@ -156,7 +155,7 @@ code (RFC 6750 §3.1): there was no token to call invalid. FastAPI, gRPC (`www-a
 trailing metadata), JSON-RPC, REST and `IdentityMiddleware` answer the same challenge.
 
 ```python
-from sincpro_framework.auth import ProtectedResource
+from sincpro_framework.auth.server import ProtectedResource
 
 resource = ProtectedResource("https://billing.sincpro.com.bo/mcp", authorization_servers=[KEYCLOAK])
 provider = JwtProvider(keycloak, resource=resource, realm="billing")
@@ -290,7 +289,8 @@ caches every answer by the token's SHA-256 — never the token — and never pas
 stream of requests. A JWT is left to `JwtProvider`.
 
 ```python
-from sincpro_framework.auth import ClientSecretBasic, IntrospectionProvider
+from sincpro_framework.auth.client import ClientSecretBasic
+from sincpro_framework.auth.server import IntrospectionProvider
 
 introspect = f"{KEYCLOAK}/protocol/openid-connect/token/introspect"
 http = ScriptedHttp({f"POST {introspect}": {"active": True, "sub": "4c1d", "aud": "billing-api",
@@ -317,13 +317,9 @@ FastAPI, a queue's message, `IdentityMiddleware` — hand it over as it came, on
 of the bus asks for it; the app still reads the whole body after.
 
 ```python
-from sincpro_framework.auth import (
-    HexDigest,
-    OutgoingRequest,
-    RequestSigner,
-    SignatureProvider,
-    TimestampedSignature,
-)
+from sincpro_framework.auth import HexDigest, TimestampedSignature
+from sincpro_framework.auth.client import OutgoingRequest, RequestSigner
+from sincpro_framework.auth.server import SignatureProvider
 from sincpro_framework.data_layer.store import InMemoryKeyValue
 
 gateway = SignatureProvider(
@@ -350,7 +346,8 @@ A token that leaks from a log or a proxy is of no use when it is bound: to a key
 on every request (DPoP, RFC 9449), or to the client certificate of its mTLS connection (RFC 8705).
 
 ```python
-from sincpro_framework.auth import DpopProofs, DpopProver
+from sincpro_framework.auth.client import DpopProver
+from sincpro_framework.auth.server import DpopProofs
 
 client_key = DpopProver()                                      # the client's — ClientCredentials(dpop=…)
 bound = jws.encode(
@@ -389,7 +386,7 @@ in OpenID AuthZEN's terms: a subject, an action, a resource, a context. `Decided
 provider's name and answers `has_permission`, `permitted` and `scope` from the engine.
 
 ```python
-from sincpro_framework.auth import AuthZenEngine, DecidedBy, OpaEngine, OpenFgaEngine
+from sincpro_framework.auth.server import AuthZenEngine, DecidedBy, OpaEngine, OpenFgaEngine
 
 pdp = ScriptedHttp({"POST https://pdp.internal/access/v1/evaluation": {"decision": True}})
 decided = DecidedBy(provider, AuthZenEngine("https://pdp.internal", http=pdp))

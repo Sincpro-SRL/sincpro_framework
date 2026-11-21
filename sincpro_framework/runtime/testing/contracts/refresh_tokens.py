@@ -9,7 +9,7 @@ way proves it by inheriting this class.
 import threading
 from datetime import UTC, datetime, timedelta
 
-from sincpro_framework.auth import RefreshRecord, RefreshTokens
+from sincpro_framework.auth.accounts import RefreshRecord, RefreshTokens
 
 
 def record(digest: str, family: str = "s-1", subject: str = "user:ana") -> RefreshRecord:

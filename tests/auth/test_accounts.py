@@ -9,19 +9,16 @@ from datetime import timedelta
 
 import pytest
 
-from sincpro_framework.auth import (
-    AuthProvider,
+from sincpro_framework.auth import AuthProvider, Credentials, Identity, PasswordRejected
+from sincpro_framework.auth.accounts import (
     BasicProvider,
-    Credentials,
     CredentialVerifier,
     HashedCredentials,
-    Identity,
     LoginAttempts,
     PasswordHasher,
-    PasswordRejected,
     ScryptCost,
 )
-from sincpro_framework.auth.adapters.accounts import passwords
+from sincpro_framework.auth.accounts.adapters.passwords import hasher
 from sincpro_framework.auth.domain import exceptions
 from sincpro_framework.data_layer.store import InMemoryKeyValue, StoreUnavailable
 from sincpro_framework.rate_limiter import RateLimited
@@ -92,7 +89,7 @@ def test_a_legacy_hash_is_verified_and_asks_to_be_replaced() -> None:
 
 def test_argon2_without_its_library_is_said_plainly(monkeypatch: pytest.MonkeyPatch) -> None:
     stored = PasswordHasher(scheme="argon2id").hash("pw")
-    monkeypatch.setattr(passwords, "_argon2", lambda: None)
+    monkeypatch.setattr(hasher, "_argon2", lambda: None)
     with pytest.raises(exceptions.ProgrammingError, match=r"sincpro-framework\[argon2\]"):
         PasswordHasher(scheme="argon2id")
     auto = PasswordHasher(scrypt=CHEAP)

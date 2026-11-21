@@ -21,14 +21,9 @@ from typing import Any
 from sqlalchemy import Table, delete, select, update
 from sqlalchemy.exc import IntegrityError
 
-from sincpro_framework.auth import (
-    ApiKey,
-    ApiKeyStore,
-    Assignment,
-    GrantStore,
-    RefreshRecord,
-    RefreshTokens,
-)
+from sincpro_framework.auth.accounts import RefreshRecord, RefreshTokens
+from sincpro_framework.auth.grants import Assignment, GrantStore
+from sincpro_framework.auth.server import ApiKey, ApiKeyStore
 from sincpro_framework.data_layer.orm.sqlalchemy.infrastructure.database import Database
 
 
