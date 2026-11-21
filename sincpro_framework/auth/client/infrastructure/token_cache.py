@@ -2,7 +2,7 @@
 running context's store is shared — until shortly before it expires.
 
     cache = TokenCache()                         the running context's store
-    cache.token(("client-credentials", endpoint, client_id, scope), fetch)   ->  IssuedToken
+    cache.token(("client-credentials", endpoint, client_id, scope), fetch)   ->  TokenResponse
 
 Context: it is the framework's `Cache`, nothing changed: one caller fetches and the others wait
 for it (single flight); a token is served until `expires_at - skew`, the skew at most half its
@@ -25,7 +25,7 @@ from typing import Any
 from pydantic import SecretStr
 
 from sincpro_framework.auth.client.domain.outbound import Sealer
-from sincpro_framework.auth.client.infrastructure.token_endpoint import IssuedToken
+from sincpro_framework.auth.client.infrastructure.token_endpoint import TokenResponse
 from sincpro_framework.auth.domain import exceptions
 from sincpro_framework.auth.infrastructure.digests import digest, fingerprint
 from sincpro_framework.context.entrypoint.resolution import current_store, key_value_store_of
@@ -34,7 +34,7 @@ from sincpro_framework.data_layer.store import KeyValueStore
 
 
 class TokenCodec:
-    """An `IssuedToken` as the bytes a shared store holds — the secrets' real values, which
+    """An `TokenResponse` as the bytes a shared store holds — the secrets' real values, which
     pydantic's JSON would mask, sealed when a `Sealer` is given."""
 
     def __init__(self, seal: Sealer | None = None) -> None:
@@ -45,7 +45,7 @@ class TokenCodec:
         """The layout's name — a sealed one is another, so neither is read as the other."""
         return "issued-token-1" + ("-sealed" if self.seal else "")
 
-    def encode(self, value: IssuedToken) -> bytes:
+    def encode(self, value: TokenResponse) -> bytes:
         """The token as JSON, its secrets in clear — then sealed, when a sealer was given."""
         plain = json.dumps(
             {
@@ -58,20 +58,20 @@ class TokenCodec:
         ).encode()
         return self.seal.seal(plain) if self.seal else plain
 
-    def decode(self, raw: bytes) -> IssuedToken:
+    def decode(self, raw: bytes) -> TokenResponse:
         """The token back — opened first when it was sealed."""
         plain = self.seal.open(raw) if self.seal else raw
-        return IssuedToken.model_validate(json.loads(plain))
+        return TokenResponse.model_validate(json.loads(plain))
 
 
-class TokenStillGood(Validation[IssuedToken]):
+class TokenStillGood(Validation[TokenResponse]):
     """A cached token holds until `expires_at - skew` — the skew at most half its life."""
 
     def __init__(self, now: Callable[[], datetime], skew: timedelta) -> None:
         self.now = now
         self.skew = skew
 
-    def after(self, value: IssuedToken, before: str | None) -> str | None:
+    def after(self, value: TokenResponse, before: str | None) -> str | None:
         """The mark: when the token stops being handed out — `skew` before it expires, or half
         its life when that is shorter."""
         life = value.expires_at - value.received_at
@@ -102,7 +102,7 @@ class TokenCache:
         self.min_reuse = min_reuse
         self.namespace = namespace
         self._codec = TokenCodec(seal)
-        self._policy: CachePolicy[IssuedToken] = CachePolicy(
+        self._policy: CachePolicy[TokenResponse] = CachePolicy(
             freshness=TimeToLive(ttl=timedelta(hours=1)),
             validation=TokenStillGood(now, skew),
             wait_for_others=wait_for_others,
@@ -127,7 +127,9 @@ class TokenCache:
         """The grant's parameters as one digest — what this process tracks a key by."""
         return digest(json.dumps(key, default=str))
 
-    def token(self, key: tuple[Any, ...], fetch: Callable[[], IssuedToken]) -> IssuedToken:
+    def token(
+        self, key: tuple[Any, ...], fetch: Callable[[], TokenResponse]
+    ) -> TokenResponse:
         """The token cached under `key`, fetched by `fetch` when there is none still good.
 
         1. The endpoint asked to wait and the wait has not passed: its refusal, again.

@@ -28,8 +28,8 @@ from sincpro_framework.auth.client.domain.outbound import (
 )
 from sincpro_framework.auth.client.infrastructure.token_cache import bearer_of
 from sincpro_framework.auth.client.infrastructure.token_endpoint import (
-    IssuedToken,
     TokenEndpoint,
+    TokenResponse,
 )
 from sincpro_framework.auth.domain import exceptions
 from sincpro_framework.auth.domain.http import ClientAuthentication, HttpClient
@@ -85,7 +85,7 @@ class RefreshingToken(TokenSource):
         self.sleep = sleep
         self.name = name
 
-    def seed(self, issued: IssuedToken) -> None:
+    def seed(self, issued: TokenResponse) -> None:
         """Hold the grant `issued` — the first one, from a consent or a device code. A token
         with no refresh token cannot be held: `ProgrammingError`."""
         if issued.refresh_token is None:

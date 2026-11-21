@@ -244,11 +244,11 @@ except ImportError as error:
 else:
     raise AssertionError("Jwks imported without PyJWT")
 
-from sincpro_framework.auth.server import Issuer, JwtProvider, SharedSecrets
+from sincpro_framework.auth.server import TrustedIssuer, JwtProvider, SharedSecrets
 import sincpro_framework.auth.accounts  # no extra loaded by a door
 import sincpro_framework.auth.grants
 
-JwtProvider(Issuer("core", audience="core", keys=SharedSecrets({"k": "a secret of 32 bytes or more!!"})))
+JwtProvider(TrustedIssuer("core", audience="core", keys=SharedSecrets({"k": "a secret of 32 bytes or more!!"})))
 
 from sincpro_framework.auth.client import (
     ClientCredentials,

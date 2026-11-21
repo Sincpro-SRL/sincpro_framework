@@ -3,7 +3,7 @@ credentials, a refresh, an exchange, a device code — and its answer read the s
 
     endpoint = TokenEndpoint("https://auth.bank.bo/token", ClientSecretBasic("billing", secret))
     endpoint.grant([("grant_type", "client_credentials"), ("scope", "payments")])
-        ->  IssuedToken(token_type="Bearer", expires_at=…, …)        never shown: the token
+        ->  TokenResponse(token_type="Bearer", expires_at=…, …)        never shown: the token
 
 Context: what the server answers is said in auth's words — a server down, overloaded (429) or
 `temporarily_unavailable` is `EndpointUnavailable` (503, with its `Retry-After`); `invalid_grant`
@@ -27,8 +27,9 @@ from sincpro_framework.sincpro_logger import logger
 ACCEPTED_TYPES = frozenset({"bearer", "dpop", "n_a"})
 
 
-class IssuedToken(DataTransferObject):
-    """What a token endpoint issued — its secrets as `SecretStr`, shown by no `repr`."""
+class TokenResponse(DataTransferObject):
+    """What a token endpoint answered (RFC 6749 §5.1) — its secrets as `SecretStr`, shown by no
+    `repr`."""
 
     model_config = ConfigDict(frozen=True)
 
@@ -68,7 +69,7 @@ class TokenEndpoint:
 
     def grant(
         self, fields: Sequence[tuple[str, str]], headers: Mapping[str, str] | None = None
-    ) -> IssuedToken:
+    ) -> TokenResponse:
         """The token the server issues for `fields`.
 
         1. POSTed form-encoded, authenticated as the client.
@@ -132,7 +133,7 @@ class TokenEndpoint:
         )
         refresh = said.get("refresh_token")
         scope = said.get("scope")
-        return IssuedToken(
+        return TokenResponse(
             access_token=SecretStr(token),
             token_type=token_type,
             expires_at=received + alive,

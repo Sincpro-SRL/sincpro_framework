@@ -65,8 +65,8 @@ from sincpro_framework.auth.client.entrypoint.calling import (
 )
 from sincpro_framework.auth.client.infrastructure.token_cache import TokenCache
 from sincpro_framework.auth.client.infrastructure.token_endpoint import (
-    IssuedToken,
     TokenEndpoint,
+    TokenResponse,
 )
 
 __all__ = [
@@ -83,7 +83,7 @@ __all__ = [
     "HeldGrant",
     "HeldGrants",
     "InMemoryHeldGrants",
-    "IssuedToken",
+    "TokenResponse",
     "KeyValueHeldGrants",
     "OutgoingRequest",
     "PresentingProvider",

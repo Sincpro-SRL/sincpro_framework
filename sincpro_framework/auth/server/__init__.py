@@ -10,7 +10,7 @@
 
 | Arrives | Provider |
 |---|---|
-| a bearer JWT of Keycloak, Entra, Google — several issuers | `JwtProvider`, `Issuer`, `ClaimMapping`, keys by `Jwks` / `PublicKeys` / `SharedSecrets` |
+| a bearer JWT of Keycloak, Entra, Google — several issuers | `JwtProvider`, `TrustedIssuer`, `ClaimMapping`, keys by `Jwks` / `PublicKeys` / `SharedSecrets` |
 | an opaque token (RFC 7662) | `IntrospectionProvider` |
 | a token bound to a key (RFC 9449) or a certificate (RFC 8705) | `DpopProofs`, `CertificateProvider` |
 | an API key | `ApiKeyProvider`, `ApiKey`, `ApiKeyStore`, `InMemoryApiKeys` |
@@ -46,8 +46,8 @@ from sincpro_framework.auth.server.adapters.bearer_tokens.introspection import (
     IntrospectionProvider,
 )
 from sincpro_framework.auth.server.adapters.bearer_tokens.jwt_provider import (
-    Issuer,
     JwtProvider,
+    TrustedIssuer,
 )
 from sincpro_framework.auth.server.adapters.bearer_tokens.protected_resource import (
     ProtectedResource,
@@ -77,7 +77,7 @@ __all__ = [
     "DpopProofs",
     "InMemoryApiKeys",
     "IntrospectionProvider",
-    "Issuer",
+    "TrustedIssuer",
     "Jwks",
     "JwtProvider",
     "OpaEngine",

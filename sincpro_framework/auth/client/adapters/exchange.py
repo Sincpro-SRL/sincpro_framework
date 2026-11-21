@@ -21,8 +21,8 @@ from typing import Any
 from sincpro_framework.auth.client.domain.outbound import OutgoingRequest, TokenSource
 from sincpro_framework.auth.client.infrastructure.token_cache import TokenCache, bearer_of
 from sincpro_framework.auth.client.infrastructure.token_endpoint import (
-    IssuedToken,
     TokenEndpoint,
+    TokenResponse,
 )
 from sincpro_framework.auth.domain import exceptions
 from sincpro_framework.auth.domain.http import ClientAuthentication, HttpClient
@@ -105,7 +105,7 @@ class TokenExchange(TokenSource):
             fingerprint(subject_token),
         )
 
-    def _exchanged(self, request: OutgoingRequest, subject: tuple[str, str]) -> IssuedToken:
+    def _exchanged(self, request: OutgoingRequest, subject: tuple[str, str]) -> TokenResponse:
         """A token for the audience, acting for `subject` — `Unauthenticated` when the server
         will not exchange the caller's token."""
         token, kind = subject

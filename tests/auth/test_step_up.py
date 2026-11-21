@@ -16,7 +16,7 @@ from sincpro_framework.auth import (
     WhenDenied,
     security,
 )
-from sincpro_framework.auth.server import Issuer, JwtProvider, SharedSecrets
+from sincpro_framework.auth.server import JwtProvider, SharedSecrets, TrustedIssuer
 
 NOW = datetime(2026, 11, 20, 12, tzinfo=UTC)
 
@@ -116,7 +116,8 @@ def test_describe_says_the_assurance() -> None:
 
 def test_the_challenge_asks_for_what_to_come_back_with() -> None:
     jwt = JwtProvider(
-        Issuer("billing", audience="b", keys=SharedSecrets({"k": "x" * 32})), realm="billing"
+        TrustedIssuer("billing", audience="b", keys=SharedSecrets({"k": "x" * 32})),
+        realm="billing",
     )
     refusal = Unauthenticated("mfa required", step_up="mfa", max_age=300)
     assert jwt.challenge_for(refusal) == (

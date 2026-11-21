@@ -154,7 +154,7 @@ except Unauthenticated as refused:
 | the roles | the ones the identity carried at sign-in, kept with the session and carried by every refreshed token |
 | "sign out everywhere" | `revoke_subject(subject)`: a password changed, an account disabled — every session of the subject ends; a new sign-in in that same second works |
 | "signed in on…" | `sessions_of(subject)` |
-| other services | `SigningKeys.private({...}, "ES256")` (`[jwt]`): they verify with `jwks()` and `Issuer(..., mapping=TokenIssuer.mapping)`, no secret shared |
+| other services | `SigningKeys.private({...}, "ES256")` (`[jwt]`): they verify with `jwks()` and `TrustedIssuer(..., mapping=TokenIssuer.mapping)`, no secret shared |
 
 ## Links that work once, and a second factor
 

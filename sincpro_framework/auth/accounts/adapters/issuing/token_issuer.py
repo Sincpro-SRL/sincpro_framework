@@ -35,7 +35,7 @@ from sincpro_framework.auth.domain.resolver import IdentityResolver, resolved
 from sincpro_framework.auth.domain.revocations import Revocations
 from sincpro_framework.auth.infrastructure import jws
 from sincpro_framework.auth.infrastructure.digests import digest, random_token
-from sincpro_framework.auth.server import ClaimMapping, ClaimTest, Issuer, JwtProvider
+from sincpro_framework.auth.server import ClaimMapping, ClaimTest, JwtProvider, TrustedIssuer
 from sincpro_framework.sincpro_abstractions import DataTransferObject
 from sincpro_framework.sincpro_logger import logger
 
@@ -82,7 +82,7 @@ class TokenIssuer:
     through `revocations`."""
 
     mapping = OWN_MAPPING
-    """How another service's `Issuer` reads these tokens — `Issuer(..., mapping=TokenIssuer.mapping)`."""
+    """How another service's `TrustedIssuer` reads these tokens — `TrustedIssuer(..., mapping=TokenIssuer.mapping)`."""
 
     def __init__(
         self,
@@ -352,7 +352,7 @@ class TokenIssuer:
         """The `JwtProvider` that accepts what this issuer signed — checking revocations, and the
         permission version when permissions are embedded."""
         return JwtProvider(
-            Issuer(
+            TrustedIssuer(
                 self.issuer,
                 audience=self.audience,
                 keys=self.keys.verification(),

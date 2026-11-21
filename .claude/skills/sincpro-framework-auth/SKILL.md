@@ -56,7 +56,7 @@ Every name below imports from `sincpro_framework.auth` unless the Import column 
 | `IdentityMiddleware` | ASGI middleware for a project's own app | adapter | same |
 | `Credentials.from_asgi` / `Credentials.from_headers` / `security.authenticated_as` / `security.challenges` / `security.identity_headers` | what an entrypoint does | classmethod / facade | same |
 | `describe()` / `verify()` / `requirements_of()` | introspection, test-time checks | function | `AccessControl` methods |
-| `JwtProvider` / `Issuer` / `ClaimMapping.keycloak()` / `.entra()` / `.google()` / `SharedSecrets` | bearer JWTs of the issuers trusted; claims → identity; HMAC keys (stdlib) | adapter / config | same |
+| `JwtProvider` / `TrustedIssuer` / `ClaimMapping.keycloak()` / `.entra()` / `.google()` / `SharedSecrets` | bearer JWTs of the issuers trusted; claims → identity; HMAC keys (stdlib) | adapter / config | same |
 | `Jwks` / `PublicKeys` / `JwtProvider.from_issuer` | public keys by OIDC discovery, cached, rotated — `[jwt]`, imported on first use | adapter | same |
 | `IntrospectionProvider` | opaque tokens (RFC 7662), cached by digest | adapter | same |
 | `SignatureProvider` / `RequestSigner` / `HexDigest` / `TimestampedSignature` | webhook HMAC in and out | adapter | same |
@@ -153,7 +153,7 @@ Silent ones first — the runtime says nothing.
   consumers, with a reason that is logged.
 - **A handwritten FastAPI route calling `bus(dto)`.** No credentials reach the bus. Use the gateway,
   or wrap the app in `IdentityMiddleware(app, access=auth)`.
-- **An `Issuer` with no audience, or a mapping that forgets Keycloak's `typ`.** The first is refused
+- **A `TrustedIssuer` with no audience, or a mapping that forgets Keycloak's `typ`.** The first is refused
   at construction; use `ClaimMapping.keycloak(...)`, which refuses ID and refresh tokens.
 - **Resolvers on `AccessControl`.** They belong to a provider (`resolvers=` or `Resolving`): a
   service token or an API key arrives resolved, a global resolver grants twice.

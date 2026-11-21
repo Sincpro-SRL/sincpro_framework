@@ -38,7 +38,12 @@ from sincpro_framework.auth.grants import (
     ScopeCeiling,
 )
 from sincpro_framework.auth.infrastructure import jws
-from sincpro_framework.auth.server import ClaimMapping, Issuer, JwtProvider, SharedSecrets
+from sincpro_framework.auth.server import (
+    ClaimMapping,
+    JwtProvider,
+    SharedSecrets,
+    TrustedIssuer,
+)
 from sincpro_framework.data_layer.caching import Cache
 from sincpro_framework.data_layer.store import InMemoryKeyValue
 from sincpro_framework.data_layer.store.adapters.redis import RedisKeyValue
@@ -240,7 +245,7 @@ def test_a_role_taken_away_holds_on_the_very_next_call() -> None:
     admin = GrantAdministration(catalog, grants, revocations)
     admin.set_level("user:ana", "bo", "invoicing", "billing.manager")
     provider = JwtProvider(
-        Issuer(
+        TrustedIssuer(
             ISSUER,
             audience="billing",
             keys=SharedSecrets({"k": SECRET}),
@@ -301,7 +306,7 @@ def test_the_revocation_check_and_the_resolver_share_one_read() -> None:
     admin.set_level("user:ana", "bo", "invoicing", "billing.manager")
     admin.entitle("bo", "e-invoicing")
     provider = JwtProvider(
-        Issuer(
+        TrustedIssuer(
             ISSUER,
             audience="billing",
             keys=SharedSecrets({"k": SECRET}),

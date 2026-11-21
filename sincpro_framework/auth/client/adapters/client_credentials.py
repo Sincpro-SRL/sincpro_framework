@@ -23,8 +23,8 @@ from sincpro_framework.auth.client.adapters.client_authentication import ClientS
 from sincpro_framework.auth.client.domain.outbound import OutgoingRequest, TokenSource
 from sincpro_framework.auth.client.infrastructure.token_cache import TokenCache, bearer_of
 from sincpro_framework.auth.client.infrastructure.token_endpoint import (
-    IssuedToken,
     TokenEndpoint,
+    TokenResponse,
 )
 from sincpro_framework.auth.domain import exceptions
 from sincpro_framework.auth.domain.http import ClientAuthentication, HttpClient
@@ -100,7 +100,7 @@ class ClientCredentials(TokenSource):
             None if self.dpop is None else self.dpop.thumbprint,
         )
 
-    def _proved(self, dpop: "DpopProver", fields: list[tuple[str, str]]) -> IssuedToken:
+    def _proved(self, dpop: "DpopProver", fields: list[tuple[str, str]]) -> TokenResponse:
         """A DPoP-bound token: asked with a proof of `dpop`'s key — and asked once more, with
         the nonce the server answered, when it demands one (RFC 9449 §8, `use_dpop_nonce`)."""
         url = self.endpoint.url
@@ -112,7 +112,7 @@ class ClientCredentials(TokenSource):
             dpop.learn(url, {"dpop-nonce": refused.dpop_nonce})
             return self.endpoint.grant(fields, {"dpop": dpop.proof("POST", url)})
 
-    def _fetched(self) -> IssuedToken:
+    def _fetched(self) -> TokenResponse:
         """A new token from the endpoint — proving the client's key when it holds one."""
         fields = [("grant_type", "client_credentials")]
         if self.scope:
@@ -124,7 +124,7 @@ class ClientCredentials(TokenSource):
             return self._proved(self.dpop, fields)
         return self.endpoint.grant(fields)
 
-    def token(self) -> IssuedToken:
+    def token(self) -> TokenResponse:
         """The current token — cached, fetched when there is none still good."""
         return self.cache.token(self._key(), self._fetched)
 

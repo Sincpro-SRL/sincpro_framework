@@ -18,8 +18,8 @@ from functools import partial
 from pydantic import ConfigDict
 
 from sincpro_framework.auth.client.infrastructure.token_endpoint import (
-    IssuedToken,
     TokenEndpoint,
+    TokenResponse,
 )
 from sincpro_framework.auth.domain import exceptions
 from sincpro_framework.auth.domain.http import ClientAuthentication, HttpClient, HttpRequest
@@ -82,7 +82,7 @@ class DeviceCode:
         """The device authorization endpoint — given, or discovered on the first call."""
         return self._device() if callable(self._device) else self._device
 
-    def authorize(self) -> IssuedToken:
+    def authorize(self) -> TokenResponse:
         """The token, once the person consented.
 
         1. The device authorization asked; its prompt shown.

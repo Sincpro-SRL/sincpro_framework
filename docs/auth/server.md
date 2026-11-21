@@ -13,7 +13,7 @@ each checks. Every block on this page runs, in order, in `tests/docs/test_persis
 
 ## JWTs: the issuers a service trusts
 
-An `Issuer` is one identity provider this service trusts: its `iss`, the audience its tokens must
+A `TrustedIssuer` is one identity provider this service trusts: its `iss`, the audience its tokens must
 name, where its keys are, how its claims read. `JwtProvider` routes a token by its `iss` — read
 before it is verified, only to route — and checks everything else against that issuer, never
 against what the token says about itself.
@@ -22,14 +22,14 @@ against what the token says about itself.
 import time
 
 from sincpro_framework.auth import Credentials
-from sincpro_framework.auth.server import ClaimMapping, Issuer, JwtProvider, SharedSecrets
+from sincpro_framework.auth.server import ClaimMapping, JwtProvider, SharedSecrets, TrustedIssuer
 from sincpro_framework.auth.domain import exceptions
 from sincpro_framework.auth.infrastructure import jws
 
 KEYCLOAK = "https://auth.sincpro.com.bo/realms/sincpro"
 SECRET = "a shared secret of thirty-two by!"
 
-keycloak = Issuer(
+keycloak = TrustedIssuer(
     KEYCLOAK,
     audience="billing-api",
     keys=SharedSecrets({"2026-09": SECRET}),       # in production: Jwks(...) — below
@@ -69,9 +69,9 @@ assert provider.authenticate(bearer(token(iss="https://elsewhere"))) is None   #
 | Checked | How |
 |---|---|
 | the issuer | the `iss` names one this provider trusts; another is `None`, the next provider's |
-| the algorithm | one the issuer's keys verify — never `none`, never HMAC for public keys nor the reverse (checked when the `Issuer` is built) |
+| the algorithm | one the issuer's keys verify — never `none`, never HMAC for public keys nor the reverse (checked when the `TrustedIssuer` is built) |
 | the key | the issuer's, by `kid`; a `jwk`, `jku` or `x5u` in the header is ignored; a `crit` header is refused |
-| the claims | `iss` exact, `aud` names one of the audiences (an `Issuer` with none is a `ProgrammingError`), `exp`, `nbf`, `iat` with `leeway` (60 s), `required` present |
+| the claims | `iss` exact, `aud` names one of the audiences (a `TrustedIssuer` with none is a `ProgrammingError`), `exp`, `nbf`, `iat` with `leeway` (60 s), `required` present |
 | the kind of token | the mapping's `refused_types`: Keycloak's ID and refresh tokens are JWTs signed with the same keys |
 | the client | `authorized_parties`, when given: the `azp` allowed |
 | revocation | `revocations=`: the token, its session, its subject signed out everywhere — one read, which also brings the permission versions the resolvers key their cache by |
@@ -112,7 +112,7 @@ class BillingPermission(Permission):
 
 
 revocations = InMemoryRevocations()               # KeyValueRevocations() in production
-own = Issuer("billing", audience="billing", keys=SharedSecrets({"own": SECRET}))
+own = TrustedIssuer("billing", audience="billing", keys=SharedSecrets({"own": SECRET}))
 provider = JwtProvider(
     [keycloak, own],
     resolvers=[RolePermissions({"accountant": {BillingPermission.ISSUE_INVOICE}})],

@@ -14,9 +14,9 @@ from sincpro_framework.auth.infrastructure import jws
 from sincpro_framework.auth.server import (
     ClaimMapping,
     DpopProofs,
-    Issuer,
     JwtProvider,
     PublicKeys,
+    TrustedIssuer,
 )
 from sincpro_framework.auth.server.adapters.bearer_tokens.jwks import Jwks
 from sincpro_framework.runtime.testing import ScriptedHttp
@@ -50,7 +50,7 @@ class Clock:
 
 def provider(http: ScriptedHttp, clock: Clock | None = None, **jwks: Any) -> JwtProvider:
     keys = Jwks(JWKS, http=http, clock=clock or Clock(), **jwks)
-    return JwtProvider(Issuer(ISSUER, audience="billing-api", keys=keys))
+    return JwtProvider(TrustedIssuer(ISSUER, audience="billing-api", keys=keys))
 
 
 @pytest.mark.parametrize("key", [RS, ES, ED], ids=["RS256", "ES256", "EdDSA"])
@@ -137,8 +137,8 @@ def test_keys_given_by_hand_verify_what_they_sign() -> None:
     by_jwk = PublicKeys([ES.jwk()])
     jwt = JwtProvider(
         [
-            Issuer("partner-a", audience="billing-api", keys=by_pem),
-            Issuer("partner-b", audience="billing-api", keys=by_jwk),
+            TrustedIssuer("partner-a", audience="billing-api", keys=by_pem),
+            TrustedIssuer("partner-b", audience="billing-api", keys=by_jwk),
         ]
     )
     assert (

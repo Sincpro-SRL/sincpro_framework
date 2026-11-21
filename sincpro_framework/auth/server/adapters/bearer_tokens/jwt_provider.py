@@ -1,13 +1,13 @@
 """`JwtProvider`: a bearer JWT verified against the issuers this service trusts — Keycloak, Entra,
 Google, its own token issuer — and turned into an `Identity`.
 
-    keycloak = Issuer(
+    keycloak = TrustedIssuer(
         "https://auth.sincpro.com.bo/realms/sincpro",
         audience="billing-api",
         keys=Jwks("https://auth.sincpro.com.bo/realms/sincpro/protocol/openid-connect/certs"),
         mapping=ClaimMapping.keycloak(client="billing-api"),
     )
-    own = Issuer("billing", audience="billing", keys=SharedSecrets({"2026-09": secret}))
+    own = TrustedIssuer("billing", audience="billing", keys=SharedSecrets({"2026-09": secret}))
     jwt = JwtProvider([keycloak, own], resolvers=[GrantResolver(catalog, grants)],
                       revocations=KeyValueRevocations())
     JwtProvider.from_issuer(url, audience="billing-api", mapping=...)    by OIDC discovery
@@ -51,7 +51,7 @@ say which key verifies it, and are ignored."""
 
 
 @dataclass(frozen=True)
-class Issuer:
+class TrustedIssuer:
     """One issuer this service trusts: who it is, which audience its tokens must name, where its
     keys are, how its claims read, and how much clock skew is tolerated."""
 
@@ -81,16 +81,18 @@ class Issuer:
             else frozenset(self.audience)
         )
         if not audiences:
-            raise exceptions.ProgrammingError(f"Issuer {self.issuer!r} names no audience")
+            raise exceptions.ProgrammingError(
+                f"TrustedIssuer {self.issuer!r} names no audience"
+            )
         algorithms = self.algorithms if self.algorithms is not None else self.keys.algorithms
         if not algorithms or "none" in algorithms or not algorithms <= self.keys.algorithms:
             raise exceptions.ProgrammingError(
-                f"Issuer {self.issuer!r}: algorithms {sorted(algorithms)} are not all ones "
+                f"TrustedIssuer {self.issuer!r}: algorithms {sorted(algorithms)} are not all ones "
                 f"its keys verify ({sorted(self.keys.algorithms)})"
             )
         if self.keys.symmetric != (algorithms <= HMAC_ALGORITHMS):
             raise exceptions.ProgrammingError(
-                f"Issuer {self.issuer!r}: HMAC and public-key algorithms never share keys"
+                f"TrustedIssuer {self.issuer!r}: HMAC and public-key algorithms never share keys"
             )
         object.__setattr__(self, "audience", audiences)
         object.__setattr__(self, "algorithms", algorithms)
@@ -120,7 +122,7 @@ class JwtProvider(AuthProvider):
 
     def __init__(
         self,
-        issuers: Issuer | Sequence[Issuer],
+        issuers: TrustedIssuer | Sequence[TrustedIssuer],
         resolvers: Sequence[IdentityResolver] = (),
         revocations: Revocations | None = None,
         resource: ProtectedResource | None = None,
@@ -132,7 +134,7 @@ class JwtProvider(AuthProvider):
         """`issuers` trusted, by their `iss`; `resolvers` run on every identity; `revocations`
         asked about every token; `resource` named in a 401 (RFC 9728); `clock` in seconds.
         Two issuers of one name are a `ProgrammingError`."""
-        listed = [issuers] if isinstance(issuers, Issuer) else list(issuers)
+        listed = [issuers] if isinstance(issuers, TrustedIssuer) else list(issuers)
         self.issuers = {one.issuer: one for one in listed}
         if len(self.issuers) != len(listed):
             raise exceptions.ProgrammingError("JwtProvider names one issuer twice")
@@ -181,7 +183,7 @@ class JwtProvider(AuthProvider):
             if name in options
         }
         return cls(
-            Issuer(issuer, audience, keys, mapping or ClaimMapping(), **options),
+            TrustedIssuer(issuer, audience, keys, mapping or ClaimMapping(), **options),
             **provider_options,
         )
 
@@ -218,12 +220,12 @@ class JwtProvider(AuthProvider):
         """The challenge of a call that presented nothing: `Bearer realm=…`, with no error."""
         return self.challenge_for(None)
 
-    def _issuer_of(self, parsed: jws.Jws) -> Issuer | None:
+    def _issuer_of(self, parsed: jws.Jws) -> TrustedIssuer | None:
         """The issuer the unverified `iss` names, if this provider trusts it."""
         named = parsed.claims.get("iss")
         return self.issuers.get(named) if isinstance(named, str) else None
 
-    def _verified(self, parsed: jws.Jws, issuer: Issuer) -> None:
+    def _verified(self, parsed: jws.Jws, issuer: TrustedIssuer) -> None:
         """The token's header, signature and claims checked against `issuer`.
 
         1. A critical header it does not understand, or an algorithm the issuer does not use:

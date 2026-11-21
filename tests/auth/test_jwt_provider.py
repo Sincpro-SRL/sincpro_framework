@@ -31,10 +31,10 @@ from sincpro_framework.auth.grants import RolePermissions
 from sincpro_framework.auth.infrastructure import jws
 from sincpro_framework.auth.server import (
     ClaimMapping,
-    Issuer,
     JwtProvider,
     ProtectedResource,
     SharedSecrets,
+    TrustedIssuer,
 )
 from sincpro_framework.runtime.testing import AuthProviderContract
 
@@ -77,8 +77,8 @@ def claims(**changed: Any) -> dict[str, Any]:
     }
 
 
-def issuer(**options: Any) -> Issuer:
-    return Issuer(
+def issuer(**options: Any) -> TrustedIssuer:
+    return TrustedIssuer(
         KEYCLOAK,
         audience="billing-api",
         keys=SharedSecrets({"2026-09": SECRET}),
@@ -119,7 +119,7 @@ def test_a_keycloak_service_account_is_a_service() -> None:
 
 
 def test_entra_names_the_person_by_object_id_and_the_tenant_by_its_id() -> None:
-    entra = Issuer(
+    entra = TrustedIssuer(
         "https://login.microsoftonline.com/t-1/v2.0",
         audience="api://billing",
         keys=SharedSecrets({"k": SECRET}),
@@ -192,7 +192,9 @@ def test_what_is_not_its_kind_is_left_to_the_next_provider() -> None:
 
 
 def test_each_issuer_is_checked_against_its_own_keys() -> None:
-    own = Issuer("billing", audience="billing", keys=SharedSecrets({"own": OTHER_SECRET}))
+    own = TrustedIssuer(
+        "billing", audience="billing", keys=SharedSecrets({"own": OTHER_SECRET})
+    )
     provider = JwtProvider([issuer(), own])
     mine = mint(
         {"iss": "billing", "aud": "billing", "sub": "7", "exp": NOW + 60},
@@ -210,16 +212,16 @@ def test_each_issuer_is_checked_against_its_own_keys() -> None:
 
 def test_an_issuer_that_cannot_be_trusted_is_a_programming_error() -> None:
     with pytest.raises(exceptions.ProgrammingError, match="no audience"):
-        Issuer(KEYCLOAK, audience=[], keys=SharedSecrets({"k": SECRET}))
+        TrustedIssuer(KEYCLOAK, audience=[], keys=SharedSecrets({"k": SECRET}))
     with pytest.raises(exceptions.ProgrammingError):
-        Issuer(
+        TrustedIssuer(
             KEYCLOAK,
             audience="a",
             keys=SharedSecrets({"k": SECRET}),
             algorithms=frozenset({"RS256"}),
         )
     with pytest.raises(exceptions.ProgrammingError):
-        Issuer(
+        TrustedIssuer(
             KEYCLOAK,
             audience="a",
             keys=SharedSecrets({"k": SECRET}),
@@ -344,7 +346,7 @@ def test_a_project_app_answers_an_expired_token_401_saying_why() -> None:
 
 def test_a_token_naming_no_subject_is_refused_never_a_shared_one() -> None:
     entra = JwtProvider(
-        Issuer(
+        TrustedIssuer(
             KEYCLOAK,
             audience="billing-api",
             keys=SharedSecrets({"2026-09": SECRET}),
