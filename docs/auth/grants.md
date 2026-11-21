@@ -143,3 +143,46 @@ What a subject holds is cached per subject, tenant and permission version: every
 `revocations`, a change holds once `cache_for` (five minutes) passes. A resolver belongs to a
 provider — `JwtProvider(..., resolvers=[resolver])`, or `Resolving(provider, resolver)` for one of
 the project's — never to `AccessControl`: a service token or an API key arrives resolved.
+
+## Roles defined at runtime
+
+An administrator adds a role from a screen — a reviewer, an external auditor — without a deploy.
+It sits beside the roles of the code in a `LiveCatalog`, the catalog in effect, and a
+`RoleDefinitions` store keeps it: `KeyValueRoleDefinitions()` on the context's store (Redis), on
+`DatabaseKeyValue` for the project's own database, `InMemoryRoleDefinitions` in a test.
+
+```python
+from sincpro_framework.auth.grants import KeyValueRoleDefinitions, LiveCatalog, RoleDefinition
+from sincpro_framework.data_layer.store import InMemoryKeyValue
+
+live = LiveCatalog(catalog, KeyValueRoleDefinitions(InMemoryKeyValue()), permissions=BillingPermission)
+runtime_admin = GrantAdministration(live, grants, revocations)
+
+runtime_admin.define_role(RoleDefinition(
+    key="billing.reviewer", name="Reviewer", grants=frozenset({BillingPermission.READ}),
+))
+runtime_admin.assign("user:bea", "bo", "billing.reviewer")
+
+bea = GrantResolver(live, grants).resolve(Identity.user("user:bea", tenant="bo"))
+assert bea.permissions == {BillingPermission.READ}
+assert [one.key for one in live.defined()] == ["billing.reviewer"]
+
+try:
+    runtime_admin.define_role(RoleDefinition(key="billing.clerk", name="Clerk, renamed"))
+except InvalidGrant as refused:
+    assert "declared in code" in str(refused)
+```
+
+| Rule | Why |
+|---|---|
+| It only adds: a role the code declares is never redefined, and a defined role grants only permissions the code declares (`permissions=`, every value of the project's `Permission` classes) | a role of the code changes in code, reviewed with the use cases that require what it grants; a permission no code checks protects nothing |
+| It is checked by the catalog's own rules: what it implies and its privilege exist, no cycle, disjoint roles, a level implying the one below | the catalog in effect holds exactly as one declared in code would |
+| `define_role` replaces one defined before; `remove_role` refuses one another implies — its holders keep an assignment that grants nothing | a screen edits in place, and a removal never breaks another role silently |
+| Two administrators writing at once: one document, written over the version it was read at, read again and retried | neither change is lost |
+| Every replica reads the version at most once a `check_every` (a second) and builds again only when it moved | a role defined holds within a second everywhere, for one small read a second |
+| A stored role that no longer builds — the code dropped what it implies — grants nothing, and is logged; a store that does not answer leaves the last catalog in effect | a broken definition never grants more than before |
+
+`GrantResolver` and `GrantAdministration` take the `LiveCatalog` where they took the catalog.
+`live.current().describe()` is the whole catalog for the administration screen, and
+`live.defined()` the roles it may edit. With a publisher, every change is published:
+`RoleDefined`, `RoleChanged`, `RoleRemoved`.

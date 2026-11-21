@@ -75,3 +75,45 @@ class EntitlementWithdrawn(DeliverableEventMixin, AuthEvent):
         default_factory=lambda: {"default": "Entitlement withdrawn", "es": "Se deshabilitó"}
     )
     entitlement: str = ""
+
+
+ROLE = "auth.role"
+"""The `entity_type` of a fact about a role defined at runtime — `entity_id` its key."""
+
+
+@dataclass(kw_only=True)
+class RoleDefined(DeliverableEventMixin, AuthEvent):
+    """A role defined at runtime — new: what it grants and implies."""
+
+    name = "auth.role.v1.defined"
+    label: dict[str, str] = field(
+        default_factory=lambda: {"default": "Role defined", "es": "Se definió un rol"}
+    )
+    role_name: str = ""
+    grants: list[str] = field(default_factory=list)
+    implies: list[str] = field(default_factory=list)
+    privilege: str | None = None
+
+
+@dataclass(kw_only=True)
+class RoleChanged(DeliverableEventMixin, AuthEvent):
+    """A role defined at runtime changed — what it grants and implies now."""
+
+    name = "auth.role.v1.changed"
+    label: dict[str, str] = field(
+        default_factory=lambda: {"default": "Role changed", "es": "Se cambió un rol"}
+    )
+    role_name: str = ""
+    grants: list[str] = field(default_factory=list)
+    implies: list[str] = field(default_factory=list)
+    privilege: str | None = None
+
+
+@dataclass(kw_only=True)
+class RoleRemoved(DeliverableEventMixin, AuthEvent):
+    """A role defined at runtime removed — its holders' assignments grant nothing from now."""
+
+    name = "auth.role.v1.removed"
+    label: dict[str, str] = field(
+        default_factory=lambda: {"default": "Role removed", "es": "Se eliminó un rol"}
+    )

@@ -17,6 +17,13 @@ what a caller holds resolved on every call.
 `RolePermissions` is the short form: a table of roles to permissions, no catalog.
 """
 
+from sincpro_framework.auth.grants.adapters.definitions import (
+    InMemoryRoleDefinitions,
+    KeyValueRoleDefinitions,
+)
+from sincpro_framework.auth.grants.adapters.live_catalog import (
+    LiveCatalog,
+)
 from sincpro_framework.auth.grants.adapters.resolver import (
     GrantResolver,
     RoleMapping,
@@ -32,16 +39,25 @@ from sincpro_framework.auth.grants.domain.assignments import (
 )
 from sincpro_framework.auth.grants.domain.catalog import (
     CatalogDescription,
+    CatalogSource,
     Category,
     Entitlement,
     GrantCatalog,
     Privilege,
     Role,
 )
+from sincpro_framework.auth.grants.domain.definitions import (
+    DefinedRoles,
+    RoleDefinition,
+    RoleDefinitions,
+)
 from sincpro_framework.auth.grants.domain.events import (
     EntitlementWithdrawn,
     LevelChanged,
     RoleAssigned,
+    RoleChanged,
+    RoleDefined,
+    RoleRemoved,
     RoleUnassigned,
     TenantEntitled,
 )
@@ -50,7 +66,9 @@ from sincpro_framework.auth.grants.services.administration import GrantAdministr
 __all__ = [
     "Assignment",
     "CatalogDescription",
+    "CatalogSource",
     "Category",
+    "DefinedRoles",
     "Entitlement",
     "EntitlementWithdrawn",
     "GrantAdministration",
@@ -60,13 +78,21 @@ __all__ = [
     "GrantStore",
     "Held",
     "InMemoryGrants",
+    "InMemoryRoleDefinitions",
     "KeyValueGrants",
+    "KeyValueRoleDefinitions",
     "LevelChanged",
+    "LiveCatalog",
     "Privilege",
     "Role",
     "RoleAssigned",
+    "RoleChanged",
+    "RoleDefined",
+    "RoleDefinition",
+    "RoleDefinitions",
     "RoleMapping",
     "RolePermissions",
+    "RoleRemoved",
     "RoleUnassigned",
     "ScopeCeiling",
     "TenantEntitled",

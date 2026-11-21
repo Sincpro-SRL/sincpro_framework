@@ -12,6 +12,9 @@ tenant's for an entitlement — so the next call on any replica resolves anew. A
 does not declare, two roles never held together, two levels of one privilege: `InvalidGrant`
 (400), nothing written. Every change written is published — `RoleAssigned`, `RoleUnassigned`,
 `LevelChanged`, `TenantEntitled`, `EntitlementWithdrawn` — when a publisher was given.
+
+Over a `LiveCatalog`, roles are also defined and removed at runtime (`define_role`,
+`remove_role`), published as `RoleDefined`, `RoleChanged`, `RoleRemoved`.
 """
 
 from datetime import datetime
@@ -19,12 +22,18 @@ from datetime import datetime
 from sincpro_framework.auth.domain import exceptions
 from sincpro_framework.auth.domain.events import SUBJECT, TENANT, EventPublisher
 from sincpro_framework.auth.domain.revocations import Revocations, tenant_subject
+from sincpro_framework.auth.grants.adapters.live_catalog import LiveCatalog
 from sincpro_framework.auth.grants.domain.assignments import Assignment, GrantStore
-from sincpro_framework.auth.grants.domain.catalog import GrantCatalog
+from sincpro_framework.auth.grants.domain.catalog import CatalogSource, GrantCatalog
+from sincpro_framework.auth.grants.domain.definitions import RoleDefinition
 from sincpro_framework.auth.grants.domain.events import (
+    ROLE,
     EntitlementWithdrawn,
     LevelChanged,
     RoleAssigned,
+    RoleChanged,
+    RoleDefined,
+    RoleRemoved,
     RoleUnassigned,
     TenantEntitled,
 )
@@ -36,7 +45,7 @@ class GrantAdministration:
 
     def __init__(
         self,
-        catalog: GrantCatalog,
+        catalog: CatalogSource,
         store: GrantStore,
         revocations: Revocations | None = None,
         publisher: EventPublisher | None = None,
@@ -55,9 +64,9 @@ class GrantAdministration:
             if one.holds_at(now)
         }
 
-    def _allowed(self, roles: set[str]) -> None:
+    def _allowed(self, catalog: GrantCatalog, roles: set[str]) -> None:
         """`InvalidGrant` saying why `roles` cannot be held together."""
-        conflicts = self.catalog.conflicts(roles)
+        conflicts = catalog.conflicts(roles)
         if conflicts:
             raise exceptions.InvalidGrant("; ".join(conflicts))
 
@@ -75,8 +84,9 @@ class GrantAdministration:
         2. Held with what the subject has now, it conflicts: `InvalidGrant`.
         Final: assigned, the subject's version bumped.
         """
-        self.catalog.role(role)
-        self._allowed(self._in_force(subject, tenant) | {role})
+        catalog = self.catalog.current()
+        catalog.role(role)
+        self._allowed(catalog, self._in_force(subject, tenant) | {role})
         self.store.assign(
             Assignment(subject=subject, tenant=tenant, role=role, valid_until=valid_until)
         )
@@ -110,12 +120,13 @@ class GrantAdministration:
         2. Every other level of it taken back; then `role` given, checked as `assign` checks.
         Final: the subject's version bumped once.
         """
-        levels = [one.key for one in self.catalog.levels.get(privilege, [])]
+        catalog = self.catalog.current()
+        levels = [one.key for one in catalog.levels.get(privilege, [])]
         if role is not None and role not in levels:
             raise exceptions.InvalidGrant(f"{role} is not a level of {privilege}")
         kept = self._in_force(subject, tenant) - set(levels)
         if role is not None:
-            self._allowed(kept | {role})
+            self._allowed(catalog, kept | {role})
         for level in levels:
             if level != role:
                 self.store.unassign(subject, tenant, level)
@@ -135,7 +146,7 @@ class GrantAdministration:
 
     def entitle(self, tenant: str, entitlement: str) -> None:
         """The tenant has `entitlement`; its version bumped."""
-        if entitlement not in self.catalog.entitlements:
+        if entitlement not in self.catalog.current().entitlements:
             raise exceptions.InvalidGrant(f"{entitlement} is not an entitlement")
         self.store.entitle(tenant, entitlement)
         if self.revocations is not None:
@@ -156,3 +167,35 @@ class GrantAdministration:
                 entity_type=TENANT, entity_id=tenant, entitlement=entitlement
             ),
         )
+
+    def _live(self) -> LiveCatalog:
+        """The `LiveCatalog` given — `ProgrammingError` over a catalog of code alone."""
+        if not isinstance(self.catalog, LiveCatalog):
+            raise exceptions.ProgrammingError(
+                "roles are defined at runtime on a LiveCatalog: "
+                "GrantAdministration(LiveCatalog(catalog, definitions), store, ...)"
+            )
+        return self.catalog
+
+    def define_role(self, definition: RoleDefinition) -> None:
+        """Define a role at runtime, new or changed — checked as `LiveCatalog.define` checks,
+        and published."""
+        new = self._live().define(definition)
+        said = RoleDefined if new else RoleChanged
+        announce(
+            self.publisher,
+            said(
+                entity_type=ROLE,
+                entity_id=definition.key,
+                role_name=definition.name,
+                grants=sorted(definition.grants),
+                implies=sorted(definition.implies),
+                privilege=definition.privilege,
+            ),
+        )
+
+    def remove_role(self, key: str) -> None:
+        """Remove a role defined at runtime — checked as `LiveCatalog.remove` checks, and
+        published."""
+        self._live().remove(key)
+        announce(self.publisher, RoleRemoved(entity_type=ROLE, entity_id=key))

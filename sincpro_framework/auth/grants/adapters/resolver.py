@@ -25,7 +25,7 @@ from fnmatch import fnmatchcase
 from sincpro_framework.auth.domain.identity import Identity
 from sincpro_framework.auth.domain.revocations import Revocations, tenant_subject
 from sincpro_framework.auth.grants.domain.assignments import GrantSource, Held
-from sincpro_framework.auth.grants.domain.catalog import GrantCatalog
+from sincpro_framework.auth.grants.domain.catalog import CatalogSource
 from sincpro_framework.data_layer.caching import Cache, CachePolicy, JsonCodec, TimeToLive
 
 
@@ -88,11 +88,12 @@ class ScopeCeiling:
 
 
 class GrantResolver:
-    """An `IdentityResolver` over a `GrantCatalog` and, given one, a `GrantSource`."""
+    """An `IdentityResolver` over a catalog — a `GrantCatalog`, or a `LiveCatalog` with the
+    roles defined at runtime — and, given one, a `GrantSource`."""
 
     def __init__(
         self,
-        catalog: GrantCatalog,
+        catalog: CatalogSource,
         source: GrantSource | None = None,
         role_mapping: RoleMapping | None = None,
         scope_ceiling: ScopeCeiling | None = None,
@@ -153,15 +154,16 @@ class GrantResolver:
             self.role_mapping.mapped(identity.roles) if self.role_mapping else identity.roles
         )
         held = self.held(identity)
-        roles = self.catalog.closure(from_token | held.roles)
-        granted = identity.permissions | self.catalog.permissions_of(roles)
+        catalog = self.catalog.current()
+        roles = catalog.closure(from_token | held.roles)
+        granted = identity.permissions | catalog.permissions_of(roles)
         permissions = granted
         if self.entitlements and held.entitlements is not None:
-            permissions = self.catalog.gated(permissions, held.entitlements)
+            permissions = catalog.gated(permissions, held.entitlements)
         if self.scope_ceiling is not None:
             permissions = self.scope_ceiling.narrowed(permissions, identity)
         if permissions != granted:
             roles = frozenset(
-                one for one in roles if self.catalog.permissions_of({one}) <= permissions
+                one for one in roles if catalog.permissions_of({one}) <= permissions
             )
         return identity.model_copy(update={"roles": roles, "permissions": permissions})
