@@ -210,6 +210,17 @@ A pair verified is remembered in this process for a minute — by an HMAC under 
 the pair — so a client sending it on every request does not pay a hash each time. Any
 `CredentialVerifier` of the project's — its own accounts table — stands in for `HashedCredentials`.
 
+## What it publishes
+
+Given `publisher=`, each piece publishes what an audit and an incident response need — never a
+token, a link or a password ([the audit trail](README.md#an-audit-trail-what-auth-publishes)):
+
+| Piece | Events |
+|---|---|
+| `TokenIssuer` | `SignedIn` (session, client, methods, scopes), `SignedOut`, `SignedOutEverywhere`, `RefreshTokenReused` — a refresh token replayed past its grace: stolen or leaked, its session revoked |
+| `LoginAttempts` | `AccountLocked` — the username counted, for how long |
+| `OneTimeTokens` | `OneTimeTokenIssued`, `OneTimeTokenRedeemed` — the subject and the purpose |
+
 ## On the project's database
 
 A service with no Redis keeps what auth stores in tables of its own database — declared in its

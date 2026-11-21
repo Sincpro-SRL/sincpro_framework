@@ -39,9 +39,19 @@ from sincpro_framework.auth.accounts.adapters.passwords.http_basic import (
 from sincpro_framework.auth.accounts.adapters.passwords.login_attempts import LoginAttempts
 from sincpro_framework.auth.accounts.adapters.totp import Totp
 from sincpro_framework.auth.accounts.domain.credential_verifier import CredentialVerifier
+from sincpro_framework.auth.accounts.domain.events import (
+    AccountLocked,
+    OneTimeTokenIssued,
+    OneTimeTokenRedeemed,
+    RefreshTokenReused,
+    SignedIn,
+    SignedOut,
+    SignedOutEverywhere,
+)
 from sincpro_framework.auth.accounts.domain.refresh_tokens import RefreshRecord, RefreshTokens
 
 __all__ = [
+    "AccountLocked",
     "BasicProvider",
     "CredentialVerifier",
     "HashedCredentials",
@@ -50,11 +60,17 @@ __all__ = [
     "KeyValueRefreshTokens",
     "LoginAttempts",
     "OneTimeGrant",
+    "OneTimeTokenIssued",
+    "OneTimeTokenRedeemed",
     "OneTimeTokens",
     "PasswordHasher",
     "RefreshRecord",
+    "RefreshTokenReused",
     "RefreshTokens",
     "ScryptCost",
+    "SignedIn",
+    "SignedOut",
+    "SignedOutEverywhere",
     "SigningKeys",
     "TokenIssuer",
     "Totp",

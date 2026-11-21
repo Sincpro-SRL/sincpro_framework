@@ -527,6 +527,65 @@ assert described.use_cases[f"{__name__}.CommandPrice"] == "open"
 assert auth.verify() == []
 ```
 
+## An audit trail: what auth publishes
+
+Every change auth makes and every security incident it sees is a `DomainEvent` with a versioned
+name, handed to the publisher a piece was given — the framework's `Publisher`, so the project
+chooses the queue. Its own audit context can keep the events in its event table, or a broker can
+carry them to the platform's audit service. Nothing is published without a publisher.
+
+```python
+from sincpro_framework.auth import AccessRefused, AuthEvent
+from sincpro_framework.event_driven import Publisher, Subscriber, SyncQueue
+
+audit_trail: list[AuthEvent] = []
+audit = UseFramework("audit", log_after_execution=False)
+
+
+@audit.feature([AccessRefused])
+class KeepInTrail(Feature):
+    def execute(self, dto: AccessRefused) -> None:
+        audit_trail.append(dto)  # a project's audit context saves it in its event table
+
+
+audited = UseFramework("billing-audited", log_after_execution=False)
+audited_auth = AccessControl[BillingPermission](publisher=Publisher(SyncQueue(Subscriber(audit))))
+audited.feature(CommandIssueInvoice)(
+    audited_auth.requires(BillingPermission.ISSUE_INVOICE)(IssueInvoice)
+)
+audited_auth.on(audited)
+
+with security.as_identity(Identity.user("user:ana", tenant="bo")):
+    try:
+        audited(CommandIssueInvoice(total=1))
+    except exceptions.PermissionDenied:
+        pass
+
+(refused,) = audit_trail
+assert (refused.use_case, refused.actor, refused.requirement) == (
+    "CommandIssueInvoice", "user:ana", "billing.invoice.issue"
+)
+```
+
+| Door | Given `publisher=` | Publishes |
+|---|---|---|
+| `auth` | `AccessControl` | `AccessRefused` — a call refused before its use case or hook ran (not a `SKIP`) |
+| `auth.grants` | `GrantAdministration` | `RoleAssigned`, `RoleUnassigned`, `LevelChanged`, `TenantEntitled`, `EntitlementWithdrawn` |
+| `auth.accounts` | `TokenIssuer` | `SignedIn`, `SignedOut`, `SignedOutEverywhere`, `RefreshTokenReused` — a replay: the session was revoked |
+| `auth.accounts` | `LoginAttempts`, `OneTimeTokens` | `AccountLocked`; `OneTimeTokenIssued`, `OneTimeTokenRedeemed` |
+
+- **Who it is about and who did it.** `entity_type` is `auth.subject` or `auth.tenant` and
+  `entity_id` names it. `actor` is the identity in play, as a provider verified it — never the
+  context's `user_id`, which a caller's own headers may carry. Nobody known is `None`; the
+  system is `system`.
+- **The flow.** Published inside a call, an event is caused by it: `correlation_id` and
+  `causation_id` follow it through every service.
+- **Never a secret.** No token, no one-time link, no password is in an event: a session is named
+  by its id and a link by its purpose.
+- **A contract.** Every event is a `DeliverableEventMixin` named `auth.<what>.v1.<fact>`, so
+  another service may depend on it. `AuthEvent` is their base: what a project maps to its event
+  table, or subscribes to whole.
+
 ## Entrypoints authenticate by themselves
 
 A guarded bus needs nothing more on its entrypoints: each builds `Credentials` from what arrived,

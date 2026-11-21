@@ -30,6 +30,7 @@ from typing import TYPE_CHECKING, Any, ClassVar
 from weakref import WeakKeyDictionary, WeakSet
 
 from sincpro_framework.auth.domain import exceptions
+from sincpro_framework.auth.domain.events import SUBJECT, AccessRefused, EventPublisher
 from sincpro_framework.auth.domain.identity import Credentials, Identity, IdentityKind
 from sincpro_framework.auth.domain.permissions import (
     OPEN,
@@ -45,6 +46,7 @@ from sincpro_framework.auth.domain.permissions import (
     WhenDenied,
 )
 from sincpro_framework.auth.domain.provider import AuthProvider
+from sincpro_framework.auth.infrastructure.announcing import announce
 from sincpro_framework.auth.infrastructure.security_context import current_identity
 from sincpro_framework.auth.services.guard import (
     GUARD_SEQUENCE,
@@ -103,11 +105,12 @@ class AccessControl[P: Permission]:
         *,
         enabled: bool = True,
         clock: Callable[[], float] = time.time,
+        publisher: EventPublisher | None = None,
     ) -> None:
         """`providers` are tried in order to authenticate a call; `enabled=False` checks
         nothing — a local environment, a test that is not about access. `enabled` and `clock`
         are named, never positional: a positional `False` once meant `strict`, and must not turn
-        every check off.
+        every check off. `publisher` is told every refused call (`AccessRefused`).
 
             AccessControl(providers=jwt).providers            ->  (jwt,)
             AccessControl(providers=[jwt, api_keys]).providers  ->  (jwt, api_keys)
@@ -120,6 +123,7 @@ class AccessControl[P: Permission]:
         )
         self.enabled = enabled
         self.clock = clock
+        self.publisher = publisher
         self.declarations = Declarations()
         self.checks: list[Rule] = []
         """What `every_call` registered — asked on every call of every bus guarded."""
@@ -631,6 +635,22 @@ class AccessControl[P: Permission]:
                 return refused
         return None
 
+    def refused(self, identity: Identity, what: str, refusal: exceptions.AuthError) -> None:
+        """Tell the publisher a call was refused — what the guard does before it raises."""
+        said = refusal.refusal_body()
+        announce(
+            self.publisher,
+            AccessRefused(
+                entity_type=SUBJECT,
+                entity_id=identity.subject,
+                use_case=what,
+                kind=str(said.get("kind", "")),
+                reason=str(said.get("reason", "")),
+                requirement=str(said.get("requirement", "")),
+                tenant=identity.tenant,
+            ),
+        )
+
     def permitted(self, permission: P, resources: Sequence[Any]) -> list[bool]:
         """`allows` for many resources — in one call to the provider when it answers batches.
         A provider that refuses the whole batch with `PermissionDenied` refuses each.
@@ -754,8 +774,8 @@ class AccessControl[P: Permission]:
         return self.refusal_of(bus, command, identity, dto) is None
 
     def using(self, providers: AuthProvider | Sequence[AuthProvider]) -> "AccessControl[P]":
-        """This object with other providers — the same declarations and `enabled`, a copy of
-        the `every_call` checks (one added to either is the other's no more):
+        """This object with other providers — the same declarations, `enabled` and publisher, a
+        copy of the `every_call` checks (one added to either is the other's no more):
         what a test puts on a `fresh()` bus, so the rules of production are checked against
         providers of its own.
 
@@ -763,7 +783,7 @@ class AccessControl[P: Permission]:
             auth.using(providers=[StaticProvider(...)]).on(test, replaces=auth)
         """
         other: AccessControl[P] = AccessControl(
-            providers, enabled=self.enabled, clock=self.clock
+            providers, enabled=self.enabled, clock=self.clock, publisher=self.publisher
         )
         other.declarations = self.declarations
         other.checks = list(self.checks)

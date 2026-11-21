@@ -38,6 +38,13 @@ from sincpro_framework.auth.grants.domain.catalog import (
     Privilege,
     Role,
 )
+from sincpro_framework.auth.grants.domain.events import (
+    EntitlementWithdrawn,
+    LevelChanged,
+    RoleAssigned,
+    RoleUnassigned,
+    TenantEntitled,
+)
 from sincpro_framework.auth.grants.services.administration import GrantAdministration
 
 __all__ = [
@@ -45,6 +52,7 @@ __all__ = [
     "CatalogDescription",
     "Category",
     "Entitlement",
+    "EntitlementWithdrawn",
     "GrantAdministration",
     "GrantCatalog",
     "GrantResolver",
@@ -53,9 +61,13 @@ __all__ = [
     "Held",
     "InMemoryGrants",
     "KeyValueGrants",
+    "LevelChanged",
     "Privilege",
     "Role",
+    "RoleAssigned",
     "RoleMapping",
     "RolePermissions",
+    "RoleUnassigned",
     "ScopeCeiling",
+    "TenantEntitled",
 ]

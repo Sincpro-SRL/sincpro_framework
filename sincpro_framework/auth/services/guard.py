@@ -136,20 +136,26 @@ class Access(Protocol):
         """Why one of the `every_call` checks refuses this call — `None` when none does."""
         ...
 
+    def refused(self, identity: Identity, what: str, refusal: exceptions.AuthError) -> None:
+        """Tell whoever listens that a call was refused — before the guard raises."""
+        ...
+
 
 def _refused_or_skipped(
+    access: Access,
     refusal: exceptions.AuthError,
     declaration: AccessDeclaration,
     identity: Identity,
     what: str,
 ) -> None:
-    """Act on a refusal as the declaration says: log and return for `WhenDenied.SKIP`, log
-    and raise it for `WhenDenied.RAISE` — the caller then answers `None` or leaves the hook's
-    moment out."""
+    """Act on a refusal as the declaration says: log and return for `WhenDenied.SKIP`; log,
+    tell `access`'s publisher and raise it for `WhenDenied.RAISE` — the caller then answers
+    `None` or leaves the hook's moment out."""
     if declaration.when_denied == WhenDenied.SKIP:
         logger.info(f"access: {what} skipped — {refusal}")
         return
     logger.warning(f"access refused: {identity.subject} → {what} — {refusal}")
+    access.refused(identity, what, refusal)
     raise refusal
 
 
@@ -246,7 +252,9 @@ class BusGuard:
                 identity, declaration, command.__name__, None, bus_context, dto
             )
             if refused is not None:
-                _refused_or_skipped(refused, declaration, identity, command.__name__)
+                _refused_or_skipped(
+                    self.access, refused, declaration, identity, command.__name__
+                )
                 return None
         intercepted = self.access.every_call_refusal(
             identity, command.__name__, dto, bus_context
@@ -255,6 +263,7 @@ class BusGuard:
             logger.warning(
                 f"access refused: {identity.subject} → {command.__name__} — {intercepted}"
             )
+            self.access.refused(identity, command.__name__, intercepted)
             raise intercepted
         return self._run_in_play(call_next, dto)
 
@@ -297,5 +306,5 @@ class HookGuard:
         )
         if refusal is None:
             return True
-        _refused_or_skipped(refusal, declaration, identity, what)
+        _refused_or_skipped(self.access, refusal, declaration, identity, what)
         return False
