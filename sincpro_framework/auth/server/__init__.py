@@ -36,7 +36,7 @@ from sincpro_framework.auth.server.adapters.api_keys import (
     ApiKeyProvider,
     ApiKeyStore,
     InMemoryApiKeys,
-    digest_of,
+    api_key_digest,
 )
 from sincpro_framework.auth.server.adapters.bearer_tokens.claim_mapping import (
     ClaimMapping,
@@ -90,7 +90,7 @@ __all__ = [
     "SharedSecrets",
     "SignatureProvider",
     "StaticProvider",
-    "digest_of",
+    "api_key_digest",
 ]
 
 _LAZY = {

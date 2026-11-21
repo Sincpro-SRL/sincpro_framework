@@ -27,13 +27,13 @@ from sincpro_framework.auth.infrastructure.digests import digest
 from sincpro_framework.sincpro_abstractions import DataTransferObject
 
 
-def digest_of(key: str) -> str:
+def api_key_digest(key: str) -> str:
     """The SHA-256 of `key`, in hex — what a store saves and looks a key up by.
 
     Context: an API key is a long random secret, so a plain hash is enough — no salt, no
     stretching — and it lets the store find the key in one lookup instead of comparing each.
 
-        digest_of("sk_3f9…")   ->  "a1b2…" (64 hex characters)
+        api_key_digest("sk_3f9…")   ->  "a1b2…" (64 hex characters)
     """
     return digest(key)
 
@@ -74,7 +74,7 @@ class ApiKeyStore(ABC):
     def issue(self, key: ApiKey) -> str:
         """A new secret for `key`, stored by its digest — the only time the secret is seen."""
         secret = f"sk_{secrets.token_urlsafe(32)}"
-        self.save(key.model_copy(update={"digest": digest_of(secret)}))
+        self.save(key.model_copy(update={"digest": api_key_digest(secret)}))
         return secret
 
     def revoke(self, secret_or_digest: str) -> None:
@@ -92,7 +92,9 @@ class ApiKeyStore(ABC):
         Final: the key is saved again with `revoked=True`.
         """
         digest = (
-            secret_or_digest if len(secret_or_digest) == 64 else digest_of(secret_or_digest)
+            secret_or_digest
+            if len(secret_or_digest) == 64
+            else api_key_digest(secret_or_digest)
         )
         found = self.find(digest)
         if found is not None:
@@ -184,7 +186,7 @@ class ApiKeyProvider(AuthProvider):
         key = self._key_in(credentials)
         if key is None:
             return None
-        stored = self.store.find(digest_of(key))
+        stored = self.store.find(api_key_digest(key))
         if stored is None:
             raise exceptions.Unauthenticated("unknown api key")
         if stored.revoked:
