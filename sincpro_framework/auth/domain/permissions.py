@@ -71,11 +71,18 @@ class ByField:
         return next((needed for one, needed in self.permissions if one == value), None)
 
     def every(self) -> AnyOf:
-        """One among every requirement it may name — what is asked with no Command at hand."""
+        """One among every requirement it may name — what is asked with no Command at hand.
+        Two rules are the same only when they are the same object: rules compare by name, and
+        two of one name may check different things."""
         found: list[Requirement] = []
         for _, needed in self.permissions:
             for one in needed.members if isinstance(needed, AnyOf) else (needed,):
-                if one not in found:
+                seen = (
+                    any(one is held for held in found)
+                    if isinstance(one, Rule)
+                    else one in found
+                )
+                if not seen:
                     found.append(one)
         return AnyOf(tuple(found))
 
@@ -134,7 +141,11 @@ class AccessCall:
     use_case: str = ""
     """The DTO's name of the use case run — empty when a handler asks `allows` by hand."""
     dto: Any = None
+    """The Command being run — `None` when nothing is run: `may_run` for a catalog, `allows`,
+    a hook."""
     resource: Any = None
+    """What a handler named in `allows(requirement, resource)` / `check(...)` — `None` when the
+    guard asks before a use case runs: there, what is acted on is the Command, `dto`."""
     context: Mapping[str, Any] = field(default_factory=dict)
 
 
@@ -150,8 +161,9 @@ class RoleRequirement:
     roles: tuple[str, ...]
 
     def __str__(self) -> str:
-        """`role billing.manager or billing.admin`."""
-        return "role " + " or ".join(self.roles)
+        """`role billing.manager or role billing.admin` — each named a role, so beside
+        permissions in an `any_of` none reads as one."""
+        return " or ".join(f"role {one}" for one in self.roles)
 
 
 @dataclass(frozen=True)

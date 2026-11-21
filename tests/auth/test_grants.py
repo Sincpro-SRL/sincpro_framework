@@ -169,6 +169,8 @@ def test_scopes_cap_a_third_party_client_never_the_services_own() -> None:
     own = resolver.resolve(held.model_copy(update={"client": "billing-web"}))
     assert third.permissions == {P.READ}
     assert own.permissions == {P.READ, P.ISSUE, P.APPROVE}
+    assert third.roles == {"billing.clerk"}  # a role is held only while all it grants is
+    assert own.roles == {"billing.approver", "billing.manager", "billing.clerk"}
 
 
 def test_a_tenant_without_the_entitlement_is_never_granted_what_it_gates() -> None:
@@ -178,7 +180,9 @@ def test_a_tenant_without_the_entitlement_is_never_granted_what_it_gates() -> No
     grants.entitle("bo", "e-invoicing")
     resolver = GrantResolver(catalog, grants, entitlements=True)
     assert P.ISSUE in resolver.resolve(Identity.user("user:ana", tenant="bo")).permissions
-    assert resolver.resolve(Identity.user("user:ana", tenant="pe")).permissions == {P.READ}
+    not_entitled = resolver.resolve(Identity.user("user:ana", tenant="pe"))
+    assert not_entitled.permissions == {P.READ}
+    assert not_entitled.roles == {"billing.clerk"}
 
 
 def test_administration_refuses_what_the_catalog_does_not_allow() -> None:

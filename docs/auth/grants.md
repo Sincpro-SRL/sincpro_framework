@@ -107,7 +107,9 @@ assert grants.held("user:ana", "bo").roles == {"billing.manager", "billing.appro
 
 `GrantResolver` runs where a provider authenticates: the token's roles mapped to the catalog's,
 the roles assigned, their closure, what it grants — gated by the tenant's entitlements and capped
-by the token's scopes.
+by the token's scopes. A role is held only while everything it grants is: once the entitlements
+or the scopes take a permission away, the roles that grant it go too, so `auth.role(...)` never
+admits what the permissions refuse.
 
 ```python
 from sincpro_framework.auth import GrantResolver, Identity, RoleMapping, ScopeCeiling
@@ -128,6 +130,7 @@ assert ana.permissions == {BillingPermission.READ, BillingPermission.ISSUE, Bill
 reports_app = resolver.resolve(Identity.user("user:ana", tenant="bo", scopes={"billing:read"})
                                .model_copy(update={"client": "reports-app"}))
 assert reports_app.permissions == {BillingPermission.READ}           # what its scope allows
+assert reports_app.roles == {"billing.clerk"}       # auth.role("billing.manager") refuses it too
 
 admin.set_level("user:ana", "bo", "invoicing", "billing.clerk")      # taken down a level…
 admin.unassign("user:ana", "bo", "billing.approver")

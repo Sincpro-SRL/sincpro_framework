@@ -287,11 +287,11 @@ assert ledger_auth.describe().every_call == ["tenant_active"]
 
 | | |
 |---|---|
-| `auth.role(*roles)` | met by one of them — the identity's roles, their closure once a `GrantResolver` resolved them |
-| `auth.any_of(...)` | one among any requirements — `auth.any_of(auth.rule("its owner", is_owner), auth.role("admin"))` |
+| `auth.role(*roles)` | met by one of them — the identity's roles, their closure once a `GrantResolver` resolved them; a role whose grants the token's scopes or the tenant's entitlements cut is not held ([grants](grants.md#resolved-per-call)) |
+| `auth.any_of(...)` | one among any requirements, asked in order: the first that holds grants it, none after it is asked — `auth.any_of(auth.role("admin"), auth.rule("its owner", is_owner))` |
 | `auth.rule(name, check)` | `check(AccessCall) -> bool`; refused, `PermissionDenied` names the rule; the check may raise an `AuthError` of its own — a step-up, `Unauthenticated`. Asked with no Command — `may_run` for a catalog, `allows`, a hook — a check that fails reading one is refused: write `call.dto is None or …` for a rule a catalog may list. `open` is not a rule's name |
 | `any_of` with a step-up | when no member holds and one is a step-up (`Unauthenticated`), that one answers: authenticating again may meet it |
-| `@auth.every_call` / `auth.every_call(check, name=…)` | asked on every use case, open or declared — a suspended tenant, maintenance, an IP allow-list read from the context; the system passes; `describe()` lists them |
+| `@auth.every_call` / `auth.every_call(check, name=…)` | asked on every use case, open or declared — a suspended tenant, maintenance, an IP allow-list read from the context; the system passes; `describe()` lists them. Asked by `may_run` with no Command, as a rule is: a check that fails reading one hides every use case from a catalog — read the context, or write `call.dto is None or …` |
 | `self.auth.allows(r)` / `check(r)` / `has_role(...)` / `identity` | the same requirements, asked by a handler before an optional step |
 
 ## Asking without running

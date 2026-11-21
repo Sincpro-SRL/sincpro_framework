@@ -116,20 +116,27 @@ def operation_security(bus: Any, dto: type) -> dict[str, Any]:
              "x-sincpro-when-denied": "raise"}
         operation_security(billing, QueryHealth)            # nothing declared
         ->  {"security": [], "x-sincpro-access": "open"}
+        operation_security(billing, QueryHealth)            # … and an `every_call` check
+        ->  {"security": [{}, {"static": []}], "x-sincpro-access": "open"}
         operation_security(<a bus with no AccessControl>, CommandIssueInvoice)
         ->  {"security": [], "x-sincpro-access": "open"}
 
-    1. A bus with no `AccessControl`, or nothing declared for the DTO: open — an empty
-       `security` says no credential is asked, and `x-sincpro-access` says so plainly.
-    2. Otherwise one requirement per provider that has a security scheme.
+    1. A bus with no `AccessControl`: open — an empty `security` says no credential is asked,
+       and `x-sincpro-access` says so plainly.
+    2. Nothing declared for the DTO: open too; when an `every_call` check may still refuse,
+       a credential is optional — `{}` beside each scheme — not unasked.
+    3. Otherwise one requirement per provider that has a security scheme.
     Final: a `requires` declaration also says its requirements and what happens when they
     are denied.
     """
     access = AccessControl.of(bus)
-    declaration = None if access is None else access.requirements_of(dto)
-    if access is None or declaration is None:
+    if access is None:
         return {"security": [], "x-sincpro-access": OPEN}
+    declaration = access.requirements_of(dto)
     schemes = [one.name for one in access.providers if one.security_scheme() is not None]
+    if declaration is None:
+        optional = [{}, *({name: []} for name in schemes)] if access.checks else []
+        return {"security": optional, "x-sincpro-access": OPEN}
     described: dict[str, Any] = {"security": [{name: []} for name in schemes]}
     if declaration.kind == "requires":
         described["x-sincpro-requires"] = [str(one) for one in declaration.requirements]

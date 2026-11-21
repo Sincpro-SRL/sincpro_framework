@@ -100,11 +100,14 @@ class AccessControl[P: Permission]:
     def __init__(
         self,
         providers: AuthProvider | Sequence[AuthProvider] = (),
+        *,
         enabled: bool = True,
         clock: Callable[[], float] = time.time,
     ) -> None:
         """`providers` are tried in order to authenticate a call; `enabled=False` checks
-        nothing — a local environment, a test that is not about access.
+        nothing — a local environment, a test that is not about access. `enabled` and `clock`
+        are named, never positional: a positional `False` once meant `strict`, and must not turn
+        every check off.
 
             AccessControl(providers=jwt).providers            ->  (jwt,)
             AccessControl(providers=[jwt, api_keys]).providers  ->  (jwt, api_keys)
@@ -193,6 +196,12 @@ class AccessControl[P: Permission]:
         """
         if not requirements:
             raise exceptions.ProgrammingError("requires() names at least one requirement")
+        said = " and ".join(str(one) for one in requirements)
+        if said in (OPEN, "authenticated"):
+            raise exceptions.ProgrammingError(
+                f"requires({said!r}) reads as what a use case that declares {said!r} is "
+                "described: name the permission or the rule otherwise"
+            )
 
         def declared[T: type](cls: T) -> T:
             return self.declarations.add(
@@ -478,11 +487,13 @@ class AccessControl[P: Permission]:
             AnyOf((READ, ADMIN)), identity holds none  ->  PermissionDenied("user:1",
                 "billing.read or billing.admin", "lacks billing.read and lacks billing.admin")
 
-        Context: every member of an `AnyOf` is asked, even after one is granted — the provider
-        may be remote, but the answer, and the reasons joined, stay complete and in order; when
-        every member is a permission, a provider that words the whole refusal (`refusing_any`)
-        is told it instead. A member refused with `Unauthenticated` — a step-up — answers for
-        the whole: authenticating again may meet it, a 403 would not say so.
+        Context: the members of an `AnyOf` are asked in order, and the first that holds grants
+        it — none after it is asked, so a remote provider is asked no more than needed and a
+        rule placed after a role is never judged for whom the role admits. Refused, the reasons
+        of every member are joined in order; when every member is a permission, a provider that
+        words the whole refusal (`refusing_any`) is told it instead. A member refused with
+        `Unauthenticated` — a step-up — answers for the whole: authenticating again may meet
+        it, a 403 would not say so.
         """
         if isinstance(requirement, AssuranceRequirement):
             return self._assured(identity, requirement)
@@ -509,13 +520,12 @@ class AccessControl[P: Permission]:
             return self._denial(identity, chosen, resource, context, dto, what)
         if not isinstance(requirement, AnyOf):
             return self._has(identity, requirement.value, resource, context)
-        denials = [
-            self._denial(identity, one, resource, context, dto, what)
-            for one in requirement.members
-        ]
-        if any(one is None for one in denials):
-            return None
-        refused = [one for one in denials if one is not None]
+        refused: list[exceptions.AuthError] = []
+        for one in requirement.members:
+            denied = self._denial(identity, one, resource, context, dto, what)
+            if denied is None:
+                return None
+            refused.append(denied)
         step_up = next(
             (one for one in refused if isinstance(one, exceptions.Unauthenticated)), None
         )
@@ -752,7 +762,9 @@ class AccessControl[P: Permission]:
             test = billing.fresh()
             auth.using(providers=[StaticProvider(...)]).on(test, replaces=auth)
         """
-        other: AccessControl[P] = AccessControl(providers, self.enabled, self.clock)
+        other: AccessControl[P] = AccessControl(
+            providers, enabled=self.enabled, clock=self.clock
+        )
         other.declarations = self.declarations
         other.checks = list(self.checks)
         return other

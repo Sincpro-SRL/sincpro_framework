@@ -4,6 +4,8 @@ closure) or a rule of the project's own, asked with the call and the execution's
 `every_call` is an interceptor of the project's, asked on every call, open or declared; and a
 handler asks the same things of `self.auth`."""
 
+from typing import Any
+
 import pytest
 
 from sincpro_framework import ApplicationService, DataTransferObject, Feature, UseFramework
@@ -138,7 +140,7 @@ def test_a_role_is_met_by_one_of_those_named() -> None:
     with pytest.raises(PermissionDenied, match="holds no billing.manager or billing.admin"):
         run(bus, CommandApprove(number="F-1"), clerk)
     assert auth.describe().use_cases[f"{__name__}.CommandApprove"] == (
-        "role billing.manager or billing.admin"
+        "role billing.manager or role billing.admin"
     )
 
 
@@ -333,3 +335,59 @@ def test_nobody_meets_no_requirement_by_hand_as_the_guard_decides() -> None:
     with pytest.raises(Unauthenticated) as unscoped:
         auth.scope_of(Invoice)
     assert unscoped.value.anonymous
+
+
+def test_enabled_is_never_positional_a_former_strict_turns_nothing_off() -> None:
+    build: Any = AccessControl
+    with pytest.raises(TypeError):
+        build((), False)
+
+
+def test_any_of_grants_at_the_first_member_that_holds_and_asks_none_after() -> None:
+    auth = AccessControl[P]()
+    bus = UseFramework("first-holds", log_after_execution=False)
+
+    def owner(call: AccessCall) -> bool:
+        return call.resource.owner == call.identity.subject  # no resource in the guard
+
+    @bus.feature(CommandApprove)
+    @auth.requires(auth.any_of(auth.role("billing.admin"), auth.rule("its owner", owner)))
+    class Approve(Feature):
+        def execute(self, dto: CommandApprove) -> Answer:
+            return Answer(by=security.identity.subject)
+
+    auth.on(bus)
+    admin = Identity.user("user:root", roles={"billing.admin"})
+    assert run(bus, CommandApprove(number="F-1"), admin).by == "user:root"
+
+
+def test_by_field_with_no_command_keeps_two_rules_of_one_name() -> None:
+    auth = AccessControl[P]()
+    payer = auth.rule("its party", lambda call: call.identity.subject == "user:ana")
+    payee = auth.rule("its party", lambda call: call.identity.subject == "user:bea")
+    chosen = auth.by_field("number", {"in": payer, "out": payee})
+    with security.as_identity(BEA):
+        assert auth.allows(chosen)
+
+
+def test_requires_never_reads_as_open_or_authenticated() -> None:
+    class Reserved(Permission):
+        OPEN = "open"
+        AUTHENTICATED = "authenticated"
+
+    auth = AccessControl[Reserved]()
+    for one in (Reserved.OPEN, Reserved.AUTHENTICATED):
+        with pytest.raises(Exception, match="reads as what a use case that declares"):
+            auth.requires(one)
+
+
+def test_the_openapi_of_an_open_operation_an_every_call_check_may_refuse() -> None:
+    from sincpro_framework.entrypoints.adapters.rest.openapi import operation_security
+
+    bus, auth = billing()
+    assert operation_security(bus, QueryHealth) == {
+        "security": [{}],
+        "x-sincpro-access": OPEN,
+    }
+    auth.checks.clear()
+    assert operation_security(bus, QueryHealth) == {"security": [], "x-sincpro-access": OPEN}
