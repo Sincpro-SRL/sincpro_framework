@@ -179,6 +179,13 @@ class InvalidGrant(ClientError):
     together, two levels of one privilege — said to whoever administers it (400)."""
 
 
+class ConcurrentChange(ClientError):
+    """What an administrator changed was changed by another at the same moment, again and again
+    — read it again and decide over what is there now (409)."""
+
+    failure_kind = FailureKind.CONFLICT
+
+
 class CredentialsRejected(ExternalServiceError):
     """An authorization server refused what this service presented to get a token — its client
     (`invalid_client`), its scope, its grant: this service's configuration, never the caller's

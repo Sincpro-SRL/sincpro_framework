@@ -570,7 +570,8 @@ assert (refused.use_case, refused.actor, refused.requirement) == (
 | Door | Given `publisher=` | Publishes |
 |---|---|---|
 | `auth` | `AccessControl` | `AccessRefused` — a call refused before its use case or hook ran (not a `SKIP`) |
-| `auth.grants` | `GrantAdministration` | `RoleAssigned`, `RoleUnassigned`, `LevelChanged`, `TenantEntitled`, `EntitlementWithdrawn` |
+| `auth` | `AccessControl(runtime=True)` | `RequirementAdded`, `RequirementRemoved` |
+| `auth.grants` | `Grants` | `RoleAssigned`, `RoleUnassigned`, `LevelChanged`, `TenantEntitled`, `EntitlementWithdrawn`; `RoleDefined`, `RoleChanged`, `RoleRemoved` |
 | `auth.accounts` | `TokenIssuer` | `SignedIn`, `SignedOut`, `SignedOutEverywhere`, `RefreshTokenReused` — a replay: the session was revoked |
 | `auth.accounts` | `LoginAttempts`, `OneTimeTokens` | `AccountLocked`; `OneTimeTokenIssued`, `OneTimeTokenRedeemed` |
 
@@ -585,6 +586,67 @@ assert (refused.use_case, refused.actor, refused.requirement) == (
 - **A contract.** Every event is a `DeliverableEventMixin` named `auth.<what>.v1.<fact>`, so
   another service may depend on it. `AuthEvent` is their base: what a project maps to its event
   table, or subscribes to whole.
+
+## Requirements added at runtime
+
+An administrator raises the bar of a use case from a screen, without a deploy — for every tenant,
+or for one. `AccessControl(runtime=True)` adds the `every_call` check `requirements added at
+runtime`, and `auth.runtime` changes them: `require`, `release`, `required`. What is required is
+judged as `requires` judges, and the refusal names what was missing.
+
+```python
+from sincpro_framework.auth import InMemoryAddedRequirements
+
+
+class CommandRefund(DataTransferObject):
+    total: int
+
+
+payments = UseFramework("payments", log_after_execution=False)
+payments_auth = AccessControl[BillingPermission](
+    runtime=InMemoryAddedRequirements(),            # True: on the context's store (Redis)
+)
+
+
+@payments.feature(CommandRefund)
+@payments_auth.requires(BillingPermission.READ_CREDIT)
+class Refund(Feature):
+    def execute(self, dto: CommandRefund) -> Answer:
+        return Answer(by=security.identity.subject)
+
+
+payments_auth.on(payments)
+
+clerk = Identity.user("user:ana", tenant="bo", permissions={BillingPermission.READ_CREDIT})
+with security.as_system("support raises the bar for refunds in bo"):
+    payments_auth.runtime.require(CommandRefund, BillingPermission.APPROVE_PAYMENT, tenant="bo")
+
+with security.as_identity(clerk):
+    try:
+        payments(CommandRefund(total=10), Answer)
+    except exceptions.PermissionDenied as refused:
+        assert "billing.payment.approve" in str(refused)
+with security.as_identity(clerk.model_copy(update={"tenant": "pe"})):
+    assert payments(CommandRefund(total=10), Answer).by == "user:ana"   # pe: the code's alone
+
+assert [one.permissions for one in payments_auth.runtime.required("bo")] == [
+    {"billing.payment.approve"}]                                         # what a screen lists
+```
+
+`require` takes permissions — a member, or its value as a screen sends it — and at most one
+`auth.role(...)`, met by any of its roles; a tenant's own role is named as the catalog holds it
+(`auth.role("cash.lead@bo")`). Who may change them is bounded as for roles —
+`AccessControl(..., administration=…)`, `BoundedAdministration()` by default
+([who administers](grants.md#who-holds-which--grants)).
+
+| Rule | Why |
+|---|---|
+| It only adds: what the code declares still holds | a mistake on the screen never opens what the code closed |
+| A use case is named by its Command's dotted name — `describe()`'s key, `guarded_use_cases()` | two bounded contexts with a Command of one name never share what is added to either |
+| Every tenant's (`tenant=None`) is the platform's; a tenant's administrator changes only its tenant's, under its tenant's administration lease, and only with what it holds — never requiring, replacing or releasing a permission or a role it lacks. A requirement still refuses every administrator who lacks it: one who holds it, or the platform, releases it | nobody requires what it could not meet itself, nor reaches another tenant; the platform always recovers a tenant |
+| Read at most once a `check_every` per tenant, one caller each; a store that does not answer leaves the last read in effect, and a tenant never read is refused (503) until it answers. A permission a replica does not know — a newer replica's — is never met | a change holds within a second everywhere; an outage never lets through what was restricted |
+| A role a tenant's requirement names, removed, leaves the requirement unmet by anyone — release it first; the platform releases it otherwise | a requirement never loosens by a role disappearing |
+| `runtime=True` keeps them on the context's store (`KeyValueAddedRequirements()`), or on the `AddedRequirementStore` given — `KeyValueAddedRequirements(DatabaseKeyValue(...))` for the project's database; published as `RequirementAdded`, `RequirementRemoved` to the `publisher` | shared by every replica, audited |
 
 ## Entrypoints authenticate by themselves
 

@@ -256,8 +256,9 @@ class JwtProvider(AuthProvider):
     def _not_revoked(self, identity: Identity, parsed: jws.Jws) -> None:
         """`Unauthenticated` when the token, its session or every session of its subject was
         revoked — one read of `revocations`, which also reads the tenant's permission version for
-        the resolvers — or when it carries permissions (`pv`) of a version the subject's has moved
-        past: they changed, the token must be refreshed."""
+        the resolvers — or when it carries permissions (`pv`) of a version the subject's, its
+        tenant's or every tenant's has moved past: they changed, the token must be refreshed.
+        """
         if self.revocations is None:
             return
         state = self.revocations.state(
@@ -267,7 +268,7 @@ class JwtProvider(AuthProvider):
         if refusal is not None:
             raise exceptions.Unauthenticated(refusal)
         carried = parsed.claims.get("pv")
-        if isinstance(carried, int) and carried != state.permission_version:
+        if isinstance(carried, int) and carried != state.permission_epoch:
             raise exceptions.Unauthenticated("permissions changed: refresh the token")
 
     def token_of(self, credentials: Credentials) -> str | None:

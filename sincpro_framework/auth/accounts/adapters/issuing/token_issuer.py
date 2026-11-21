@@ -174,9 +174,7 @@ class TokenIssuer:
         if self.embed_permissions:
             claims["permissions"] = sorted(identity.permissions)
             claims["pv"] = (
-                0
-                if self.revocations is None
-                else self.revocations.permission_version(identity.subject)
+                0 if self.revocations is None else self.revocations.permission_epoch(identity)
             )
         return self.keys.sign(claims)
 

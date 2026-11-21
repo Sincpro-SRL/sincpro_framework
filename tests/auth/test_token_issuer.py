@@ -299,6 +299,20 @@ def test_a_refreshed_token_keeps_its_roles_and_resolves_its_permissions_anew() -
     assert (refreshed.roles, refreshed.permissions) == ({"colegiado"}, frozenset())
 
 
+def test_embedded_permissions_are_refused_once_its_tenants_or_every_tenants_change() -> None:
+    sessions = issuer(Clock(), embed_permissions=True, resolvers=[Granted({"dues.pay"})])
+    assert sessions.revocations is not None
+    for scope in ("tenant:cauor", "tenant:*"):  # a tenant role changed; a shared one
+        tokens = sessions.issue(ANA)
+        assert sessions.provider().authenticate(bearer(tokens)) is not None
+        sessions.revocations.bump_permissions(scope)
+        with pytest.raises(exceptions.Unauthenticated, match="permissions changed"):
+            sessions.provider().authenticate(bearer(tokens))
+    other = sessions.issue(ANA.model_copy(update={"tenant": "other"}))
+    sessions.revocations.bump_permissions("tenant:cauor")
+    assert sessions.provider().authenticate(bearer(other)) is not None  # not its tenant
+
+
 def test_embedding_permissions_with_refresh_tokens_needs_resolvers() -> None:
     with pytest.raises(exceptions.ProgrammingError, match="needs resolvers="):
         issuer(embed_permissions=True)

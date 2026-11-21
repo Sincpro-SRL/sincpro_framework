@@ -22,7 +22,8 @@ The doors, one per job — each a docs page under `docs/auth/`:
                                       tokens, webhook signatures, mTLS, DPoP proofs, policy engines
     sincpro_framework.auth.client     present what goes out: token sources, client credentials,
                                       per tenant, exchange, refresh, device code, request signing
-    sincpro_framework.auth.grants     roles and groups the Odoo 20 way: catalog, assignments
+    sincpro_framework.auth.grants     roles and groups the Odoo 20 way: a catalog in code,
+                                      `Grants` to resolve, assign and define them at runtime
     sincpro_framework.auth.accounts   accounts the service manages itself: passwords, lockout,
                                       HTTP Basic, one-time links, TOTP, the token issuer
 
@@ -34,17 +35,33 @@ extra is asked for (`PublicKey`, `PrivateKey` here). JSON-RPC, REST, FastAPI, gR
 import importlib
 from typing import TYPE_CHECKING, Any
 
+from sincpro_framework.auth.adapters.added_requirements import (
+    InMemoryAddedRequirements,
+    KeyValueAddedRequirements,
+)
 from sincpro_framework.auth.adapters.revocations import (
     InMemoryRevocations,
     KeyValueRevocations,
+)
+from sincpro_framework.auth.domain.added_requirements import (
+    AddedRequirement,
+    AddedRequirementStore,
+)
+from sincpro_framework.auth.domain.administration import (
+    AdministrationPolicy,
+    BoundedAdministration,
+    TrustedAdministration,
 )
 from sincpro_framework.auth.domain.events import (
     AccessRefused,
     AuthEvent,
     EventPublisher,
+    RequirementAdded,
+    RequirementRemoved,
 )
 from sincpro_framework.auth.domain.exceptions import (
     AuthError,
+    ConcurrentChange,
     CredentialsRejected,
     EndpointUnavailable,
     GrantRejected,
@@ -88,6 +105,9 @@ from sincpro_framework.auth.domain.revocations import (
 )
 from sincpro_framework.auth.entrypoint.access_control import AccessControl, AccessDescription
 from sincpro_framework.auth.entrypoint.asgi import IdentityMiddleware
+from sincpro_framework.auth.entrypoint.runtime_requirements import (
+    RuntimeRequirements,
+)
 from sincpro_framework.auth.entrypoint.security import security
 from sincpro_framework.auth.infrastructure.server_metadata import (
     OidcDiscovery,
@@ -107,14 +127,19 @@ __all__ = [
     "AccessDeclaration",
     "AccessDescription",
     "AccessRefused",
+    "AddedRequirement",
+    "AddedRequirementStore",
+    "AdministrationPolicy",
     "AnyOf",
     "Assurance",
     "AssuranceRequirement",
     "AuthError",
     "AuthEvent",
     "AuthProvider",
+    "BoundedAdministration",
     "ByField",
     "ClientAuthentication",
+    "ConcurrentChange",
     "Credentials",
     "CredentialsRejected",
     "EndpointUnavailable",
@@ -128,21 +153,27 @@ __all__ = [
     "IdentityKind",
     "IdentityMiddleware",
     "IdentityResolver",
+    "InMemoryAddedRequirements",
     "InMemoryRevocations",
     "InvalidGrant",
+    "KeyValueAddedRequirements",
     "KeyValueRevocations",
     "NoCredentialsFor",
     "OidcDiscovery",
     "PasswordRejected",
     "Permission",
     "PermissionDenied",
+    "RequirementAdded",
+    "RequirementRemoved",
     "Revocations",
     "RevocationState",
     "RoleRequirement",
     "Rule",
+    "RuntimeRequirements",
     "ServerMetadata",
     "SignatureStyle",
     "TimestampedSignature",
+    "TrustedAdministration",
     "Unauthenticated",
     "UrllibHttp",
     "WhenDenied",

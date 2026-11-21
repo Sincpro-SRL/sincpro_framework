@@ -38,7 +38,6 @@ from sincpro_framework.auth.accounts import (
 from sincpro_framework.auth.grants import (
     Entitlement,
     EntitlementWithdrawn,
-    GrantAdministration,
     GrantCatalog,
     InMemoryGrants,
     LevelChanged,
@@ -48,6 +47,7 @@ from sincpro_framework.auth.grants import (
     RoleUnassigned,
     TenantEntitled,
 )
+from sincpro_framework.auth.grants.services.administration import GrantAdministration
 from sincpro_framework.data_layer.store import InMemoryKeyValue
 from sincpro_framework.event_driven import Publisher, Subscriber, SyncQueue
 
@@ -78,7 +78,13 @@ approver = Role(
     sequence=20,
 )
 catalog = GrantCatalog([approver], entitlements=[Entitlement("payments", gates={P.APPROVE})])
-ADMIN = Identity.user("user:admin")
+ADMIN = Identity.user(
+    "user:admin",
+    tenant="bo",
+    roles={"billing.approver", "billing.clerk"},
+    permissions={P.READ, P.APPROVE},
+)
+"""The administrator of tenant bo — it holds what it gives."""
 
 
 def test_every_grant_written_is_published_by_whom_and_on_whom() -> None:
@@ -89,6 +95,7 @@ def test_every_grant_written_is_published_by_whom_and_on_whom() -> None:
         admin.assign("user:ana", "bo", "billing.clerk", valid_until=friday)
         admin.unassign("user:ana", "bo", "billing.clerk")
         admin.set_level("user:ana", "bo", "invoicing", "billing.approver")
+    with security.as_system("the platform sells payments to bo"):
         admin.entitle("bo", "payments")
         admin.withdraw("bo", "payments")
     assert [type(one) for one in audit.events] == [
@@ -112,21 +119,21 @@ def test_every_grant_written_is_published_by_whom_and_on_whom() -> None:
         "bo",
         "payments",
     )
+    assert entitled.actor == "system"
     assert all(one.name.startswith("auth.") and ".v1." in one.name for one in audit.events)
 
 
-def test_nothing_is_published_without_a_publisher_and_nobody_known_is_no_actor() -> None:
-    GrantAdministration(catalog, InMemoryGrants()).assign("user:ana", "bo", "billing.clerk")
-    audit = Recorder()
-    GrantAdministration(catalog, InMemoryGrants(), publisher=audit).assign(
-        "user:ana", "bo", "billing.clerk"
-    )
-    assert audit.events[0].actor is None
+def test_nothing_is_published_without_a_publisher_and_nobody_administers() -> None:
     with security.as_system("a migration"):
-        GrantAdministration(catalog, InMemoryGrants(), publisher=audit).assign(
-            "user:bea", "bo", "billing.clerk"
+        GrantAdministration(catalog, InMemoryGrants()).assign(
+            "user:ana", "bo", "billing.clerk"
         )
-    assert audit.events[1].actor == "system"
+    audit = Recorder()
+    with pytest.raises(Unauthenticated):
+        GrantAdministration(catalog, InMemoryGrants(), publisher=audit).assign(
+            "user:ana", "bo", "billing.clerk"
+        )
+    assert audit.events == []
 
 
 class CommandApprove(DataTransferObject):
