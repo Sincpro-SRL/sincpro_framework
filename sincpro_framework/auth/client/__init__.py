@@ -16,9 +16,10 @@ they lapse and shared by every replica.
 | a device's authorization (RFC 8628) | `DeviceCode`, `DevicePrompt` |
 | a signed request, a DPoP proof | `RequestSigner`, `DpopProver` |
 
-Every source is a `TokenSource`. How the client authenticates to a token endpoint is a
-`ClientAuthentication` of the root: `ClientSecretBasic`, `ClientSecretPost`, `ClientSecretJwt`,
-`PrivateKeyJwt`, `PublicClient` — an introspecting server uses them too. `call_with_credentials`
+Every source is a `TokenSource`. How this service authenticates to a token endpoint —
+`ClientSecretBasic`, `ClientSecretPost`, `ClientSecretJwt`, `PrivateKeyJwt`, `PublicClient` — is
+the root's `ClientAuthentication` port; an `auth.server.IntrospectionProvider` takes them too, the
+server asking the authorization server as its client. `call_with_credentials`
 retries once on a 401 with a fresh credential; `requests_auth` and `httpx_auth` are the same for
 those libraries.
 

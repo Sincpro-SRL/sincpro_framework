@@ -1,4 +1,7 @@
-# Accounts the service manages itself
+# Accounts the service manages itself — `sincpro_framework.auth.accounts`
+
+**Door**: `from sincpro_framework.auth.accounts import …` — folder `auth/accounts/`. It builds on
+[`auth.server`](server.md): the token issuer verifies what it issued with a `JwtProvider`.
 
 Most services verify a token an identity provider issued ([the providers](server.md)). A small
 service with no identity provider — a college's members, a shop's customers — keeps its own

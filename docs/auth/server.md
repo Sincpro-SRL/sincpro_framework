@@ -1,4 +1,7 @@
-# Verifying what arrives — the providers
+# Verifying what arrives — `sincpro_framework.auth.server`
+
+**Door**: `from sincpro_framework.auth.server import …` — folder `auth/server/`. Everything here
+verifies a credential that arrives; what goes out is [`auth.client`](client.md).
 
 [The overview](README.md) says how a use case declares what it requires and how a provider
 answers. This page is the providers the framework ships for what a caller presents, and what

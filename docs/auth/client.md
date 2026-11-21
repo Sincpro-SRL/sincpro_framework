@@ -1,4 +1,7 @@
-# Presenting what goes out — token sources
+# Presenting what goes out — `sincpro_framework.auth.client`
+
+**Door**: `from sincpro_framework.auth.client import …` — folder `auth/client/`. Everything here
+is what this service presents when it calls another; what arrives is [`auth.server`](server.md).
 
 [The overview](README.md) and [the providers](server.md) are about who calls this service. This
 page is the other half: what this service presents when it calls another — a bank, SIAT, a

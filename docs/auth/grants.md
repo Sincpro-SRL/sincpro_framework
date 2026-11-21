@@ -1,4 +1,7 @@
-# Grants — roles declared in code, held per tenant, resolved per call
+# Grants — `sincpro_framework.auth.grants`
+
+**Door**: `from sincpro_framework.auth.grants import …` — folder `auth/grants/`. Roles declared in
+code, held per tenant, resolved per call.
 
 A use case requires a `Permission` ([the overview](README.md)). Who holds it comes from roles:
 the ones a token carries, the ones this service assigned. This page is the catalog of roles —
