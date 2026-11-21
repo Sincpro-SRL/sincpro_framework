@@ -127,6 +127,11 @@ class AssuranceRequirement:
         return f"assurance({', '.join(said)})"
 
 
+def command_name(command: type) -> str:
+    """The dotted name a Command is listed under — `describe()`'s key, `AccessCall.command`."""
+    return f"{command.__module__}.{command.__qualname__}"
+
+
 @dataclass(frozen=True)
 class AccessCall:
     """What a rule is asked about: who calls, which use case, with what, on what — and the
@@ -147,6 +152,9 @@ class AccessCall:
     """What a handler named in `allows(requirement, resource)` / `check(...)` — `None` when the
     guard asks before a use case runs: there, what is acted on is the Command, `dto`."""
     context: Mapping[str, Any] = field(default_factory=dict)
+    command: str = ""
+    """The Command's dotted name — `module.CommandApprove`, as `describe()` lists it: what tells
+    apart two bounded contexts' Commands of one name. Empty when a handler asks by hand."""
 
 
 @dataclass(frozen=True)

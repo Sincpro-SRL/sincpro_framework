@@ -197,9 +197,9 @@ def test_a_tenants_administrator_defines_and_gives_only_what_it_holds() -> None:
 
 def test_a_role_that_grants_nothing_is_given_only_by_who_holds_it() -> None:
     roles, grants = live(), InMemoryGrants()
-    with as_(BO_ADMIN), pytest.raises(PermissionDenied, match="gives billing.admin"):
+    with as_(BO_ADMIN), pytest.raises(PermissionDenied, match="needs billing.admin"):
         GrantAdministration(roles, grants).assign("user:ana", "bo", "billing.admin")
-    with as_(BO_ADMIN), pytest.raises(PermissionDenied, match="gives billing.admin"):
+    with as_(BO_ADMIN), pytest.raises(PermissionDenied, match="needs billing.admin"):
         RoleAdministration(roles, grants).define(
             RoleDefinition(key="cash.boss", tenant="bo", implies=frozenset({"billing.admin"}))
         )

@@ -586,6 +586,55 @@ assert (refused.use_case, refused.actor, refused.requirement) == (
   another service may depend on it. `AuthEvent` is their base: what a project maps to its event
   table, or subscribes to whole.
 
+## Requirements added at runtime
+
+An administrator raises the bar of a use case from a screen, without a deploy — for every tenant,
+or for one. `require_at_runtime` adds the `every_call` check `requirements added at runtime`;
+what is required is judged as `requires` judges, and the refusal names what was missing.
+
+```python
+from sincpro_framework.auth import InMemoryAddedRequirements
+
+
+class CommandRefund(DataTransferObject):
+    total: int
+
+
+payments = UseFramework("payments", log_after_execution=False)
+payments_auth = AccessControl[BillingPermission]()
+
+
+@payments.feature(CommandRefund)
+@payments_auth.requires(BillingPermission.READ_CREDIT)
+class Refund(Feature):
+    def execute(self, dto: CommandRefund) -> Answer:
+        return Answer(by=security.identity.subject)
+
+
+payments_auth.on(payments)
+runtime = payments_auth.require_at_runtime(InMemoryAddedRequirements(), BillingPermission)
+
+clerk = Identity.user("user:ana", tenant="bo", permissions={BillingPermission.READ_CREDIT})
+with security.as_system("support raises the bar for refunds in bo"):
+    runtime.require(CommandRefund, permissions={BillingPermission.APPROVE_PAYMENT}, tenant="bo")
+
+with security.as_identity(clerk):
+    try:
+        payments(CommandRefund(total=10), Answer)
+    except exceptions.PermissionDenied as refused:
+        assert "billing.payment.approve" in str(refused)
+with security.as_identity(clerk.model_copy(update={"tenant": "pe"})):
+    assert payments(CommandRefund(total=10), Answer).by == "user:ana"   # pe: the code's alone
+```
+
+| Rule | Why |
+|---|---|
+| It only adds: what the code declares still holds | a mistake on the screen never opens what the code closed |
+| A use case is named by its Command's dotted name — `describe()`'s key, `guarded_use_cases()` | two bounded contexts with a Command of one name never share what is added to either |
+| Every tenant's (`tenant=None`) is the platform's; a tenant's administrator changes only its tenant's, and only with what it holds — never requiring, replacing or releasing a permission or a role it lacks | a weaker administrator never shuts out a stronger one, nor reaches another tenant |
+| Read at most once a `check_every` per tenant, one caller each; a store that does not answer leaves the last read in effect | a change holds within a second everywhere, and an outage changes nothing |
+| `KeyValueAddedRequirements()` on the context's store, or `DatabaseKeyValue`; published as `RequirementAdded`, `RequirementRemoved` | shared by every replica, audited |
+
 ## Entrypoints authenticate by themselves
 
 A guarded bus needs nothing more on its entrypoints: each builds `Credentials` from what arrived,

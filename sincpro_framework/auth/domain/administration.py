@@ -115,7 +115,7 @@ class BoundedAdministration(AdministrationPolicy):
             raise exceptions.PermissionDenied(
                 actor.subject,
                 what,
-                f"{what} gives {', '.join(missing)}, which {actor.subject} does not hold",
+                f"{what} needs {', '.join(missing)}, which {actor.subject} does not hold",
             )
 
 

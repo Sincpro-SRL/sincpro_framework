@@ -34,9 +34,18 @@ extra is asked for (`PublicKey`, `PrivateKey` here). JSON-RPC, REST, FastAPI, gR
 import importlib
 from typing import TYPE_CHECKING, Any
 
+from sincpro_framework.auth.adapters.added_requirements import (
+    InMemoryAddedRequirements,
+    KeyValueAddedRequirements,
+)
 from sincpro_framework.auth.adapters.revocations import (
     InMemoryRevocations,
     KeyValueRevocations,
+)
+from sincpro_framework.auth.domain.added_requirements import (
+    AddedRequirement,
+    AddedRequirements,
+    AddedRequirementStore,
 )
 from sincpro_framework.auth.domain.administration import (
     AdministrationPolicy,
@@ -47,6 +56,8 @@ from sincpro_framework.auth.domain.events import (
     AccessRefused,
     AuthEvent,
     EventPublisher,
+    RequirementAdded,
+    RequirementRemoved,
 )
 from sincpro_framework.auth.domain.exceptions import (
     AuthError,
@@ -93,6 +104,9 @@ from sincpro_framework.auth.domain.revocations import (
 )
 from sincpro_framework.auth.entrypoint.access_control import AccessControl, AccessDescription
 from sincpro_framework.auth.entrypoint.asgi import IdentityMiddleware
+from sincpro_framework.auth.entrypoint.runtime_requirements import (
+    RuntimeRequirements,
+)
 from sincpro_framework.auth.entrypoint.security import security
 from sincpro_framework.auth.infrastructure.server_metadata import (
     OidcDiscovery,
@@ -112,6 +126,9 @@ __all__ = [
     "AccessDeclaration",
     "AccessDescription",
     "AccessRefused",
+    "AddedRequirement",
+    "AddedRequirements",
+    "AddedRequirementStore",
     "AdministrationPolicy",
     "AnyOf",
     "Assurance",
@@ -135,18 +152,23 @@ __all__ = [
     "IdentityKind",
     "IdentityMiddleware",
     "IdentityResolver",
+    "InMemoryAddedRequirements",
     "InMemoryRevocations",
     "InvalidGrant",
+    "KeyValueAddedRequirements",
     "KeyValueRevocations",
     "NoCredentialsFor",
     "OidcDiscovery",
     "PasswordRejected",
     "Permission",
     "PermissionDenied",
+    "RequirementAdded",
+    "RequirementRemoved",
     "Revocations",
     "RevocationState",
     "RoleRequirement",
     "Rule",
+    "RuntimeRequirements",
     "ServerMetadata",
     "SignatureStyle",
     "TimestampedSignature",
