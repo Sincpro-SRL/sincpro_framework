@@ -48,7 +48,7 @@ from sincpro_framework.auth.grants.domain.catalog import (
     Privilege,
     Role,
 )
-from sincpro_framework.auth.grants.domain.changes import GrantChange
+from sincpro_framework.auth.grants.domain.changes import GrantAction, GrantChange
 from sincpro_framework.auth.grants.domain.definitions import (
     RoleDefinition,
     RoleDefinitions,
@@ -71,6 +71,7 @@ __all__ = [
     "Category",
     "Entitlement",
     "EntitlementWithdrawn",
+    "GrantAction",
     "GrantCatalog",
     "GrantChange",
     "GrantResolver",

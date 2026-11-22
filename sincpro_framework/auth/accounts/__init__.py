@@ -29,6 +29,7 @@ from sincpro_framework.auth.accounts.adapters.one_time_tokens import (
     OneTimeTokens,
 )
 from sincpro_framework.auth.accounts.adapters.passwords.hasher import (
+    HashScheme,
     PasswordHasher,
     ScryptCost,
 )
@@ -54,6 +55,7 @@ __all__ = [
     "AccountLocked",
     "BasicProvider",
     "CredentialVerifier",
+    "HashScheme",
     "HashedCredentials",
     "InMemoryRefreshTokens",
     "IssuedTokens",

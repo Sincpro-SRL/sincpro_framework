@@ -7,6 +7,8 @@ billing's `AccessControl` held no provider of that name and answered a `Programm
 500 in the middle of the request, for an identity the same process had verified a moment before.
 """
 
+from structlog.testing import capture_logs
+
 from sincpro_framework import ApplicationService, DataTransferObject, Feature, UseFramework
 from sincpro_framework.auth import (
     AccessControl,
@@ -109,3 +111,57 @@ def test_a_context_with_providers_of_its_own_still_decides_about_the_caller():
     issued = _sell(_sales_calling_billing([StaticProvider({}, name="billing-keys")]))
     assert issued.by == "user:ana"
     assert "bo" in issued.scope
+
+
+class OwnKeys(StaticProvider):
+    """Another kind of provider, given the name another context's provider already has."""
+
+
+def test_providers_of_different_kinds_under_one_name_are_said_once():
+    sales_bus = UseFramework("sales-named-alike", log_after_execution=False)
+    billing_bus = UseFramework("billing-named-alike", log_after_execution=False)
+    for bus in (sales_bus, billing_bus):
+
+        @bus.feature(CommandIssue)
+        class Answer(Feature):
+            def execute(self, dto: CommandIssue) -> Issued:
+                return Issued(by=security.identity.subject)
+
+    billing_auth = AccessControl[BillingPermission](providers=[OwnKeys({}, name="keys")])
+    with capture_logs() as logs:
+        AccessControl[SalesPermission](providers=[StaticProvider({}, name="keys")]).on(
+            sales_bus
+        )
+        billing_auth.on(billing_bus)
+        sales_bus(CommandIssue(total=1))
+        billing_bus(CommandIssue(total=1))
+    with capture_logs() as again:
+        billing_bus.fresh()(CommandIssue(total=1))
+
+    def clashes(lines: list) -> list[str]:
+        return [
+            one["provider"]
+            for one in lines
+            if "different kinds under one name" in one["event"]
+        ]
+
+    assert "keys" in clashes(logs)
+    assert clashes(again) == []
+
+
+def test_one_kind_of_provider_in_every_context_never_clashes():
+    first = UseFramework("first-same-kind", log_after_execution=False)
+    second = UseFramework("second-same-kind", log_after_execution=False)
+    for bus in (first, second):
+
+        @bus.feature(CommandIssue)
+        class Answer(Feature):
+            def execute(self, dto: CommandIssue) -> Issued:
+                return Issued(by=security.identity.subject)
+
+    with capture_logs() as logs:
+        for bus in (first, second):
+            AccessControl[SalesPermission](providers=[StaticProvider({}, "tokens")]).on(bus)
+        first(CommandIssue(total=1))
+        second(CommandIssue(total=1))
+    assert not [line for line in logs if "different kinds under one name" in line["event"]]

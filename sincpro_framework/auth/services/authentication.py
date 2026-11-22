@@ -54,6 +54,25 @@ def vouched_by(providers: Sequence[AuthProvider], identity: Identity) -> AuthPro
     )
 
 
+def clashing_names(providers: Sequence[AuthProvider]) -> set[str]:
+    """The names of `providers` that another `AccessControl` of the process gives to a provider
+    of another kind — an identity vouched for under that name may be asked of either.
+
+        # sales holds StaticProvider "static"; billing holds its own OdooKeys named "static"
+        clashing_names(billing_providers)   ->  {"static"}
+
+    Context: instances of one kind under one name are what several bounded contexts verifying
+    the same tokens hold, and never clash.
+    """
+    kinds = {one.name: type(one) for one in providers}
+    return {
+        other.name
+        for access in list(guarded_buses.values())
+        for other in access.providers
+        if other.name in kinds and type(other) is not kinds[other.name]
+    }
+
+
 def authenticated(providers: Sequence[AuthProvider], credentials: Credentials) -> Identity:
     """Who the credentials say is calling — the first provider that recognizes them, or
     `Identity.anonymous()` when none does. `Unauthenticated` when one recognizes them and

@@ -43,6 +43,7 @@ from sincpro_framework.auth.domain.permissions import (
     AnyOf,
     AssuranceRequirement,
     ByField,
+    DeclarationKind,
     Permission,
     Requirement,
     RoleRequirement,
@@ -140,6 +141,8 @@ class AccessControl[P: Permission]:
         self._roots: list["UseFramework"] = []
         self._hooks: list[Hooks] = []
         self._hook_guard = HookGuard(self)
+        self._noted: set[str] = set()
+        """The provider names a clash was already warned about."""
 
     @classmethod
     def of(cls, bus: "UseFramework") -> "AccessControl[Any] | None":
@@ -203,20 +206,25 @@ class AccessControl[P: Permission]:
                 ->  "billing.read (else skipped)"
             auth.requires()   ->  raises ProgrammingError("requires() names at least one ...")
 
-        The class is returned as it was, its declaration stored in `declarations`.
+        The class is returned as it was, its declaration stored in `declarations`. A requirement
+        that reads `open` or `authenticated` is declared all the same, with a warning: the
+        descriptions (`describe()`, the manifest, OpenAPI) would read it as declaring nothing,
+        or anybody authenticated.
         """
         if not requirements:
             raise exceptions.ProgrammingError("requires() names at least one requirement")
         said = " and ".join(str(one) for one in requirements)
-        if said in (OPEN, "authenticated"):
-            raise exceptions.ProgrammingError(
-                f"requires({said!r}) reads as what a use case that declares {said!r} is "
-                "described: name the permission or the rule otherwise"
+        if said in (OPEN, DeclarationKind.AUTHENTICATED):
+            logger.warning(
+                "a requirement reads as what a use case that declares it is described: rename "
+                "the permission or the rule",
+                requirement=said,
             )
 
         def declared[T: type](cls: T) -> T:
             return self.declarations.add(
-                cls, AccessDeclaration("requires", tuple(requirements), when_denied)
+                cls,
+                AccessDeclaration(DeclarationKind.REQUIRES, tuple(requirements), when_denied),
             )
 
         return declared
@@ -263,7 +271,7 @@ class AccessControl[P: Permission]:
 
     def authenticated[T: type](self, cls: T) -> T:
         """Anyone authenticated, whatever they may do."""
-        return self.declarations.add(cls, AccessDeclaration("authenticated"))
+        return self.declarations.add(cls, AccessDeclaration(DeclarationKind.AUTHENTICATED))
 
     def role(self, *roles: str) -> RoleRequirement:
         """A requirement met by holding one of `roles` — Odoo's `groups=`, for `requires`,
@@ -286,11 +294,12 @@ class AccessControl[P: Permission]:
                                lambda call: call.dto.owner == call.identity.subject)
             @auth.requires(BillingPermission.READ, is_own)
 
-        `open` is not a rule's name: it is what declaring nothing is called.
+        A rule named `open` is made all the same, with a warning: `open` is what declaring
+        nothing is called, and the descriptions would read the rule as no requirement.
         """
         if name == OPEN:
-            raise exceptions.ProgrammingError(
-                "a rule is not named 'open' — that names a use case that declares nothing"
+            logger.warning(
+                "a rule named 'open' reads as a use case that declares nothing: rename it"
             )
         return Rule(name, check)
 
@@ -371,7 +380,7 @@ class AccessControl[P: Permission]:
     ) -> exceptions.AuthError | None:
         """Why `identity` may not run what `declaration` guards — `None` when it may.
 
-        refusal(ANONYMOUS, AccessDeclaration("authenticated"), "IssueInvoice")
+        refusal(ANONYMOUS, AccessDeclaration(DeclarationKind.AUTHENTICATED), "IssueInvoice")
             ->  Unauthenticated("authenticate to run IssueInvoice")
         """
         return self._decisions.refusal(identity, declaration, what, resource, context, dto)
@@ -443,7 +452,17 @@ class AccessControl[P: Permission]:
 
     def attach(self, bus: "UseFramework") -> None:
         """What `on(bus)` wires, and what every generation `fresh()` makes of the bus wires
-        again against itself: the guard, and this object as the handlers' `auth`."""
+        again against itself: the guard, and this object as the handlers' `auth` — and, once
+        per name, a warning when another `AccessControl` of the process gives a provider of
+        another kind the name of one of these."""
+        for name in sorted(authentication.clashing_names(self.providers) - self._noted):
+            self._noted.add(name)
+            logger.warning(
+                "two AccessControls of the process hold providers of different kinds under one "
+                "name: an identity vouched for by one may be asked of the other — name them "
+                "apart",
+                provider=name,
+            )
         guard = BusGuard(self, bus)
         bus.interceptor(sequence=GUARD_SEQUENCE)(guard)
         bus.add_dependency("auth", self)
@@ -453,22 +472,35 @@ class AccessControl[P: Permission]:
 
     def _replacing(self, replaced: "AccessControl[Any]", bus: "UseFramework") -> None:
         """What `on(bus, replaces=replaced)` wires, and every generation `fresh()` makes of the
-        bus wires again: this object's guard in the place of `replaced`'s, and this object as
-        the handlers' `auth` — `replaced` guards the bus no more.
+        bus wires again: this object's guard in the place of the one guarding the bus, and this
+        object as the handlers' `auth`.
 
-        A bus `replaced` does not guard has nothing to replace: `ProgrammingError`."""
-        old = replaced._guards.get(bus)
-        if old is None:
-            raise exceptions.ProgrammingError(
-                f"the AccessControl replaced does not guard '{bus.name}': guard it with on() "
-                "instead"
+        1. `replaced` guards the bus: its guard and its `auth` are replaced.
+        2. Another `AccessControl` guards it: that one is replaced, with a warning.
+        3. Nothing guards it: guarded as `on(bus)` guards, with a warning.
+        Final: the one replaced guards the bus no more.
+        """
+        guarding = replaced if bus in replaced._guards else guarded_buses.get(bus)
+        if not isinstance(guarding, AccessControl) or bus not in guarding._guards:
+            logger.warning(
+                "replaces= names an AccessControl and nothing guards the bus: guarded as on() "
+                "guards it",
+                bus=bus.name,
+            )
+            self.attach(bus)
+            return
+        if guarding is not replaced:
+            logger.warning(
+                "replaces= names an AccessControl that does not guard the bus: the one "
+                "guarding it is replaced",
+                bus=bus.name,
             )
         guard = BusGuard(self, bus)
-        bus.interceptor(sequence=GUARD_SEQUENCE, replaces=old)(guard)
-        bus.add_dependency("auth", self, replaces=replaced)
+        bus.interceptor(sequence=GUARD_SEQUENCE, replaces=guarding._guards[bus])(guard)
+        bus.add_dependency("auth", self, replaces=guarding)
         self._guards[bus] = guard
         self._buses.add(bus)
-        replaced._buses.discard(bus)
+        guarding._buses.discard(bus)
         guarded_buses[bus] = self
 
     def refusal_of(
@@ -484,13 +516,14 @@ class AccessControl[P: Permission]:
             auth.refusal_of(billing, CommandIssueInvoice)
                 ->  PermissionDenied("user:42", "billing.invoice.issue")   or None
 
-        A bus this object does not guard: `ProgrammingError`."""
+        Context: a bus another `AccessControl` guards is answered by that one, and a bus nobody
+        guards runs anything — `None`.
+        """
         guard = self._guards.get(bus)
-        if guard is None:
-            raise exceptions.ProgrammingError(
-                f"this AccessControl does not guard '{bus.name}'"
-            )
-        return guard.refusal_for(command, identity or current_identity(), dto)
+        if guard is not None:
+            return guard.refusal_for(command, identity or current_identity(), dto)
+        guarding = AccessControl.of(bus)
+        return None if guarding is None else guarding.refusal_of(bus, command, identity, dto)
 
     def may_run(
         self,
@@ -538,7 +571,7 @@ class AccessControl[P: Permission]:
 
             auth.on(billing)          # billing and each generation `fresh()` makes of it
             auth.on(billing_hooks)    # every hook of the collection is gated
-            auth.on(billing)   # again  ->  raises ProgrammingError("... guards 'billing'")
+            auth.on(billing)   # again  ->  a warning; guarded once
             auth.using(providers=[fake]).on(test, replaces=auth)   # a fresh() bus, in a test
 
         `replaces` names the `AccessControl` guarding the bus now — what `fresh()` repeats from
@@ -546,9 +579,9 @@ class AccessControl[P: Permission]:
 
         1. Disabled: a warning is logged — the target is wired anyway, and checks nothing.
         2. A `Hooks` collection:
-           2.1 one already guarded is a `ProgrammingError`;
+           2.1 one already guarded by this object: a warning, guarded once;
            2.2 else the hook guard is set as its gate and the collection stored.
-        3. A bus already guarded is a `ProgrammingError`.
+        3. A bus already guarded by this object: a warning, guarded once.
         4. `attach` is registered as an extension of the bus — run on it and on every
            generation made of it, so the guard and `auth` reach each.
         5. Each log line of the bus gets the `identity` of who acts.
@@ -566,12 +599,16 @@ class AccessControl[P: Permission]:
             return
         if isinstance(target, Hooks):
             if any(target is one for one in self._hooks):
-                raise exceptions.ProgrammingError("AccessControl already guards this Hooks")
+                logger.warning("AccessControl already guards this Hooks: guarded once")
+                return
             target.gate(self._hook_guard)
             self._hooks.append(target)
             return
         if target in self._roots:
-            raise exceptions.ProgrammingError(f"AccessControl already guards '{target.name}'")
+            logger.warning(
+                "AccessControl already guards the bus: guarded once", bus=target.name
+            )
+            return
         target.extend(self.attach)
         target.logger.add_context_source(self._identity_for_logs)
         self._roots.append(target)
@@ -589,7 +626,7 @@ class AccessControl[P: Permission]:
         """What a Command's use case, a handler or a hook declared — `None` for nothing; with
         `bus`, the handler that bus answers it with.
 
-            auth.requirements_of(CommandIssueInvoice)  ->  AccessDeclaration("requires", (ISSUE,))
+            auth.requirements_of(CommandIssueInvoice)  ->  AccessDeclaration(DeclarationKind.REQUIRES, (ISSUE,))
             auth.requirements_of(QueryHealth)          ->  None    # declared nothing
         """
         return description.requirements_of(self.declarations, list(self._buses), cls, bus)

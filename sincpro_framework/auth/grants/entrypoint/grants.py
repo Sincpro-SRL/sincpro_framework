@@ -48,7 +48,12 @@ from sincpro_framework.auth.grants.adapters.resolver import (
 from sincpro_framework.auth.grants.adapters.stores import KeyValueGrants
 from sincpro_framework.auth.grants.domain.assignments import Assignment, GrantStore
 from sincpro_framework.auth.grants.domain.catalog import GrantCatalog
-from sincpro_framework.auth.grants.domain.changes import Allow, GrantChange, allowed
+from sincpro_framework.auth.grants.domain.changes import (
+    Allow,
+    GrantAction,
+    GrantChange,
+    allowed,
+)
 from sincpro_framework.auth.grants.domain.definitions import (
     RoleDefinition,
     RoleDefinitions,
@@ -141,7 +146,7 @@ class Grants:
             @grants.allow
             def owners_give_admin(change: GrantChange) -> bool: ...
 
-            grants.allow(lambda change: change.action != "remove", name="nothing is removed")
+            grants.allow(lambda change: change.action != GrantAction.REMOVE, name="nothing is removed")
         """
 
         def registered(given: F) -> F:
@@ -164,7 +169,7 @@ class Grants:
         own = catalog_key(role, tenant)
         return own if own in catalog.roles else role
 
-    def _asked(self, action: Any, tenant: str | None, **said: Any) -> None:
+    def _asked(self, action: GrantAction, tenant: str | None, **said: Any) -> None:
         """The project's own rules about this change, asked of who acts."""
         allowed(self.rules, GrantChange(current_identity(), action, tenant, **said))
 
@@ -177,13 +182,13 @@ class Grants:
     ) -> None:
         """Give `subject` the role `role` in `tenant` — until `until`, when temporary."""
         key = self._named(role, tenant)
-        self._asked("assign", tenant, subject=subject, role=key)
+        self._asked(GrantAction.ASSIGN, tenant, subject=subject, role=key)
         self._granting.assign(subject, tenant, key, valid_until=until)
 
     def unassign(self, subject: str, role: str, tenant: str | None = None) -> None:
         """Take `role` back from `subject` in `tenant`."""
         key = self._named(role, tenant)
-        self._asked("unassign", tenant, subject=subject, role=key)
+        self._asked(GrantAction.UNASSIGN, tenant, subject=subject, role=key)
         self._granting.unassign(subject, tenant, key)
 
     def set_level(
@@ -191,17 +196,19 @@ class Grants:
     ) -> None:
         """Hold `role` as the one level of `privilege` — `None` for no access."""
         key = None if role is None else self._named(role, tenant)
-        self._asked("set_level", tenant, subject=subject, role=key, privilege=privilege)
+        self._asked(
+            GrantAction.SET_LEVEL, tenant, subject=subject, role=key, privilege=privilege
+        )
         self._granting.set_level(subject, tenant, privilege, key)
 
     def entitle(self, tenant: str, entitlement: str) -> None:
         """The tenant has `entitlement` — the platform's to say."""
-        self._asked("entitle", tenant, entitlement=entitlement)
+        self._asked(GrantAction.ENTITLE, tenant, entitlement=entitlement)
         self._granting.entitle(tenant, entitlement)
 
     def withdraw(self, tenant: str, entitlement: str) -> None:
         """The tenant no longer has `entitlement` — the platform's to say."""
-        self._asked("withdraw", tenant, entitlement=entitlement)
+        self._asked(GrantAction.WITHDRAW, tenant, entitlement=entitlement)
         self._granting.withdraw(tenant, entitlement)
 
     def define(
@@ -230,13 +237,15 @@ class Grants:
             disjoint=frozenset(self._named(one, tenant) for one in disjoint),
             description=description,
         )
-        self._asked("define", tenant, role=definition.catalog_key, definition=definition)
+        self._asked(
+            GrantAction.DEFINE, tenant, role=definition.catalog_key, definition=definition
+        )
         self._defining.define(definition)
         return definition
 
     def remove(self, key: str, tenant: str | None = None) -> None:
         """Remove the role `key` defined at runtime — every tenant's, or `tenant`'s own."""
-        self._asked("remove", tenant, role=catalog_key(key, tenant))
+        self._asked(GrantAction.REMOVE, tenant, role=catalog_key(key, tenant))
         self._defining.remove(key, tenant)
 
     def catalog(self, tenant: str | None = None) -> GrantCatalog:

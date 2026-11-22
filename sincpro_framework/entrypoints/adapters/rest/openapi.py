@@ -12,7 +12,7 @@ import copy
 from collections.abc import Iterable, Mapping
 from typing import Any
 
-from sincpro_framework.auth import OPEN, AccessControl
+from sincpro_framework.auth import OPEN, AccessControl, DeclarationKind
 from sincpro_framework.ddd.metamodel import contract_of
 from sincpro_framework.entrypoints.adapters.rest.routing import RestRoute, is_plain
 from sincpro_framework.introspection.entity_tags import only_reads, role_of
@@ -138,7 +138,7 @@ def operation_security(bus: Any, dto: type) -> dict[str, Any]:
         optional = [{}, *({name: []} for name in schemes)] if access.checks else []
         return {"security": optional, "x-sincpro-access": OPEN}
     described: dict[str, Any] = {"security": [{name: []} for name in schemes]}
-    if declaration.kind == "requires":
+    if declaration.kind == DeclarationKind.REQUIRES:
         described["x-sincpro-requires"] = [str(one) for one in declaration.requirements]
         described["x-sincpro-when-denied"] = declaration.when_denied.value
     return described

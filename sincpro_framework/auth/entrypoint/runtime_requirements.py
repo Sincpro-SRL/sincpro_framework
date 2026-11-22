@@ -23,8 +23,8 @@ from sincpro_framework.auth.domain.administration import AdministrationPolicy
 from sincpro_framework.auth.domain.events import EventPublisher
 from sincpro_framework.auth.domain.permissions import AccessCall, Permission, RoleRequirement
 from sincpro_framework.auth.infrastructure.locks import AdministrationLocks
+from sincpro_framework.auth.services.guard import Access
 from sincpro_framework.auth.services.requirement_administration import (
-    Judging,
     RequirementAdministration,
 )
 
@@ -34,7 +34,7 @@ class RuntimeRequirements:
 
     def __init__(
         self,
-        access: Judging,
+        access: Access,
         store: AddedRequirementStore,
         permissions: Iterable[Permission] | None = None,
         policy: AdministrationPolicy | None = None,
@@ -60,7 +60,7 @@ class RuntimeRequirements:
         """What may be required, by value."""
         return self._administration.permissions
 
-    def judged_by(self, access: Judging) -> "RuntimeRequirements":
+    def judged_by(self, access: Access) -> "RuntimeRequirements":
         """These requirements — the same store, bound, leases and what was read — judged by
         `access`: what `AccessControl.using` gives the copy it makes."""
         judged = copy.copy(self)

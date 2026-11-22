@@ -7,6 +7,7 @@ import json
 from typing import Any
 
 import pytest
+from structlog.testing import capture_logs
 
 from sincpro_framework import DataTransferObject, Feature, UseFramework
 from sincpro_framework.auth import (
@@ -20,7 +21,7 @@ from sincpro_framework.auth import (
 )
 from sincpro_framework.auth.domain import exceptions
 from sincpro_framework.auth.server import StaticProvider
-from sincpro_framework.exceptions import ProgrammingError, ServiceUnavailableError
+from sincpro_framework.exceptions import ServiceUnavailableError
 from sincpro_framework.runtime.testing import AuthProviderContract
 
 
@@ -131,12 +132,42 @@ def test_a_fresh_bus_made_of_the_test_bus_keeps_the_replacement():
         assert again(CommandPostEntry(amount=1), ResponsePosted).by == "tester"
 
 
-def test_replacing_what_does_not_guard_the_bus_says_so():
+def test_replacing_on_a_bus_nobody_guards_guards_it_and_says_so():
     _, auth = guarded()
     other = UseFramework("ledger-unguarded", log_after_execution=False)
 
-    with pytest.raises(ProgrammingError, match="does not guard 'ledger-unguarded'"):
-        auth.using(providers=[]).on(other, replaces=auth)
+    @other.feature(CommandPostEntry)
+    @auth.requires(LedgerPermission.POST)
+    class PostElsewhere(Feature):
+        def execute(self, dto: CommandPostEntry) -> ResponsePosted:
+            return ResponsePosted(by=security.identity.subject)
+
+    test_auth = auth.using(providers=[])
+    with capture_logs() as logs:
+        test_auth.on(other, replaces=auth)
+        with pytest.raises(exceptions.Unauthenticated):
+            other(CommandPostEntry(amount=1))
+    assert AccessControl.of(other) is test_auth
+    assert any("nothing guards the bus" in line["event"] for line in logs)
+
+
+def test_replacing_names_the_wrong_access_control_and_the_one_guarding_is_replaced():
+    ledger, auth = guarded()
+    test = ledger.fresh()
+    stranger = AccessControl[LedgerPermission]()
+    test_auth = auth.using(
+        providers=[
+            StaticProvider(
+                {"t": Identity.user("tester", permissions=[LedgerPermission.POST])}
+            )
+        ]
+    )
+    with capture_logs() as logs:
+        test_auth.on(test, replaces=stranger)
+        with security.authenticated_as(test, bearer("t")):
+            assert test(CommandPostEntry(amount=1), ResponsePosted).by == "tester"
+    assert AccessControl.of(test) is test_auth
+    assert any("does not guard the bus" in line["event"] for line in logs)
 
 
 # --- a backend that does not answer ---------------------------------------------------------------

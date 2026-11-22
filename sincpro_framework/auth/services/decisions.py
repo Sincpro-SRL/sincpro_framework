@@ -6,11 +6,11 @@ says no without a traceback; the guard and the facade raise it. Who is asked abo
 is its provider (`vouched_by`); an identity opened by hand answers with its own permissions.
 """
 
-from collections.abc import Callable, Mapping, Sequence
-from typing import TYPE_CHECKING, Any, Protocol
+from collections.abc import Mapping, Sequence
+from typing import TYPE_CHECKING, Any
 
 from sincpro_framework.auth.domain import exceptions
-from sincpro_framework.auth.domain.events import SUBJECT, AccessRefused, EventPublisher
+from sincpro_framework.auth.domain.events import SUBJECT, AccessRefused
 from sincpro_framework.auth.domain.identity import Identity, IdentityKind
 from sincpro_framework.auth.domain.permissions import (
     AccessCall,
@@ -24,30 +24,20 @@ from sincpro_framework.auth.domain.permissions import (
     Rule,
     command_name,
 )
-from sincpro_framework.auth.domain.provider import AuthProvider
 from sincpro_framework.auth.infrastructure.announcing import announce
 from sincpro_framework.auth.infrastructure.security_context import current_identity
 from sincpro_framework.auth.services.authentication import vouched_by
+from sincpro_framework.auth.services.guard import Access
 from sincpro_framework.context import context_scopes
 
 if TYPE_CHECKING:
     from sincpro_framework.ddd.criteria import Criteria
 
 
-class Configured(Protocol):
-    """What the decisions read of the `AccessControl` that holds them — read on every call, so a
-    provider added to it afterwards is asked too."""
-
-    providers: tuple[AuthProvider, ...]
-    clock: Callable[[], float]
-    publisher: EventPublisher | None
-    checks: list[Rule]
-
-
 class Decisions:
     """The decisions of one `AccessControl`."""
 
-    def __init__(self, access: Configured) -> None:
+    def __init__(self, access: Access) -> None:
         self.access = access
 
     def _has(
@@ -233,9 +223,9 @@ class Decisions:
     ) -> exceptions.AuthError | None:
         """Why `identity` may not run what `declaration` guards — `None` when it may.
 
-            refusal(ANONYMOUS, AccessDeclaration("authenticated"), "IssueInvoice")
+            refusal(ANONYMOUS, AccessDeclaration(DeclarationKind.AUTHENTICATED), "IssueInvoice")
                 ->  Unauthenticated("authenticate to run IssueInvoice")
-            refusal(user_without_issue, AccessDeclaration("requires", (ISSUE,)), "IssueInvoice")
+            refusal(user, AccessDeclaration(DeclarationKind.REQUIRES, (ISSUE,)), "IssueInvoice")
                 ->  PermissionDenied("user:42", "billing.invoice.issue")
 
         Context: the system passes first; nobody is refused before any provider is asked; then

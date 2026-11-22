@@ -16,9 +16,12 @@ from typing import TYPE_CHECKING, Any, Protocol
 from weakref import WeakKeyDictionary, WeakValueDictionary
 
 from sincpro_framework.auth.domain import exceptions
+from sincpro_framework.auth.domain.events import EventPublisher
 from sincpro_framework.auth.domain.identity import Identity, IdentityKind
 from sincpro_framework.auth.domain.permissions import (
     AccessDeclaration,
+    DeclarationKind,
+    Rule,
     WhenDenied,
     command_name,
 )
@@ -59,7 +62,7 @@ class Declarations:
         """Mark `cls` with `declaration` and answer `cls` — what every decorator ends in.
 
             @auth.requires(A)
-            @auth.requires(B)          ->  AccessDeclaration("requires", (B, A))
+            @auth.requires(B)          ->  AccessDeclaration(DeclarationKind.REQUIRES, (B, A))
             class IssueInvoice(Feature): ...
 
         Context: stacked decorators on one class add up; the same class declared two
@@ -74,14 +77,16 @@ class Declarations:
         held = self._by_class.get(cls)
         if held is None:
             merged = declaration
-        elif held.kind == declaration.kind == "requires":
+        elif held.kind == declaration.kind == DeclarationKind.REQUIRES:
             if held.when_denied != declaration.when_denied:
                 raise exceptions.ProgrammingError(
                     f"{cls.__name__} requires with when_denied={held.when_denied} and "
                     f"{declaration.when_denied}: declare one"
                 )
             merged = AccessDeclaration(
-                "requires", held.requirements + declaration.requirements, held.when_denied
+                DeclarationKind.REQUIRES,
+                held.requirements + declaration.requirements,
+                held.when_denied,
             )
         else:
             raise exceptions.ProgrammingError(
@@ -95,7 +100,7 @@ class Declarations:
         """What `cls` declared — or, when it declared nothing, what the newest of the handlers
         it replaced did, `replaced` given oldest first.
 
-            declarations.of(IssueInvoice)    ->  AccessDeclaration("requires", (ISSUE,))
+            declarations.of(IssueInvoice)    ->  AccessDeclaration(DeclarationKind.REQUIRES, (ISSUE,))
             declarations.of(IssueV3, ["billing.IssueInvoice", "billing.IssueInvoiceV2"])
                 ->  what IssueInvoiceV2 declared — or IssueInvoice's, when V2 declared nothing
             declarations.of(QueryHealth)     ->  None
@@ -118,16 +123,20 @@ class Declarations:
 
 
 class Access(Protocol):
-    """What a guard asks of the `AccessControl` that built it — whether it checks, what was
-    declared, and the decision itself.
+    """What every service of auth reads of the `AccessControl` above it — what it holds, what
+    was declared, and the decision itself.
 
-    Context: a port, so the guard below the entrypoint never imports the `AccessControl` above
-    it; that one object answers it as it is.
+    Context: one port, so no service imports the facade; that one object answers it as it is,
+    read on every call — a provider added to it afterwards is asked too.
     """
 
     enabled: bool
     declarations: Declarations
     providers: tuple[AuthProvider, ...]
+    clock: Callable[[], float]
+    publisher: EventPublisher | None
+    checks: list[Rule]
+    """What `every_call` registered."""
 
     @property
     def needs_body(self) -> bool:
@@ -160,6 +169,10 @@ class Access(Protocol):
 
     def refused(self, identity: Identity, what: str, refusal: exceptions.AuthError) -> None:
         """Tell whoever listens that a call was refused — before the guard raises."""
+        ...
+
+    def guarded_use_cases(self) -> set[str]:
+        """The dotted names of every Command of every bus guarded."""
         ...
 
 

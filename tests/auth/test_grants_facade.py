@@ -15,6 +15,7 @@ from sincpro_framework.auth import (
     security,
 )
 from sincpro_framework.auth.grants import (
+    GrantAction,
     GrantCatalog,
     GrantChange,
     Grants,
@@ -140,7 +141,7 @@ def test_the_projects_own_rules_are_asked_of_every_change() -> None:
         seen.append(change)
         return change.role != "billing.manager" or "billing.owner" in change.actor.roles
 
-    held.allow(lambda change: change.action != "remove", name="nothing is removed")
+    held.allow(lambda change: change.action != GrantAction.REMOVE, name="nothing is removed")
     bo_manager = Identity.user(
         "user:manager",
         tenant="bo",
