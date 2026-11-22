@@ -23,6 +23,7 @@ from collections.abc import Iterable, Iterator
 from contextlib import contextmanager
 from contextvars import ContextVar
 from datetime import datetime
+from enum import StrEnum
 
 from pydantic import ConfigDict, Field
 
@@ -32,6 +33,15 @@ from sincpro_framework.sincpro_abstractions import DataTransferObject
 _VERSIONS_READ: ContextVar[dict[tuple[int, str], int] | None] = ContextVar(
     "sincpro_auth_versions_read", default=None
 )
+
+
+class WhenUnavailable(StrEnum):
+    """What a credential gets while the revocations store does not answer."""
+
+    REFUSE = "refuse"
+    """Refused (503): nothing revoked is ever let through."""
+    ADMIT = "admit"
+    """Admitted unchecked, with a warning — availability over revocation."""
 
 
 def tenant_subject(tenant: str) -> str:

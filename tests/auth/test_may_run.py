@@ -1,12 +1,9 @@
 """Asking whether someone may run a use case, without running it — the same decision the bus's
 guard takes, so a catalog lists exactly what its caller may call."""
 
-import pytest
-
 from sincpro_framework import DataTransferObject, Feature, UseFramework
 from sincpro_framework.auth import AccessControl, Identity, Permission, security
 from sincpro_framework.auth.domain import exceptions
-from sincpro_framework.exceptions import ProgrammingError
 
 
 class SalesPermission(Permission):
@@ -79,9 +76,20 @@ def test_the_requirements_of_a_command_on_one_bus():
     assert auth.requirements_of(CommandPing, bus=bus) is None
 
 
-def test_asking_about_a_bus_it_does_not_guard_says_so():
+def test_a_bus_nobody_guards_runs_anything_it_is_asked_about():
     _, auth = sales()
     other = UseFramework("sales-unguarded", log_after_execution=False)
 
-    with pytest.raises(ProgrammingError, match="does not guard 'sales-unguarded'"):
-        auth.may_run(other, CommandCreateQuote, SELLER)
+    assert auth.may_run(other, CommandCreateQuote, GUEST)
+    assert auth.refusal_of(other, CommandCreateQuote, GUEST) is None
+
+
+def test_a_bus_another_access_control_guards_is_answered_by_that_one():
+    bus, guarding = sales()
+    asking = AccessControl[SalesPermission]()
+
+    assert asking.may_run(bus, CommandCreateQuote, SELLER)
+    assert not asking.may_run(bus, CommandCreateQuote, GUEST)
+    assert str(asking.refusal_of(bus, CommandCreateQuote, GUEST)) == str(
+        guarding.refusal_of(bus, CommandCreateQuote, GUEST)
+    )

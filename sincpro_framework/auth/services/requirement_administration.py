@@ -18,9 +18,9 @@ until it answers: what only restricts fails closed.
 
 import copy
 import time
-from collections.abc import Callable, Hashable, Iterable, Mapping
+from collections.abc import Callable, Hashable, Iterable
 from datetime import timedelta
-from typing import Any, Protocol
+from typing import Any
 
 from sincpro_framework.auth.domain import exceptions
 from sincpro_framework.auth.domain.added_requirements import (
@@ -43,6 +43,7 @@ from sincpro_framework.auth.domain.identity import Identity
 from sincpro_framework.auth.domain.permissions import (
     AccessCall,
     AccessDeclaration,
+    DeclarationKind,
     Permission,
     Requirement,
     RoleRequirement,
@@ -54,28 +55,8 @@ from sincpro_framework.auth.infrastructure.announcing import announce
 from sincpro_framework.auth.infrastructure.locks import AdministrationLocks
 from sincpro_framework.auth.infrastructure.refreshed import Refreshed
 from sincpro_framework.auth.infrastructure.security_context import current_identity
+from sincpro_framework.auth.services.guard import Access
 from sincpro_framework.sincpro_logger import logger
-
-
-class Judging(Protocol):
-    """What the requirements ask of the `AccessControl` that holds them."""
-
-    def refusal(
-        self,
-        identity: Identity,
-        declaration: AccessDeclaration,
-        what: str,
-        resource: Any = None,
-        context: Mapping[str, Any] | None = None,
-        dto: Any = None,
-    ) -> exceptions.AuthError | None:
-        """Why `identity` may not run what `declaration` guards — `None` when it may."""
-        ...
-
-    def guarded_use_cases(self) -> set[str]:
-        """The dotted names of every Command of every bus guarded."""
-        ...
-
 
 Scoped = dict[str, list[Requirement]]
 """What holds for a tenant, by Command: every tenant's and its own."""
@@ -114,7 +95,7 @@ class RequirementAdministration:
 
     def __init__(
         self,
-        access: Judging,
+        access: Access,
         store: AddedRequirementStore,
         permissions: Iterable[Permission] | None = None,
         policy: AdministrationPolicy | None = None,
@@ -141,7 +122,7 @@ class RequirementAdministration:
             clock=clock,
         )
 
-    def judged_by(self, access: Judging) -> "RequirementAdministration":
+    def judged_by(self, access: Access) -> "RequirementAdministration":
         """These requirements — the same store, bound, leases and what was read — judged by
         `access`: what `AccessControl.using` gives the copy it makes."""
         judged = copy.copy(self)
@@ -201,7 +182,7 @@ class RequirementAdministration:
             return True
         refused = self.access.refusal(
             call.identity,
-            AccessDeclaration("requires", tuple(required)),
+            AccessDeclaration(DeclarationKind.REQUIRES, tuple(required)),
             call.use_case,
             call.resource,
             call.context,

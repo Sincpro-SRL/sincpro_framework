@@ -141,7 +141,7 @@ except Unauthenticated as refused:
 `until` is when the last token it covers expires: an entry lives no longer. `KeyValueRevocations`
 keeps them on the running context's store — Redis in production — under digested keys; a store
 that does not answer is refused (503) by default, or admitted with a warning
-(`on_unavailable="admit"`). One authentication reads the store once: the token, its session, its
+(`on_unavailable=WhenUnavailable.ADMIT`). One authentication reads the store once: the token, its session, its
 subject's and its tenant's permission versions in one `get_many`, and a `GrantResolver` on the
 same `Revocations` is answered from that read (`remembering_versions()`).
 

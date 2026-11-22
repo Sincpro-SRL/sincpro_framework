@@ -17,7 +17,7 @@ from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
 from datetime import timedelta
 from enum import StrEnum
-from typing import Any, Literal
+from typing import Any
 
 from sincpro_framework.auth.domain.identity import Identity
 from sincpro_framework.sincpro_abstractions import DataTransferObject
@@ -212,6 +212,13 @@ class Rule:
 type Requirement = Permission | AnyOf | ByField | AssuranceRequirement | RoleRequirement | Rule
 
 
+class DeclarationKind(StrEnum):
+    """What a use case or a hook declared: anybody authenticated, or requirements."""
+
+    AUTHENTICATED = "authenticated"
+    REQUIRES = "requires"
+
+
 OPEN = "open"
 """How a use case that declares nothing is described — in `describe()`, the manifest, OpenAPI
 and the logs: anyone may run it."""
@@ -222,18 +229,18 @@ class AccessDeclaration:
     """What a use case or a hook declared: `authenticated`, or the requirements it needs, and
     what it does when they are missing. Declaring nothing is open — anyone may run it."""
 
-    kind: Literal["authenticated", "requires"]
+    kind: DeclarationKind
     requirements: tuple[Requirement, ...] = ()
     when_denied: WhenDenied = WhenDenied.RAISE
 
     def __str__(self) -> str:
         """How `describe()` and the logs say it.
 
-        AccessDeclaration("authenticated")                            ->  "authenticated"
-        AccessDeclaration("requires", (A, AnyOf((B, C))))             ->  "a and b or c"
-        AccessDeclaration("requires", (A,), WhenDenied.SKIP)          ->  "a (else skipped)"
+        AccessDeclaration(DeclarationKind.AUTHENTICATED)             ->  "authenticated"
+        AccessDeclaration(DeclarationKind.REQUIRES, (A, AnyOf((B, C))))  ->  "a and b or c"
+        AccessDeclaration(DeclarationKind.REQUIRES, (A,), WhenDenied.SKIP)  ->  "a (else skipped)"
         """
-        if self.kind != "requires":
+        if self.kind != DeclarationKind.REQUIRES:
             return self.kind
         needed = " and ".join(str(one) for one in self.requirements)
         return needed if self.when_denied == WhenDenied.RAISE else f"{needed} (else skipped)"

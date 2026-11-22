@@ -17,9 +17,12 @@ import time
 from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
 from functools import partial
-from typing import Literal
 
-from sincpro_framework.auth.domain.revocations import Revocations, RevocationState
+from sincpro_framework.auth.domain.revocations import (
+    Revocations,
+    RevocationState,
+    WhenUnavailable,
+)
 from sincpro_framework.auth.infrastructure.digests import digest
 from sincpro_framework.context.entrypoint.resolution import current_store, key_value_store_of
 from sincpro_framework.data_layer.store import (
@@ -40,7 +43,7 @@ class KeyValueRevocations(Revocations):
         self,
         store: KeyValueStore | None = None,
         prefix: str = "sincpro:auth:revoked",
-        on_unavailable: Literal["refuse", "admit"] = "refuse",
+        on_unavailable: WhenUnavailable = WhenUnavailable.REFUSE,
         now: Callable[[], datetime] = partial(datetime.now, UTC),
         bypass_for: timedelta = timedelta(seconds=30),
     ) -> None:
@@ -126,7 +129,7 @@ class KeyValueRevocations(Revocations):
         session: str | None,
         related: tuple[str, ...],
     ) -> RevocationState:
-        """Everything revoked about this credential — or, with `on_unavailable="admit"` and the
+        """Everything revoked about this credential — or, with `WhenUnavailable.ADMIT` and the
         store not answering, nothing: logged, and the store left alone for a while.
 
         1. Admitting and the store bypassed: nothing revoked.
@@ -135,12 +138,12 @@ class KeyValueRevocations(Revocations):
                logs a warning, trips the bypass and answers nothing revoked.
         Final: the state the store holds.
         """
-        if self.on_unavailable == "admit" and self._bypass.is_open():
+        if self.on_unavailable == WhenUnavailable.ADMIT and self._bypass.is_open():
             return RevocationState()
         try:
             return self._held(subject, token_id, session, related)
         except StoreUnavailable:
-            if self.on_unavailable == "refuse":
+            if self.on_unavailable == WhenUnavailable.REFUSE:
                 raise
             logger.warning("revocations store unavailable: credentials admitted unchecked")
             self._bypass.trip()

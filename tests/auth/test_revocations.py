@@ -12,7 +12,7 @@ from sincpro_framework.auth.adapters.revocations import (
     InMemoryRevocations,
     KeyValueRevocations,
 )
-from sincpro_framework.auth.domain.revocations import Revocations
+from sincpro_framework.auth.domain.revocations import Revocations, WhenUnavailable
 from sincpro_framework.data_layer.store import InMemoryKeyValue, StoreUnavailable
 from sincpro_framework.data_layer.store.adapters.redis import RedisKeyValue
 from sincpro_framework.runtime.testing import ManualClock
@@ -59,6 +59,6 @@ def test_a_store_that_does_not_answer_is_refused_by_default() -> None:
 
 
 def test_a_project_may_admit_while_its_store_is_down() -> None:
-    revocations = KeyValueRevocations(DownStore(), on_unavailable="admit")
+    revocations = KeyValueRevocations(DownStore(), on_unavailable=WhenUnavailable.ADMIT)
     assert revocations.state("user:1", session="s-1").refusal(None) is None
     assert revocations.state("user:1").permission_version == 0

@@ -14,6 +14,7 @@ from sincpro_framework.auth.accounts import (
     BasicProvider,
     CredentialVerifier,
     HashedCredentials,
+    HashScheme,
     LoginAttempts,
     PasswordHasher,
     ScryptCost,
@@ -28,7 +29,7 @@ CHEAP = ScryptCost(ln=10)
 
 
 def test_a_password_verifies_and_another_does_not() -> None:
-    hasher = PasswordHasher(scheme="scrypt", scrypt=CHEAP)
+    hasher = PasswordHasher(scheme=HashScheme.SCRYPT, scrypt=CHEAP)
     stored = hasher.hash("correct horse")
     assert stored.startswith("$scrypt$ln=10,r=8,p=1$")
     assert hasher.verify(stored, "correct horse") and not hasher.verify(stored, "wrong horse")
@@ -36,27 +37,29 @@ def test_a_password_verifies_and_another_does_not() -> None:
 
 
 def test_the_same_characters_typed_differently_are_one_password() -> None:
-    hasher = PasswordHasher(scheme="scrypt", scrypt=CHEAP)
+    hasher = PasswordHasher(scheme=HashScheme.SCRYPT, scrypt=CHEAP)
     assert hasher.verify(hasher.hash("ﬁle"), "file")
 
 
 def test_nobody_learns_whether_a_username_exists() -> None:
-    hasher = PasswordHasher(scheme="scrypt", scrypt=CHEAP)
+    hasher = PasswordHasher(scheme=HashScheme.SCRYPT, scrypt=CHEAP)
     assert hasher.verify(None, "anything") is False
 
 
 def test_a_password_too_long_is_refused_before_it_is_hashed() -> None:
-    hasher = PasswordHasher(scheme="scrypt", scrypt=CHEAP, max_length=64)
+    hasher = PasswordHasher(scheme=HashScheme.SCRYPT, scrypt=CHEAP, max_length=64)
     with pytest.raises(PasswordRejected):
         hasher.hash("x" * 65)
     assert not hasher.verify(hasher.hash("x" * 64), "x" * 65)
 
 
 def test_a_cost_raised_or_a_scheme_changed_asks_for_a_new_hash() -> None:
-    old = PasswordHasher(scheme="scrypt", scrypt=CHEAP).hash("pw")
-    assert not PasswordHasher(scheme="scrypt", scrypt=CHEAP).needs_rehash(old)
-    assert PasswordHasher(scheme="scrypt", scrypt=ScryptCost(ln=11)).needs_rehash(old)
-    argon2 = PasswordHasher(scheme="argon2id")
+    old = PasswordHasher(scheme=HashScheme.SCRYPT, scrypt=CHEAP).hash("pw")
+    assert not PasswordHasher(scheme=HashScheme.SCRYPT, scrypt=CHEAP).needs_rehash(old)
+    assert PasswordHasher(scheme=HashScheme.SCRYPT, scrypt=ScryptCost(ln=11)).needs_rehash(
+        old
+    )
+    argon2 = PasswordHasher(scheme=HashScheme.ARGON2ID)
     assert argon2.needs_rehash(old)
     assert argon2.verify(old, "pw")
     argon2_hash = argon2.hash("pw")
@@ -82,18 +85,20 @@ def test_a_legacy_hash_is_verified_and_asks_to_be_replaced() -> None:
     salt = b"0123456789abcdef"
     digest = hashlib.scrypt(b"clave-123", salt=salt, n=2**10, r=8, p=1, dklen=32).hex()
     legacy = f"scrypt$1024$8$1${salt.hex()}${digest}"
-    hasher = PasswordHasher(scheme="scrypt", scrypt=CHEAP, legacy={"scrypt$": quipu_clave})
+    hasher = PasswordHasher(
+        scheme=HashScheme.SCRYPT, scrypt=CHEAP, legacy={"scrypt$": quipu_clave}
+    )
     assert hasher.verify(legacy, "clave-123") and not hasher.verify(legacy, "otra")
     assert hasher.needs_rehash(legacy)
 
 
 def test_argon2_without_its_library_is_said_plainly(monkeypatch: pytest.MonkeyPatch) -> None:
-    stored = PasswordHasher(scheme="argon2id").hash("pw")
+    stored = PasswordHasher(scheme=HashScheme.ARGON2ID).hash("pw")
     monkeypatch.setattr(hasher, "_argon2", lambda: None)
     with pytest.raises(exceptions.ProgrammingError, match=r"sincpro-framework\[argon2\]"):
-        PasswordHasher(scheme="argon2id")
+        PasswordHasher(scheme=HashScheme.ARGON2ID)
     auto = PasswordHasher(scrypt=CHEAP)
-    assert auto.scheme == "scrypt"
+    assert auto.scheme == HashScheme.SCRYPT
     with pytest.raises(exceptions.ProgrammingError, match="argon2"):
         auto.verify(stored, "pw")
 
@@ -172,7 +177,7 @@ class Counting(CredentialVerifier):
         return self.inner.verify(username, password)
 
 
-HASHER = PasswordHasher(scheme="scrypt", scrypt=CHEAP)
+HASHER = PasswordHasher(scheme=HashScheme.SCRYPT, scrypt=CHEAP)
 ACCOUNTS = HashedCredentials(
     {
         "reports": (

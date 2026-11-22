@@ -13,6 +13,7 @@ from dataclasses import dataclass
 from typing import Any
 
 import pytest
+from structlog.testing import capture_logs
 
 from sincpro_framework import (
     ApplicationService,
@@ -600,15 +601,16 @@ def test_a_copy_made_before_the_collection_is_guarded_is_guarded_too() -> None:
         invoices.save(Invoice(total=1))
 
 
-def test_a_collection_guarded_twice_is_refused_and_a_combination_asks_once() -> None:
+def test_a_collection_guarded_twice_is_guarded_once_and_a_combination_asks_once() -> None:
     recording = RecordingProvider()
     auth = AccessControl[BillingPermission](providers=[recording])
     core, _ = _guarded_core_hooks(auth)
     client = Hooks(None)
     auth.on(core)
     auth.on(client)
-    with pytest.raises(exceptions.ProgrammingError):
+    with capture_logs() as logs:
         auth.on(core)
+    assert any("already guards this Hooks" in line["event"] for line in logs)
     writer = Identity.user("user:1", permissions={BillingPermission.WRITE_INVOICE})
     with security.as_identity(writer.model_copy(update={"provider": recording.name})):
         MemoryRepository(hooks=core.combined_with(client)).save(Invoice(total=1))
@@ -753,12 +755,13 @@ def test_the_call_to_another_service_carries_what_the_identitys_provider_issues(
     assert AccessControl[BillingPermission]().credentials_for(Identity.user("user:1")) is None
 
 
-def test_wiring_mistakes_are_refused_where_they_are_made() -> None:
+def test_wiring_mistakes_are_refused_where_they_are_made_and_a_repeat_is_said() -> None:
     auth = AccessControl[BillingPermission]()
     billing = UseFramework("billing", log_after_execution=False)
     auth.on(billing)
-    with pytest.raises(exceptions.ProgrammingError):
+    with capture_logs() as logs:
         auth.on(billing)
+    assert any("already guards the bus" in line["event"] for line in logs)
     with pytest.raises(exceptions.ProgrammingError):
         auth.requires()
     with pytest.raises(exceptions.ProgrammingError):

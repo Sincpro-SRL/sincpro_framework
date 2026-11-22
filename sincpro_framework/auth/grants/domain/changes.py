@@ -12,13 +12,23 @@ tenant's lease; both must let the change through, so a rule only restricts: answ
 
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass
-from typing import Literal
+from enum import StrEnum
 
 from sincpro_framework.auth.domain import exceptions
 from sincpro_framework.auth.domain.identity import Identity, IdentityKind
 from sincpro_framework.auth.grants.domain.definitions import RoleDefinition
 
-Action = Literal["assign", "unassign", "set_level", "entitle", "withdraw", "define", "remove"]
+
+class GrantAction(StrEnum):
+    """What an administrator is about to do — what a rule of `@grants.allow` reads."""
+
+    ASSIGN = "assign"
+    UNASSIGN = "unassign"
+    SET_LEVEL = "set_level"
+    ENTITLE = "entitle"
+    WITHDRAW = "withdraw"
+    DEFINE = "define"
+    REMOVE = "remove"
 
 
 @dataclass(frozen=True)
@@ -26,7 +36,7 @@ class GrantChange:
     """What an administrator is about to change, and who."""
 
     actor: Identity
-    action: Action
+    action: GrantAction
     tenant: str | None = None
     subject: str | None = None
     """Whose roles change — assign, unassign, set_level."""

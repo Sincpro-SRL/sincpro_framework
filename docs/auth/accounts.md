@@ -14,14 +14,14 @@ logout and revocation. Every block on this page runs, in order, in
 ## Passwords
 
 ```python
-from sincpro_framework.auth.accounts import PasswordHasher, ScryptCost
+from sincpro_framework.auth.accounts import HashScheme, PasswordHasher, ScryptCost
 
-hasher = PasswordHasher(scheme="scrypt", scrypt=ScryptCost(ln=12))   # ln=15 in production
+hasher = PasswordHasher(scheme=HashScheme.SCRYPT, scrypt=ScryptCost(ln=12))   # ln=15 in production
 stored = hasher.hash("correct horse battery")
 assert stored.startswith("$scrypt$ln=12,r=8,p=1$")
 assert hasher.verify(stored, "correct horse battery")
 assert not hasher.verify(None, "correct horse battery")    # a username nobody holds: as slow, False
-assert PasswordHasher(scheme="scrypt").needs_rehash(stored)      # the cost rose: rehash on login
+assert PasswordHasher(scheme=HashScheme.SCRYPT).needs_rehash(stored)      # the cost rose: rehash on login
 ```
 
 | | |

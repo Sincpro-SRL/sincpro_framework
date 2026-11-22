@@ -5,6 +5,7 @@ closure) or a rule of the project's own, asked with the call and the execution's
 handler asks the same things of `self.auth`."""
 
 import pytest
+from structlog.testing import capture_logs
 
 from sincpro_framework import ApplicationService, DataTransferObject, Feature, UseFramework
 from sincpro_framework.auth import (
@@ -286,10 +287,11 @@ def test_by_field_with_no_command_keeps_roles_and_rules_among_its_options() -> N
         assert auth.allows(chosen)
 
 
-def test_open_is_no_rules_name_and_a_test_copy_never_adds_checks_to_production() -> None:
+def test_a_rule_named_open_is_made_with_a_warning_and_a_test_copy_never_adds_checks() -> None:
     auth = AccessControl[P]()
-    with pytest.raises(Exception, match="not named 'open'"):
-        auth.rule("open", lambda call: True)
+    with capture_logs() as logs:
+        assert auth.rule("open", lambda call: True).name == "open"
+    assert any("reads as a use case that declares nothing" in line["event"] for line in logs)
     copy = auth.using([])
     copy.every_call(lambda call: False, name="the test's own")
     assert auth.checks == [] and [one.name for one in copy.checks] == ["the test's own"]
@@ -372,8 +374,14 @@ def test_requires_never_reads_as_open_or_authenticated() -> None:
 
     auth = AccessControl[Reserved]()
     for one in (Reserved.OPEN, Reserved.AUTHENTICATED):
-        with pytest.raises(Exception, match="reads as what a use case that declares"):
-            auth.requires(one)
+        with capture_logs() as logs:
+
+            @auth.requires(one)
+            class Declared(Feature):
+                def execute(self, dto: CommandApprove) -> None: ...
+
+        assert auth.requirements_of(Declared) is not None
+        assert any("reads as what a use case" in line["event"] for line in logs)
 
 
 def test_the_openapi_of_an_open_operation_an_every_call_check_may_refuse() -> None:

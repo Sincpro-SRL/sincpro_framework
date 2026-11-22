@@ -92,6 +92,7 @@ from sincpro_framework.auth.domain.permissions import (
     AnyOf,
     AssuranceRequirement,
     ByField,
+    DeclarationKind,
     Permission,
     RoleRequirement,
     Rule,
@@ -102,6 +103,7 @@ from sincpro_framework.auth.domain.resolver import IdentityResolver
 from sincpro_framework.auth.domain.revocations import (
     Revocations,
     RevocationState,
+    WhenUnavailable,
     remembering_versions,
 )
 from sincpro_framework.auth.entrypoint.access_control import AccessControl
@@ -143,6 +145,7 @@ __all__ = [
     "ConcurrentChange",
     "Credentials",
     "CredentialsRejected",
+    "DeclarationKind",
     "EndpointUnavailable",
     "EventPublisher",
     "GrantRejected",
@@ -178,6 +181,7 @@ __all__ = [
     "Unauthenticated",
     "UrllibHttp",
     "WhenDenied",
+    "WhenUnavailable",
     "refusal_from",
     "remembering_versions",
     "security",

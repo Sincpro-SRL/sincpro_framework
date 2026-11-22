@@ -12,7 +12,7 @@ Context: a password is NFKC-normalized first, so the same characters typed on tw
 the same password. `verify(None, …)` — a username nobody holds — runs a hash all the same and
 answers `False`, so the time it takes says nothing about which usernames exist. A password longer
 than `max_length` is refused before it is hashed: a megabyte of input would otherwise be a way to
-burn the server's CPU. With `scheme="auto"`, pin it in settings across a fleet: a machine without
+burn the server's CPU. With `HashScheme.AUTO`, pin it in settings across a fleet: a machine without
 argon2 cannot verify an argon2 hash.
 """
 
@@ -23,9 +23,19 @@ import secrets
 import unicodedata
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
-from typing import Any, Literal
+from enum import StrEnum
+from typing import Any
 
 from sincpro_framework.auth.domain import exceptions
+
+
+class HashScheme(StrEnum):
+    """How new passwords are hashed — every scheme is still verified."""
+
+    AUTO = "auto"
+    """argon2id when `argon2-cffi` is installed, else scrypt."""
+    SCRYPT = "scrypt"
+    ARGON2ID = "argon2id"
 
 
 @dataclass(frozen=True)
@@ -59,7 +69,7 @@ class PasswordHasher:
 
     def __init__(
         self,
-        scheme: Literal["auto", "scrypt", "argon2id"] = "auto",
+        scheme: HashScheme = HashScheme.AUTO,
         scrypt: ScryptCost = ScryptCost(),
         max_length: int = 1024,
         legacy: Mapping[str, Callable[[str, str], bool]] | None = None,
@@ -67,12 +77,14 @@ class PasswordHasher:
         """`legacy` verifies hashes another system wrote, by the prefix they start with — each
         verified once more, then `needs_rehash` says to store the new one."""
         argon2 = _argon2()
-        if scheme == "argon2id" and argon2 is None:
+        if scheme == HashScheme.ARGON2ID and argon2 is None:
             raise exceptions.ProgrammingError(
                 "argon2id needs argon2-cffi. Install with: pip install sincpro-framework[argon2]"
             )
         self.scheme = (
-            "argon2id" if scheme == "argon2id" or (scheme == "auto" and argon2) else "scrypt"
+            HashScheme.ARGON2ID
+            if scheme == HashScheme.ARGON2ID or (scheme == HashScheme.AUTO and argon2)
+            else HashScheme.SCRYPT
         )
         self.cost = scrypt
         self.max_length = max_length
@@ -102,7 +114,7 @@ class PasswordHasher:
     def hash(self, password: str) -> str:
         """`password` hashed with a new salt, in this hasher's scheme and cost."""
         normalized = self._normalized(password)
-        if self.scheme == "argon2id":
+        if self.scheme == HashScheme.ARGON2ID:
             return self._argon2.hash(normalized)
         salt = secrets.token_bytes(16)
         cost = self.cost
@@ -159,7 +171,7 @@ class PasswordHasher:
     def needs_rehash(self, stored: str) -> bool:
         """Whether `stored` should be replaced by `hash(password)` once the password is known
         good — another scheme, a lower cost, a legacy format."""
-        if self.scheme == "argon2id":
+        if self.scheme == HashScheme.ARGON2ID:
             if not stored.startswith("$argon2id$"):
                 return True
             return bool(self._argon2.check_needs_rehash(stored))

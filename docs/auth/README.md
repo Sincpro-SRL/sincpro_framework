@@ -307,7 +307,7 @@ assert ledger_auth.describe().every_call == ["tenant_active"]
 |---|---|
 | `auth.role(*roles)` | met by one of them — the identity's roles, their closure once a `GrantResolver` resolved them; a role whose grants the token's scopes or the tenant's entitlements cut is not held ([grants](grants.md#resolved-per-call)) |
 | `auth.any_of(...)` | one among any requirements, asked in order: the first that holds grants it, none after it is asked — `auth.any_of(auth.role("admin"), auth.rule("its owner", is_owner))` |
-| `auth.rule(name, check)` | `check(AccessCall) -> bool`; refused, `PermissionDenied` names the rule; the check may raise an `AuthError` of its own — a step-up, `Unauthenticated`. Asked with no Command — `may_run` for a catalog, `allows`, a hook — a check that fails reading one is refused: write `call.dto is None or …` for a rule a catalog may list. `open` is not a rule's name |
+| `auth.rule(name, check)` | `check(AccessCall) -> bool`; refused, `PermissionDenied` names the rule; the check may raise an `AuthError` of its own — a step-up, `Unauthenticated`. Asked with no Command — `may_run` for a catalog, `allows`, a hook — a check that fails reading one is refused: write `call.dto is None or …` for a rule a catalog may list. A rule named `open` is made, with a warning: the descriptions would read it as no requirement |
 | `any_of` with a step-up | when no member holds and one is a step-up (`Unauthenticated`), that one answers: authenticating again may meet it |
 | `@auth.every_call` / `auth.every_call(check, name=…)` | asked on every use case, open or declared — a suspended tenant, maintenance, an IP allow-list read from the context; the system passes; `describe()` lists them. Asked by `may_run` with no Command, as a rule is: a check that fails reading one hides every use case from a catalog — read the context, or write `call.dto is None or …` |
 | `self.auth.allows(r)` / `check(r)` / `has_role(...)` / `identity` | the same requirements, asked by a handler before an optional step |
@@ -361,7 +361,8 @@ assert finance_auth.requirements_of(CommandRegisterPayment, bus=finance) is not 
 ```
 
 `refusal_of(bus, Command, identity)` answers why not — the refusal the guard would raise — and
-`None` when it may; the identity in play is asked when none is given.
+`None` when it may; the identity in play is asked when none is given. Asked about a bus another
+`AccessControl` guards, that one answers; a bus nobody guards runs anything (`None`).
 
 Asking is as cheap as the provider makes it: `may_run` asks `has_permission` once per permission.
 A provider whose permissions come from a backend — a tenant's agents, a plan — reads them **once,
@@ -443,6 +444,9 @@ unchecked = AccessControl[BillingPermission](enabled=False)
 | one bus that must not be guarded | no `auth.on(bus)` for it |
 | a new generation of the bus — `fresh()`, the runtime registry | guarded as the bus it came from, resolving its own handlers |
 | a `fresh()` bus checked by other providers — a test's | `auth.using(providers=[...]).on(fresh, replaces=auth)`: the same declarations and `enabled`; its guard and its `auth` in the place of the original's, on every bus made of it too |
+| `replaces=` naming an `AccessControl` that does not guard the bus | the one guarding it is replaced — or, nobody guarding it, the bus is guarded as `on(bus)` guards — with a warning |
+| `auth.on(...)` twice on the same bus or `Hooks` | guarded once, with a warning |
+| two `AccessControl`s with providers of different kinds under one name | a warning once per name: an identity vouched for under that name may be asked of either — name them apart |
 
 ## Hooks
 
