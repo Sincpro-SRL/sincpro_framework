@@ -193,13 +193,28 @@ class Jwks(KeySource):
 
     def _refetched(self, url: str) -> list[Mapping[str, Any]] | None:
         """The key set fetched again now — `None` while the cooldown since the last refetch
-        has not passed, so forged key ids never become a stream of fetches."""
+        has not passed, so forged key ids never become a stream of fetches, and `None` when the
+        issuer does not answer.
+
+        Context: the cached set is replaced only by one fetched — an unknown key id while the
+        issuer is down must not throw away the keys every other token is still verified with.
+        """
         with self._lock:
             if self.clock() - self._refetched_at < self.unknown_kid_cooldown.total_seconds():
                 return None
             self._refetched_at = self.clock()
+        try:
+            fetched = self._fetched(url)
+        except ServiceUnavailableError as error:
+            logger.warning(
+                "the JWKS could not be fetched again", url=safe_url(url), error=str(error)
+            )
+            return None
         self.cache.forget(("jwks", url), self._codec)
-        return self._keys(url)
+        document = self.cache.get_or_compute(
+            ("jwks", url), lambda: fetched, self._policy, self._codec
+        )
+        return list(document["keys"])
 
     def _key(self, jwk: Mapping[str, Any], algorithm: str) -> PublicKey:
         """The parsed key of `jwk` for `algorithm`, parsed once."""

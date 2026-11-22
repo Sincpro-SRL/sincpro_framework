@@ -26,7 +26,13 @@ from sincpro_framework.auth.infrastructure.security_context import (
     _access_in_play,
     current_identity,
 )
-from sincpro_framework.context import ContextKey, context_scopes, use_context
+from sincpro_framework.context import (
+    ContextKey,
+    ContextLevel,
+    EntrypointKind,
+    context_scopes,
+    use_context,
+)
 from sincpro_framework.sincpro_logger import logger
 
 if TYPE_CHECKING:
@@ -150,6 +156,62 @@ class Access(Protocol):
         ...
 
 
+CALLERS = frozenset(EntrypointKind) - {EntrypointKind.DIRECT, EntrypointKind.CRON}
+"""The entrances whose flow opens with what a caller carried — `baggage`, `sincpro-context`, a
+message's envelope —, not with what the code said."""
+
+
+def _carried(context: Any, key: str) -> bool:
+    """Whether the value of `key` is the caller's own — held by the entrypoint a wire opened,
+    not by code, a provider or a scope (`Context.origin`)."""
+    origin = context.origin(key)
+    return (
+        origin is not None
+        and origin.level == ContextLevel.ENTRYPOINT
+        and context.kind in CALLERS
+    )
+
+
+def _acting(identity: Identity, context: Any) -> exceptions.PermissionDenied | None:
+    """Who acts and where, as the identity a provider verified says — never as the caller's
+    headers say.
+
+    Context: the context is a dict a caller writes (`baggage`, `sincpro-context`); what a draft,
+    a cached answer, an audit trail or a project's query keys on (`Owner.BY_TENANT_AND_USER`)
+    is read from it. Code, a provider of the project's and a scope still say what they say.
+
+    1. `user_id`: unsaid, the identity's subject; carried by the caller, a person's subject in
+       its place — a service acts for whom its call names.
+    2. An identity of a tenant acts in it: `tenant_id` unsaid is its tenant; a tenant the
+       caller carried that is another (`tenant_id`, `tenant_ids`) is refused.
+    Final: `None`, or the refusal.
+    """
+    said = context.get(ContextKey.USER_ID)
+    if said is None or (
+        identity.kind == IdentityKind.USER
+        and said != identity.subject
+        and _carried(context, ContextKey.USER_ID)
+    ):
+        context.set(ContextKey.USER_ID, identity.subject)
+    if identity.tenant is None:
+        return None
+    named = (
+        [context.get(ContextKey.TENANT_ID)] if _carried(context, ContextKey.TENANT_ID) else []
+    )
+    if _carried(context, ContextKey.TENANT_IDS):
+        named.extend(context.get(ContextKey.TENANT_IDS) or ())
+    other = next((one for one in named if one not in (None, identity.tenant)), None)
+    if other is not None:
+        return exceptions.PermissionDenied(
+            identity.subject,
+            ContextKey.TENANT_ID,
+            f"acts in tenant {identity.tenant!r}, the call names {other!r}",
+        )
+    if context.get(ContextKey.TENANT_ID) is None:
+        context.set(ContextKey.TENANT_ID, identity.tenant)
+    return None
+
+
 def _refused_or_skipped(
     access: Access,
     refusal: exceptions.AuthError,
@@ -161,9 +223,11 @@ def _refused_or_skipped(
     tell `access`'s publisher and raise it for `WhenDenied.RAISE` — the caller then answers
     `None` or leaves the hook's moment out."""
     if declaration.when_denied == WhenDenied.SKIP:
-        logger.info(f"access: {what} skipped — {refusal}")
+        logger.debug("access skipped", use_case=what, reason=str(refusal))
         return
-    logger.warning(f"access refused: {identity.subject} → {what} — {refusal}")
+    logger.warning(
+        "access refused", subject=identity.subject, use_case=what, reason=str(refusal)
+    )
     access.refused(identity, what, refusal)
     raise refusal
 
@@ -237,9 +301,9 @@ class BusGuard:
     def __call__(self, dto: Any, call_next: Callable[[Any], Any]) -> Any:
         """Decide whether the identity in play may run the use case `dto` enters, and run it.
 
-        1. Who acts: the identity in play, unless anonymous, is the execution's `user_id` when
-           nothing said one — not a provider of the project's, not a scope —, so a fact the use
-           case records names its `actor`.
+        1. Who acts and where: the identity in play, unless anonymous, over what
+           its caller carried (`_acting`) — a fact the use case records names its `actor`, and
+           a tenant the caller named that is not its own is refused.
         2. Disabled: it runs.
         3. Declared something the identity lacks: refused, or skipped (`None`) when it said
            `WhenDenied.SKIP`.
@@ -248,9 +312,17 @@ class BusGuard:
         Final: it runs, this `AccessControl` in play.
         """
         identity = current_identity()
-        context = use_context()
-        if not identity.is_anonymous and context.get(ContextKey.USER_ID) is None:
-            context.set(ContextKey.USER_ID, identity.subject)
+        if not identity.is_anonymous:
+            elsewhere = _acting(identity, use_context())
+            if elsewhere is not None and self.access.enabled:
+                logger.warning(
+                    "access refused",
+                    subject=identity.subject,
+                    use_case=type(dto).__name__,
+                    reason=elsewhere.reason,
+                )
+                self.access.refused(identity, type(dto).__name__, elsewhere)
+                raise elsewhere
         if not self.access.enabled:
             return call_next(dto)
         command = type(dto)
@@ -272,7 +344,10 @@ class BusGuard:
         )
         if intercepted is not None:
             logger.warning(
-                f"access refused: {identity.subject} → {command.__name__} — {intercepted}"
+                "access refused",
+                subject=identity.subject,
+                use_case=command.__name__,
+                reason=str(intercepted),
             )
             self.access.refused(identity, command.__name__, intercepted)
             raise intercepted

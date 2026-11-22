@@ -26,8 +26,8 @@ import time
 
 from sincpro_framework.auth import Credentials
 from sincpro_framework.auth.server import ClaimMapping, JwtProvider, SharedSecrets, TrustedIssuer
-from sincpro_framework.auth.domain import exceptions
-from sincpro_framework.auth.infrastructure import jws
+from sincpro_framework.auth import Unauthenticated
+from sincpro_framework.runtime.testing import signed_token
 
 KEYCLOAK = "https://auth.sincpro.com.bo/realms/sincpro"
 SECRET = "a shared secret of thirty-two by!"
@@ -48,8 +48,7 @@ def token(**claims) -> str:
                "azp": "billing-web", "sid": "s-1", "jti": "j-1", "scope": "openid",
                "realm_access": {"roles": ["app:billing"]},
                "resource_access": {"billing-api": {"roles": ["accountant"]}}, **claims}
-    return jws.encode({"alg": "HS256", "kid": "2026-09"}, payload,
-                      jws.HmacKey.of("2026-09", SECRET).sign)
+    return signed_token(payload, secret=SECRET, kid="2026-09")
 
 
 def bearer(value: str) -> Credentials:
@@ -63,7 +62,7 @@ assert (ana.client, ana.session, ana.token_id) == ("billing-web", "s-1", "j-1")
 
 try:
     provider.authenticate(bearer(token(aud="another-api")))
-except exceptions.Unauthenticated as refused:
+except Unauthenticated as refused:
     assert refused.reason == "token is for another audience"
 
 assert provider.authenticate(bearer(token(iss="https://elsewhere"))) is None   # not its kind
@@ -128,7 +127,7 @@ assert ana is not None and ana.permissions == {BillingPermission.ISSUE_INVOICE}
 revocations.revoke_session("s-1", until=datetime.now(UTC) + timedelta(hours=1))   # a logout
 try:
     provider.authenticate(bearer(token()))
-except exceptions.Unauthenticated as refused:
+except Unauthenticated as refused:
     assert refused.reason == "session revoked"
 ```
 
@@ -159,7 +158,7 @@ from sincpro_framework.auth.server import ProtectedResource
 
 resource = ProtectedResource("https://billing.sincpro.com.bo/mcp", authorization_servers=[KEYCLOAK])
 provider = JwtProvider(keycloak, resource=resource, realm="billing")
-assert provider.challenge_for(exceptions.Unauthenticated("token expired")) == (
+assert provider.challenge_for(Unauthenticated("token expired")) == (
     'Bearer realm="billing", error="invalid_token", error_description="token expired", '
     'resource_metadata="https://billing.sincpro.com.bo/.well-known/oauth-protected-resource/mcp"'
 )
@@ -173,7 +172,7 @@ still the refusal's own:
 ```python
 from sincpro_framework.auth import refusal_from
 
-nobody = exceptions.Unauthenticated("authenticate to run IssueInvoice", anonymous=True)
+nobody = Unauthenticated("authenticate to run IssueInvoice", anonymous=True)
 assert nobody.refusal_body() == {
     "kind": "unauthenticated", "reason": "authenticate to run IssueInvoice", "anonymous": True,
 }
@@ -208,10 +207,9 @@ keycloak_provider = JwtProvider.from_issuer(
 )
 assert http.sent == []                                         # nothing fetched yet
 
-signed = jws.encode(
-    {"alg": "ES256", "kid": "kc-1"},
+signed = signed_token(
     {"iss": KEYCLOAK, "aud": "billing-api", "sub": "4c1d", "exp": time.time() + 300},
-    signing.sign,
+    key=signing,
 )
 assert keycloak_provider.authenticate(bearer(signed)).subject == "user:4c1d"
 ```
@@ -270,7 +268,7 @@ with_password_only = Identity.user("user:4c1d", permissions={BillingPermission.I
 with security.as_identity(with_password_only):
     try:
         payments(CommandApprovePayment(amount=900))
-    except exceptions.Unauthenticated as refused:
+    except Unauthenticated as refused:
         assert (refused.step_up, refused.max_age) == ("mfa", 300)
         assert 'error="insufficient_user_authentication"' in provider.challenge_for(refused)
 ```
@@ -350,11 +348,11 @@ from sincpro_framework.auth.client import DpopProver
 from sincpro_framework.auth.server import DpopProofs
 
 client_key = DpopProver()                                      # the client's — ClientCredentials(dpop=…)
-bound = jws.encode(
-    {"alg": "HS256", "kid": "own"},
+bound = signed_token(
     {"iss": "billing", "aud": "billing", "sub": "ana", "exp": time.time() + 300,
      "cnf": {"jkt": client_key.thumbprint}},
-    jws.HmacKey.of("own", SECRET).sign,
+    secret=SECRET,
+    kid="own",
 )
 api = JwtProvider(own, dpop=DpopProofs("https://billing.sincpro.com.bo"))
 with_proof = Credentials(
@@ -365,7 +363,7 @@ with_proof = Credentials(
 assert api.authenticate(with_proof).subject == "user:ana"
 try:
     api.authenticate(Credentials(transport="http", headers={"authorization": f"Bearer {bound}"}))
-except exceptions.Unauthenticated as refused:
+except Unauthenticated as refused:
     assert refused.reason == "this token must be sent as DPoP"
 ```
 

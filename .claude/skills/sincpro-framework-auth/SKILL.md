@@ -208,7 +208,7 @@ from sincpro_framework.auth import (
     Permission,
     WhenDenied,
 )
-from sincpro_framework.auth.domain import exceptions
+from sincpro_framework.auth import Unauthenticated
 
 
 class BillingPermission(Permission):
@@ -227,7 +227,7 @@ class TenantKeys(AuthProvider):
         if key is None:
             return None                                  # not mine: the next provider is tried
         if key not in self.keys:
-            raise exceptions.Unauthenticated("unknown key")         # mine, and it fails
+            raise Unauthenticated("unknown key")         # mine, and it fails
         return Identity.user(self.keys[key], tenant="bo", permissions={BillingPermission.ISSUE_INVOICE})
 
 
