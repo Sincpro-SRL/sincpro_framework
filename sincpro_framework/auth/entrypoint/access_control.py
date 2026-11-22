@@ -26,19 +26,20 @@ import functools
 import time
 from collections.abc import Callable, Iterable, Mapping, Sequence
 from datetime import timedelta
-from typing import TYPE_CHECKING, Any, ClassVar
+from typing import TYPE_CHECKING, Any
 from weakref import WeakKeyDictionary, WeakSet
 
 from sincpro_framework.auth.adapters.added_requirements import KeyValueAddedRequirements
 from sincpro_framework.auth.domain import exceptions
 from sincpro_framework.auth.domain.added_requirements import AddedRequirementStore
 from sincpro_framework.auth.domain.administration import AdministrationPolicy
-from sincpro_framework.auth.domain.events import SUBJECT, AccessRefused, EventPublisher
-from sincpro_framework.auth.domain.identity import Credentials, Identity, IdentityKind
+from sincpro_framework.auth.domain.events import EventPublisher
+from sincpro_framework.auth.domain.identity import Credentials, Identity
 from sincpro_framework.auth.domain.permissions import (
     OPEN,
     AccessCall,
     AccessDeclaration,
+    AccessDescription,
     AnyOf,
     AssuranceRequirement,
     ByField,
@@ -47,21 +48,20 @@ from sincpro_framework.auth.domain.permissions import (
     RoleRequirement,
     Rule,
     WhenDenied,
-    command_name,
 )
 from sincpro_framework.auth.domain.provider import AuthProvider
 from sincpro_framework.auth.entrypoint.runtime_requirements import RuntimeRequirements
-from sincpro_framework.auth.infrastructure.announcing import announce
 from sincpro_framework.auth.infrastructure.security_context import current_identity
+from sincpro_framework.auth.services import authentication, description
+from sincpro_framework.auth.services.decisions import Decisions
 from sincpro_framework.auth.services.guard import (
     GUARD_SEQUENCE,
     BusGuard,
     Declarations,
     HookGuard,
+    guarded_buses,
 )
-from sincpro_framework.context import context_scopes
 from sincpro_framework.ddd.repositories.hooks import Hooks
-from sincpro_framework.sincpro_abstractions import DataTransferObject
 from sincpro_framework.sincpro_logger import logger
 
 if TYPE_CHECKING:
@@ -71,19 +71,6 @@ if TYPE_CHECKING:
 
 RUNTIME_CHECK = "requirements added at runtime"
 """The name `describe()` and a refusal give the check of `runtime`."""
-
-
-class AccessDescription(DataTransferObject):
-    """What `describe()` answers — for an admin screen, an audit, an agent writing code."""
-
-    enabled: bool
-    providers: list[str]
-    every_call: list[str] = []
-    """The checks run on every call of a guarded bus, by name — `every_call`."""
-    use_cases: dict[str, str]
-    """Each use case of the guarded buses, by its DTO's name: what it declared, or `open`."""
-    hooks: dict[str, str]
-    """Each hook of the guarded collections that declared something, by its name."""
 
 
 class AccessControl[P: Permission]:
@@ -103,15 +90,9 @@ class AccessControl[P: Permission]:
     entrypoint finds the one of the bus it dispatches to with no argument to pass.
     """
 
-    _guarding: ClassVar["WeakKeyDictionary[UseFramework, AccessControl[Any]]"] = (
-        WeakKeyDictionary()
-    )
-    """Which `AccessControl` guards each bus — and each generation made of it."""
-
     def __init__(
         self,
         providers: AuthProvider | Sequence[AuthProvider] = (),
-        *,
         enabled: bool = True,
         clock: Callable[[], float] = time.time,
         publisher: EventPublisher | None = None,
@@ -119,10 +100,9 @@ class AccessControl[P: Permission]:
         administration: AdministrationPolicy | None = None,
     ) -> None:
         """`providers` are tried in order to authenticate a call; `enabled=False` checks
-        nothing — a local environment, a test that is not about access. `enabled` and `clock`
-        are named, never positional: a positional `False` once meant `strict`, and must not turn
-        every check off. `publisher` is told every refused call (`AccessRefused`) and every
-        requirement added or released at runtime.
+        nothing — a local environment, a test that is not about access. `publisher` is told
+        every refused call (`AccessRefused`) and every requirement added or released at
+        runtime.
 
         `runtime=True` lets administrators require more of a use case without a deploy —
         `auth.runtime` — kept on the context's store, or on the `AddedRequirementStore` given;
@@ -143,6 +123,7 @@ class AccessControl[P: Permission]:
         self.declarations = Declarations()
         self.checks: list[Rule] = []
         """What `every_call` registered — asked on every call of every bus guarded."""
+        self._decisions = Decisions(self)
         self._runtime: RuntimeRequirements | None = None
         if runtime:
             self._runtime = RuntimeRequirements(
@@ -164,7 +145,8 @@ class AccessControl[P: Permission]:
     def of(cls, bus: "UseFramework") -> "AccessControl[Any] | None":
         """The `AccessControl` guarding `bus`, or `None` when nothing does — an entrypoint then
         leaves the identity as it found it."""
-        return cls._guarding.get(bus)
+        found = guarded_buses.get(bus)
+        return found if isinstance(found, AccessControl) else None
 
     @classmethod
     def guarding(cls, context: str) -> "list[AccessControl[Any]]":
@@ -180,9 +162,9 @@ class AccessControl[P: Permission]:
         """
         found: list[AccessControl[Any]] = []
         for _, access in sorted(
-            cls._guarding.items(), key=lambda item: item[0].name != context
+            guarded_buses.items(), key=lambda item: item[0].name != context
         ):
-            if access not in found:
+            if isinstance(access, AccessControl) and access not in found:
                 found.append(access)
         return found
 
@@ -196,7 +178,7 @@ class AccessControl[P: Permission]:
     def any_needs_body(cls) -> bool:
         """Whether any `AccessControl` of this process reads bodies — what an entrypoint that
         does not know its bus yet asks before it reads one."""
-        return any(access.needs_body for access in list(cls._guarding.values()))
+        return any(access.needs_body for access in list(guarded_buses.values()))
 
     @property
     def identity(self) -> Identity:
@@ -327,7 +309,7 @@ class AccessControl[P: Permission]:
         return self._runtime
 
     def every_call[F: Callable[[AccessCall], bool]](
-        self, check: F | None = None, *, name: str | None = None
+        self, check: F | None = None, name: str | None = None
     ) -> Any:
         """Ask `check` on every call of every bus this object guards — declared or open, before
         it runs: an interceptor of the project's own, beside the declarations. Refused, the call
@@ -351,249 +333,32 @@ class AccessControl[P: Permission]:
 
     # Authenticating
 
-    def _provider_of(self, identity: Identity) -> AuthProvider | None:
-        """The provider that vouched for `identity` — the one asked about its permissions.
-
-        Context: `None` for an identity opened by hand; one vouched for by a provider this
-        does not hold is refused — its permissions would otherwise be taken on its word."""
-        if identity.provider is None:
-            return None
-        for provider in self.providers:
-            if provider.name == identity.provider:
-                return provider
-        raise exceptions.ProgrammingError(
-            f"{identity.subject} was vouched for by '{identity.provider}', a provider this "
-            "AccessControl does not hold"
-        )
-
     def authenticate(self, credentials: Credentials) -> Identity:
         """Who the credentials say is calling — the first provider that recognizes them, or
-        `Identity.anonymous()` when none does. `Unauthenticated` when one recognizes them and
-        they fail.
-
-            # providers=[jwt, api_keys]
-            x-api-key: sk_3f9…      ->  Identity("apikey:ops-bot", provider="api-keys")
-            no credentials at all   ->  Identity.anonymous()
-            Authorization: Bearer <expired>  ->  raises Unauthenticated, api_keys not asked
-
-        Context: the identity is stamped with the name of the provider that answered, even
-        when the provider left `provider` unset — that is the one later asked about it.
-        """
-        for provider in self.providers:
-            identity = provider.authenticate(credentials)
-            if identity is not None:
-                if identity.provider != provider.name:
-                    identity = identity.model_copy(update={"provider": provider.name})
-                return identity
-        return Identity.anonymous()
+        `Identity.anonymous()` when none does; `Unauthenticated` when one recognizes them and
+        they fail. The identity names the provider that answered: the one asked about it."""
+        return authentication.authenticated(self.providers, credentials)
 
     def challenges(self, refusal: exceptions.Unauthenticated | None = None) -> list[str]:
         """The `WWW-Authenticate` values a 401 answers with, one per provider that has one —
         for `refusal` when the wire knows it, so a step-up names what to come back with."""
-        return [
-            challenge for one in self.providers if (challenge := one.challenge_for(refusal))
-        ]
+        return authentication.challenges(self.providers, refusal)
 
     def credentials_for(
         self, identity: Identity | None = None, audience: str | None = None
     ) -> Credentials | None:
         """What to send another service — `audience`, when named — so it knows who this call
-        acts for: asked of the identity's provider first (`outbound_for`).
+        acts for, the identity in play when none is given: asked of its provider first.
 
-            # acting as user:42, vouched for by "service-tokens"
             auth.credentials_for()
                 ->  Credentials(transport="service", headers={"x-sp-service-token": "eyJ…"})
-            # a provider that issues nothing for the identity — and no other does either
             auth.credentials_for(Identity.anonymous())   ->  None
-
-        Context: the identity in play when none is given; the other providers are then asked
-        in order, the first that issues something wins.
         """
-        acting = identity or current_identity()
-        if acting.provider is not None and acting.provider not in {
-            one.name for one in self.providers
-        }:
-            return None
-        own = self._provider_of(acting)
-        for provider in (own, *(one for one in self.providers if one is not own)):
-            if provider is not None and (issued := provider.outbound_for(acting, audience)):
-                return issued
-        return None
+        return authentication.credentials_for(
+            self.providers, identity or current_identity(), audience
+        )
 
     # Deciding
-
-    def _has(
-        self,
-        identity: Identity,
-        permission: str,
-        resource: Any,
-        context: Mapping[str, Any] | None,
-    ) -> exceptions.PermissionDenied | None:
-        """The refusal of one permission — `None` when `identity` holds it.
-
-        Context: answered, not raised, so `_denial` can weigh the members of an `AnyOf` and
-        `allows` can say no without a traceback. A provider that raises `PermissionDenied` to
-        say why has that very refusal answered.
-
-        1. An identity opened by hand: its `permissions` are the answer.
-        2. Else its provider's `has_permission`, with `resource` and `context`.
-        Final: `None` when allowed, else the provider's `PermissionDenied` or a plain one.
-        """
-        provider = self._provider_of(identity)
-        try:
-            if provider is None:
-                allowed = permission in identity.permissions
-            else:
-                allowed = provider.has_permission(identity, permission, resource, context)
-        except exceptions.PermissionDenied as denied:
-            return denied
-        return None if allowed else exceptions.PermissionDenied(identity.subject, permission)
-
-    def _assured(
-        self, identity: Identity, requirement: AssuranceRequirement
-    ) -> exceptions.Unauthenticated | None:
-        """The step-up refusal when `identity` authenticated too weakly or too long ago.
-
-            assurance(methods={"mfa"}), amr ["pwd"]   ->  Unauthenticated("mfa required",
-                                                               step_up="mfa")
-            assurance(max_age=5m), authenticated 1h ago  ->  Unauthenticated("a recent
-                                                               authentication required", …)
-
-        Context: judged on the identity itself — its `assurance` and `authenticated_at`, as
-        the provider read them — with this object's clock; no provider is asked.
-        """
-        reasons = []
-        if requirement.acr and identity.assurance.level not in requirement.acr:
-            reasons.append(f"authentication level {' or '.join(requirement.acr)} required")
-        missing = requirement.methods - identity.assurance.methods
-        if missing:
-            reasons.append(f"{', '.join(sorted(missing))} required")
-        if requirement.max_age is not None and (
-            identity.authenticated_at is None
-            or self.clock() - identity.authenticated_at.timestamp()
-            > requirement.max_age.total_seconds()
-        ):
-            reasons.append("a recent authentication required")
-        if not reasons:
-            return None
-        return exceptions.Unauthenticated(
-            "; ".join(reasons),
-            step_up=requirement.step_up,
-            max_age=(
-                None
-                if requirement.max_age is None
-                else int(requirement.max_age.total_seconds())
-            ),
-        )
-
-    def _ruled(self, rule: Rule, call: AccessCall) -> exceptions.AuthError | None:
-        """The refusal of a rule that does not hold — `PermissionDenied` naming it, or the
-        `AuthError` its check raised to answer otherwise.
-
-        1. The check holds: `None`.
-        2. It raised an `AuthError`: that refusal.
-        3. Asked with no Command (`may_run`, `allows`, a hook) and it failed reading one:
-           refused — what cannot be judged is never granted. A rule that may be judged
-           without it says so: `lambda call: call.dto is None or call.dto.owner == ...`.
-        Final: `PermissionDenied` naming the rule.
-        """
-        try:
-            if rule.check(call):
-                return None
-        except exceptions.AuthError as refused:
-            return refused
-        except Exception:
-            if call.dto is not None:
-                raise
-            return exceptions.PermissionDenied(
-                call.identity.subject,
-                rule.name,
-                f"{rule.name} cannot be judged without the Command",
-            )
-        return exceptions.PermissionDenied(
-            call.identity.subject, rule.name, f"{rule.name} does not hold"
-        )
-
-    def _denial(
-        self,
-        identity: Identity,
-        requirement: Requirement,
-        resource: Any,
-        context: Mapping[str, Any] | None,
-        dto: Any = None,
-        what: str = "",
-    ) -> exceptions.AuthError | None:
-        """The refusal of a requirement — one permission, a role, a rule, or an `AnyOf` refused
-        only when every member is.
-
-            AnyOf((READ, ADMIN)), identity holds READ  ->  None
-            AnyOf((READ, ADMIN)), identity holds none  ->  PermissionDenied("user:1",
-                "billing.read or billing.admin", "lacks billing.read and lacks billing.admin")
-
-        Context: the members of an `AnyOf` are asked in order, and the first that holds grants
-        it — none after it is asked, so a remote provider is asked no more than needed and a
-        rule placed after a role is never judged for whom the role admits. Refused, the reasons
-        of every member are joined in order; when every member is a permission, a provider that
-        words the whole refusal (`refusing_any`) is told it instead. A member refused with
-        `Unauthenticated` — a step-up — answers for the whole: authenticating again may meet
-        it, a 403 would not say so.
-        """
-        if isinstance(requirement, AssuranceRequirement):
-            return self._assured(identity, requirement)
-        if isinstance(requirement, RoleRequirement):
-            if identity.roles & set(requirement.roles):
-                return None
-            return exceptions.PermissionDenied(
-                identity.subject,
-                str(requirement),
-                f"holds no {' or '.join(requirement.roles)}",
-            )
-        if isinstance(requirement, Rule):
-            call = AccessCall(
-                identity,
-                what,
-                dto,
-                resource,
-                dict(context or {}),
-                "" if dto is None else command_name(type(dto)),
-            )
-            return self._ruled(requirement, call)
-        if isinstance(requirement, ByField):
-            chosen = requirement.every() if dto is None else requirement.chosen(dto)
-            if chosen is None:
-                value = getattr(dto, requirement.field, None)
-                return exceptions.PermissionDenied(
-                    identity.subject,
-                    str(requirement),
-                    f"{requirement.field}={value!r} names no requirement",
-                )
-            return self._denial(identity, chosen, resource, context, dto, what)
-        if not isinstance(requirement, AnyOf):
-            return self._has(identity, requirement.value, resource, context)
-        refused: list[exceptions.AuthError] = []
-        for one in requirement.members:
-            denied = self._denial(identity, one, resource, context, dto, what)
-            if denied is None:
-                return None
-            refused.append(denied)
-        step_up = next(
-            (one for one in refused if isinstance(one, exceptions.Unauthenticated)), None
-        )
-        if step_up is not None:
-            return step_up
-        each = [getattr(one, "reason", None) or str(one) for one in refused]
-        provider = self._provider_of(identity)
-        permissions = [
-            one.value for one in requirement.members if isinstance(one, Permission)
-        ]
-        said = (
-            provider.refusing_any(identity, permissions, each)
-            if provider is not None and len(permissions) == len(requirement.members)
-            else None
-        )
-        return exceptions.PermissionDenied(
-            identity.subject, str(requirement), said or " and ".join(each)
-        )
 
     def refusal(
         self,
@@ -606,39 +371,10 @@ class AccessControl[P: Permission]:
     ) -> exceptions.AuthError | None:
         """Why `identity` may not run what `declaration` guards — `None` when it may.
 
-            refusal(ANONYMOUS, AccessDeclaration("authenticated"), "IssueInvoice")
-                ->  Unauthenticated("authenticate to run IssueInvoice")
-            refusal(user_without_issue, AccessDeclaration("requires", (ISSUE,)), "IssueInvoice")
-                ->  PermissionDenied("user:42", "billing.invoice.issue")
-
-        Context: the system passes first; nobody is refused before any provider is asked; then
-        each requirement in order, the first refused answering — a `by_field` one chosen by
-        `dto`, the Command being run, or one among its permissions without it.
+        refusal(ANONYMOUS, AccessDeclaration("authenticated"), "IssueInvoice")
+            ->  Unauthenticated("authenticate to run IssueInvoice")
         """
-        if identity.kind == IdentityKind.SYSTEM:
-            return None
-        if identity.is_anonymous:
-            return exceptions.Unauthenticated(f"authenticate to run {what}", anonymous=True)
-        for requirement in declaration.requirements:
-            denied = self._denial(identity, requirement, resource, context, dto, what)
-            if denied is not None:
-                return denied
-        return None
-
-    def _refused_in_play(
-        self, requirement: P | Requirement, resource: Any
-    ) -> exceptions.AuthError | None:
-        """What `allows` and `check` decide for the identity in play — as the guard would: the
-        system passes, nobody is refused before any provider or rule is asked, then the
-        requirement's own refusal."""
-        identity = current_identity()
-        if identity.kind == IdentityKind.SYSTEM:
-            return None
-        if identity.is_anonymous:
-            return exceptions.Unauthenticated(
-                f"authenticate to {requirement}", anonymous=True
-            )
-        return self._denial(identity, requirement, resource, context_scopes.live())
+        return self._decisions.refusal(identity, declaration, what, resource, context, dto)
 
     def allows(self, requirement: P | Requirement, resource: Any = None) -> bool:
         """Whether the identity in play meets `requirement` — a permission, a role, a rule,
@@ -648,7 +384,7 @@ class AccessControl[P: Permission]:
             self.auth.allows(BillingPermission.READ_CREDIT)
             self.auth.allows(self.auth.role("billing.manager"))
         """
-        return self._refused_in_play(requirement, resource) is None
+        return self._decisions.in_play(requirement, resource) is None
 
     def has_role(self, *roles: str) -> bool:
         """Whether the identity in play holds one of `roles` — `allows(role(...))`, said short."""
@@ -657,13 +393,11 @@ class AccessControl[P: Permission]:
     def check(self, requirement: P | Requirement, resource: Any = None) -> None:
         """`allows`, raising `PermissionDenied` — or `Unauthenticated` for nobody — when not.
 
-            self.auth.check(BillingPermission.ISSUE_INVOICE)    # holds it  ->  None
-            # lacks it   ->  raises PermissionDenied("user:42", "billing.invoice.issue")
-            # nobody     ->  raises Unauthenticated("authenticate to billing.invoice.issue")
-
-        The system passes without asking any provider.
+        self.auth.check(BillingPermission.ISSUE_INVOICE)    # holds it  ->  None
+        # lacks it   ->  raises PermissionDenied("user:42", "billing.invoice.issue")
+        # nobody     ->  raises Unauthenticated("authenticate to billing.invoice.issue")
         """
-        denied = self._refused_in_play(requirement, resource)
+        denied = self._decisions.in_play(requirement, resource)
         if denied is not None:
             raise denied
 
@@ -677,79 +411,28 @@ class AccessControl[P: Permission]:
     ) -> exceptions.AuthError | None:
         """Why one of the `every_call` checks refuses this call — `None` when every one lets it
         through, or the system acts. What the guard asks after the declaration."""
-        if identity.kind == IdentityKind.SYSTEM:
-            return None
-        call = AccessCall(identity, what, dto, None, dict(context), command)
-        for check in self.checks:
-            refused = self._ruled(check, call)
-            if refused is not None:
-                return refused
-        return None
+        return self._decisions.every_call_refusal(identity, what, dto, context, command)
 
     def refused(self, identity: Identity, what: str, refusal: exceptions.AuthError) -> None:
         """Tell the publisher a call was refused — what the guard does before it raises."""
-        said = refusal.refusal_body()
-        announce(
-            self.publisher,
-            AccessRefused(
-                entity_type=SUBJECT,
-                entity_id=identity.subject,
-                use_case=what,
-                kind=str(said.get("kind", "")),
-                reason=str(said.get("reason", "")),
-                requirement=str(said.get("requirement", "")),
-                tenant=identity.tenant,
-            ),
-        )
+        self._decisions.refused(identity, what, refusal)
 
     def permitted(self, permission: P, resources: Sequence[Any]) -> list[bool]:
         """`allows` for many resources — in one call to the provider when it answers batches.
-        A provider that refuses the whole batch with `PermissionDenied` refuses each.
 
-            self.auth.permitted(BillingPermission.READ, [invoice_1, invoice_2])
-                ->  [True, False]      # as the provider answered each
-            # the system  ->  [True, True]
-            # opened by hand: holding READ  ->  [True, True]; not  ->  [False, False]
-
-        Context: an identity opened by hand answers with its `permissions`, the same for each.
+        self.auth.permitted(BillingPermission.READ, [invoice_1, invoice_2])
+            ->  [True, False]      # as the provider answered each
         """
-        identity = current_identity()
-        if identity.kind == IdentityKind.SYSTEM:
-            return [True] * len(resources)
-        provider = self._provider_of(identity)
-        if provider is None:
-            return [permission.value in identity.permissions] * len(resources)
-        try:
-            return provider.permitted(
-                identity, permission.value, resources, context_scopes.live()
-            )
-        except exceptions.PermissionDenied:
-            return [False] * len(resources)
+        return self._decisions.permitted(permission, resources)
 
     def scope_of(self, aggregate: type) -> "Criteria | None":
         """Which records of `aggregate` the identity in play may read, as its provider filters
-        them — `search(Aggregate, criteria)` or a SQL `narrowed(...)` takes it.
+        them — `search(Aggregate, criteria)` or a SQL `narrowed(...)` takes it; `None` for every
+        record (the system, an identity opened by hand); `Unauthenticated` for nobody.
 
-        Context: `None` means every record, and only two identities read every record: the
-        system, and one opened by hand — a test, in-process code. Nobody calling is refused:
-        a read scoped by identity with no identity would otherwise read everything.
-
-            self.auth.scope_of(Invoice)   # user:42 of tenant bo, its provider scoping
-                ->  Criteria.where("tenant", "=", "bo")
-            # the system, or an identity opened by hand  ->  None
-            # nobody  ->  raises Unauthenticated("authenticate to read Invoice")
-
-        The criteria is the provider's `scope(identity, aggregate)`, taken as it answers.
+            self.auth.scope_of(Invoice)   ->  Criteria.where("tenant", "=", "bo")
         """
-        identity = current_identity()
-        if identity.kind == IdentityKind.SYSTEM:
-            return None
-        if identity.is_anonymous:
-            raise exceptions.Unauthenticated(
-                f"authenticate to read {aggregate.__name__}", anonymous=True
-            )
-        provider = self._provider_of(identity)
-        return None if provider is None else provider.scope(identity, aggregate)
+        return self._decisions.scope_of(aggregate)
 
     # Wiring
 
@@ -766,7 +449,7 @@ class AccessControl[P: Permission]:
         bus.add_dependency("auth", self)
         self._guards[bus] = guard
         self._buses.add(bus)
-        AccessControl._guarding[bus] = self
+        guarded_buses[bus] = self
 
     def _replacing(self, replaced: "AccessControl[Any]", bus: "UseFramework") -> None:
         """What `on(bus, replaces=replaced)` wires, and every generation `fresh()` makes of the
@@ -786,7 +469,7 @@ class AccessControl[P: Permission]:
         self._guards[bus] = guard
         self._buses.add(bus)
         replaced._buses.discard(bus)
-        AccessControl._guarding[bus] = self
+        guarded_buses[bus] = self
 
     def refusal_of(
         self,
@@ -895,49 +578,21 @@ class AccessControl[P: Permission]:
 
     # Describing — read without building a bus nor closing a collection
 
-    def _use_cases(self) -> dict[str, AccessDeclaration | None]:
-        """What each use case of every guarded bus declared, by its Command's dotted name —
-        `None` for one that declared nothing; a replaced use case answers its replacement's.
-        """
-        declared: dict[str, AccessDeclaration | None] = {}
-        for bus in list(self._buses):
-            for command, handler in bus.handlers().items():
-                declared[command_name(command)] = self.declarations.of(
-                    handler, bus.replaced_for(command)
-                )
-        return declared
-
     def guarded_use_cases(self) -> set[str]:
         """The dotted name of every Command of every bus this object guards — what a screen
         offers to require more of."""
-        return set(self._use_cases())
+        return set(description.declared_use_cases(self.declarations, list(self._buses)))
 
     def requirements_of(
         self, cls: type, bus: "UseFramework | None" = None
     ) -> AccessDeclaration | None:
-        """What a Command's use case, a handler or a hook declared — `None` for nothing.
+        """What a Command's use case, a handler or a hook declared — `None` for nothing; with
+        `bus`, the handler that bus answers it with.
 
             auth.requirements_of(CommandIssueInvoice)  ->  AccessDeclaration("requires", (ISSUE,))
-            auth.requirements_of(IssueInvoice)         ->  the same, asked of the handler
             auth.requirements_of(QueryHealth)          ->  None    # declared nothing
-            auth.requirements_of(CommandIssueInvoice, bus=billing)   on that bus only
-
-        Context: a Command a guarded bus runs answers its handler's declaration — its
-        replacement's when replaced; with `bus`, the handler that bus answers it with; any other
-        class is looked up as it is.
         """
-        if bus is not None:
-            handler = bus.handlers().get(cls)
-            return (
-                None
-                if handler is None
-                else self.declarations.of(handler, bus.replaced_for(cls))
-            )
-        for guarded in list(self._buses):
-            handler = guarded.handlers().get(cls)
-            if handler is not None:
-                return self.declarations.of(handler, guarded.replaced_for(cls))
-        return self.declarations.of(cls)
+        return description.requirements_of(self.declarations, list(self._buses), cls, bus)
 
     def verify(self) -> list[str]:
         """What would not work as declared — for a test, or a check once everything is
@@ -948,52 +603,25 @@ class AccessControl[P: Permission]:
             AccessControl(enabled=False).verify()   # once on a bus
                 ->  ["access control is disabled",
                      "billing.Orphan declares access but runs on no bus or hooks this ..."]
-
-        1. Disabled: said first — at runtime nothing is checked; the rest is still listed.
-        Final: a class declared that no guarded bus or collection runs — its declaration never
-        holds.
         """
-        problems = [] if self.enabled else ["access control is disabled"]
-        running: set[type] = set()
-        replaced: set[str] = set()
-        for bus in list(self._buses):
-            for command, handler in bus.handlers().items():
-                running.add(handler)
-                replaced.update(bus.replaced_for(command))
-        for hooks in self._hooks:
-            running.update(hooks.registered())
-        problems += sorted(
-            f"{f"{cls.__module__}.{cls.__qualname__}"} declares access but runs on no bus or hooks this AccessControl "
-            "guards"
-            for cls in self.declarations.declared()
-            if cls not in running and f"{cls.__module__}.{cls.__qualname__}" not in replaced
+        return description.problems(
+            self.declarations, list(self._buses), self._hooks, self.enabled
         )
-        return problems
 
     def describe(self) -> AccessDescription:
         """Everything this object guards and how — read without building a bus.
 
-            auth.describe()
-                ->  AccessDescription(enabled=True, providers=["odoo"],
-                        use_cases={"billing.CommandIssueInvoice": "billing.invoice.issue",
-                                   "billing.QueryHealth": "open"},
-                        hooks={"billing.hooks.NotifyCustomer": "authenticated"})
-
-        Context: every use case is listed, `open` when it declared nothing — anyone may run it;
-        only the hooks that declared something are.
+        auth.describe()
+            ->  AccessDescription(enabled=True, providers=["odoo"],
+                    use_cases={"billing.CommandIssueInvoice": "billing.invoice.issue",
+                               "billing.QueryHealth": "open"},
+                    hooks={"billing.hooks.NotifyCustomer": "authenticated"})
         """
-        return AccessDescription(
-            enabled=self.enabled,
-            providers=[one.name for one in self.providers],
-            every_call=[one.name for one in self.checks],
-            use_cases={
-                name: str(declaration) if declaration else OPEN
-                for name, declaration in self._use_cases().items()
-            },
-            hooks={
-                f"{hook.__module__}.{hook.__qualname__}": str(declaration)
-                for collection in self._hooks
-                for hook in collection.registered()
-                if (declaration := self.declarations.of(hook)) is not None
-            },
+        return description.description(
+            self.declarations,
+            list(self._buses),
+            self._hooks,
+            self.enabled,
+            self.providers,
+            self.checks,
         )

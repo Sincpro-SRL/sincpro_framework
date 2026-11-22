@@ -36,7 +36,6 @@ def granting(
 
 def signed_token(
     claims: Mapping[str, Any],
-    *,
     key: "PrivateKey | None" = None,
     secret: str | None = None,
     kid: str | None = None,

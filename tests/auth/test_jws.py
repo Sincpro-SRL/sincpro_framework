@@ -56,6 +56,17 @@ def test_a_header_naming_another_algorithm_is_never_verified_by_the_key() -> Non
         f"{jws.encoded(b'{}')}.{jws.encoded(b'not json')}.c2ln",
         "x" * (jws.MAX_TOKEN_LENGTH + 1),
         "eyJ+YWxn.eyJz.c2ln",
+        f"{jws.encoded(b'[' * 12_000)}.{jws.encoded(b'{}')}.c2ln",
+    ],
+    ids=[
+        "no-dots",
+        "two-parts",
+        "four-parts",
+        "header-not-an-object",
+        "payload-not-json",
+        "too-long",
+        "not-base64url",
+        "nested-deeper-than-the-parser-recurses",
     ],
 )
 def test_what_is_not_a_compact_jws_is_malformed(token: str) -> None:

@@ -292,6 +292,16 @@ nothing said one. That is what `Entity.record()` stamps as `actor`, and what an 
 `created_by`. Don't write a `context_provider` that copies `security.identity.subject` into
 `user_id`. Write one only when `user_id` is something else: a profile id, say. Yours wins.
 
+A caller nobody verified owns nothing it names: on a guarded bus, the `user_id`, `tenant_id` and
+`tenant_ids` an anonymous caller carried in `baggage` or `sincpro-context` are dropped, so a cache,
+a draft or an idempotent write of an open use case is never handed to it under another's name.
+An identity without a tenant acts where the call says — when the tenant must be the verified one,
+put it on the identity in the provider or an `IdentityResolver`.
+
+**Security to weigh — tell the user, never decide for them:** an identity whose token carries no
+tenant (a Keycloak user with no tenant claim) acts in whatever tenant its call names. If the
+service is multi-tenant, say so and offer the claims transformation that sets `Identity.tenant`.
+
 ## Hooks
 
 ```python

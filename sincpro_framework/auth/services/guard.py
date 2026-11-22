@@ -22,6 +22,7 @@ from sincpro_framework.auth.domain.permissions import (
     WhenDenied,
     command_name,
 )
+from sincpro_framework.auth.domain.provider import AuthProvider
 from sincpro_framework.auth.infrastructure.security_context import (
     _access_in_play,
     current_identity,
@@ -126,6 +127,12 @@ class Access(Protocol):
 
     enabled: bool
     declarations: Declarations
+    providers: tuple[AuthProvider, ...]
+
+    @property
+    def needs_body(self) -> bool:
+        """Whether a provider reads the request's raw body — a webhook signature."""
+        ...
 
     def refusal(
         self,
@@ -156,6 +163,12 @@ class Access(Protocol):
         ...
 
 
+guarded_buses: "WeakKeyDictionary[UseFramework, Access]" = WeakKeyDictionary()
+"""Which `AccessControl` guards each bus of the process — and each generation made of it: what
+an entrypoint asks to authenticate a call, and where an identity vouched for by another bounded
+context finds its provider."""
+
+
 CALLERS = frozenset(EntrypointKind) - {EntrypointKind.DIRECT, EntrypointKind.CRON}
 """The entrances whose flow opens with what a caller carried — `baggage`, `sincpro-context`, a
 message's envelope —, not with what the code said."""
@@ -172,6 +185,11 @@ def _carried(context: Any, key: str) -> bool:
     )
 
 
+WHO_AND_WHERE = (ContextKey.USER_ID, ContextKey.TENANT_ID, ContextKey.TENANT_IDS)
+"""The keys of the context that say who acts and where — what a draft, a cached answer, an
+idempotent write and a fact's `actor` are owned by."""
+
+
 def _acting(identity: Identity, context: Any) -> exceptions.PermissionDenied | None:
     """Who acts and where, as the identity a provider verified says — never as the caller's
     headers say.
@@ -180,12 +198,19 @@ def _acting(identity: Identity, context: Any) -> exceptions.PermissionDenied | N
     a cached answer, an audit trail or a project's query keys on (`Owner.BY_TENANT_AND_USER`)
     is read from it. Code, a provider of the project's and a scope still say what they say.
 
-    1. `user_id`: unsaid, the identity's subject; carried by the caller, a person's subject in
+    1. Nobody verified: what the caller carried about who acts and where is dropped — an
+       anonymous caller never owns the draft, the cached answer or the write of whom it names.
+    2. `user_id`: unsaid, the identity's subject; carried by the caller, a person's subject in
        its place — a service acts for whom its call names.
-    2. An identity of a tenant acts in it: `tenant_id` unsaid is its tenant; a tenant the
+    3. An identity of a tenant acts in it: `tenant_id` unsaid is its tenant; a tenant the
        caller carried that is another (`tenant_id`, `tenant_ids`) is refused.
     Final: `None`, or the refusal.
     """
+    if identity.is_anonymous:
+        for key in WHO_AND_WHERE:
+            if _carried(context, key):
+                context.set(key, None)
+        return None
     said = context.get(ContextKey.USER_ID)
     if said is None or (
         identity.kind == IdentityKind.USER
@@ -268,11 +293,11 @@ class BusGuard:
     def _run_in_play(self, call_next: Callable[[Any], Any], dto: Any) -> Any:
         """Run the use case with this `AccessControl` in play — what `security.identity_headers`
         asks first for the credentials of a call onwards; undone once it answers."""
-        guarding = _access_in_play.set(self.access)
+        in_play = _access_in_play.set(self.access)
         try:
             return call_next(dto)
         finally:
-            _access_in_play.reset(guarding)
+            _access_in_play.reset(in_play)
 
     def refusal_for(
         self, command: type, identity: Identity, dto: Any = None
@@ -301,9 +326,10 @@ class BusGuard:
     def __call__(self, dto: Any, call_next: Callable[[Any], Any]) -> Any:
         """Decide whether the identity in play may run the use case `dto` enters, and run it.
 
-        1. Who acts and where: the identity in play, unless anonymous, over what
-           its caller carried (`_acting`) — a fact the use case records names its `actor`, and
-           a tenant the caller named that is not its own is refused.
+        1. Who acts and where: the identity in play over what its caller carried (`_acting`)
+           — a fact the use case records names its `actor`, a tenant the caller named that is
+           not its own is refused, and nobody verified owns nothing the caller named. Disabled,
+           an anonymous caller's context is left as it came.
         2. Disabled: it runs.
         3. Declared something the identity lacks: refused, or skipped (`None`) when it said
            `WhenDenied.SKIP`.
@@ -312,7 +338,7 @@ class BusGuard:
         Final: it runs, this `AccessControl` in play.
         """
         identity = current_identity()
-        if not identity.is_anonymous:
+        if self.access.enabled or not identity.is_anonymous:
             elsewhere = _acting(identity, use_context())
             if elsewhere is not None and self.access.enabled:
                 logger.warning(

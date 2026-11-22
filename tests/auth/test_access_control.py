@@ -621,11 +621,20 @@ def test_reads_scoped_by_identity_are_refused_to_nobody() -> None:
     auth = AccessControl[BillingPermission](providers=[_keys()])
     with pytest.raises(auth_exceptions.Unauthenticated):
         auth.scope_of(Invoice)
-    with security.as_identity(
-        Identity.user("user:1").model_copy(update={"provider": "elsewhere"})
-    ):
-        with pytest.raises(exceptions.ProgrammingError):
-            auth.scope_of(Invoice)
+
+
+def test_an_identity_no_provider_of_the_process_vouched_for_answers_as_opened_by_hand() -> (
+    None
+):
+    """Every identity in play was verified by the process or opened by its code: one naming a
+    provider nobody holds is answered by what it holds, never refused for where it came from.
+    """
+    auth = AccessControl[BillingPermission](providers=[_keys()])
+    stranger = Identity.user("user:1", permissions={BillingPermission.ISSUE_INVOICE})
+    with security.as_identity(stranger.model_copy(update={"provider": "elsewhere"})):
+        assert auth.scope_of(Invoice) is None
+        assert auth.allows(BillingPermission.ISSUE_INVOICE)
+        assert not auth.allows(BillingPermission.READ_CREDIT)
 
 
 def test_one_resource_refused_with_a_reason_never_takes_a_batch_down() -> None:

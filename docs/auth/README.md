@@ -410,8 +410,18 @@ assert auth.authenticate(Credentials(transport="http")).is_anonymous
   replaces one the caller carried, so every fact a use case records names it as `actor` (and an
   `AuditedMixin` record as `created_by`). An identity of a tenant fills `tenant_id`, and a call
   that carried another tenant is refused (`PermissionDenied`): `context["tenant_id"]`, a draft, a
-  cached answer and an idempotent write are owned as verified. Code, a provider of the project's
-  (`bus.context_provider(gives=["user_id"])`) and a scope still say what they say.
+  cached answer and an idempotent write are owned as verified. A caller nobody verified owns
+  nothing it names: the `user_id`, `tenant_id` and `tenant_ids` it carried are dropped, so an
+  open use case never hands it another's draft or cached answer. Code, a provider of the
+  project's (`bus.context_provider(gives=["user_id"])`) and a scope still say what they say.
+- An identity without a tenant — a platform user, a token with no tenant claim — acts where the
+  call says. When the tenant must be the verified one, the provider or an `IdentityResolver`
+  puts it on the identity (a claims transformation), and the rule above holds it.
+- A bounded context reached in process — a bus injected as a dependency, guarded by an
+  `AccessControl` of its own — decides about the same identity: its own provider of the name the
+  identity carries when it holds one, else the provider of the process that let the caller in,
+  else the identity's own permissions, as for one opened by hand. Nothing is refused for having
+  been verified by another context of the process.
 
 ## Open, skipping, disabled, the system
 
