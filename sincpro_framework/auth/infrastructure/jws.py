@@ -113,6 +113,9 @@ def parse(token: str, what: str = "token") -> Jws:
         parse("eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJ1In0.c2ln")
             ->  Jws(header={"alg": "HS256"}, claims={"sub": "u"}, ...)
         parse("not-a-token")   ->  raises Unauthenticated("malformed token")
+
+    Context: a header or a payload nested deeper than the parser recurses is malformed too —
+    a token nobody signed must never answer the caller with an internal error.
     """
     if len(token) > MAX_TOKEN_LENGTH:
         raise exceptions.Unauthenticated(f"malformed {what}")
@@ -124,7 +127,7 @@ def parse(token: str, what: str = "token") -> Jws:
             signing_input=f"{header_part}.{payload_part}".encode(),
             signature=decoded(signature_part),
         )
-    except ValueError as error:
+    except (ValueError, RecursionError) as error:
         raise exceptions.Unauthenticated(f"malformed {what}") from error
 
 

@@ -4,8 +4,6 @@ closure) or a rule of the project's own, asked with the call and the execution's
 `every_call` is an interceptor of the project's, asked on every call, open or declared; and a
 handler asks the same things of `self.auth`."""
 
-from typing import Any
-
 import pytest
 
 from sincpro_framework import ApplicationService, DataTransferObject, Feature, UseFramework
@@ -334,10 +332,10 @@ def test_nobody_meets_no_requirement_by_hand_as_the_guard_decides() -> None:
     assert unscoped.value.anonymous
 
 
-def test_enabled_is_never_positional_a_former_strict_turns_nothing_off() -> None:
-    build: Any = AccessControl
-    with pytest.raises(TypeError):
-        build((), False)
+def test_access_control_turned_off_positionally_says_so() -> None:
+    """`enabled` is the second parameter: turning it off — by name or by position — checks
+    nothing, and `verify()` says it first."""
+    assert AccessControl[P]((), False).verify() == ["access control is disabled"]
 
 
 def test_any_of_grants_at_the_first_member_that_holds_and_asks_none_after() -> None:

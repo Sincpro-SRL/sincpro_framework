@@ -20,8 +20,11 @@ blocks that thread only.
 
 The provider that authenticated an identity (`Identity.provider`) is the one asked about it. An
 identity opened by hand (`provider=None` — a test, in-process code) answers with its own
-`permissions`. An identity stamped with a provider name the `AccessControl` does not hold is
-refused (`ProgrammingError`, from `sincpro_framework.exceptions`), so its permissions are never taken on its word.
+`permissions`. A bounded context reached in process, guarded by its own `AccessControl`, asks
+its own provider of that name; holding none, it asks the provider of the process that let the
+caller in; when no provider of the process has that name, the identity answers with its own
+`permissions`. Give each context's `AccessControl` its own providers, or none: nothing is refused
+for having been verified by another context of the process.
 
 Prove a provider with `sincpro_framework.runtime.testing.AuthProviderContract`: inherit it, answer
 `make_provider`, `accepted`, `foreign` and `rejected`, run with pytest.

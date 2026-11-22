@@ -88,6 +88,7 @@ from sincpro_framework.auth.domain.permissions import (
     OPEN,
     AccessCall,
     AccessDeclaration,
+    AccessDescription,
     AnyOf,
     AssuranceRequirement,
     ByField,
@@ -103,7 +104,7 @@ from sincpro_framework.auth.domain.revocations import (
     RevocationState,
     remembering_versions,
 )
-from sincpro_framework.auth.entrypoint.access_control import AccessControl, AccessDescription
+from sincpro_framework.auth.entrypoint.access_control import AccessControl
 from sincpro_framework.auth.entrypoint.asgi import IdentityMiddleware
 from sincpro_framework.auth.entrypoint.runtime_requirements import (
     RuntimeRequirements,

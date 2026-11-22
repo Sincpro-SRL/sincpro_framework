@@ -146,3 +146,52 @@ def test_code_still_says_where_a_call_acts():
     bus = _ledger()
     with security.as_identity(ANA_BO), bus.context({ContextKey.TENANT_ID: "pe"}):
         assert bus(CommandWhoActs(), Seen).tenant_id == "pe"
+
+
+def test_an_anonymous_caller_owns_nothing_it_names():
+    """The incident: on an open use case, `Baggage: user_id=user:ana,tenant_id=bo` from a caller
+    nobody verified made the call's draft, cached answer and idempotent write ana's."""
+    nobody = Identity.anonymous()
+    seen = _carried(_ledger(), nobody, {"Baggage": "user_id=user:ana,tenant_id=bo"})
+    assert (seen.user_id, seen.tenant_id) == (None, None)
+    seen = _carried(_ledger(), nobody, {"sincpro-context": '{"tenant_ids": ["bo", "pe"]}'})
+    assert seen.tenant_id is None
+
+
+def test_an_anonymous_caller_never_reads_the_answer_cached_for_whom_it_names():
+    bus = UseFramework("rates-who-acts", log_after_execution=False)
+    AccessControl[DeskPermission]().on(bus)
+    computed: list[str | None] = []
+
+    @bus.cache
+    def balance() -> str:
+        computed.append(use_context().get(ContextKey.USER_ID))
+        return f"balance of {computed[-1]}"
+
+    class Balance(DataTransferObject):
+        said: str
+
+    @bus.feature(CommandWhoActs)
+    class ReadBalance(Feature):
+        def execute(self, dto: CommandWhoActs) -> Balance:
+            return Balance(said=balance())
+
+    with security.as_identity(ANA_BO), bus.context({}, kind=EntrypointKind.REST):
+        assert bus(CommandWhoActs(), Balance).said == "balance of user:ana"
+    carried = merge_http_context({"Baggage": "user_id=user:ana,tenant_id=bo"})
+    with bus.context(carried, kind=EntrypointKind.REST):
+        assert bus(CommandWhoActs(), Balance).said == "balance of None"
+    assert computed == ["user:ana", None]
+
+
+def test_an_access_control_turned_off_leaves_an_anonymous_callers_context_as_it_came():
+    bus = UseFramework("ledger-unguarded-who", log_after_execution=False)
+    AccessControl[DeskPermission](enabled=False).on(bus)
+
+    @bus.feature(CommandWhoActs)
+    class WhereActs(Feature):
+        def execute(self, dto: CommandWhoActs) -> Seen:
+            return Seen(user_id=use_context().get(ContextKey.USER_ID))
+
+    seen = _carried(bus, Identity.anonymous(), {"Baggage": "user_id=user:dev"})
+    assert seen.user_id == "user:dev"

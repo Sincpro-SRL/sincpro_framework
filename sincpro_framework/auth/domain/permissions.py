@@ -20,6 +20,7 @@ from enum import StrEnum
 from typing import Any, Literal
 
 from sincpro_framework.auth.domain.identity import Identity
+from sincpro_framework.sincpro_abstractions import DataTransferObject
 
 
 class Permission(StrEnum):
@@ -236,3 +237,17 @@ class AccessDeclaration:
             return self.kind
         needed = " and ".join(str(one) for one in self.requirements)
         return needed if self.when_denied == WhenDenied.RAISE else f"{needed} (else skipped)"
+
+
+class AccessDescription(DataTransferObject):
+    """What `AccessControl.describe()` answers — for an admin screen, an audit, an agent writing
+    code."""
+
+    enabled: bool
+    providers: list[str]
+    every_call: list[str] = []
+    """The checks run on every call of a guarded bus, by name — `every_call`."""
+    use_cases: dict[str, str]
+    """Each use case of the guarded buses, by its DTO's name: what it declared, or `open`."""
+    hooks: dict[str, str]
+    """Each hook of the guarded collections that declared something, by its name."""

@@ -67,7 +67,6 @@ class Grants:
     def __init__(
         self,
         catalog: GrantCatalog,
-        *,
         store: KeyValueStore | None = None,
         assignments: GrantStore | None = None,
         revocations: Revocations | None = None,
@@ -133,7 +132,7 @@ class Grants:
         )
 
     def allow[F: Callable[[GrantChange], bool]](
-        self, check: F | None = None, *, name: str | None = None
+        self, check: F | None = None, name: str | None = None
     ) -> Any:
         """Ask `check` of every change an administrator makes — beside the bound, both must let
         it through; `False` refuses it (`PermissionDenied` naming the rule). The system passes.
@@ -173,7 +172,6 @@ class Grants:
         self,
         subject: str,
         role: str,
-        *,
         tenant: str | None = None,
         until: datetime | None = None,
     ) -> None:
@@ -182,14 +180,14 @@ class Grants:
         self._asked("assign", tenant, subject=subject, role=key)
         self._granting.assign(subject, tenant, key, valid_until=until)
 
-    def unassign(self, subject: str, role: str, *, tenant: str | None = None) -> None:
+    def unassign(self, subject: str, role: str, tenant: str | None = None) -> None:
         """Take `role` back from `subject` in `tenant`."""
         key = self._named(role, tenant)
         self._asked("unassign", tenant, subject=subject, role=key)
         self._granting.unassign(subject, tenant, key)
 
     def set_level(
-        self, subject: str, privilege: str, role: str | None, *, tenant: str | None = None
+        self, subject: str, privilege: str, role: str | None, tenant: str | None = None
     ) -> None:
         """Hold `role` as the one level of `privilege` — `None` for no access."""
         key = None if role is None else self._named(role, tenant)
@@ -209,7 +207,6 @@ class Grants:
     def define(
         self,
         key: str,
-        *,
         tenant: str | None = None,
         name: str = "",
         grants: Iterable[str] = (),
@@ -237,7 +234,7 @@ class Grants:
         self._defining.define(definition)
         return definition
 
-    def remove(self, key: str, *, tenant: str | None = None) -> None:
+    def remove(self, key: str, tenant: str | None = None) -> None:
         """Remove the role `key` defined at runtime — every tenant's, or `tenant`'s own."""
         self._asked("remove", tenant, role=catalog_key(key, tenant))
         self._defining.remove(key, tenant)
