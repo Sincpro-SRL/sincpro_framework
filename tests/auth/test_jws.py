@@ -1,6 +1,7 @@
 """The JWS core every JWT reader shares: RFC 7515's own example verifies, a header never picks
 its algorithm, and a JWT's registered claims are refused at the edge of their leeway."""
 
+import base64
 import json
 
 import pytest
@@ -72,6 +73,25 @@ def test_a_header_naming_another_algorithm_is_never_verified_by_the_key() -> Non
 def test_what_is_not_a_compact_jws_is_malformed(token: str) -> None:
     with pytest.raises(exceptions.Unauthenticated, match="malformed token"):
         jws.parse(token)
+
+
+BASE64URL = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_"
+
+
+def test_a_signature_spelled_another_way_is_malformed() -> None:
+    """The incident: a 32-byte signature is 43 characters, and the last one carries 2 bits no
+    byte reads — a token changed there decoded to the same signature and still verified, about
+    once in a thousand tokens."""
+    key = jws.HmacKey.of("k1", "secret")
+    token = jws.encode({"alg": "HS256", "kid": "k1"}, {"sub": "u"}, key.sign)
+    head, claims, signature = token.split(".")
+    respelled = signature[:-1] + BASE64URL[BASE64URL.index(signature[-1]) ^ 0b01]
+    assert base64.urlsafe_b64decode(respelled + "=") == base64.urlsafe_b64decode(
+        signature + "="
+    )
+    with pytest.raises(exceptions.Unauthenticated, match="malformed token"):
+        jws.parse(f"{head}.{claims}.{respelled}")
+    assert key.verifies(jws.parse(token))
 
 
 def test_an_opaque_token_does_not_look_like_a_jws() -> None:

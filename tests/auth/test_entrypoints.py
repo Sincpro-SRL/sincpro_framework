@@ -382,8 +382,9 @@ def test_a_service_token_is_refused_tampered_expired_or_for_another_audience() -
     issuer = ServiceTokenProvider("orders", keys)
     token = issuer.token_for(ISSUER)
     head, claims, signature = token.split(".")
+    tampered = ("B" if signature[0] == "A" else "A") + signature[1:]
     for bad in (
-        f"{head}.{claims}.{signature[:-2]}xx",
+        f"{head}.{claims}.{tampered}",
         ServiceTokenProvider("orders", keys, ttl_seconds=-10).token_for(ISSUER),
         ServiceTokenProvider("orders", keys, audience="elsewhere").token_for(ISSUER),
         ServiceTokenProvider("orders", {"old": "other"}).token_for(ISSUER),

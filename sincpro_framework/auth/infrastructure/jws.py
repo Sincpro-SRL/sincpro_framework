@@ -49,15 +49,19 @@ def encoded(raw: bytes) -> str:
 def decoded(text: str) -> bytes:
     """The bytes of an unpadded base64url `text`; `ValueError` for anything else.
 
-    Context: strict — a `+`, a `/` or padding is not base64url, so two spellings of one
-    signature never both verify.
+    Context: strict, so two spellings of one signature never both verify — a `+`, a `/` or
+    padding is not base64url, and neither is a last character whose unused bits are set
+    (RFC 4648 §3.5): it decodes to the same bytes as the canonical one.
     """
     if text and not _SEGMENT.match(text):
         raise ValueError("not base64url")
     try:
-        return base64.urlsafe_b64decode(text + "=" * (-len(text) % 4))
+        raw = base64.urlsafe_b64decode(text + "=" * (-len(text) % 4))
     except binascii.Error as error:
         raise ValueError("not base64url") from error
+    if encoded(raw) != text:
+        raise ValueError("not canonical base64url")
+    return raw
 
 
 def looks_like_jws(token: str) -> bool:
