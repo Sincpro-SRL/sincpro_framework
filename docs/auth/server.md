@@ -1,7 +1,9 @@
-# Verifying what arrives — `sincpro_framework.auth.server`
+# Verifying what arrives, issuing to OAuth clients — `sincpro_framework.auth.server`
 
-**Door**: `from sincpro_framework.auth.server import …` — folder `auth/server/`. Everything here
-verifies a credential that arrives; what goes out is [`auth.client`](client.md).
+**Door**: `from sincpro_framework.auth.server import …` — folder `auth/server/`, two sub-domains in
+each of its layers: `resource_server` verifies a credential that arrives, and
+`authorization_server` issues tokens to OAuth clients ([below](#issuing-to-oauth-clients-the-authorization-server)).
+What goes out is [`auth.client`](client.md).
 
 [The overview](README.md) says how a use case declares what it requires and how a provider
 answers. This page is the providers the framework ships for what a caller presents, and what
@@ -402,3 +404,81 @@ assert decided.name == provider.name
 No decision is cached — a policy that changes holds at once. An engine that does not answer is
 `EndpointUnavailable` (503), never `False`: a refusal the engine did not make would be a lie.
 `headers=` authenticates this service to the engine — a dict, or a function of a `TokenSource`.
+
+## Issuing to OAuth clients: the authorization server
+
+The other half of `server`: instead of verifying what an identity provider issued, the service
+**is** the authorization server — an MCP host, a partner's app or a CLI gets a token by the
+person signing in on the project's own page, never by handing over a password. It issues with the
+service's own [`TokenIssuer`](accounts.md#issuing-tokens), so what it hands out is verified by
+`JwtProvider.for_token_issuer` like any session of the service.
+
+```python
+import base64
+import hashlib
+from urllib.parse import parse_qs, urlsplit
+
+from sincpro_framework.auth import Identity, InMemoryRevocations
+from sincpro_framework.auth.accounts import InMemoryRefreshTokens, SigningKeys, TokenIssuer
+from sincpro_framework.auth.server import (
+    AuthorizationRequest,
+    AuthorizationServer,
+    InMemoryClients,
+)
+
+issuer = TokenIssuer(
+    "https://auth.colegio.bo",
+    audience="colegio",
+    keys=SigningKeys.hmac({"2026-11": "a token secret of thirty-two bytes!"}),
+    refresh_tokens=InMemoryRefreshTokens(),
+    revocations=InMemoryRevocations(),
+)
+oauth = AuthorizationServer("https://auth.colegio.bo", tokens=issuer, clients=InMemoryClients())
+
+client = oauth.register(["https://claude.ai/api/mcp/auth_callback"], name="Claude").client  # RFC 7591
+
+verifier = "the-client-keeps-this-secret-verifier-0123456789"                   # PKCE, RFC 7636
+challenge = base64.urlsafe_b64encode(hashlib.sha256(verifier.encode()).digest()).rstrip(b"=").decode()
+pending = oauth.authorize(AuthorizationRequest(                                  # /authorize
+    client_id=client.client_id,
+    redirect_uri="https://claude.ai/api/mcp/auth_callback",
+    code_challenge=challenge,
+    state="xyz",
+))
+# … the project's login page shows pending.client_name, the person signs in …
+redirect = oauth.complete(pending.id, Identity.user("user:MFAQ0123", tenant="cauor"))
+code = parse_qs(urlsplit(redirect).query)["code"][0]
+
+tokens = oauth.exchange_code(code, verifier, client.client_id,                   # /token
+                             "https://claude.ai/api/mcp/auth_callback")
+renewed = oauth.refresh(tokens.answer()["refresh_token"], client.client_id)      # its client only
+oauth.revoke(renewed.answer()["refresh_token"], client.client_id)                # RFC 7009
+```
+
+| Step | Method | What it guarantees |
+|---|---|---|
+| `/authorize` | `authorize(request)` → `PendingAuthorization` | an unknown client or a redirect it did not register is refused, never redirected — no open redirector |
+| sign-in | `complete(id, identity)` / `deny(id)` | the project's page says who signed in; the browser goes back with `code`, `state` and `iss` (RFC 9207) |
+| `/token` | `exchange_code(code, verifier, client_id, redirect_uri)` | a code works once, for its client, its redirect and its PKCE verifier; it lasts a minute |
+| refresh | `refresh(token, client_id)` | rotated, a replay revokes the session — and another client's refresh token is refused |
+| `/revoke` | `revoke(token, client_id)` | the session ends, its access tokens refused at once |
+| `/register` | `register(redirect_uris, …)` | https, loopback http or a private-use scheme, never a fragment; a confidential client's secret shown once |
+| `/.well-known/oauth-authorization-server` | `metadata(endpoints)` | RFC 8414, listing only the capabilities the server composes |
+
+**Compose what you serve.** Each capability is a mixin over `AuthorizationServerCore` —
+`AuthorizationCodeGrant`, `RefreshTokenGrant`, `TokenRevocation`, `ClientRegistration`,
+`AuthorizationServerMetadata` — and `AuthorizationServer` composes them all. A server without
+dynamic registration is `class Server(AuthorizationCodeGrant, RefreshTokenGrant,
+AuthorizationServerMetadata)`, and its metadata never names a registration endpoint.
+
+**Policy is an argument, never a fork.** `pkce=PkcePolicy.REQUIRED` (OAuth 2.1, the default),
+`PkcePolicy.PUBLIC_CLIENTS` for confidential clients that predate PKCE (RFC 6749 + 7636), or
+`PkcePolicy.OPTIONAL`; `challenge_methods` adds `CodeChallengeMethod.PLAIN` for a client that
+cannot hash. Every decision is a public method to override: `tokens_for` (what a code grants),
+`accepts_redirect` (which redirects may be registered), `authenticate_client`, and
+`OAuthClient.redirects_to` (how a redirect matches). Clients live in a `ClientRegistry` —
+`InMemoryClients`, `KeyValueClients` (the context's store), or the project's own. A refusal is an
+`OAuthError` whose `answer()` is the body RFC 6749 §5.2 defines, `status` 400 — 401 for
+`invalid_client`.
+
+The transport is the project's: an HTTP route, FastMCP's provider or a test call these methods.

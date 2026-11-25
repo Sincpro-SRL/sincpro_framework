@@ -18,6 +18,7 @@ each — authenticate again. `PermissionDenied`, not `PermissionError`: Python's
 
 from collections.abc import Mapping
 from datetime import timedelta
+from enum import StrEnum
 from typing import Any
 
 from sincpro_framework.common.failures.problem import Problem
@@ -185,6 +186,39 @@ class EndpointUnavailable(ServiceUnavailableError):
 class InvalidGrant(ClientError):
     """A grant that cannot be given — a role the catalog does not declare, two roles never held
     together, two levels of one privilege — said to whoever administers it (400)."""
+
+
+class OAuthErrorCode(StrEnum):
+    """What an authorization server answers a refused request with — RFC 6749 §5.2 and §4.1.2.1."""
+
+    INVALID_REQUEST = "invalid_request"
+    INVALID_CLIENT = "invalid_client"
+    INVALID_GRANT = "invalid_grant"
+    UNAUTHORIZED_CLIENT = "unauthorized_client"
+    UNSUPPORTED_GRANT_TYPE = "unsupported_grant_type"
+    INVALID_SCOPE = "invalid_scope"
+    ACCESS_DENIED = "access_denied"
+    INVALID_CLIENT_METADATA = "invalid_client_metadata"
+    INVALID_REDIRECT_URI = "invalid_redirect_uri"
+
+
+class OAuthError(ClientError):
+    """A request the authorization server refuses, as OAuth says it: a code and a description
+    a client reads (400; `invalid_client` is 401, the client did not prove who it is).
+
+        OAuthError(OAuthErrorCode.INVALID_GRANT, "the code was already used").answer()
+            ->  {"error": "invalid_grant", "error_description": "the code was already used"}
+    """
+
+    def __init__(self, error: OAuthErrorCode, description: str) -> None:
+        super().__init__(f"{error.value}: {description}")
+        self.error = error
+        self.description = description
+        self.status = 401 if error is OAuthErrorCode.INVALID_CLIENT else 400
+
+    def answer(self) -> dict[str, str]:
+        """The error response body every transport sends as it is."""
+        return {"error": self.error.value, "error_description": self.description}
 
 
 class ConcurrentChange(ClientError):
