@@ -506,7 +506,7 @@ def test_a_deadline_passed_after_the_call_was_sent_may_have_run(remote):
     remote.shop.hosted_by(f"{remote.shop.hosted_at}".replace("timeout=5", "timeout=0.2"))
 
     with pytest.raises(remote_exceptions.ContextTimeout, match="within 0.2s") as late:
-        remote.shop(CommandSlow(seconds=1))
+        remote.shop(CommandSlow(seconds=0.4))  # past the 0.2 s deadline
 
     assert refined_failure_kind(late.value) == exceptions.FailureKind.UNKNOWN_OUTCOME
 

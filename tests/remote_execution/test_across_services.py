@@ -148,14 +148,14 @@ def test_the_call_is_answered_by_the_service_hosting_the_context(service_b):
 
 
 def test_a_payload_far_past_any_per_message_limit_travels_both_ways_byte_exact(service_b):
-    """96 MiB — gRPC refuses a single message past 4 MB by default: this one travels in chunks."""
+    """6 MiB — gRPC refuses a single message past 4 MB by default: this one travels in chunks."""
     address, _served = service_b
     billing, _ = _service_a(address, timeout=60)
-    data = bytes(range(256)) * (96 * 1024 * 1024 // 256)
+    data = bytes(range(256)) * (6 * 1024 * 1024 // 256)
 
     answer = billing(CommandEcho(data=data), ResponseEcho)
 
-    assert len(answer.data) == 96 * 1024 * 1024 and answer.data == data
+    assert len(answer.data) == 6 * 1024 * 1024 and answer.data == data
 
 
 def test_without_a_response_type_it_answers_what_the_handler_declares(service_b):

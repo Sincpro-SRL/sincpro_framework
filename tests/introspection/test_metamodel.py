@@ -9,6 +9,7 @@ A model that changes at runtime — an extension that overlays how a field is sh
 again with another fingerprint, said in the log, and the bus's metamodel answers another version.
 """
 
+import functools
 import json
 from dataclasses import dataclass, field
 from typing import Any
@@ -297,6 +298,7 @@ class ResponseTicketNoted(DataTransferObject):
     noted: bool
 
 
+@functools.cache  # read by every test, never changed: built once
 def help_desk() -> UseFramework:
     bus = UseFramework("desk-metamodel", log_after_execution=False)
     bus.add_dependency("repository", MemoryRepository())
