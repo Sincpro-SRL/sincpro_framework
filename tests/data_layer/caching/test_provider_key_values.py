@@ -24,7 +24,16 @@ class TestRedisKeyValue(KeyValueStoreContract):
         return RedisKeyValue(fakeredis.FakeRedis(), prefix="test:")
 
     def expire(self, store: KeyValueStore, seconds: float) -> None:
-        time.sleep(seconds)
+        """`seconds` pass for every key: what is left of each expiry, shortened — gone at zero."""
+        assert isinstance(store, RedisKeyValue)
+        for key in store.client.keys("*"):
+            left = store.client.pttl(key)
+            if left < 0:
+                continue
+            if left <= seconds * 1000:
+                store.client.delete(key)
+            else:
+                store.client.pexpire(key, int(left - seconds * 1000))
 
 
 class TestMemcachedKeyValue(KeyValueStoreContract):
@@ -32,7 +41,12 @@ class TestMemcachedKeyValue(KeyValueStoreContract):
         return MemcachedKeyValue(MockMemcacheClient(), prefix="test:")
 
     def expire(self, store: KeyValueStore, seconds: float) -> None:
-        time.sleep(seconds)
+        """`seconds` pass for every key: the mock keeps each one's moment of expiry, moved back."""
+        assert isinstance(store, MemcachedKeyValue)
+        contents = store.client._contents
+        for key, (at, value, flags) in list(contents.items()):
+            if at:
+                contents[key] = (at - seconds, value, flags)
 
     @pytest.mark.skip(
         reason="pymemcache's MockMemcacheClient adds Python objects on incr, where memcached "
