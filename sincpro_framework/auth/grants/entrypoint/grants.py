@@ -41,12 +41,6 @@ from sincpro_framework.auth.common.domain.revocations import Revocations
 from sincpro_framework.auth.common.infrastructure.locks import AdministrationLocks
 from sincpro_framework.auth.common.infrastructure.security_context import current_identity
 from sincpro_framework.auth.grants.adapters.definitions import KeyValueRoleDefinitions
-from sincpro_framework.auth.grants.adapters.live_catalog import LiveCatalog
-from sincpro_framework.auth.grants.adapters.resolver import (
-    GrantResolver,
-    RoleMapping,
-    ScopeCeiling,
-)
 from sincpro_framework.auth.grants.adapters.stores import KeyValueGrants
 from sincpro_framework.auth.grants.domain.assignments import Assignment, GrantStore
 from sincpro_framework.auth.grants.domain.catalog import GrantCatalog
@@ -62,6 +56,12 @@ from sincpro_framework.auth.grants.domain.definitions import (
     catalog_key,
 )
 from sincpro_framework.auth.grants.services.administration import GrantAdministration
+from sincpro_framework.auth.grants.services.live_catalog import LiveCatalog
+from sincpro_framework.auth.grants.services.resolution import (
+    GrantResolver,
+    RoleMapping,
+    ScopeCeiling,
+)
 from sincpro_framework.auth.grants.services.role_administration import RoleAdministration
 from sincpro_framework.data_layer.store import KeyValueStore
 

@@ -39,10 +39,10 @@ from sincpro_framework.auth.grants import (
     RoleRemoved,
     RoleUnassigned,
 )
-from sincpro_framework.auth.grants.adapters.live_catalog import LiveCatalog
 from sincpro_framework.auth.grants.domain.definitions import DefinedRoles
 from sincpro_framework.auth.grants.domain.giving import givable
 from sincpro_framework.auth.grants.services.administration import GrantAdministration
+from sincpro_framework.auth.grants.services.live_catalog import LiveCatalog
 from sincpro_framework.auth.grants.services.role_administration import RoleAdministration
 from sincpro_framework.data_layer.store import InMemoryKeyValue, LeaseTaken, StoreUnavailable
 
