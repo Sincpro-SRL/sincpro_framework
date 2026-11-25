@@ -19,23 +19,20 @@ from sincpro_framework import DataTransferObject, Feature, UseFramework
 from sincpro_framework.auth import (
     AccessControl,
     AuthProvider,
+    ClaimMapping,
     Credentials,
     IdentityKind,
     IdentityMiddleware,
     InMemoryRevocations,
     Permission,
+    SharedSecrets,
+    TrustedIssuer,
     security,
 )
 from sincpro_framework.auth.common.domain import exceptions
 from sincpro_framework.auth.common.infrastructure import jws
 from sincpro_framework.auth.grants import RolePermissions
-from sincpro_framework.auth.server import (
-    ClaimMapping,
-    JwtProvider,
-    ProtectedResource,
-    SharedSecrets,
-    TrustedIssuer,
-)
+from sincpro_framework.auth.server import JwtProvider, ProtectedResource
 from sincpro_framework.runtime.testing import AuthProviderContract
 
 KEYCLOAK = "https://auth.acme.bo/realms/acme"

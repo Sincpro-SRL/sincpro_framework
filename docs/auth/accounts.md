@@ -1,7 +1,8 @@
 # Accounts the service manages itself — `sincpro_framework.auth.accounts`
 
 **Door**: `from sincpro_framework.auth.accounts import …` — folder `auth/accounts/`. It builds on
-[`auth.server`](server.md): the token issuer verifies what it issued with a `JwtProvider`.
+nothing but the shared kernel: what a token issuer signed is verified on the
+[`auth.server`](server.md) side, by `JwtProvider.for_token_issuer(issuer)`.
 
 Most services verify a token an identity provider issued ([the providers](server.md)). A small
 service with no identity provider — a college's members, a shop's customers — keeps its own
@@ -130,12 +131,13 @@ What it answers — a token, a session — is the [token issuer](#issuing-tokens
 ## Issuing tokens
 
 Once a person signed in, `TokenIssuer` hands out a short access token and an opaque refresh token,
-and takes them back. Its `provider()` is the `JwtProvider` that accepts them — checking
-revocations on every call.
+and takes them back. `JwtProvider.for_token_issuer(issuer)` accepts them — by the issuer's
+`trusted_issuer()`, checking revocations on every call.
 
 ```python
 from sincpro_framework.auth import AccessControl, Assurance, Credentials, InMemoryRevocations
 from sincpro_framework.auth.accounts import InMemoryRefreshTokens, SigningKeys, TokenIssuer
+from sincpro_framework.auth.server import JwtProvider
 
 sessions = TokenIssuer(
     "https://colegio.bo",
@@ -149,7 +151,7 @@ tokens = sessions.issue(Identity.user("user:MFAQ0123", tenant="cauor"),
 answer = tokens.answer()                      # what the sign-in use case returns
 assert set(answer) == {"access_token", "token_type", "expires_in", "refresh_token"}
 
-session_auth = AccessControl[MembersPermission](providers=[sessions.provider()])
+session_auth = AccessControl[MembersPermission](providers=[JwtProvider.for_token_issuer(sessions)])
 caller = Credentials(transport="http", headers={"authorization": f"Bearer {answer['access_token']}"})
 assert session_auth.authenticate(caller).subject == "user:MFAQ0123"
 

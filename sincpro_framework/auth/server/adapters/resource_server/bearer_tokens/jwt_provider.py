@@ -21,13 +21,10 @@ that cannot be fetched are `EndpointUnavailable` (503) — the caller's token di
 
 import time
 from collections.abc import Callable, Iterable, Mapping, Sequence
-from dataclasses import dataclass, field
-from datetime import timedelta
 from typing import TYPE_CHECKING, Any
 
 from sincpro_framework.auth.common.domain import exceptions
 from sincpro_framework.auth.common.domain.identity import Credentials, Identity
-from sincpro_framework.auth.common.domain.keys import KeySource
 from sincpro_framework.auth.common.domain.provider import AuthProvider
 from sincpro_framework.auth.common.domain.resolver import IdentityResolver, resolved
 from sincpro_framework.auth.common.domain.revocations import (
@@ -36,80 +33,17 @@ from sincpro_framework.auth.common.domain.revocations import (
     remembering_versions,
 )
 from sincpro_framework.auth.common.infrastructure import jws
-from sincpro_framework.auth.server.domain.claim_mapping import ClaimMapping
-from sincpro_framework.auth.server.domain.protected_resource import (
+from sincpro_framework.auth.common.infrastructure.claim_mapping import ClaimMapping
+from sincpro_framework.auth.common.infrastructure.trusted_issuer import TrustedIssuer
+from sincpro_framework.auth.server.domain.resource_server.protected_resource import (
     ProtectedResource,
 )
 
 if TYPE_CHECKING:
-    from sincpro_framework.auth.server.adapters.bearer_tokens.dpop_proofs import DpopProofs
-
-HMAC_ALGORITHMS = frozenset(jws.HMAC_DIGESTS)
-"""The headers read are `alg` and `kid`. `crit` names an extension that must be understood —
-none is — so a token carrying it is refused; `jku`, `x5u`, `jwk` and `x5c` would let the token
-say which key verifies it, and are ignored."""
-
-
-@dataclass(frozen=True)
-class TrustedIssuer:
-    """One issuer this service trusts: who it is, which audience its tokens must name, where its
-    keys are, how its claims read, and how much clock skew is tolerated."""
-
-    issuer: str
-    audience: str | Iterable[str]
-    keys: KeySource
-    mapping: ClaimMapping = field(default_factory=ClaimMapping)
-    leeway: timedelta = timedelta(seconds=60)
-    required: frozenset[str] = frozenset({"exp", "sub"})
-    authorized_parties: frozenset[str] | None = None
-    """The clients (`azp`) whose tokens are accepted — every client when `None`."""
-    algorithms: frozenset[str] | None = None
-    """The algorithms accepted — the key source's when `None`; a subset of them otherwise."""
-
-    def __post_init__(self) -> None:
-        """Checked once, at construction — a `ProgrammingError` each:
-
-        1. No audience: every token of the issuer would be accepted, whichever service it was
-           issued for — the audience check Odoo's `auth_oauth` left as a comment.
-        2. `none`, or an algorithm of the other family than the keys' — HMAC for public keys,
-           public keys for a secret: the algorithm-confusion attack.
-        Final: the audience held as a set, the algorithms resolved.
-        """
-        audiences = (
-            frozenset({self.audience})
-            if isinstance(self.audience, str)
-            else frozenset(self.audience)
-        )
-        if not audiences:
-            raise exceptions.ProgrammingError(
-                f"TrustedIssuer {self.issuer!r} names no audience"
-            )
-        algorithms = self.algorithms if self.algorithms is not None else self.keys.algorithms
-        if not algorithms or "none" in algorithms or not algorithms <= self.keys.algorithms:
-            raise exceptions.ProgrammingError(
-                f"TrustedIssuer {self.issuer!r}: algorithms {sorted(algorithms)} are not all ones "
-                f"its keys verify ({sorted(self.keys.algorithms)})"
-            )
-        if self.keys.symmetric != (algorithms <= HMAC_ALGORITHMS):
-            raise exceptions.ProgrammingError(
-                f"TrustedIssuer {self.issuer!r}: HMAC and public-key algorithms never share keys"
-            )
-        object.__setattr__(self, "audience", audiences)
-        object.__setattr__(self, "algorithms", algorithms)
-
-    @property
-    def audiences(self) -> frozenset[str]:
-        """The audiences, as a set."""
-        return frozenset(self.audience)
-
-    def rules(self) -> jws.ClaimRules:
-        """The registered-claim rules its tokens are checked by."""
-        return jws.ClaimRules(
-            issuer=self.issuer,
-            audiences=self.audiences,
-            leeway=self.leeway.total_seconds(),
-            required=self.required,
-        )
+    from sincpro_framework.auth.accounts import TokenIssuer
+    from sincpro_framework.auth.server.adapters.resource_server.bearer_tokens.dpop_proofs import (
+        DpopProofs,
+    )
 
 
 def _quoted(text: str) -> str:
@@ -118,7 +52,12 @@ def _quoted(text: str) -> str:
 
 
 class JwtProvider(AuthProvider):
-    """Bearer JWTs of the issuers given, verified and mapped; the identities resolved further."""
+    """Bearer JWTs of the issuers given, verified and mapped; the identities resolved further.
+
+    Context: the headers read are `alg` and `kid`. `crit` names an extension that must be
+    understood — none is — so a token carrying it is refused; `jku`, `x5u`, `jwk` and `x5c` would
+    let the token say which key verifies it, and are ignored.
+    """
 
     def __init__(
         self,
@@ -147,6 +86,28 @@ class JwtProvider(AuthProvider):
         self.dpop = dpop
 
     @classmethod
+    def for_token_issuer(
+        cls,
+        issuer: "TokenIssuer",
+        resolvers: Sequence[IdentityResolver] | None = None,
+        name: str = "sessions",
+    ) -> "JwtProvider":
+        """The provider that accepts what `issuer` signed — by its `trusted_issuer()`, checking
+        its revocations, and the permission version when it embeds permissions. `resolvers` are
+        the issuer's own when not given: what a store grants is resolved on every call, as it
+        was at sign-in.
+
+            auth = AccessControl(providers=[JwtProvider.for_token_issuer(sessions)])
+        """
+        return cls(
+            issuer.trusted_issuer(),
+            resolvers=issuer.resolvers if resolvers is None else resolvers,
+            revocations=issuer.revocations,
+            name=name,
+            clock=issuer.clock,
+        )
+
+    @classmethod
     def from_issuer(
         cls,
         issuer: str,
@@ -166,7 +127,9 @@ class JwtProvider(AuthProvider):
         Context: nothing is fetched here — the discovery document and the keys are read on the
         first token, so a service starts while its identity provider is down.
         """
-        from sincpro_framework.auth.server.adapters.bearer_tokens.jwks import Jwks
+        from sincpro_framework.auth.server.adapters.resource_server.bearer_tokens.jwks import (
+            Jwks,
+        )
 
         keys = Jwks.discovered(issuer, algorithms=algorithms, http=http, discovery=discovery)
         provider_options = {

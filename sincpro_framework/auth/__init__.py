@@ -57,6 +57,7 @@ from sincpro_framework.auth.common.adapters.server_metadata import (
     OidcDiscovery,
     ServerMetadata,
 )
+from sincpro_framework.auth.common.adapters.shared_secrets import SharedSecrets
 from sincpro_framework.auth.common.adapters.urllib_http import UrllibHttp
 from sincpro_framework.auth.common.domain.administration import (
     AdministrationPolicy,
@@ -117,13 +118,19 @@ from sincpro_framework.auth.common.domain.revocations import (
     WhenUnavailable,
     remembering_versions,
 )
+from sincpro_framework.auth.common.infrastructure.claim_mapping import ClaimMapping, ClaimTest
 from sincpro_framework.auth.common.infrastructure.signatures import (
     HexDigest,
     SignatureStyle,
     TimestampedSignature,
 )
+from sincpro_framework.auth.common.infrastructure.trusted_issuer import TrustedIssuer
 
 __all__ = [
+    "TrustedIssuer",
+    "SharedSecrets",
+    "ClaimTest",
+    "ClaimMapping",
     "OPEN",
     "AccessCall",
     "AccessControl",
@@ -190,12 +197,14 @@ __all__ = [
 
 _LAZY = {
     "PrivateKey": "sincpro_framework.auth.common.adapters.jose_keys",
+    "PublicKeys": "sincpro_framework.auth.common.adapters.public_keys",
     "PublicKey": "sincpro_framework.auth.common.adapters.jose_keys",
 }
 """Names of the `[jwt]` extra, by the module that holds them — loaded on first use."""
 
 if TYPE_CHECKING:
     from sincpro_framework.auth.common.adapters.jose_keys import PrivateKey, PublicKey
+    from sincpro_framework.auth.common.adapters.public_keys import PublicKeys
 
 
 def __getattr__(name: str) -> Any:

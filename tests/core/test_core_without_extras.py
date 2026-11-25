@@ -244,7 +244,8 @@ except ImportError as error:
 else:
     raise AssertionError("Jwks imported without PyJWT")
 
-from sincpro_framework.auth.server import TrustedIssuer, JwtProvider, SharedSecrets
+from sincpro_framework.auth import SharedSecrets, TrustedIssuer
+from sincpro_framework.auth.server import JwtProvider
 import sincpro_framework.auth.accounts  # no extra loaded by a door
 import sincpro_framework.auth.grants
 

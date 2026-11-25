@@ -17,13 +17,13 @@ from sincpro_framework.auth.common.adapters.urllib_http import UrllibHttp
 from sincpro_framework.auth.common.domain import exceptions
 from sincpro_framework.auth.common.domain.http import HttpClient
 from sincpro_framework.auth.common.domain.identity import Identity
-from sincpro_framework.auth.server.adapters.policy.requests import (
+from sincpro_framework.auth.server.adapters.resource_server.policy.requests import (
     DescribeResource,
     posted,
     resource_of,
     subject_of,
 )
-from sincpro_framework.auth.server.domain.policy import PolicyEngine
+from sincpro_framework.auth.server.domain.resource_server.policy import PolicyEngine
 from sincpro_framework.ddd.criteria import Condition, Criteria, Operator
 
 type Headers = Mapping[str, str] | Callable[[], Mapping[str, str]] | None

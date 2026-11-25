@@ -12,7 +12,7 @@ from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import ec
 from cryptography.x509.oid import ExtendedKeyUsageOID, NameOID
 
-from sincpro_framework.auth import Credentials
+from sincpro_framework.auth import Credentials, SharedSecrets, TrustedIssuer
 from sincpro_framework.auth.client import (
     AesGcmSealer,
     ClientCredentials,
@@ -24,13 +24,7 @@ from sincpro_framework.auth.client import (
 )
 from sincpro_framework.auth.common.domain import exceptions
 from sincpro_framework.auth.common.infrastructure import jws
-from sincpro_framework.auth.server import (
-    CertificateProvider,
-    DpopProofs,
-    JwtProvider,
-    SharedSecrets,
-    TrustedIssuer,
-)
+from sincpro_framework.auth.server import CertificateProvider, DpopProofs, JwtProvider
 from sincpro_framework.data_layer.store import InMemoryKeyValue
 from sincpro_framework.runtime.testing import FakeTokenEndpoint
 

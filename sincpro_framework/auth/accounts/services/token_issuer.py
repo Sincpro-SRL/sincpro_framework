@@ -9,7 +9,7 @@ them back: a logout, "sign out everywhere", a permission changed.
     tokens.answer()        ->  {"access_token": …, "refresh_token": …, "expires_in": 600, …}
     issuer.refresh(refresh_token)                  a new pair, the old refresh token spent
     issuer.revoke(access_or_refresh_token)         the session ends, its access token at once
-    auth = AccessControl(providers=[issuer.provider(resolvers=[GrantResolver(...)])])
+    auth = AccessControl(providers=[JwtProvider.for_token_issuer(issuer, resolvers=[GrantResolver(...)])])
 
 Context: the access token lives ten minutes and carries who and how — no permissions by default:
 the provider resolves them on every call, so a role taken away holds at once. A session keeps
@@ -45,8 +45,9 @@ from sincpro_framework.auth.common.domain.resolver import IdentityResolver, reso
 from sincpro_framework.auth.common.domain.revocations import Revocations
 from sincpro_framework.auth.common.infrastructure import jws
 from sincpro_framework.auth.common.infrastructure.announcing import announce
+from sincpro_framework.auth.common.infrastructure.claim_mapping import ClaimMapping, ClaimTest
 from sincpro_framework.auth.common.infrastructure.digests import digest, random_token
-from sincpro_framework.auth.server import ClaimMapping, ClaimTest, JwtProvider, TrustedIssuer
+from sincpro_framework.auth.common.infrastructure.trusted_issuer import TrustedIssuer
 from sincpro_framework.sincpro_abstractions import DataTransferObject
 from sincpro_framework.sincpro_logger import logger
 
@@ -443,24 +444,17 @@ class TokenIssuer:
             SignedOutEverywhere(entity_type=SUBJECT, entity_id=subject),
         )
 
-    def provider(
-        self, resolvers: Sequence[IdentityResolver] | None = None, name: str = "sessions"
-    ) -> JwtProvider:
-        """The `JwtProvider` that accepts what this issuer signed — checking revocations, and the
-        permission version when permissions are embedded. `resolvers` are the issuer's own when
-        not given: what a store grants is resolved on every call, as it was at sign-in."""
-        return JwtProvider(
-            TrustedIssuer(
-                self.issuer,
-                audience=self.audience,
-                keys=self.keys.verification(),
-                mapping=OWN_MAPPING,
-                required=frozenset({"exp", "sub", "sid"}),
-            ),
-            resolvers=self.resolvers if resolvers is None else resolvers,
-            revocations=self.revocations,
-            name=name,
-            clock=self.clock,
+    def trusted_issuer(self) -> TrustedIssuer:
+        """What a verifier trusts about this issuer — its name, audience, keys and how its claims
+        read: `JwtProvider.for_token_issuer(issuer)` verifies by it, and another service of the
+        platform by `TrustedIssuer(..., keys=PublicKeys(issuer.jwks()["keys"]), mapping=TokenIssuer.mapping)`.
+        """
+        return TrustedIssuer(
+            self.issuer,
+            audience=self.audience,
+            keys=self.keys.verification(),
+            mapping=OWN_MAPPING,
+            required=frozenset({"exp", "sub", "sid"}),
         )
 
     def jwks(self) -> dict[str, Any]:

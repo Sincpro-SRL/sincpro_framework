@@ -20,6 +20,8 @@ from sincpro_framework.auth import (
     InMemoryRevocations,
     KeyValueRevocations,
     PrivateKey,
+    PublicKeys,
+    TrustedIssuer,
     security,
 )
 from sincpro_framework.auth.accounts import (
@@ -33,7 +35,7 @@ from sincpro_framework.auth.accounts import (
 from sincpro_framework.auth.common.domain import exceptions
 from sincpro_framework.auth.common.infrastructure.digests import digest
 from sincpro_framework.auth.grants import GrantCatalog, Grants, Role
-from sincpro_framework.auth.server import JwtProvider, PublicKeys, TrustedIssuer
+from sincpro_framework.auth.server import JwtProvider
 from sincpro_framework.context import KeyValueContexts
 from sincpro_framework.data_layer.store import InMemoryKeyValue, StoreUnavailable
 from sincpro_framework.data_layer.store.adapters.redis import RedisKeyValue
@@ -87,7 +89,7 @@ def test_what_the_issuer_signs_its_provider_reads_as_the_same_person() -> None:
     tokens = sessions.issue(
         ANA, scopes={"dues"}, assurance=Assurance(methods=frozenset({"pwd"}))
     )
-    identity = sessions.provider().authenticate(bearer(tokens))
+    identity = JwtProvider.for_token_issuer(sessions).authenticate(bearer(tokens))
     assert identity is not None
     assert (identity.subject, identity.kind, identity.tenant) == (
         "user:MFAQ0123",
@@ -109,7 +111,7 @@ def test_a_refresh_spends_the_token_and_keeps_the_session() -> None:
     first = sessions.issue(ANA)
     second = sessions.refresh(refresh_of(first))
     assert second.session == first.session and second.refresh_token != first.refresh_token
-    assert sessions.provider().authenticate(bearer(second)) is not None
+    assert JwtProvider.for_token_issuer(sessions).authenticate(bearer(second)) is not None
 
 
 def test_two_tabs_refreshing_at_once_both_stay_signed_in_on_one_session() -> None:
@@ -137,7 +139,7 @@ def test_a_refresh_token_replayed_later_revokes_the_whole_session() -> None:
     with pytest.raises(exceptions.Unauthenticated, match="session revoked"):
         sessions.refresh(refresh_of(second))
     with pytest.raises(exceptions.Unauthenticated, match="session revoked"):
-        sessions.provider().authenticate(bearer(second))
+        JwtProvider.for_token_issuer(sessions).authenticate(bearer(second))
 
 
 def test_racing_refreshes_with_one_token_all_get_a_pair_of_its_session() -> None:
@@ -164,11 +166,11 @@ def test_a_logout_refuses_the_access_token_at_once() -> None:
     tokens, other = sessions.issue(ANA), sessions.issue(ANA)
     sessions.revoke(tokens.access_token.get_secret_value())
     with pytest.raises(exceptions.Unauthenticated, match="session revoked"):
-        sessions.provider().authenticate(bearer(tokens))
-    assert sessions.provider().authenticate(bearer(other)) is not None
+        JwtProvider.for_token_issuer(sessions).authenticate(bearer(tokens))
+    assert JwtProvider.for_token_issuer(sessions).authenticate(bearer(other)) is not None
     sessions.revoke(refresh_of(other))
     with pytest.raises(exceptions.Unauthenticated):
-        sessions.provider().authenticate(bearer(other))
+        JwtProvider.for_token_issuer(sessions).authenticate(bearer(other))
 
 
 def test_signing_out_everywhere_ends_every_session_and_a_new_sign_in_works() -> None:
@@ -178,11 +180,11 @@ def test_signing_out_everywhere_ends_every_session_and_a_new_sign_in_works() -> 
     clock.now += 1.7  # a fraction into a second, as a real clock is
     sessions.revoke_subject(ANA.subject)
     with pytest.raises(exceptions.Unauthenticated, match="session revoked"):
-        sessions.provider().authenticate(bearer(before))
+        JwtProvider.for_token_issuer(sessions).authenticate(bearer(before))
     with pytest.raises(exceptions.Unauthenticated, match="session revoked"):
         sessions.refresh(refresh_of(before))
     again = sessions.issue(ANA)  # the same second: a password changed, then a new sign-in
-    assert sessions.provider().authenticate(bearer(again)) is not None
+    assert JwtProvider.for_token_issuer(sessions).authenticate(bearer(again)) is not None
 
 
 def test_a_token_of_an_identity_provider_signed_out_everywhere_is_refused_by_the_second() -> (
@@ -255,11 +257,11 @@ def test_embedded_permissions_are_refused_once_they_changed() -> None:
         embed_permissions=True,
     )
     tokens = sessions.issue(ANA.model_copy(update={"permissions": frozenset({"dues.pay"})}))
-    identity = sessions.provider().authenticate(bearer(tokens))
+    identity = JwtProvider.for_token_issuer(sessions).authenticate(bearer(tokens))
     assert identity is not None and identity.permissions == {"dues.pay"}
     revocations.bump_permissions(ANA.subject)
     with pytest.raises(exceptions.Unauthenticated, match="permissions changed"):
-        sessions.provider().authenticate(bearer(tokens))
+        JwtProvider.for_token_issuer(sessions).authenticate(bearer(tokens))
 
 
 class TestInMemoryRefreshTokens(RefreshTokensContract):
@@ -294,15 +296,17 @@ def test_a_refreshed_token_keeps_its_roles_and_resolves_its_permissions_anew() -
     granted = Granted({"dues.pay"})
     sessions = issuer(clock, embed_permissions=True, resolvers=[granted])
     tokens = sessions.issue(ANA)
-    first = sessions.provider().authenticate(bearer(tokens))
+    first = JwtProvider.for_token_issuer(sessions).authenticate(bearer(tokens))
     assert first is not None
     assert (first.roles, first.permissions) == ({"colegiado"}, {"dues.pay"})
     granted.permissions = set()
     assert sessions.revocations is not None
     sessions.revocations.bump_permissions(ANA.subject)  # what GrantAdministration does
     with pytest.raises(exceptions.Unauthenticated, match="permissions changed"):
-        sessions.provider().authenticate(bearer(tokens))
-    refreshed = sessions.provider().authenticate(bearer(sessions.refresh(refresh_of(tokens))))
+        JwtProvider.for_token_issuer(sessions).authenticate(bearer(tokens))
+    refreshed = JwtProvider.for_token_issuer(sessions).authenticate(
+        bearer(sessions.refresh(refresh_of(tokens)))
+    )
     assert refreshed is not None
     assert (refreshed.roles, refreshed.permissions) == ({"colegiado"}, frozenset())
 
@@ -312,13 +316,15 @@ def test_embedded_permissions_are_refused_once_its_tenants_or_every_tenants_chan
     assert sessions.revocations is not None
     for scope in ("tenant:cauor", "tenant:*"):  # a tenant role changed; a shared one
         tokens = sessions.issue(ANA)
-        assert sessions.provider().authenticate(bearer(tokens)) is not None
+        assert JwtProvider.for_token_issuer(sessions).authenticate(bearer(tokens)) is not None
         sessions.revocations.bump_permissions(scope)
         with pytest.raises(exceptions.Unauthenticated, match="permissions changed"):
-            sessions.provider().authenticate(bearer(tokens))
+            JwtProvider.for_token_issuer(sessions).authenticate(bearer(tokens))
     other = sessions.issue(ANA.model_copy(update={"tenant": "other"}))
     sessions.revocations.bump_permissions("tenant:cauor")
-    assert sessions.provider().authenticate(bearer(other)) is not None  # not its tenant
+    assert (
+        JwtProvider.for_token_issuer(sessions).authenticate(bearer(other)) is not None
+    )  # not its tenant
 
 
 def test_embedding_permissions_with_refresh_tokens_needs_resolvers() -> None:
@@ -332,7 +338,7 @@ def test_a_role_given_in_the_store_holds_and_taken_away_is_gone_from_the_session
     with security.as_system("the treasurer approves dues"):
         grants.assign(ANA.subject, "dues.approver", tenant="cauor")
     sessions = issuer(resolvers=[grants])
-    provider = sessions.provider()  # resolves as the issuer does
+    provider = JwtProvider.for_token_issuer(sessions)  # resolves as the issuer does
     tokens = sessions.issue(ANA)
     held = provider.authenticate(bearer(tokens))
     assert held is not None and held.roles == {"colegiado", "dues.approver"}
@@ -403,7 +409,7 @@ def test_a_logout_holds_on_a_bounded_context_with_a_store_of_its_own() -> None:
     )
     members = UseFramework("members-own-store", log_after_execution=False)
     members.store_context_in(KeyValueContexts(InMemoryKeyValue()))
-    access = AccessControl(providers=[sessions.provider()])
+    access = AccessControl(providers=[JwtProvider.for_token_issuer(sessions)])
 
     class CommandSignOut(DataTransferObject):
         token: str

@@ -12,10 +12,10 @@ other services verify with `jwks()` and no secret is shared.
 from collections.abc import Callable, Mapping
 from typing import Any
 
+from sincpro_framework.auth.common.adapters.shared_secrets import SharedSecrets
 from sincpro_framework.auth.common.domain import exceptions
 from sincpro_framework.auth.common.domain.keys import KeySource
 from sincpro_framework.auth.common.infrastructure import jws
-from sincpro_framework.auth.server import SharedSecrets
 
 
 class SigningKeys:
@@ -47,7 +47,7 @@ class SigningKeys:
         """Private keys by id — `PrivateKey`s or PEM text — the `[jwt]` extra; `jwks()` publishes
         their public halves."""
         from sincpro_framework.auth.common.adapters.jose_keys import PrivateKey
-        from sincpro_framework.auth.server import PublicKeys
+        from sincpro_framework.auth.common.adapters.public_keys import PublicKeys
 
         loaded = {
             kid: (
