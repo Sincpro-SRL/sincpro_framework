@@ -16,12 +16,14 @@ again, and one abandoned lapses on its own. `at_most` caps a session however muc
 none by default. `idle_for=None` never lapses: it lasts until `close`.
 
 A session lives on the `KeyValueStore` the context is stored on — Redis or Valkey shared by
-every replica, this process's memory with nothing set — under `session:<namespace>:<id>`. Its
+every replica, this process's memory with nothing set — under `session:<namespace>:<sha256 of
+the id>`, so whoever reads the store finds no session to present. Its
 values are JSON: text, numbers, booleans, lists and mappings of them. While the store does not
 answer, a session cannot be read or opened (`StoreUnavailable`): a login cannot pretend to be
 known.
 """
 
+import hashlib
 import json
 import secrets
 from collections.abc import Callable, Mapping
@@ -59,8 +61,9 @@ class Sessions:
         self.now = now
 
     def _key(self, session_id: str) -> str:
-        """Where a session is stored: `session:<namespace>:<id>`."""
-        return f"session:{self.namespace}:{session_id}"
+        """Where a session is stored: `session:<namespace>:<sha256 of the id>` — never the id
+        the client holds, so a copy of the store opens no session."""
+        return f"session:{self.namespace}:{hashlib.sha256(session_id.encode()).hexdigest()}"
 
     def _lasts(self, opened_at: datetime, now: datetime) -> timedelta | None:
         """How long a session opened at `opened_at` lasts from `now` if unused: `idle_for`, never

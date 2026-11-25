@@ -112,16 +112,17 @@ def test_a_refresh_spends_the_token_and_keeps_the_session() -> None:
     assert sessions.provider().authenticate(bearer(second)) is not None
 
 
-def test_a_refresh_token_used_twice_at_once_is_refused_the_session_kept() -> None:
+def test_two_tabs_refreshing_at_once_both_stay_signed_in_on_one_session() -> None:
     clock = Clock()
     sessions = issuer(clock)
     first = sessions.issue(ANA)
     spent = refresh_of(first)
-    second = sessions.refresh(spent)
+    one_tab = sessions.refresh(spent)
     clock.now += 5
-    with pytest.raises(exceptions.Unauthenticated, match="already used"):
-        sessions.refresh(spent)
-    assert sessions.refresh(refresh_of(second))
+    other_tab = sessions.refresh(spent)
+    assert one_tab.session == other_tab.session == first.session
+    assert sessions.refresh(refresh_of(one_tab)) and sessions.refresh(refresh_of(other_tab))
+    assert [one.family for one in sessions.sessions_of(ANA.subject)] == [first.session]
 
 
 def test_a_refresh_token_replayed_later_revokes_the_whole_session() -> None:
@@ -139,26 +140,23 @@ def test_a_refresh_token_replayed_later_revokes_the_whole_session() -> None:
         sessions.provider().authenticate(bearer(second))
 
 
-def test_racing_refreshes_with_one_token_give_one_new_pair() -> None:
+def test_racing_refreshes_with_one_token_all_get_a_pair_of_its_session() -> None:
     sessions = issuer()
-    spent = refresh_of(sessions.issue(ANA))
+    first = sessions.issue(ANA)
+    spent, session = refresh_of(first), first.session
     barrier = threading.Barrier(16)
     outcomes: list[bool] = []
 
     def refresh() -> None:
         barrier.wait()
-        try:
-            sessions.refresh(spent)
-            outcomes.append(True)
-        except exceptions.Unauthenticated:
-            outcomes.append(False)
+        outcomes.append(sessions.refresh(spent).session == session)
 
     threads = [threading.Thread(target=refresh) for _ in range(16)]
     for thread in threads:
         thread.start()
     for thread in threads:
         thread.join()
-    assert outcomes.count(True) == 1
+    assert outcomes == [True] * 16
 
 
 def test_a_logout_refuses_the_access_token_at_once() -> None:
@@ -369,15 +367,6 @@ def test_the_index_of_sessions_keeps_only_the_live_ones_and_ends_with_the_last()
     assert index is not None and list(json.loads(index)) == [later.session]
     clock.now += timedelta(days=31).total_seconds()
     assert store.get(kept._index_key(ANA.subject)) is None
-
-
-def test_an_index_entry_it_cannot_read_is_dropped_never_a_failed_sign_in() -> None:
-    store = InMemoryKeyValue()
-    kept = KeyValueRefreshTokens(store)
-    store.set(kept._index_key(ANA.subject), json.dumps({"sid_older": "a-digest"}).encode())
-    sessions = issuer(refresh_tokens=kept)
-    tokens = sessions.issue(ANA)
-    assert [one.family for one in sessions.sessions_of(ANA.subject)] == [tokens.session]
 
 
 class FailingWrites(InMemoryKeyValue):

@@ -1,16 +1,17 @@
 """`Totp`: a second factor from an authenticator app — RFC 6238 — on the standard library: a
 secret shared once by QR code, a six-digit code that changes every thirty seconds.
 
-    totp = Totp(issuer="CAUOR")
+    totp = Totp(issuer="CAUOR")                                  the running context's store
     secret = totp.new_secret()                                   kept encrypted with the account
     totp.provisioning_uri(secret, "MFAQ0123")                    the QR code's content
-    totp.verify(secret, "492039", subject="user:MFAQ0123")       ->  True, once
+    totp.verify(secret, "492039", "user:MFAQ0123")               ->  True, once
 
 Context: a code is accepted within `window` steps either side (clock skew), compared in constant
-time; with `replay`, a step accepted for a subject is never accepted again — nor an older one —
-written by compare-and-set, so the same code sent twice at once is accepted once. Six digits can
-be guessed: count failed codes with `LoginAttempts`. The secret cannot be hashed — the server
-computes codes from it — so keep it encrypted at rest.
+time, and once: a step accepted for a subject is never accepted again — nor an older one —
+written by compare-and-set on the store every replica shares, so the same code sent twice at
+once is accepted once (NIST SP 800-63B: an OTP is used once). Six digits can be guessed: check
+each code inside `LoginAttempts.attempt`. The secret cannot be hashed — the server computes codes
+from it — so keep it encrypted at rest.
 """
 
 import base64
@@ -26,8 +27,8 @@ from urllib.parse import quote, urlencode
 
 from sincpro_framework.auth.domain import exceptions
 from sincpro_framework.auth.infrastructure.digests import digest
+from sincpro_framework.context.entrypoint.resolution import current_store, key_value_store_of
 from sincpro_framework.data_layer.store import KeyValueStore
-from sincpro_framework.sincpro_logger import logger
 
 
 class TotpAlgorithm(StrEnum):
@@ -56,9 +57,12 @@ class Totp:
         period: int = 30,
         algorithm: TotpAlgorithm = TotpAlgorithm.SHA1,
         window: int = 1,
-        replay: KeyValueStore | None = None,
+        store: KeyValueStore | None = None,
         clock: Callable[[], float] = time.time,
     ) -> None:
+        """`window` is how many steps either side of now a code is accepted in — a phone whose
+        clock drifts; `store` keeps the last step each subject used — the running context's
+        when not given."""
         if algorithm not in ALGORITHMS:
             raise exceptions.ProgrammingError(
                 f"TOTP algorithm is one of {[one.value for one in TotpAlgorithm]}"
@@ -68,9 +72,12 @@ class Totp:
         self.period = period
         self.algorithm = TotpAlgorithm(algorithm)
         self.window = window
-        self.replay = replay
+        self._store = store
         self.clock = clock
-        self._warned = False
+
+    def store(self) -> KeyValueStore:
+        """The store the steps used are kept in — the one given, else the running context's."""
+        return self._store if self._store is not None else key_value_store_of(current_store())
 
     def new_secret(self, length: int = 20) -> str:
         """A new secret, base32 — what the authenticator app and the account keep."""
@@ -107,48 +114,36 @@ class Totp:
         """The code of the current step."""
         return self.code_at(secret, int(self.clock() // self.period))
 
-    def _first_use(self, replay: KeyValueStore, subject: str, step: int) -> bool:
-        """Whether `step` is later than the last step `replay` accepted for `subject` — and, when
-        it is, recorded as the last, by compare-and-set.
+    def _first_use(self, subject: str, step: int) -> bool:
+        """Whether `step` is later than the last step accepted for `subject` — and, when it is,
+        recorded as the last, by compare-and-set.
 
         Context: the record lives as long as a step it refuses could still verify — up to
         `window` steps ahead accepted now, valid `window` steps after it, one more for the
         moment within the step — and is gone after, so the store holds no key per subject
         forever.
         """
+        store = self.store()
         key = f"sincpro:auth:totp:{digest(subject)}"
         lives = timedelta(seconds=self.period * (2 * self.window + 2))
         for _ in range(16):
-            held = replay.get(key)
+            held = store.get(key)
             if held is not None and int(held) >= step:
                 return False
             written = str(step).encode()
-            if held is None and replay.add(key, written, lives):
+            if held is None and store.add(key, written, lives):
                 return True
-            if held is not None and replay.replace(key, held, written, lives):
+            if held is not None and store.replace(key, held, written, lives):
                 return True
         return False
 
-    def verify(self, secret: str, code: str, subject: str | None = None) -> bool:
-        """Whether `code` is the secret's within `window` steps of now — and, with `replay`, the
-        first use of that step by `subject`. A code of anything but ASCII digits is not.
-
-        Context: a `Totp` given `replay` was asked never to accept a code twice, which needs
-        the `subject`; without it the code is verified all the same and a warning says, once,
-        that a code may be used twice.
-        """
-        if self.replay is not None and subject is None and not self._warned:
-            self._warned = True
-            logger.warning(
-                f"Totp({self.issuer!r}) was given replay= but verify() no subject: a code may "
-                "be used twice — pass verify(secret, code, subject=...)"
-            )
+    def verify(self, secret: str, code: str, subject: str) -> bool:
+        """Whether `code` is the secret's within `window` steps of now, used by `subject` for
+        the first time. A code of anything but ASCII digits is not."""
         if not (code.isascii() and code.isdigit()) or len(code) != self.digits:
             return False
         current = int(self.clock() // self.period)
         for step in range(current - self.window, current + self.window + 1):
             if hmac.compare_digest(self.code_at(secret, step), code):
-                if self.replay is not None and subject is not None:
-                    return self._first_use(self.replay, subject, step)
-                return True
+                return self._first_use(subject, step)
         return False

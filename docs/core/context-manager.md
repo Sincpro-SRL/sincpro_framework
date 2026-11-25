@@ -404,7 +404,7 @@ What a `KeyValueContexts` writes on Redis, under its prefix (`sincpro:context` b
 
 Beside them, on the same `KeyValueStore`, in sections of their own: `bus.cache`, `bus.idempotency`,
 the query cache, the circuit breakers (`sincpro:circuit_breaker:<name>:…`) and the
-[sessions](sessions.md) (`session:<namespace>:<id>`). **None of it is ever
+[sessions](sessions.md) (`session:<namespace>:<sha256 of the id>`). **None of it is ever
 a value of the context**: the context holds the keys that address it — a tenant, a user, a node's
 id — and the data stays in the store. A cache is keyed by its owner (`tenant_id`, `user_id`, the
 keys of `vary_by`) read from the context of the call; a draft by the keys `by=` names.

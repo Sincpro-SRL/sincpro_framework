@@ -1,6 +1,7 @@
 """Sessions: one sign-in, and a client that keeps using it is never asked again; one abandoned
 lapses on its own; a code used once is used once."""
 
+import hashlib
 from datetime import UTC, datetime, timedelta
 
 import pytest
@@ -116,7 +117,9 @@ def test_the_context_answers_the_sessions_of_the_store_it_is_saved_on():
         opened = use_context().sessions(idle_for=timedelta(days=30)).open({"user_id": "ana"})
         found = use_context().sessions().get(opened.id)
 
-    assert found is not None and store.get(f"session:sessions:{opened.id}") is not None
+    held = f"session:sessions:{hashlib.sha256(opened.id.encode()).hexdigest()}"
+    assert found is not None and store.get(held) is not None
+    assert store.get(f"session:sessions:{opened.id}") is None  # never the id the client holds
 
 
 class DownKeyValue(InMemoryKeyValue):
