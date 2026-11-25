@@ -92,23 +92,30 @@ anybody (`open`); `@auth.authenticated` anybody *known*. `security.as_system(rea
 
 **Inside the framework** — package `sincpro_framework/auth/`, standard library only:
 
-- One folder per job, each its own door (PRD_35):
+- One sub-context per job, each in the framework's layers — `domain/` (abstractions, ports),
+  `services/` (operations), `adapters/` (what is external), `infrastructure/` (low-level
+  mechanism), `entrypoint/` (facades) — only the layers it has; the root is only the public door:
 
   ```
-  auth/            the contract — domain/ (Identity, AuthProvider, permissions, errors, revocations),
-                   entrypoint/ (AccessControl, security, asgi), services/guard.py (BusGuard, HookGuard),
-                   infrastructure/ (the identity ContextVar, jws, JOSE keys, HTTP, discovery)
-  auth/server/     verify what arrives — adapters/bearer_tokens/ (JwtProvider, introspection, DPoP
-                   proofs), api_keys, service_tokens, webhook_signatures, certificates, policy/
-  auth/client/     present what goes out — domain/ (TokenSource), adapters/ (every source),
-                   infrastructure/ (token endpoint, token cache), entrypoint/ (call_with_credentials)
-  auth/grants/     roles — domain/ (catalog, assignments), adapters/ (resolver, stores), services/
-  auth/accounts/   the service's own accounts — adapters/passwords/ (hasher, lockout, HTTP Basic),
-                   adapters/issuing/ (TokenIssuer, SigningKeys, refresh tokens), one-time tokens, TOTP
+  auth/common/          the shared kernel — domain/ (Identity, AuthProvider, permissions, errors,
+                        revocations, keys, HTTP port), adapters/ (revocation stores, UrllibHttp,
+                        JOSE keys, discovery), infrastructure/ (jws, digests, the identity ContextVar)
+  auth/access_control/  the guard on the bus — entrypoint/ (AccessControl, security, asgi,
+                        RuntimeRequirements), services/ (authentication, decisions, guard)
+  auth/server/          verify what arrives — domain/ (ClaimMapping, PolicyEngine), services/
+                        (Resolving, DecidedBy), adapters/ (JwtProvider, introspection, DPoP proofs,
+                        api_keys, service_tokens, webhook_signatures, certificates, policy engines)
+  auth/client/          present what goes out — domain/ (TokenSource), adapters/ (every source),
+                        infrastructure/ (token endpoint, token cache), entrypoint/ (call_with_credentials)
+  auth/grants/          roles — domain/ (catalog, assignments, RolePermissions), services/
+                        (administration, GrantResolver, LiveCatalog), adapters/ (stores), entrypoint/ (Grants)
+  auth/accounts/        the service's own accounts — services/ (TokenIssuer, LoginAttempts,
+                        OneTimeTokens, Totp, BasicProvider), adapters/ (PasswordHasher, SigningKeys,
+                        refresh token stores)
   ```
 
-  The root never imports a door; `server`, `client`, `grants` build on the root alone, `accounts`
-  on the root and the server (`tests/auth/test_doors.py`).
+  `common` builds on nothing; `access_control`, `server`, `client`, `grants` on `common` alone;
+  `accounts` on `common` and `server` (`tests/auth/test_doors.py`).
 - HS256 and HMAC, scrypt, TOTP and the HTTP client (`UrllibHttp`) are the standard library;
   asymmetric JOSE (RS/PS/ES/EdDSA, JWKS, DPoP, mTLS, AES-GCM) is the `[jwt]` extra (PyJWT +
   cryptography), argon2 the `[argon2]` one. PyJWT only signs and verifies: claims are always

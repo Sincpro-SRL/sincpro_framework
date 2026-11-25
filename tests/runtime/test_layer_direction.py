@@ -19,7 +19,12 @@ import pytest
 FRAMEWORK = Path(__file__).parents[2] / "sincpro_framework"
 
 LAYERED = [
-    "auth",
+    "auth/access_control",
+    "auth/accounts",
+    "auth/client",
+    "auth/common",
+    "auth/grants",
+    "auth/server",
     "context",
     "data_layer/caching",
     "data_layer/object_storage",
