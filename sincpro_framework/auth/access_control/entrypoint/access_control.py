@@ -29,7 +29,24 @@ from datetime import timedelta
 from typing import TYPE_CHECKING, Any
 from weakref import WeakKeyDictionary, WeakSet
 
-from sincpro_framework.auth.adapters.added_requirements import KeyValueAddedRequirements
+from sincpro_framework.auth.access_control.adapters.added_requirements import (
+    KeyValueAddedRequirements,
+)
+from sincpro_framework.auth.access_control.domain.added_requirements import (
+    AddedRequirementStore,
+)
+from sincpro_framework.auth.access_control.entrypoint.runtime_requirements import (
+    RuntimeRequirements,
+)
+from sincpro_framework.auth.access_control.services import authentication, description
+from sincpro_framework.auth.access_control.services.decisions import Decisions
+from sincpro_framework.auth.access_control.services.guard import (
+    GUARD_SEQUENCE,
+    BusGuard,
+    Declarations,
+    HookGuard,
+    guarded_buses,
+)
 from sincpro_framework.auth.common.domain import exceptions
 from sincpro_framework.auth.common.domain.administration import AdministrationPolicy
 from sincpro_framework.auth.common.domain.events import EventPublisher
@@ -51,17 +68,6 @@ from sincpro_framework.auth.common.domain.permissions import (
 )
 from sincpro_framework.auth.common.domain.provider import AuthProvider
 from sincpro_framework.auth.common.infrastructure.security_context import current_identity
-from sincpro_framework.auth.domain.added_requirements import AddedRequirementStore
-from sincpro_framework.auth.entrypoint.runtime_requirements import RuntimeRequirements
-from sincpro_framework.auth.services import authentication, description
-from sincpro_framework.auth.services.decisions import Decisions
-from sincpro_framework.auth.services.guard import (
-    GUARD_SEQUENCE,
-    BusGuard,
-    Declarations,
-    HookGuard,
-    guarded_buses,
-)
 from sincpro_framework.ddd.repositories.hooks import Hooks
 from sincpro_framework.sincpro_logger import logger
 

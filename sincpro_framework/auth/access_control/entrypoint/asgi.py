@@ -29,7 +29,7 @@ from sincpro_framework.common.failures import retry_after
 from sincpro_framework.exceptions import ExternalServiceError, FailureKind
 
 if TYPE_CHECKING:
-    from sincpro_framework.auth.entrypoint.access_control import AccessControl
+    from sincpro_framework.auth.access_control.entrypoint.access_control import AccessControl
 
 type Scope = MutableMapping[str, Any]
 type Receive = Callable[[], Awaitable[MutableMapping[str, Any]]]

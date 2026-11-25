@@ -35,10 +35,20 @@ extra is asked for (`PublicKey`, `PrivateKey` here). JSON-RPC, REST, FastAPI, gR
 import importlib
 from typing import TYPE_CHECKING, Any
 
-from sincpro_framework.auth.adapters.added_requirements import (
+from sincpro_framework.auth.access_control.adapters.added_requirements import (
     InMemoryAddedRequirements,
     KeyValueAddedRequirements,
 )
+from sincpro_framework.auth.access_control.domain.added_requirements import (
+    AddedRequirement,
+    AddedRequirementStore,
+)
+from sincpro_framework.auth.access_control.entrypoint.access_control import AccessControl
+from sincpro_framework.auth.access_control.entrypoint.asgi import IdentityMiddleware
+from sincpro_framework.auth.access_control.entrypoint.runtime_requirements import (
+    RuntimeRequirements,
+)
+from sincpro_framework.auth.access_control.entrypoint.security import security
 from sincpro_framework.auth.common.adapters.revocations import (
     InMemoryRevocations,
     KeyValueRevocations,
@@ -112,16 +122,6 @@ from sincpro_framework.auth.common.infrastructure.signatures import (
     SignatureStyle,
     TimestampedSignature,
 )
-from sincpro_framework.auth.domain.added_requirements import (
-    AddedRequirement,
-    AddedRequirementStore,
-)
-from sincpro_framework.auth.entrypoint.access_control import AccessControl
-from sincpro_framework.auth.entrypoint.asgi import IdentityMiddleware
-from sincpro_framework.auth.entrypoint.runtime_requirements import (
-    RuntimeRequirements,
-)
-from sincpro_framework.auth.entrypoint.security import security
 
 __all__ = [
     "OPEN",

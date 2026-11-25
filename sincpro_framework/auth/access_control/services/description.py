@@ -9,6 +9,7 @@ these early changes nothing; it only sees less.
 from collections.abc import Iterable
 from typing import TYPE_CHECKING
 
+from sincpro_framework.auth.access_control.services.guard import Declarations
 from sincpro_framework.auth.common.domain.permissions import (
     OPEN,
     AccessDeclaration,
@@ -17,7 +18,6 @@ from sincpro_framework.auth.common.domain.permissions import (
     command_name,
 )
 from sincpro_framework.auth.common.domain.provider import AuthProvider
-from sincpro_framework.auth.services.guard import Declarations
 
 if TYPE_CHECKING:
     from sincpro_framework.ddd.repositories.hooks import Hooks

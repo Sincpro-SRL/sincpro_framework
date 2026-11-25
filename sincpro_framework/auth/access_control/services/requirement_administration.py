@@ -22,6 +22,12 @@ from collections.abc import Callable, Hashable, Iterable
 from datetime import timedelta
 from typing import Any
 
+from sincpro_framework.auth.access_control.domain.added_requirements import (
+    AddedRequirement,
+    AddedRequirements,
+    AddedRequirementStore,
+)
+from sincpro_framework.auth.access_control.services.guard import Access
 from sincpro_framework.auth.common.domain import exceptions
 from sincpro_framework.auth.common.domain.administration import (
     AdministrationPolicy,
@@ -50,12 +56,6 @@ from sincpro_framework.auth.common.infrastructure.announcing import announce
 from sincpro_framework.auth.common.infrastructure.locks import AdministrationLocks
 from sincpro_framework.auth.common.infrastructure.refreshed import Refreshed
 from sincpro_framework.auth.common.infrastructure.security_context import current_identity
-from sincpro_framework.auth.domain.added_requirements import (
-    AddedRequirement,
-    AddedRequirements,
-    AddedRequirementStore,
-)
-from sincpro_framework.auth.services.guard import Access
 from sincpro_framework.sincpro_logger import logger
 
 Scoped = dict[str, list[Requirement]]

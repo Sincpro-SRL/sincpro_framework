@@ -21,6 +21,7 @@ from collections.abc import Generator, Iterable
 from contextlib import AbstractContextManager, contextmanager, nullcontext
 from typing import TYPE_CHECKING
 
+from sincpro_framework.auth.access_control.entrypoint.access_control import AccessControl
 from sincpro_framework.auth.common.domain.exceptions import Unauthenticated
 from sincpro_framework.auth.common.domain.identity import Credentials, Identity
 from sincpro_framework.auth.common.infrastructure.security_context import (
@@ -31,7 +32,6 @@ from sincpro_framework.auth.common.infrastructure.security_context import (
     presented_credential,
     presenting,
 )
-from sincpro_framework.auth.entrypoint.access_control import AccessControl
 from sincpro_framework.context import ContextStore, use_context
 
 if TYPE_CHECKING:

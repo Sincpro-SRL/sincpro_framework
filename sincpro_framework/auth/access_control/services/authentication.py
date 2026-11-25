@@ -11,11 +11,11 @@ elsewhere: every identity in play was verified by this process or opened by its 
 
 from collections.abc import Iterable, Sequence
 
+from sincpro_framework.auth.access_control.services.guard import guarded_buses
 from sincpro_framework.auth.common.domain import exceptions
 from sincpro_framework.auth.common.domain.identity import Credentials, Identity
 from sincpro_framework.auth.common.domain.provider import AuthProvider
 from sincpro_framework.auth.common.infrastructure.security_context import access_in_play
-from sincpro_framework.auth.services.guard import guarded_buses
 
 
 def _named(providers: Iterable[AuthProvider], name: str) -> AuthProvider | None:
