@@ -38,7 +38,7 @@ global                         Level.GLOBAL — key `global`; every service and 
                      └─ scope  ┘
 ```
 
-| Level | Kept under | Shared by | Refreshed |
+| Level | Kept under | Shared by | ScopedCache |
 |---|---|---|---|
 | `global` | `global` | every service and replica that set the store | by version, at most once per `every` |
 | `process` (`Level.ROOT`) | `process:{service_name}` — the bus's observability service name | that service's replicas, never another service | by version, at most once per `every` |

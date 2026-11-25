@@ -1,1 +1,2 @@
-"""Talking to a token endpoint, the cache every replica shares, sealing what is kept."""
+"""The bytes a shared store holds of a token or a grant — its secrets readable, encrypted when
+given a `Sealer`."""

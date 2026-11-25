@@ -5,7 +5,7 @@ nothing but the shared kernel: what a token issuer signed is verified on the
 [`auth.server`](server.md) side, by `JwtProvider.for_token_issuer(issuer)`.
 
 Most services verify a token an identity provider issued ([the providers](server.md)). A small
-service with no identity provider — a college's members, a shop's customers — keeps its own
+service with no identity provider — a college's members, a shop's customers — stores its own
 accounts. The framework never ships a user table nor a login screen: the account is the project's
 own entity. It ships what every such project otherwise writes by hand, and gets wrong the same
 ways: hashing, locking guessed accounts, one-time links, TOTP, and issuing tokens with refresh,
@@ -43,7 +43,7 @@ from sincpro_framework.auth.accounts import LoginAttempts
 from sincpro_framework.data_layer.store import InMemoryKeyValue
 from sincpro_framework.rate_limiter import RateLimited
 
-attempts = LoginAttempts(InMemoryKeyValue(), max_failures=3, lock_for=timedelta(minutes=15))
+attempts = LoginAttempts(InMemoryKeyValue(), max_failures=3, lock_ttl=timedelta(minutes=15))
 for _ in range(3):
     try:
         with attempts.attempt("ana@colegio.bo"):            # its turn: one attempt at a time
@@ -60,7 +60,7 @@ assert attempts.locked_for("ana@colegio.bo") is not None    # what a screen show
 
 | `with attempts.attempt(key):` | |
 |---|---|
-| before the block | the account's turn: another attempt at it running — on any replica — is waited for; locked: `RateLimited`, the block never runs |
+| before the block | the account's turn — a lease on the store, released only by the attempt that holds it: another attempt at it running — on any replica — is waited for; locked: `RateLimited`, the block never runs |
 | the block raises `Unauthenticated` | one failure; the one that reaches `max_failures` locks the key |
 | the block raises anything else | nothing counted: the project's database down is not a guess |
 | the block ends well | the count starts over |
@@ -167,10 +167,11 @@ except Unauthenticated as refused:
 | | |
 |---|---|
 | the access token | ten minutes; who, which session, when and how they authenticated, the scopes — no permissions: the provider's resolvers give them per call, so a role taken away holds at once (`embed_permissions=True` carries them with a version a change refuses, resolved by the issuer's `resolvers=` at sign-in and again at every refresh — with refresh tokens and no `resolvers=` it is refused at construction: a refresh never copies permissions a role taken away would outlive) |
-| the refresh token | random, stored by digest, rotated on every use; used again within `reuse_grace` (ten seconds — two tabs refreshing at once) it answers a pair of the same session; past it, it is a replay, and the whole session is revoked |
-| a session | ends `idle_for` (14 days) after the last refresh and `at_most` (30 days) after it began |
-| a logout | `revoke(token)` — an access or a refresh token — ends its session, its access tokens refused at once |
-| the roles | the ones the identity carried at sign-in, kept with the session and carried by every refreshed token — never the ones a resolver added from a store: those are resolved again by whoever verifies the token, so a role taken away there is gone at once |
+| the refresh token | random, stored by digest, rotated on every use; used again within `reuse_grace` (ten seconds — two tabs refreshing at once) it answers a pair of the same session; past it, it is a replay, and the whole session is revoked — which is why `refresh_tokens=` needs `revocations=` (`ProgrammingError` otherwise: without them the thief who refreshed first would go on refreshing) |
+| a session | ends `idle_ttl` (14 days) after the last refresh and `session_ttl` (30 days) after it began |
+| a logout | `revoke(token)` — an access or a refresh token — ends its session, its access tokens refused at once; `revoke(token, client=…)` leaves another client's tokens alone (RFC 7009) |
+| "sign out this device" | `revoke_session(session, subject)` — a session by its id, from `sessions_of`; what the authorization server calls when a code is replayed |
+| the roles | the ones the identity carried at sign-in, stored with the session and carried by every refreshed token — never the ones a resolver added from a store: those are resolved again by whoever verifies the token, so a role taken away there is gone at once |
 | "sign out everywhere" | `revoke_subject(subject)`: a password changed, an account disabled — every session of the subject ends; a new sign-in in that same second works |
 | "signed in on…" | `sessions_of(subject)` — one per live session, none signed out of |
 | other services | `SigningKeys.private({...}, "ES256")` (`[jwt]`): they verify with `jwks()` and `TrustedIssuer(..., mapping=TokenIssuer.mapping)`, no secret shared |
@@ -186,17 +187,17 @@ reset = links.issue("password-reset", "user:MFAQ0123", ttl=timedelta(minutes=30)
 assert links.redeem("password-reset", reset).subject == "user:MFAQ0123"
 
 totp = Totp(issuer="CAUOR", store=InMemoryKeyValue())     # the context's store in production
-secret = totp.new_secret()                                 # kept encrypted with the account
+secret = totp.new_secret()                                 # stored encrypted with the account
 uri = totp.provisioning_uri(secret, "MFAQ0123")            # the QR code the app scans
-assert totp.verify(secret, totp.now(secret), "user:MFAQ0123")
-assert not totp.verify(secret, totp.now(secret), "user:MFAQ0123")   # once only
+assert totp.verify(secret, totp.current_code(secret), "user:MFAQ0123")
+assert not totp.verify(secret, totp.current_code(secret), "user:MFAQ0123")   # once only
 ```
 
 | `OneTimeTokens` | |
 |---|---|
 | bound to its purpose | stored by the token's digest under `purpose` — a reset link is never an invitation |
 | once | taken atomically: two clicks at once redeem it once |
-| the last one sent | `single_outstanding` (default): asking again voids the link before; `void(purpose, subject)` voids them all |
+| the last one sent | `single_outstanding` (default): asking again invalidates the link before; `invalidate(purpose, subject)` invalidates them all |
 | replaces | an administrator handing a temporary password in an HTTP answer |
 
 `Totp` is RFC 6238 on the standard library — its own test vectors pass — accepting a code within
@@ -223,7 +224,7 @@ assert basic.authenticate(
 ).subject == "service:reports"
 ```
 
-A pair verified is remembered in this process for a minute — by an HMAC under a random key, never
+A pair verified is cached in this process for `cache_ttl` (a minute) — by an HMAC under a random key, never
 the pair — so a client sending it on every request does not pay a hash each time. Any
 `CredentialVerifier` of the project's — its own accounts table — stands in for `HashedCredentials`.
 
@@ -240,7 +241,7 @@ token, a link or a password ([the audit trail](README.md#an-audit-trail-what-aut
 
 ## On the project's database
 
-A service with no Redis keeps what auth stores in tables of its own database — declared in its
+A service with no Redis persists what auth stores in tables of its own database — declared in its
 metadata and migrations like any other table, every store proven by the same contract as the
 ones in memory and on Redis.
 

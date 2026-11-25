@@ -17,8 +17,8 @@ from sincpro_framework.auth.client import (
     AesGcmSealer,
     ClientCredentials,
     DpopProver,
-    HeldGrant,
-    KeyValueHeldGrants,
+    KeyValueOAuthGrants,
+    OAuthGrant,
     OutgoingRequest,
     TokenCache,
 )
@@ -40,7 +40,9 @@ def token(**claims) -> str:
         "exp": time.time() + 300,
         **claims,
     }
-    return jws.encode({"alg": "HS256", "kid": "k"}, payload, jws.HmacKey.of("k", SECRET).sign)
+    return jws.encode(
+        {"alg": "HS256", "kid": "k"}, payload, jws.HmacKey.from_secret("k", SECRET).sign
+    )
 
 
 def resource(**options) -> JwtProvider:
@@ -58,7 +60,7 @@ def dpop_request(
         transport="http",
         headers={
             "authorization": f"DPoP {access}",
-            "dpop": prover.proof(method, f"{API}{path}", access),
+            "dpop": prover.create_proof(method, f"{API}{path}", access),
         },
         method=method,
         uri=f"{path}?page=2",
@@ -88,7 +90,7 @@ def test_a_bound_token_with_its_proof_is_let_through() -> None:
                 update={
                     "headers": {
                         **c.headers,
-                        "dpop": DpopProver().proof("GET", f"{API}/invoices", a),
+                        "dpop": DpopProver().create_proof("GET", f"{API}/invoices", a),
                     }
                 }
             ),
@@ -99,7 +101,7 @@ def test_a_bound_token_with_its_proof_is_let_through() -> None:
                 update={
                     "headers": {
                         **c.headers,
-                        "dpop": p.proof("GET", f"{API}/invoices", "other-token"),
+                        "dpop": p.create_proof("GET", f"{API}/invoices", "other-token"),
                     }
                 }
             ),
@@ -173,7 +175,9 @@ def test_a_client_proves_its_key_for_the_token_and_for_each_request() -> None:
     scheme, access = headers["authorization"].split()
     proof = jws.parse(headers["dpop"])
     assert scheme == "DPoP" and proof.claims["htu"] == f"{API}/qr"
-    assert proof.claims["ath"] == jws.encoded(hashlib.sha256(access.encode()).digest())
+    assert proof.claims["ath"] == jws.base64url_encode(
+        hashlib.sha256(access.encode()).digest()
+    )
     assert bank.invalidate(request, headers, {"dpop-nonce": "n-1"})
     assert jws.parse(bank.headers_for(request)["dpop"]).claims["nonce"] == "n-1"
 
@@ -310,15 +314,15 @@ def test_a_token_bound_to_a_certificate_needs_that_certificate() -> None:
 
 def test_what_a_shared_store_keeps_of_a_secret_is_sealed() -> None:
     sealer = AesGcmSealer(AesGcmSealer.new_key())
-    sealed = sealer.seal(b"rt_secret")
-    assert b"rt_secret" not in sealed and sealer.open(sealed) == b"rt_secret"
+    sealed = sealer.encrypt(b"rt_secret")
+    assert b"rt_secret" not in sealed and sealer.decrypt(sealed) == b"rt_secret"
     with pytest.raises(ValueError):
-        AesGcmSealer(AesGcmSealer.new_key()).open(sealed)
+        AesGcmSealer(AesGcmSealer.new_key()).decrypt(sealed)
     store = InMemoryKeyValue()
-    held = KeyValueHeldGrants(store, seal=sealer)
-    assert held.replace("odoo", None, HeldGrant(refresh_token="rt_secret"))
+    grants = KeyValueOAuthGrants(store, sealer=sealer)
+    assert grants.compare_and_set("odoo", None, OAuthGrant(refresh_token="rt_secret"))
     assert all(b"rt_secret" not in value for value, _ in store._values.values())
-    found = held.current("odoo")
+    found = grants.get("odoo")
     assert found is not None and found.refresh_token == "rt_secret"
     server = FakeTokenEndpoint(clients={"billing": "s3cret"})
     cache_store = InMemoryKeyValue()
@@ -327,7 +331,7 @@ def test_what_a_shared_store_keeps_of_a_secret_is_sealed() -> None:
         client_secret="s3cret",
         token_endpoint=server.token_endpoint,
         http=server,
-        cache=TokenCache(cache_store, seal=sealer),
+        cache=TokenCache(cache_store, sealer=sealer),
     )
     assert bank.headers_for(OutgoingRequest(url=API)) == {"authorization": "Bearer at-1"}
     assert all(b"at-1" not in value for value, _ in cache_store._values.values())

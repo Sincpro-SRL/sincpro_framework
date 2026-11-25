@@ -62,14 +62,14 @@ class CertificateProvider(AuthProvider):
         """Mutual TLS — the client's certificate is its credential."""
         return {"type": "mutualTLS"}
 
-    def _loaded(self, raw: bytes) -> Any:
+    def _load_certificate(self, raw: bytes) -> Any:
         """The certificate, PEM or DER — `Unauthenticated` when it is neither."""
         try:
-            return x509.load_der_x509_certificate(jws.der_of(raw))
+            return x509.load_der_x509_certificate(jws.to_der(raw))
         except ValueError as error:
             raise exceptions.Unauthenticated("unreadable client certificate") from error
 
-    def _named(self, certificate: Any) -> tuple[str, bool]:
+    def _subject_of(self, certificate: Any) -> tuple[str, bool]:
         """The certificate's name — its SPIFFE ID when it has one — and whether it is one."""
         try:
             uris = certificate.extensions.get_extension_for_class(
@@ -100,7 +100,7 @@ class CertificateProvider(AuthProvider):
         raw = credentials.peer_certificate
         if raw is None:
             return None
-        certificate = self._loaded(raw)
+        certificate = self._load_certificate(raw)
         now = datetime.fromtimestamp(self.clock(), UTC)
         if not certificate.not_valid_before_utc <= now <= certificate.not_valid_after_utc:
             raise exceptions.Unauthenticated("client certificate outside its validity")
@@ -110,7 +110,7 @@ class CertificateProvider(AuthProvider):
                 verifier.verify(certificate, [])
             except VerificationError as error:
                 raise exceptions.Unauthenticated("client certificate not trusted") from error
-        named, is_spiffe = self._named(certificate)
+        named, is_spiffe = self._subject_of(certificate)
         if self.trust_domain is not None:
             if not is_spiffe:
                 raise exceptions.Unauthenticated(

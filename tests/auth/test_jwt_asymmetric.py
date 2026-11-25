@@ -76,7 +76,7 @@ def test_an_hmac_token_signed_with_the_public_key_is_refused() -> None:
     forged = jws.encode(
         {"alg": "HS256", "kid": "rs-1"},
         {"iss": ISSUER, "aud": "billing-api", "sub": "4c1d", "exp": NOW + 300},
-        jws.HmacKey.of("rs-1", public_pem).sign,
+        jws.HmacKey.from_secret("rs-1", public_pem).sign,
     )
     http = ScriptedHttp({JWKS: {"keys": [RS.jwk()]}})
     with pytest.raises(exceptions.Unauthenticated, match="HS256, not accepted"):

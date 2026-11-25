@@ -1,7 +1,7 @@
 """The public keys of an issuer published as a JWKS and fetched (`Jwks`) — the `[jwt]` extra.
 
     Jwks("https://auth.sincpro.com.bo/realms/sincpro/protocol/openid-connect/certs")
-    Jwks.discovered("https://auth.sincpro.com.bo/realms/sincpro")   the URL by OIDC discovery
+    Jwks.from_discovery("https://auth.sincpro.com.bo/realms/sincpro")   the URL by OIDC discovery
 
 Context: the set is fetched once and cached (`refresh_every`, ten minutes); an identity provider
 that rotates its keys publishes the new one before it signs with it, so a token naming a `kid`
@@ -17,15 +17,15 @@ from collections.abc import Callable, Iterable, Mapping, Sequence
 from datetime import timedelta
 from typing import Any
 
-from sincpro_framework.auth.common.adapters.jose_keys import PublicKey, fits
+from sincpro_framework.auth.common.adapters.jose_keys import PublicKey, is_compatible
 from sincpro_framework.auth.common.adapters.public_keys import asymmetric_algorithms
 from sincpro_framework.auth.common.adapters.server_metadata import (
     OidcDiscovery,
-    discovery_for,
+    resolve_discovery,
 )
 from sincpro_framework.auth.common.adapters.urllib_http import UrllibHttp
 from sincpro_framework.auth.common.domain import exceptions
-from sincpro_framework.auth.common.domain.http import HttpClient, HttpRequest, safe_url
+from sincpro_framework.auth.common.domain.http import HttpClient, HttpRequest, redact_url
 from sincpro_framework.auth.common.domain.keys import KeySource, VerificationKey
 from sincpro_framework.data_layer.caching import (
     Cache,
@@ -40,12 +40,12 @@ from sincpro_framework.sincpro_logger import logger
 DEFAULT_ALGORITHMS = ("RS256", "PS256", "ES256", "EdDSA")
 
 
-def _matching(
+def _select_key(
     keys: Sequence[Mapping[str, Any]], key_id: str | None, algorithm: str
 ) -> Mapping[str, Any] | None:
     """The one JWK for `key_id` and `algorithm` — by its `kid`, or the only one fitting the
     algorithm when the token names none."""
-    fitting = [one for one in keys if fits(one, algorithm)]
+    fitting = [one for one in keys if is_compatible(one, algorithm)]
     if key_id is not None:
         return next((one for one in fitting if one.get("kid") == key_id), None)
     return fitting[0] if len(fitting) == 1 else None
@@ -85,7 +85,7 @@ class Jwks(KeySource):
         self._lock = threading.Lock()
 
     @classmethod
-    def discovered(
+    def from_discovery(
         cls,
         issuer: str,
         algorithms: Iterable[str] = DEFAULT_ALGORITHMS,
@@ -95,9 +95,9 @@ class Jwks(KeySource):
     ) -> "Jwks":
         """The JWKS whose URL `issuer`'s discovery document publishes (`jwks_uri`), found on the
         first token."""
-        found = discovery_for(http, discovery)
+        found = resolve_discovery(http, discovery)
         return cls(
-            lambda: found.of(issuer).endpoint("jwks_uri"), algorithms, http=http, **options
+            lambda: found.fetch(issuer).endpoint("jwks_uri"), algorithms, http=http, **options
         )
 
     @property
@@ -105,7 +105,7 @@ class Jwks(KeySource):
         """The JWKS URL — discovered on the first call when it was given as a function."""
         return self._url() if callable(self._url) else self._url
 
-    def _fetched(self, url: str) -> dict[str, Any]:
+    def _fetch(self, url: str) -> dict[str, Any]:
         """The key set as published — its signing keys only.
 
         1. Fetched; a status that is not success, or a body without a `keys` list:
@@ -115,19 +115,19 @@ class Jwks(KeySource):
         answer = self.http.send(HttpRequest(url=url, headers={"accept": "application/json"}))
         if not answer.ok:
             raise exceptions.EndpointUnavailable(
-                safe_url(url),
+                redact_url(url),
                 f"answered {answer.status}",
                 answer.status,
                 answer.retry_after(),
             )
         keys = answer.json_object().get("keys")
         if not isinstance(keys, list):
-            raise exceptions.EndpointUnavailable(safe_url(url), "answered no key set")
+            raise exceptions.EndpointUnavailable(redact_url(url), "answered no key set")
         published = [one for one in keys if isinstance(one, dict)]
         leaked = [one.get("kid") for one in published if "d" in one]
         if leaked:
             logger.error(
-                "a JWKS publishes private keys — left out", url=safe_url(url), kids=leaked
+                "a JWKS publishes private keys — left out", url=redact_url(url), kids=leaked
             )
         return {
             "keys": [
@@ -138,11 +138,11 @@ class Jwks(KeySource):
     def _keys(self, url: str) -> list[Mapping[str, Any]]:
         """The cached key set — fetched when it is not."""
         document = self.cache.get_or_compute(
-            ("jwks", url), lambda: self._fetched(url), self._policy, self._codec
+            ("jwks", url), lambda: self._fetch(url), self._policy, self._codec
         )
         return list(document["keys"])
 
-    def _refetched(self, url: str) -> list[Mapping[str, Any]] | None:
+    def _refetch(self, url: str) -> list[Mapping[str, Any]] | None:
         """The key set fetched again now — `None` while the cooldown since the last refetch
         has not passed, so forged key ids never become a stream of fetches, and `None` when the
         issuer does not answer.
@@ -155,10 +155,10 @@ class Jwks(KeySource):
                 return None
             self._refetched_at = self.clock()
         try:
-            fetched = self._fetched(url)
+            fetched = self._fetch(url)
         except ServiceUnavailableError as error:
             logger.warning(
-                "the JWKS could not be fetched again", url=safe_url(url), error=str(error)
+                "the JWKS could not be fetched again", url=redact_url(url), error=str(error)
             )
             return None
         self.cache.forget(("jwks", url), self._codec)
@@ -185,10 +185,10 @@ class Jwks(KeySource):
         if algorithm not in self.algorithms:
             raise exceptions.Unauthenticated(f"token signed with {algorithm}, not accepted")
         url = self.url
-        found = _matching(self._keys(url), key_id, algorithm)
+        found = _select_key(self._keys(url), key_id, algorithm)
         if found is None:
-            again = self._refetched(url)
-            found = None if again is None else _matching(again, key_id, algorithm)
+            again = self._refetch(url)
+            found = None if again is None else _select_key(again, key_id, algorithm)
         if found is None:
             raise exceptions.Unauthenticated(
                 "token signed with a key the issuer does not publish"

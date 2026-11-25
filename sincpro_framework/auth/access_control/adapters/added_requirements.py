@@ -1,4 +1,4 @@
-"""Where the requirements added at runtime are kept: in memory, or on a `KeyValueStore` — the
+"""Where the requirements added at runtime are stored: in memory, or on a `KeyValueStore` — the
 running context's when none is given (Redis), or `DatabaseKeyValue` on the project's database —
 one versioned document per scope, written by compare-and-swap."""
 

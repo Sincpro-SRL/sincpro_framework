@@ -12,8 +12,8 @@ from collections.abc import Callable
 from typing import Any
 
 from sincpro_framework.auth.client.domain.outbound import OutgoingRequest, TokenSource
-from sincpro_framework.auth.common.infrastructure.digests import revealed
-from sincpro_framework.auth.common.infrastructure.signatures import SignatureStyle
+from sincpro_framework.auth.common.infrastructure.digests import reveal_secret
+from sincpro_framework.auth.common.infrastructure.signatures import SignatureScheme
 
 
 class RequestSigner(TokenSource):
@@ -24,21 +24,21 @@ class RequestSigner(TokenSource):
     def __init__(
         self,
         secret: Any,
-        style: SignatureStyle,
+        scheme: SignatureScheme,
         name: str = "request-signer",
         clock: Callable[[], float] = time.time,
     ) -> None:
         self._secret = secret
-        self.style = style
+        self.scheme = scheme
         self.name = name
         self.clock = clock
 
     def headers_for(self, request: OutgoingRequest) -> dict[str, str]:
         """The style's header, signing the request's body at this moment."""
-        written = self.style.written(
-            revealed(self._secret).encode(), request.body or b"", int(self.clock())
+        written = self.scheme.sign_header(
+            reveal_secret(self._secret).encode(), request.body or b"", int(self.clock())
         )
-        return {self.style.header: written}
+        return {self.scheme.header: written}
 
     def __repr__(self) -> str:
-        return f"RequestSigner(header={self.style.header!r})"
+        return f"RequestSigner(header={self.scheme.header!r})"

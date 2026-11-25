@@ -31,7 +31,7 @@ class PrivateKeyJwt(ClientAuthentication):
             header["kid"] = self.key.key_id
         return jws.encode(header, claims, self.key.sign)
 
-    def applied(
+    def apply(
         self, fields: Sequence[tuple[str, str]], endpoint: str
     ) -> tuple[list[tuple[str, str]], dict[str, str]]:
         """The fields with a fresh assertion for `endpoint`."""

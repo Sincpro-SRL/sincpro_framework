@@ -1,4 +1,4 @@
-"""`PasswordHasher`: a password kept as a slow, salted hash — scrypt from the standard library,
+"""`PasswordHasher`: a password stored as a slow, salted hash — scrypt from the standard library,
 argon2id when `argon2-cffi` is installed (the `[argon2]` extra) — verified in constant time,
 rehashed when its cost falls behind.
 
@@ -56,14 +56,6 @@ def _argon2() -> Any:
     return argon2.PasswordHasher
 
 
-def _b64(raw: bytes) -> str:
-    return base64.b64encode(raw).rstrip(b"=").decode()
-
-
-def _unb64(text: str) -> bytes:
-    return base64.b64decode(text + "=" * (-len(text) % 4))
-
-
 class PasswordHasher:
     """Hashes and verifies passwords in one scheme, and verifies the ones of `legacy` too."""
 
@@ -119,7 +111,9 @@ class PasswordHasher:
         salt = secrets.token_bytes(16)
         cost = self.cost
         key = self._scrypt(normalized, salt, cost)
-        return f"$scrypt$ln={cost.ln},r={cost.r},p={cost.p}${_b64(salt)}${_b64(key)}"
+        encoded_salt = base64.b64encode(salt).rstrip(b"=").decode()
+        encoded_key = base64.b64encode(key).rstrip(b"=").decode()
+        return f"$scrypt$ln={cost.ln},r={cost.r},p={cost.p}${encoded_salt}${encoded_key}"
 
     def _scrypt_parts(self, stored: str) -> tuple[ScryptCost, bytes, bytes] | None:
         """The cost, salt and key of a `$scrypt$` hash — `None` when it is not one."""
@@ -129,7 +123,13 @@ class PasswordHasher:
             cost = ScryptCost(int(values["ln"]), int(values["r"]), int(values["p"]))
         except (ValueError, KeyError):
             return None
-        return (cost, _unb64(salt), _unb64(key)) if name == "scrypt" else None
+        if name != "scrypt":
+            return None
+        return (
+            cost,
+            base64.b64decode(salt + "=" * (-len(salt) % 4)),
+            base64.b64decode(key + "=" * (-len(key) % 4)),
+        )
 
     def _legacy_for(self, stored: str) -> Callable[[str, str], bool] | None:
         return next(

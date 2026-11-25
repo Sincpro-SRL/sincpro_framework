@@ -18,7 +18,7 @@ from collections.abc import Mapping, Sequence
 from functools import cached_property
 from typing import Any
 
-from sincpro_framework.auth import Credentials, refusal_from, security
+from sincpro_framework.auth import Credentials, Unauthenticated, security
 from sincpro_framework.common.naming import snake
 from sincpro_framework.entrypoints.adapters.rpc.errors import UNAUTHENTICATED
 from sincpro_framework.entrypoints.adapters.rpc.jrpc import (
@@ -294,6 +294,8 @@ def http_status(
         return status, {}
     if error.get("code") == UNAUTHENTICATED:
         served = surface if isinstance(surface, RpcSurface) else RpcSurface(surface)
-        challenges = security.challenges(served.buses(), refusal_from(data))
+        challenges = security.challenges(
+            served.buses(), Unauthenticated.from_error_body(data)
+        )
         return 401, {"www-authenticate": ", ".join(challenges)} if challenges else {}
     return 200, {}

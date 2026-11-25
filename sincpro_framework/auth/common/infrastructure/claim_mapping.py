@@ -45,7 +45,7 @@ class ClaimTest(DataTransferObject):
     equals: str | None = None
     prefix: str | None = None
 
-    def holds(self, claims: Mapping[str, Any]) -> bool:
+    def matches(self, claims: Mapping[str, Any]) -> bool:
         """Whether the claim at `path` is text that equals `equals` or starts with `prefix`."""
         value = value_at(claims, self.path)
         if not isinstance(value, str):
@@ -64,7 +64,7 @@ class ClaimMapping(DataTransferObject):
     subject_prefix: str = "user:"
     """Put before the subject claim — `user:<sub>` — so a user and a service never share one."""
     service_prefix: str = "service:"
-    service_when: ClaimTest | None = None
+    service_match: ClaimTest | None = None
     """What makes a token a service's rather than a person's — Keycloak's service accounts,
     Entra's app-only tokens. It is then a SERVICE identity, `service:<sub>`."""
     tenant: str | None = None
@@ -94,7 +94,7 @@ class ClaimMapping(DataTransferObject):
             scopes=("scope",),
             client=("azp",),
             tenant=tenant,
-            service_when=ClaimTest(path="preferred_username", prefix="service-account-"),
+            service_match=ClaimTest(path="preferred_username", prefix="service-account-"),
             refused_types=frozenset({"ID", "Refresh", "Logout"}),
         )
 
@@ -109,7 +109,7 @@ class ClaimMapping(DataTransferObject):
             roles=("roles",),
             scopes=("scp",),
             client=("azp", "appid"),
-            service_when=ClaimTest(path="idtyp", equals="app"),
+            service_match=ClaimTest(path="idtyp", equals="app"),
         )
 
     @classmethod
@@ -119,7 +119,7 @@ class ClaimMapping(DataTransferObject):
 
     def _names(self, claims: Mapping[str, Any], paths: tuple[str, ...]) -> frozenset[str]:
         """The union of the names held at each path."""
-        return frozenset().union(*(jws.text_set(value_at(claims, path)) for path in paths))
+        return frozenset().union(*(jws.claim_names(value_at(claims, path)) for path in paths))
 
     def _first_text(self, claims: Mapping[str, Any], paths: tuple[str, ...]) -> str | None:
         """The first path holding text."""
@@ -131,17 +131,17 @@ class ClaimMapping(DataTransferObject):
     def identity(self, claims: Mapping[str, Any], provider: str) -> Identity:
         """The identity `claims` describe, vouched for by `provider`.
 
-        1. A service when `service_when` holds: `service:<subject>`, else `user:<subject>`;
+        1. A service when `service_match` matches: `service:<subject>`, else `user:<subject>`;
            no subject — the claim missing, empty, or not text nor a number: `Unauthenticated`,
            never a `user:None` every such token would share.
         2. Tenant, roles, scopes, permissions and client from their paths.
         Final: session (`sid`), token id (`jti`), `auth_time`, `exp`, `acr` and `amr` typed;
-        every claim kept in `claims`.
+        every claim retained in `claims`.
         """
         named = value_at(claims, self.subject)
         if isinstance(named, bool) or not isinstance(named, (str, int)) or named == "":
             raise exceptions.Unauthenticated(f"the token names no subject ({self.subject})")
-        service = self.service_when is not None and self.service_when.holds(claims)
+        service = self.service_match is not None and self.service_match.matches(claims)
         prefix = self.service_prefix if service else self.subject_prefix
         tenant = value_at(claims, self.tenant) if self.tenant else None
         level = claims.get("acr")
@@ -157,10 +157,10 @@ class ClaimMapping(DataTransferObject):
             claims=dict(claims),
             session=claims.get("sid") if isinstance(claims.get("sid"), str) else None,
             token_id=claims.get("jti") if isinstance(claims.get("jti"), str) else None,
-            authenticated_at=jws.moment(claims, "auth_time"),
-            expires_at=jws.moment(claims, "exp"),
+            authenticated_at=jws.claim_datetime(claims, "auth_time"),
+            expires_at=jws.claim_datetime(claims, "exp"),
             assurance=Assurance(
                 level=level if isinstance(level, str) else None,
-                methods=jws.text_set(claims.get("amr")),
+                methods=jws.claim_names(claims.get("amr")),
             ),
         )

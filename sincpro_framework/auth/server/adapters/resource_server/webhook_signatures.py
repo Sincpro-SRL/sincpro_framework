@@ -3,7 +3,7 @@ request by signing its body with a secret both share.
 
     payments = SignatureProvider(
         secrets={"2026-09": settings.gateway_secret},
-        style=TimestampedSignature("x-gateway-signature"),
+        scheme=TimestampedSignature("x-gateway-signature"),
         subject="service:payment-gateway",
         permissions={PaymentPermission.NOTIFY},
         replay=KeyValueRevocations-like store or None,
@@ -24,8 +24,8 @@ from typing import Any
 from sincpro_framework.auth.common.domain import exceptions
 from sincpro_framework.auth.common.domain.identity import Credentials, Identity, IdentityKind
 from sincpro_framework.auth.common.domain.provider import AuthProvider
-from sincpro_framework.auth.common.infrastructure.digests import digest, revealed
-from sincpro_framework.auth.common.infrastructure.signatures import SignatureStyle
+from sincpro_framework.auth.common.infrastructure.digests import digest, reveal_secret
+from sincpro_framework.auth.common.infrastructure.signatures import SignatureScheme
 from sincpro_framework.data_layer.store import KeyValueStore
 
 
@@ -37,7 +37,7 @@ class SignatureProvider(AuthProvider):
     def __init__(
         self,
         secrets: Mapping[str, Any],
-        style: SignatureStyle,
+        scheme: SignatureScheme,
         subject: str,
         tenant: str | None = None,
         permissions: Iterable[str] = (),
@@ -48,8 +48,8 @@ class SignatureProvider(AuthProvider):
     ) -> None:
         if not secrets:
             raise exceptions.ProgrammingError("SignatureProvider needs at least one secret")
-        self._secrets = [revealed(one).encode() for one in secrets.values()]
-        self.style = style
+        self._secrets = [reveal_secret(one).encode() for one in secrets.values()]
+        self.scheme = scheme
         self.subject = subject
         self.tenant = tenant
         self.permissions = frozenset(permissions)
@@ -63,7 +63,7 @@ class SignatureProvider(AuthProvider):
         return {
             "type": "apiKey",
             "in": "header",
-            "name": self.style.header,
+            "name": self.scheme.header,
             "description": "an HMAC-SHA256 signature of the body",
         }
 
@@ -77,21 +77,21 @@ class SignatureProvider(AuthProvider):
         5. With `replay`, a signature seen within `tolerance`: `Unauthenticated`.
         Final: a SERVICE identity of `subject`.
         """
-        value = credentials.headers.get(self.style.header)
+        value = credentials.headers.get(self.scheme.header)
         if value is None:
             return None
         if credentials.body is None:
             raise exceptions.ProgrammingError(
                 f"{self.name} verifies the body: the entrypoint handed none"
             )
-        _, timestamp = self.style.read(value)
+        _, timestamp = self.scheme.parse_header(value)
         if (
             timestamp is not None
             and abs(self.clock() - timestamp) > self.tolerance.total_seconds()
         ):
             raise exceptions.Unauthenticated("signature outside its tolerance")
         if not any(
-            self.style.matches(secret, credentials.body, value) for secret in self._secrets
+            self.scheme.matches(secret, credentials.body, value) for secret in self._secrets
         ):
             raise exceptions.Unauthenticated("signature does not match")
         if self.replay is not None and not self.replay.add(

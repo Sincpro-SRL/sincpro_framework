@@ -130,3 +130,68 @@ class AuthProvider(ABC):
         exchanged for that audience, say. By default `credentials_for(identity)`, whatever the
         audience, so a provider that only overrides that one answers as before."""
         return self.credentials_for(identity)
+
+
+class DelegatingProvider(AuthProvider):
+    """A provider that wraps another and answers everything as it does — the base of a
+    decorator that changes one part: who is calling (`ResolvingProvider`), who decides
+    (`PolicyEngineProvider`). The wrapped provider's `name` and `needs_body` are preserved, so the
+    identities it vouches for stay its own.
+
+        class AuditedProvider(DelegatingProvider):
+            def authenticate(self, credentials: Credentials) -> Identity | None:
+                identity = self.provider.authenticate(credentials)
+                audit(identity)
+                return identity
+    """
+
+    def __init__(self, provider: AuthProvider) -> None:
+        self.provider = provider
+        self.name = provider.name
+        self.needs_body = provider.needs_body
+
+    def authenticate(self, credentials: Credentials) -> Identity | None:
+        return self.provider.authenticate(credentials)
+
+    def refusing_any(
+        self, identity: Identity, permissions: Sequence[str], reasons: Sequence[str]
+    ) -> str | None:
+        return self.provider.refusing_any(identity, permissions, reasons)
+
+    def has_permission(
+        self,
+        identity: Identity,
+        permission: str,
+        resource: Any = None,
+        context: Mapping[str, Any] | None = None,
+    ) -> bool:
+        return self.provider.has_permission(identity, permission, resource, context)
+
+    def permitted(
+        self,
+        identity: Identity,
+        permission: str,
+        resources: Sequence[Any],
+        context: Mapping[str, Any] | None = None,
+    ) -> list[bool]:
+        return self.provider.permitted(identity, permission, resources, context)
+
+    def scope(self, identity: Identity, aggregate: type) -> "Criteria | None":
+        return self.provider.scope(identity, aggregate)
+
+    def security_scheme(self) -> dict[str, Any] | None:
+        return self.provider.security_scheme()
+
+    def challenge(self) -> str | None:
+        return self.provider.challenge()
+
+    def challenge_for(self, refusal: exceptions.Unauthenticated | None) -> str | None:
+        return self.provider.challenge_for(refusal)
+
+    def credentials_for(self, identity: Identity) -> Credentials | None:
+        return self.provider.credentials_for(identity)
+
+    def outbound_for(
+        self, identity: Identity, audience: str | None = None
+    ) -> Credentials | None:
+        return self.provider.outbound_for(identity, audience)

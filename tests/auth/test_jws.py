@@ -14,7 +14,7 @@ RFC7515_A1 = (
     ".eyJpc3MiOiJqb2UiLA0KICJleHAiOjEzMDA4MTkzODAsDQogImh0dHA6Ly9leGFtcGxlLmNvbS9pc19yb290Ijp0cnVlfQ"
     ".dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk"
 )
-RFC7515_A1_KEY = jws.decoded(
+RFC7515_A1_KEY = jws.base64url_decode(
     "AyM1SysPpbyDfgZld3umj1qzKObwVMkoqQ-EstJQLr_T-1qS0gZH75aKtMN3Yj0iPS4hcgUuTwjAzZr1Z9CAow"
 )
 
@@ -23,28 +23,30 @@ def test_the_example_of_rfc_7515_verifies_and_a_changed_signature_does_not() -> 
     parsed = jws.parse(RFC7515_A1)
     key = jws.HmacKey(None, RFC7515_A1_KEY)
     assert parsed.claims["iss"] == "joe" and parsed.algorithm == "HS256"
-    assert key.verifies(parsed)
+    assert key.verify_jws(parsed)
     tampered = jws.parse(RFC7515_A1[:-2] + ("Xk" if RFC7515_A1[-2:] != "Xk" else "Yk"))
-    assert not key.verifies(tampered)
+    assert not key.verify_jws(tampered)
 
 
 def test_a_token_made_here_reads_back_the_same() -> None:
-    key = jws.HmacKey.of("k1", "a secret of thirty-two characters!")
+    key = jws.HmacKey.from_secret("k1", "a secret of thirty-two characters!")
     token = jws.encode({"alg": "HS256", "kid": "k1"}, {"sub": "user:42", "n": 1}, key.sign)
     parsed = jws.parse(token)
     assert (parsed.key_id, dict(parsed.claims)) == ("k1", {"sub": "user:42", "n": 1})
-    assert key.verifies(parsed)
+    assert key.verify_jws(parsed)
     assert jws.looks_like_jws(token)
 
 
 def test_a_header_naming_another_algorithm_is_never_verified_by_the_key() -> None:
-    key = jws.HmacKey.of("k1", "s")
+    key = jws.HmacKey.from_secret("k1", "s")
     token = jws.encode(
-        {"alg": "HS512", "kid": "k1"}, {"sub": "u"}, jws.HmacKey.of("k1", "s", "HS512").sign
+        {"alg": "HS512", "kid": "k1"},
+        {"sub": "u"},
+        jws.HmacKey.from_secret("k1", "s", "HS512").sign,
     )
-    assert not key.verifies(jws.parse(token))
+    assert not key.verify_jws(jws.parse(token))
     unsigned = jws.encode({"alg": "none"}, {"sub": "u"}, lambda _: b"")
-    assert not key.verifies(jws.parse(unsigned))
+    assert not key.verify_jws(jws.parse(unsigned))
 
 
 @pytest.mark.parametrize(
@@ -53,11 +55,11 @@ def test_a_header_naming_another_algorithm_is_never_verified_by_the_key() -> Non
         "not-a-token",
         "a.b",
         "a.b.c.d",
-        f"{jws.encoded(b'[1]')}.{jws.encoded(b'{}')}.c2ln",
-        f"{jws.encoded(b'{}')}.{jws.encoded(b'not json')}.c2ln",
+        f"{jws.base64url_encode(b'[1]')}.{jws.base64url_encode(b'{}')}.c2ln",
+        f"{jws.base64url_encode(b'{}')}.{jws.base64url_encode(b'not json')}.c2ln",
         "x" * (jws.MAX_TOKEN_LENGTH + 1),
         "eyJ+YWxn.eyJz.c2ln",
-        f"{jws.encoded(b'[' * 12_000)}.{jws.encoded(b'{}')}.c2ln",
+        f"{jws.base64url_encode(b'[' * 12_000)}.{jws.base64url_encode(b'{}')}.c2ln",
     ],
     ids=[
         "no-dots",
@@ -82,7 +84,7 @@ def test_a_signature_spelled_another_way_is_malformed() -> None:
     """The incident: a 32-byte signature is 43 characters, and the last one carries 2 bits no
     byte reads — a token changed there decoded to the same signature and still verified, about
     once in a thousand tokens."""
-    key = jws.HmacKey.of("k1", "secret")
+    key = jws.HmacKey.from_secret("k1", "secret")
     token = jws.encode({"alg": "HS256", "kid": "k1"}, {"sub": "u"}, key.sign)
     head, claims, signature = token.split(".")
     respelled = signature[:-1] + BASE64URL[BASE64URL.index(signature[-1]) ^ 0b01]
@@ -91,7 +93,7 @@ def test_a_signature_spelled_another_way_is_malformed() -> None:
     )
     with pytest.raises(exceptions.Unauthenticated, match="malformed token"):
         jws.parse(f"{head}.{claims}.{respelled}")
-    assert key.verifies(jws.parse(token))
+    assert key.verify_jws(jws.parse(token))
 
 
 def test_an_opaque_token_does_not_look_like_a_jws() -> None:
@@ -102,7 +104,7 @@ def test_an_opaque_token_does_not_look_like_a_jws() -> None:
 
 def test_an_algorithm_that_is_not_hmac_is_a_programming_error() -> None:
     with pytest.raises(exceptions.ProgrammingError):
-        jws.HmacKey.of("k", "s", "RS256")
+        jws.HmacKey.from_secret("k", "s", "RS256")
 
 
 NOW = 1_900_000_000.0
@@ -150,16 +152,16 @@ def test_an_empty_set_of_audiences_is_never_a_configuration() -> None:
 
 
 def test_a_claim_of_names_is_read_from_a_string_or_a_list() -> None:
-    assert jws.text_set("openid billing:read") == {"openid", "billing:read"}
-    assert jws.text_set(["a", 1, "b"]) == {"a", "b"}
-    assert jws.text_set({"a": 1}) == frozenset() and jws.text_set(None) == frozenset()
+    assert jws.claim_names("openid billing:read") == {"openid", "billing:read"}
+    assert jws.claim_names(["a", 1, "b"]) == {"a", "b"}
+    assert jws.claim_names({"a": 1}) == frozenset() and jws.claim_names(None) == frozenset()
 
 
 def test_the_payload_is_compact_json() -> None:
     token = jws.encode(
-        {"alg": "HS256"}, {"a": 1, "b": [1, 2]}, jws.HmacKey.of(None, "s").sign
+        {"alg": "HS256"}, {"a": 1, "b": [1, 2]}, jws.HmacKey.from_secret(None, "s").sign
     )
     assert (
-        jws.decoded(token.split(".")[1])
+        jws.base64url_decode(token.split(".")[1])
         == json.dumps({"a": 1, "b": [1, 2]}, separators=(",", ":")).encode()
     )

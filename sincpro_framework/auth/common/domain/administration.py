@@ -26,36 +26,59 @@ from sincpro_framework.auth.common.domain.identity import Identity, IdentityKind
 
 
 class AdministrationPolicy(ABC):
-    """The port: whether who acts may administer a scope, a subject, what they would give."""
+    """The port: whether who acts may administer a scope, a subject, what they would give.
+
+    Context: a template — whoever is `is_unrestricted` passes every rule, nobody known passes none
+    (`Unauthenticated`), and anyone else is asked the policy's own rules, each a no-op until
+    overridden: `_validate_tenant`, `_validate_subject`, `_validate_holds`.
+    """
 
     @abstractmethod
-    def unbounded(self, actor: Identity) -> bool:
+    def is_unrestricted(self, actor: Identity) -> bool:
         """Whether `actor` may do anything — no further rule is asked of them."""
 
-    @abstractmethod
-    def in_scope(self, actor: Identity, tenant: str | None, what: str) -> None:
+    def _is_bounded(self, actor: Identity, action: str) -> bool:
+        """Whether the policy's rules are asked of `actor` — `False` for whom is unbounded;
+        `Unauthenticated` for nobody known: whoever administers is somebody."""
+        if self.is_unrestricted(actor):
+            return False
+        if actor.is_anonymous:
+            raise exceptions.Unauthenticated(f"authenticate to {action}", anonymous=True)
+        return True
+
+    def _validate_tenant(self, actor: Identity, tenant: str | None, action: str) -> None:
+        """Raise unless `actor` may administer `tenant` — nothing, unless overridden."""
+
+    def _validate_subject(self, actor: Identity, subject: str, action: str) -> None:
+        """Raise unless `actor` may administer what `subject` holds — nothing, unless
+        overridden."""
+
+    def _validate_holds(
+        self, actor: Identity, action: str, permissions: Iterable[str], roles: Iterable[str]
+    ) -> None:
+        """Raise unless `actor` holds what it would give — nothing, unless overridden."""
+
+    def validate_tenant(self, actor: Identity, tenant: str | None, action: str) -> None:
         """Raise unless `actor` may administer `tenant` — `None` is what every tenant shares."""
+        if self._is_bounded(actor, action):
+            self._validate_tenant(actor, tenant, action)
 
-    @abstractmethod
-    def on_subject(self, actor: Identity, subject: str, what: str) -> None:
+    def validate_subject(self, actor: Identity, subject: str, action: str) -> None:
         """Raise unless `actor` may administer what `subject` holds."""
+        if self._is_bounded(actor, action):
+            self._validate_subject(actor, subject, action)
 
-    @abstractmethod
-    def holding(
+    def validate_holds(
         self,
         actor: Identity,
-        what: str,
+        action: str,
         permissions: Iterable[str] = (),
         roles: Iterable[str] = (),
     ) -> None:
         """Raise unless `actor` holds every one of `permissions` and of `roles` — what it may
         give, take away or require."""
-
-
-def _unknown(actor: Identity, what: str) -> None:
-    """`Unauthenticated` for nobody known — whoever administers is somebody."""
-    if actor.is_anonymous:
-        raise exceptions.Unauthenticated(f"authenticate to {what}", anonymous=True)
+        if self._is_bounded(actor, action):
+            self._validate_holds(actor, action, permissions, roles)
 
 
 class BoundedAdministration(AdministrationPolicy):
@@ -66,56 +89,47 @@ class BoundedAdministration(AdministrationPolicy):
         """`superadmin` — a permission whose holders are the platform's own administrators."""
         self.superadmin = superadmin
 
-    def unbounded(self, actor: Identity) -> bool:
+    def is_unrestricted(self, actor: Identity) -> bool:
         """The system, or a holder of `superadmin`."""
         return actor.kind == IdentityKind.SYSTEM or (
             self.superadmin is not None and self.superadmin in actor.permissions
         )
 
-    def in_scope(self, actor: Identity, tenant: str | None, what: str) -> None:
+    def _validate_tenant(self, actor: Identity, tenant: str | None, action: str) -> None:
         """Their own tenant only; what every tenant shares is the platform's."""
-        if self.unbounded(actor):
-            return
-        _unknown(actor, what)
         if tenant is None:
             raise exceptions.PermissionDenied(
-                actor.subject, what, f"{what} is the platform's: it applies to every tenant"
+                actor.subject,
+                action,
+                f"{action} is the platform's: it applies to every tenant",
             )
         if actor.tenant != tenant:
             raise exceptions.PermissionDenied(
-                actor.subject, what, f"{what} in tenant {tenant}, not {actor.tenant}"
+                actor.subject, action, f"{action} in tenant {tenant}, not {actor.tenant}"
             )
 
-    def on_subject(self, actor: Identity, subject: str, what: str) -> None:
+    def _validate_subject(self, actor: Identity, subject: str, action: str) -> None:
         """Never on themselves: what they hold is somebody else's to change."""
-        if self.unbounded(actor):
-            return
-        _unknown(actor, what)
         if actor.subject == subject:
             raise exceptions.PermissionDenied(
-                actor.subject, what, f"{what} for {subject}: nobody administers themselves"
+                actor.subject,
+                action,
+                f"{action} for {subject}: nobody administers themselves",
             )
 
-    def holding(
-        self,
-        actor: Identity,
-        what: str,
-        permissions: Iterable[str] = (),
-        roles: Iterable[str] = (),
+    def _validate_holds(
+        self, actor: Identity, action: str, permissions: Iterable[str], roles: Iterable[str]
     ) -> None:
         """Every permission and role named among the actor's own — roles as resolved, their
         closure."""
-        if self.unbounded(actor):
-            return
-        _unknown(actor, what)
         missing = sorted(
             {*(set(permissions) - actor.permissions), *(set(roles) - actor.roles)}
         )
         if missing:
             raise exceptions.PermissionDenied(
                 actor.subject,
-                what,
-                f"{what} needs {', '.join(missing)}, which {actor.subject} does not hold",
+                action,
+                f"{action} needs {', '.join(missing)}, which {actor.subject} does not hold",
             )
 
 
@@ -123,24 +137,6 @@ class TrustedAdministration(AdministrationPolicy):
     """Whoever is known may administer anything — the administrators are trusted, as Odoo trusts
     its access-rights group. Nobody known still administers nothing."""
 
-    def unbounded(self, actor: Identity) -> bool:
+    def is_unrestricted(self, actor: Identity) -> bool:
         """Anyone known."""
         return not actor.is_anonymous
-
-    def in_scope(self, actor: Identity, tenant: str | None, what: str) -> None:
-        """Anyone known, anywhere."""
-        _unknown(actor, what)
-
-    def on_subject(self, actor: Identity, subject: str, what: str) -> None:
-        """Anyone known, on anyone."""
-        _unknown(actor, what)
-
-    def holding(
-        self,
-        actor: Identity,
-        what: str,
-        permissions: Iterable[str] = (),
-        roles: Iterable[str] = (),
-    ) -> None:
-        """Anyone known, whatever they hold."""
-        _unknown(actor, what)

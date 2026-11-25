@@ -2,8 +2,8 @@
 it, never the secret.
 
     digest("rt_3f9…")         ->  "a1b2c3…" (64 hex characters) — what a store looks it up by
-    fingerprint("eyJhbGci…")   ->  "a1b2c3d4" — what a log line may show
-    revealed(Secret("s"))      ->  "s" — read where it is used, never earlier
+    short_digest("eyJhbGci…")   ->  "a1b2c3d4" — what a log line may show
+    reveal_secret(Secret("s"))      ->  "s" — read where it is used, never earlier
 
 Context: a token, a refresh token, a one-time link and an API key are long random values, so a
 plain hash is enough to find them — no salt, no stretching, one lookup instead of a comparison per
@@ -24,17 +24,17 @@ def digest(value: str | bytes) -> str:
     return hashlib.sha256(raw).hexdigest()
 
 
-def fingerprint(value: str | bytes) -> str:
+def short_digest(value: str | bytes) -> str:
     """Eight hex characters of `value`'s SHA-256 — enough to tell two tokens apart in a log,
     nothing to recover either."""
     return digest(value)[:8]
 
 
-def revealed(value: Any) -> str:
+def reveal_secret(value: Any) -> str:
     """The text of a secret given as `str`, `SecretStr` or pydantic `Secret[str]`.
 
-        revealed("s")              ->  "s"
-        revealed(SecretStr("s"))   ->  "s"
+        reveal_secret("s")              ->  "s"
+        reveal_secret(SecretStr("s"))   ->  "s"
 
     Context: components take either, so a project hands what its settings hold — a `Secret`
     read from `$ENV:…` — without unwrapping it first.

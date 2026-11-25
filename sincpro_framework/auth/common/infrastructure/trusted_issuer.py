@@ -8,12 +8,9 @@ from dataclasses import dataclass, field
 from datetime import timedelta
 
 from sincpro_framework.auth.common.domain import exceptions
-from sincpro_framework.auth.common.domain.keys import KeySource
+from sincpro_framework.auth.common.domain.keys import HMAC_ALGORITHMS, KeySource
 from sincpro_framework.auth.common.infrastructure import jws
 from sincpro_framework.auth.common.infrastructure.claim_mapping import ClaimMapping
-
-HMAC_ALGORITHMS = frozenset(jws.HMAC_DIGESTS)
-"""The algorithms a shared secret verifies — never shared with public keys."""
 
 
 @dataclass(frozen=True)

@@ -15,7 +15,7 @@ from typing import Any
 
 from sincpro_framework.auth.client.domain.outbound import OutgoingRequest, TokenSource
 from sincpro_framework.auth.common.domain import exceptions
-from sincpro_framework.auth.common.infrastructure.digests import revealed
+from sincpro_framework.auth.common.infrastructure.digests import reveal_secret
 
 
 class StaticToken(TokenSource):
@@ -35,7 +35,7 @@ class StaticToken(TokenSource):
 
     def headers_for(self, request: OutgoingRequest) -> dict[str, str]:
         """`<scheme> <token>` under `header` — the bare token when there is no scheme."""
-        value = revealed(self._token)
+        value = reveal_secret(self._token)
         return {self.header: f"{self.scheme} {value}" if self.scheme else value}
 
     def __repr__(self) -> str:
@@ -65,7 +65,7 @@ class BasicCredentials(TokenSource):
 
     def headers_for(self, request: OutgoingRequest) -> dict[str, str]:
         """`Basic` with `username:password` in base64 (RFC 7617)."""
-        pair = f"{self.username}:{revealed(self._password)}".encode()
+        pair = f"{self.username}:{reveal_secret(self._password)}".encode()
         return {"authorization": f"Basic {base64.b64encode(pair).decode()}"}
 
     def __repr__(self) -> str:

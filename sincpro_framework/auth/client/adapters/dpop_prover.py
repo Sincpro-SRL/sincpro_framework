@@ -5,8 +5,9 @@ every request, so a token that leaks from a log or a proxy is of no use. The `[j
     bank.headers_for(request)  ->  {"authorization": "DPoP …", "dpop": "<proof for this request>"}
 
 Context: a proof names the method and URL (no query), when it was made, a random id, and the
-token's hash; a server that answers with a `DPoP-Nonce` is told it on the next proof — learnt per
-origin from the answer (`learn`), which `ClientCredentials.invalidate` does on a 401.
+token's hash; a server that answers with a `DPoP-Nonce` is told it on the next proof — stored per
+origin from the answer (`update_nonce`), which every token source's `invalidate` does on a 401 and
+the token endpoint does on `use_dpop_nonce`.
 """
 
 import hashlib
@@ -21,6 +22,7 @@ from sincpro_framework.auth.common.infrastructure.digests import random_token
 
 
 def _origin(url: str) -> str:
+    """`scheme://host[:port]` of `url` — what a nonce is stored by."""
     parts = urlsplit(url)
     return f"{parts.scheme}://{parts.netloc}"
 
@@ -45,7 +47,7 @@ class DpopProver:
         self._nonces: dict[str, str] = {}
         self._lock = threading.Lock()
 
-    def proof(self, method: str, url: str, access_token: str | None = None) -> str:
+    def create_proof(self, method: str, url: str, access_token: str | None = None) -> str:
         """A proof for one request — `ath` naming the token when it carries one."""
         parts = urlsplit(url)
         claims: dict[str, object] = {
@@ -55,7 +57,9 @@ class DpopProver:
             "iat": int(self.clock()),
         }
         if access_token is not None:
-            claims["ath"] = jws.encoded(hashlib.sha256(access_token.encode()).digest())
+            claims["ath"] = jws.base64url_encode(
+                hashlib.sha256(access_token.encode()).digest()
+            )
         with self._lock:
             nonce = self._nonces.get(_origin(url))
         if nonce is not None:
@@ -63,8 +67,8 @@ class DpopProver:
         header = {"typ": "dpop+jwt", "alg": self.key.algorithm, "jwk": self.jwk}
         return jws.encode(header, claims, self.key.sign)
 
-    def learn(self, url: str, headers: Mapping[str, str]) -> bool:
-        """Remember the `DPoP-Nonce` an answer from `url`'s origin carried — `True` when it is a
+    def update_nonce(self, url: str, headers: Mapping[str, str]) -> bool:
+        """Store the `DPoP-Nonce` an answer from `url`'s origin carried — `True` when it is a
         new one, so the request is worth sending again."""
         nonce = {name.lower(): value for name, value in headers.items()}.get("dpop-nonce")
         if not nonce:

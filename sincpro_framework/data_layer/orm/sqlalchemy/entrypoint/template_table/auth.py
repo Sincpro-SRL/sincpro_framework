@@ -79,14 +79,14 @@ def entitlement_table(name: str, metadata: MetaData) -> Table:
 def refresh_token_table(name: str, metadata: MetaData) -> Table:
     """A refresh token by its digest — never the token — its session and when it was rotated.
 
-    out     digest TEXT PRIMARY KEY · family · subject · record (JSON) · rotated_at NULL
+    out     digest TEXT PRIMARY KEY · session · subject · record (JSON) · rotated_at NULL
             · session_ends TIMESTAMP (UTC)
     """
     return Table(
         name,
         metadata,
         Column("digest", Text, primary_key=True),
-        Column("family", Text, nullable=False),
+        Column("session", Text, nullable=False),
         Column("subject", Text, nullable=False),
         Column("record", Text, nullable=False),
         Column("rotated_at", DateTime, nullable=True),

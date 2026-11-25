@@ -18,7 +18,7 @@ from collections.abc import Callable, Sequence
 from typing import Any
 
 from sincpro_framework.aio.async_threads import on_async_thread
-from sincpro_framework.auth import AccessControl, Credentials, Unauthenticated, refusal_from
+from sincpro_framework.auth import AccessControl, Credentials, Unauthenticated
 from sincpro_framework.entrypoints.adapters.rest import exceptions
 from sincpro_framework.entrypoints.adapters.rest.routing import (
     RestRoute,
@@ -154,7 +154,9 @@ def routes(
                 Credentials.from_asgi(request.scope, body=raw),
             )
             headers: dict[str, str] = {}
-            refusal = refusal_from(body.get("error")) if status == 401 else None
+            refusal = (
+                Unauthenticated.from_error_body(body.get("error")) if status == 401 else None
+            )
             if status == 401 and (refusals := challenges(refusal)):
                 headers["www-authenticate"] = ", ".join(refusals)
             wait = body.get("error", {}).get("retry_after") if status >= 400 else None

@@ -20,43 +20,43 @@ def hmac_sha256(secret: bytes, signed: bytes) -> bytes:
     return hmac.new(secret, signed, hashlib.sha256).digest()
 
 
-class SignatureStyle(ABC):
+class SignatureScheme(ABC):
     """How a signature is written in a header, and what it covers."""
 
     header: str
 
     @abstractmethod
-    def written(self, secret: bytes, body: bytes, timestamp: int) -> str:
+    def sign_header(self, secret: bytes, body: bytes, timestamp: int) -> str:
         """The header's value signing `body` at `timestamp`."""
 
     @abstractmethod
-    def read(self, value: str) -> tuple[list[bytes], int | None]:
+    def parse_header(self, value: str) -> tuple[list[bytes], int | None]:
         """The signatures a header's value carries, and the timestamp it names — `([], None)`
         for a value that is not this style's."""
 
     @abstractmethod
-    def covered(self, body: bytes, timestamp: int | None) -> bytes:
+    def signed_payload(self, body: bytes, timestamp: int | None) -> bytes:
         """What a signature covers."""
 
     def matches(self, secret: bytes, body: bytes, value: str) -> bool:
         """Whether one of the signatures in `value` is `secret`'s over the body."""
-        signatures, timestamp = self.read(value)
-        expected = hmac_sha256(secret, self.covered(body, timestamp))
+        signatures, timestamp = self.parse_header(value)
+        expected = hmac_sha256(secret, self.signed_payload(body, timestamp))
         return any(hmac.compare_digest(expected, one) for one in signatures)
 
 
-class HexDigest(SignatureStyle):
+class HexDigest(SignatureScheme):
     """`<prefix><hex>` of the body alone — GitHub's `X-Hub-Signature-256: sha256=…`."""
 
     def __init__(self, header: str = "x-hub-signature-256", prefix: str = "sha256=") -> None:
         self.header = header.lower()
         self.prefix = prefix
 
-    def written(self, secret: bytes, body: bytes, timestamp: int) -> str:
+    def sign_header(self, secret: bytes, body: bytes, timestamp: int) -> str:
         """`<prefix><hex>` of the body's HMAC — the timestamp is not signed."""
         return f"{self.prefix}{hmac_sha256(secret, body).hex()}"
 
-    def read(self, value: str) -> tuple[list[bytes], int | None]:
+    def parse_header(self, value: str) -> tuple[list[bytes], int | None]:
         """The one signature after the prefix — none for a value without it, or not hex."""
         if not value.startswith(self.prefix):
             return [], None
@@ -65,26 +65,26 @@ class HexDigest(SignatureStyle):
         except ValueError:
             return [], None
 
-    def covered(self, body: bytes, timestamp: int | None) -> bytes:
+    def signed_payload(self, body: bytes, timestamp: int | None) -> bytes:
         """The body alone."""
         return body
 
 
-class TimestampedSignature(SignatureStyle):
+class TimestampedSignature(SignatureScheme):
     """`t=<unix>,v1=<hex>` of `"<t>." + body` — Stripe's shape: the moment is signed too."""
 
     def __init__(self, header: str = "x-signature") -> None:
         self.header = header.lower()
 
-    def covered(self, body: bytes, timestamp: int | None) -> bytes:
+    def signed_payload(self, body: bytes, timestamp: int | None) -> bytes:
         """`<timestamp>.` and the body — the moment is signed with it."""
         return f"{timestamp}.".encode() + body
 
-    def written(self, secret: bytes, body: bytes, timestamp: int) -> str:
+    def sign_header(self, secret: bytes, body: bytes, timestamp: int) -> str:
         """`t=<timestamp>,v1=<hex>`."""
-        return f"t={timestamp},v1={hmac_sha256(secret, self.covered(body, timestamp)).hex()}"
+        return f"t={timestamp},v1={hmac_sha256(secret, self.signed_payload(body, timestamp)).hex()}"
 
-    def read(self, value: str) -> tuple[list[bytes], int | None]:
+    def parse_header(self, value: str) -> tuple[list[bytes], int | None]:
         """Every `v1=` signature and the `t=` timestamp — none for a value that does not
         parse."""
         timestamp: int | None = None

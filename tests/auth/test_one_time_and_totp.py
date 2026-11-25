@@ -1,4 +1,4 @@
-"""A link that works once, for what it was sent for, the older ones void when a newer one is sent;
+"""A link that works once, for what it was sent for, the older ones invalidated when a newer one is sent;
 and a second factor whose codes are RFC 6238's own, accepted once each."""
 
 import base64
@@ -51,7 +51,7 @@ def test_only_the_last_link_sent_works() -> None:
         tokens.redeem("password-reset", first)
     assert tokens.redeem("password-reset", second).subject == "user:ana"
     third = tokens.issue("password-reset", "user:ana", ttl=timedelta(minutes=30))
-    tokens.void("password-reset", "user:ana")
+    tokens.invalidate("password-reset", "user:ana")
     with pytest.raises(exceptions.Unauthenticated):
         tokens.redeem("password-reset", third)
 
@@ -92,7 +92,7 @@ def test_no_link_is_stored_as_issued() -> None:
 def test_codes_are_rfc_6238s_own(moment: int, code: str) -> None:
     secret = base64.b32encode(b"12345678901234567890").decode()
     totp = Totp("x", digits=8, store=InMemoryKeyValue(), clock=lambda: moment)
-    assert totp.now(secret) == code
+    assert totp.current_code(secret) == code
     assert totp.verify(secret, code, "user:ana")
 
 
@@ -100,7 +100,7 @@ def test_a_code_is_accepted_within_one_step_either_side_and_never_beyond() -> No
     now = [1_900_000_000.0]
     totp = Totp("CAUOR", store=InMemoryKeyValue(), clock=lambda: now[0])
     secret = totp.new_secret()
-    code = totp.now(secret)
+    code = totp.current_code(secret)
     now[0] += 30
     assert totp.verify(secret, code, "user:ana")
     now[0] += 30
@@ -116,7 +116,7 @@ def test_a_code_is_accepted_once_and_never_an_older_one() -> None:
     now = [1_900_000_000.0]
     totp = Totp("CAUOR", store=InMemoryKeyValue(), clock=lambda: now[0])
     secret = totp.new_secret()
-    code = totp.now(secret)
+    code = totp.current_code(secret)
     assert totp.verify(secret, code, "user:ana")
     assert not totp.verify(secret, code, "user:ana")
     assert totp.verify(secret, code, "user:bea")
@@ -137,7 +137,7 @@ def test_a_code_is_refused_again_while_it_could_verify_and_forgotten_after() -> 
     ):
         assert not totp.verify(secret, ahead, "user:ana")
         now[0] += 10
-    now[0] = accepted + 4 * 30  # (2 × window + 2) steps
+    now[0] = accepted + 4 * 30  # (2 × valid_window + 2) steps
     assert store.get(f"sincpro:auth:totp:{digest('user:ana')}") is None
 
 
@@ -153,3 +153,23 @@ def test_the_qr_code_says_what_the_app_needs() -> None:
         "digits": ["6"],
         "period": ["30"],
     }
+
+
+def test_the_same_code_sent_at_once_from_many_threads_is_accepted_once() -> None:
+    now = [1_900_000_000.0]
+    totp = Totp("CAUOR", store=InMemoryKeyValue(), clock=lambda: now[0])
+    secret = totp.new_secret()
+    code = totp.current_code(secret)
+    barrier = threading.Barrier(16)
+    accepted: list[bool] = []
+
+    def verify() -> None:
+        barrier.wait()
+        accepted.append(totp.verify(secret, code, "user:ana"))
+
+    threads = [threading.Thread(target=verify) for _ in range(16)]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join()
+    assert accepted.count(True) == 1, accepted

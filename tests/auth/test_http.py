@@ -12,7 +12,7 @@ import pytest
 
 from sincpro_framework.auth import EndpointUnavailable, HttpAnswer, HttpRequest, UrllibHttp
 from sincpro_framework.auth.common.domain import exceptions
-from sincpro_framework.auth.common.domain.http import safe_url
+from sincpro_framework.auth.common.domain.http import redact_url
 
 hits: list[str] = []
 
@@ -121,7 +121,7 @@ def test_a_request_never_says_its_secrets() -> None:
     assert "s3cret" not in repr(request) and "czNjcmV0" not in repr(request)
     assert "pw" not in repr(request) and "abc" not in repr(request)
     assert request.target == "https://auth.acme.bo/token"
-    assert safe_url("https://[::1]:8443/p?q") == "https://[::1]:8443/p"
+    assert redact_url("https://[::1]:8443/p?q") == "https://[::1]:8443/p"
 
 
 def test_retry_after_is_read_as_seconds_or_a_date_and_capped() -> None:

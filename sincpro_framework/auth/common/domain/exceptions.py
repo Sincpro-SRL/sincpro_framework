@@ -106,30 +106,34 @@ class Unauthenticated(AuthError):
             body["anonymous"] = True
         return body
 
+    @classmethod
+    def from_error_body(cls, body: Any) -> "Unauthenticated | None":
+        """The `Unauthenticated` a wire's answer describes — a REST problem body, a JSON-RPC
+        error's `data`, a `refusal_body()` — rebuilt where only the answer is left, to choose the
+        challenge; `None` for an answer of any other kind.
 
-def refusal_from(said: Any) -> Unauthenticated | None:
-    """The `Unauthenticated` a wire's answer describes — a REST problem body, a JSON-RPC
-    error's `data`, a `refusal_body()` — rebuilt where only the answer is left, to choose the
-    challenge; `None` for an answer of any other kind.
+            Unauthenticated.from_error_body(
+                {"kind": "unauthenticated", "detail": "mfa required", "step_up": "mfa"}
+            )                                           ->  Unauthenticated("mfa required", step_up="mfa")
+            Unauthenticated.from_error_body({"kind": "permission_denied", ...})   ->  None
 
-        refusal_from({"kind": "unauthenticated", "detail": "mfa required", "step_up": "mfa"})
-            ->  Unauthenticated("mfa required", step_up="mfa")
-        refusal_from({"kind": "permission_denied", ...})       ->  None
-
-    Context: the reason is the problem's `detail`, the JSON-RPC `message`, or a
-    `refusal_body`'s own `reason` — in the first two `reason` is a code, never the text;
-    `step_up`, `max_age` and `anonymous` sit beside it, as `refusal_body` wrote them.
-    """
-    if not isinstance(said, Mapping) or said.get("kind") != FailureKind.UNAUTHENTICATED.value:
-        return None
-    reason = said.get("detail", said.get("message", said.get("reason", "")))
-    step_up, max_age = said.get("step_up"), said.get("max_age")
-    return Unauthenticated(
-        reason if isinstance(reason, str) else "",
-        step_up if isinstance(step_up, str) else None,
-        max_age if isinstance(max_age, int) and not isinstance(max_age, bool) else None,
-        anonymous=said.get("anonymous") is True,
-    )
+        Context: the reason is the problem's `detail`, the JSON-RPC `message`, or a
+        `refusal_body`'s own `reason` — in the first two `reason` is a code, never the text;
+        `step_up`, `max_age` and `anonymous` sit beside it, as `refusal_body` wrote them.
+        """
+        if (
+            not isinstance(body, Mapping)
+            or body.get("kind") != FailureKind.UNAUTHENTICATED.value
+        ):
+            return None
+        reason = body.get("detail", body.get("message", body.get("reason", "")))
+        step_up, max_age = body.get("step_up"), body.get("max_age")
+        return cls(
+            reason if isinstance(reason, str) else "",
+            step_up if isinstance(step_up, str) else None,
+            max_age if isinstance(max_age, int) and not isinstance(max_age, bool) else None,
+            anonymous=body.get("anonymous") is True,
+        )
 
 
 class PermissionDenied(AuthError):
@@ -200,21 +204,38 @@ class OAuthErrorCode(StrEnum):
     ACCESS_DENIED = "access_denied"
     INVALID_CLIENT_METADATA = "invalid_client_metadata"
     INVALID_REDIRECT_URI = "invalid_redirect_uri"
+    UNSUPPORTED_RESPONSE_TYPE = "unsupported_response_type"
+    INVALID_TARGET = "invalid_target"
+    """The `resource` asked for is not one the server issues tokens for — RFC 8707 §2."""
+    INVALID_TOKEN = "invalid_token"
+    """A bearer token the endpoint needs is missing or wrong — RFC 6750 §3.1; RFC 7591 §3 for
+    the initial access token of a registration (401)."""
 
 
 class OAuthError(ClientError):
     """A request the authorization server refuses, as OAuth says it: a code and a description
-    a client reads (400; `invalid_client` is 401, the client did not prove who it is).
+    a client reads (400; `invalid_client` and `invalid_token` are 401, the caller did not prove
+    who it is).
 
         OAuthError(OAuthErrorCode.INVALID_GRANT, "the code was already used").answer()
             ->  {"error": "invalid_grant", "error_description": "the code was already used"}
     """
 
-    def __init__(self, error: OAuthErrorCode, description: str) -> None:
+    def __init__(
+        self, error: OAuthErrorCode, description: str, redirect_uri: str | None = None
+    ) -> None:
+        """`redirect_uri`, when set, is where the browser is sent with the error instead of an
+        error page — RFC 6749 §4.1.2.1: the client and its redirect were verified, so the client
+        hears it (`?error=…&error_description=…&state=…&iss=…`)."""
         super().__init__(f"{error.value}: {description}")
         self.error = error
         self.description = description
-        self.status = 401 if error is OAuthErrorCode.INVALID_CLIENT else 400
+        self.redirect_uri = redirect_uri
+        self.status = (
+            401
+            if error in (OAuthErrorCode.INVALID_CLIENT, OAuthErrorCode.INVALID_TOKEN)
+            else 400
+        )
 
     def answer(self) -> dict[str, str]:
         """The error response body every transport sends as it is."""

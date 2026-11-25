@@ -1,8 +1,8 @@
 """Who holds which role: an assignment given to a subject in a tenant, what a subject holds, and
-the store that keeps them — only what was assigned; the closure is the catalog's.
+the store that holds them — only what was assigned; the closure is the catalog's.
 
     store.assign(Assignment(subject="user:ana", tenant="bo", role="billing.manager"))
-    store.held("user:ana", "bo")   ->  Held(roles={"billing.manager"}, entitlements=…)
+    store.grants_of("user:ana", "bo")   ->  SubjectGrants(roles={"billing.manager"}, entitlements=…)
 """
 
 from abc import ABC, abstractmethod
@@ -23,14 +23,14 @@ class Assignment(DataTransferObject):
     role: str
     valid_until: datetime | None = None
 
-    def holds_at(self, now: datetime) -> bool:
+    def is_active_at(self, now: datetime) -> bool:
         """Whether the assignment is in force at `now`."""
         return self.valid_until is None or now < self.valid_until
 
 
-class Held(DataTransferObject):
-    """What a subject holds in a tenant, as a store keeps it: the roles assigned, and what the
-    tenant is entitled to — `None` when the store keeps no entitlements."""
+class SubjectGrants(DataTransferObject):
+    """What a subject holds in a tenant, as a store records it: the roles assigned, and what the
+    tenant is entitled to — `None` when the store records no entitlements."""
 
     model_config = ConfigDict(frozen=True)
 
@@ -42,13 +42,13 @@ class GrantSource(ABC):
     """The port: what a subject holds in a tenant."""
 
     @abstractmethod
-    def held(self, subject: str, tenant: str | None) -> Held:
+    def grants_of(self, subject: str, tenant: str | None) -> SubjectGrants:
         """The roles assigned to `subject` in `tenant` and in force, and the tenant's
-        entitlements when the source keeps them."""
+        entitlements when the source records them."""
 
 
 class GrantStore(GrantSource):
-    """A `GrantSource` the service writes — assignments and entitlements, kept as given."""
+    """A `GrantSource` the service writes — assignments and entitlements, stored as given."""
 
     @abstractmethod
     def assign(self, assignment: Assignment) -> None:
@@ -82,14 +82,14 @@ class GrantStore(GrantSource):
         """The moment assignments are judged in force at — UTC now unless overridden."""
         return datetime.now(UTC)
 
-    def held(self, subject: str, tenant: str | None) -> Held:
+    def grants_of(self, subject: str, tenant: str | None) -> SubjectGrants:
         """The roles assigned and in force now, and the tenant's entitlements."""
         moment = self.now()
-        return Held(
+        return SubjectGrants(
             roles=frozenset(
                 one.role
                 for one in self.assignments_of(subject, tenant)
-                if one.holds_at(moment)
+                if one.is_active_at(moment)
             ),
             entitlements=self.entitlements_of(tenant),
         )

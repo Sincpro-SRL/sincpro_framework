@@ -5,7 +5,7 @@ issuer, a peer — by key id, the standard library's.
     SharedSecrets({"a": old, "b": new}, algorithm="HS512")  both verify; rotate by adding
 
 Context: a token naming no `kid` is verified only when there is exactly one key — with two, it
-could be either, and guessing is how a rotated-out key keeps working. A secret shorter than the
+could be either, and guessing is how a rotated-out key goes on working. A secret shorter than the
 algorithm's hash (32 bytes for HS256, RFC 7518 §3.2) is accepted and warned about once.
 """
 
@@ -13,11 +13,16 @@ from collections.abc import Mapping
 from typing import Any
 
 from sincpro_framework.auth.common.domain import exceptions
-from sincpro_framework.auth.common.domain.keys import KeySource, VerificationKey
+from sincpro_framework.auth.common.domain.keys import JwsAlgorithm, KeySource, VerificationKey
 from sincpro_framework.auth.common.infrastructure import jws
 from sincpro_framework.sincpro_logger import logger
 
-MINIMUM_SECRET = {"HS256": 32, "HS384": 48, "HS512": 64}
+MINIMUM_SECRET: dict[str, int] = {
+    JwsAlgorithm.HS256: 32,
+    JwsAlgorithm.HS384: 48,
+    JwsAlgorithm.HS512: 64,
+}
+"""The shortest secret each HMAC algorithm is warned under — its hash's length (RFC 7518 §3.2)."""
 
 
 class SharedSecrets(KeySource):
@@ -25,12 +30,12 @@ class SharedSecrets(KeySource):
 
     symmetric = True
 
-    def __init__(self, keys: Mapping[str, Any], algorithm: str = "HS256") -> None:
+    def __init__(self, keys: Mapping[str, Any], algorithm: str = JwsAlgorithm.HS256) -> None:
         """`keys` by id, each text or a pydantic `Secret`; at least one, or `ProgrammingError`."""
         if not keys:
             raise exceptions.ProgrammingError("SharedSecrets needs at least one key")
         self.keys = {
-            key_id: jws.HmacKey.of(key_id, secret, algorithm)
+            key_id: jws.HmacKey.from_secret(key_id, secret, algorithm)
             for key_id, secret in keys.items()
         }
         self.algorithms = frozenset({algorithm})

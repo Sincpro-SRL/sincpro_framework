@@ -1,5 +1,5 @@
 """`KeyValueRevocations`: `Revocations` on a `KeyValueStore` — the context's by default, Redis in
-production, `DatabaseKeyValue` for a project that keeps it in its database.
+production, `DatabaseKeyValue` for a project that stores it in its database.
 
     revocations = KeyValueRevocations()                       the running context's store
     revocations = KeyValueRevocations(RedisKeyValue.from_url(url, prefix="billing"))
@@ -10,7 +10,8 @@ nor a subject (an email, often) lands in the store as written. `read` is one `ge
 store that does not answer does is a choice the project makes: `"refuse"` (the default) lets
 `StoreUnavailable` through — every call answers 503 until it is back, nothing revoked is ever
 accepted —, `"admit"` treats the store as saying nothing was revoked, logs a warning and leaves
-it alone for a while (`StoreBypass`), so a Redis restart does not take the service down.
+it alone for a while (`StoreBypass`), so a Redis restart does not take the service down. The
+permission versions are counters the store must never evict (see `Revocations`).
 """
 
 import time
@@ -18,13 +19,12 @@ from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
 from functools import partial
 
-from sincpro_framework.auth.common.domain.revocations import (
-    Revocations,
-    RevocationState,
-    WhenUnavailable,
-)
+from sincpro_framework.auth.common.adapters.key_value import KeyValueStoreMixin
+from sincpro_framework.auth.common.domain.revocations import RevocationState, WhenUnavailable
 from sincpro_framework.auth.common.infrastructure.digests import digest
-from sincpro_framework.context.entrypoint.resolution import current_store, key_value_store_of
+from sincpro_framework.auth.common.infrastructure.permission_versions import (
+    CachingRevocations,
+)
 from sincpro_framework.data_layer.store import (
     InMemoryKeyValue,
     KeyValueStore,
@@ -36,8 +36,11 @@ from sincpro_framework.sincpro_logger import logger
 REVOKED = b"1"
 
 
-class KeyValueRevocations(Revocations):
-    """Revocations kept as keys with a time to live, under `prefix`."""
+class KeyValueRevocations(KeyValueStoreMixin, CachingRevocations):
+    """Revocations stored as keys with a time to live, under `prefix`."""
+
+    warn_when_unshared = True
+    """A revocation in this process alone is one no other replica refuses."""
 
     def __init__(
         self,
@@ -49,15 +52,10 @@ class KeyValueRevocations(Revocations):
     ) -> None:
         """`store` pins one instead of the running context's; `now` is the clock `until` is
         measured against."""
-        self._store = store
-        self.prefix = prefix
+        self._init_key_value_store(store, prefix)
         self.on_unavailable = on_unavailable
         self.now = now
         self._bypass = StoreBypass(bypass_for, time.monotonic)
-
-    def store(self) -> KeyValueStore:
-        """The store given, else the running context's — read at every call."""
-        return self._store if self._store is not None else key_value_store_of(current_store())
 
     def _key(self, kind: str, value: str) -> str:
         """`<prefix>:<kind>:<sha256 of value>`."""
@@ -90,7 +88,7 @@ class KeyValueRevocations(Revocations):
         """`<prefix>:pv:<digest>` incremented by the store — atomic on every replica."""
         return self.store().increment(self._key("pv", subject))
 
-    def _held(
+    def _read_store(
         self,
         subject: str,
         token_id: str | None,
@@ -118,7 +116,7 @@ class KeyValueRevocations(Revocations):
             ),
             permission_version=0 if version is None else int(version),
             versions={
-                one: 0 if held is None else int(held) for one, held in versions.items()
+                one: 0 if value is None else int(value) for one, value in versions.items()
             },
         )
 
@@ -141,7 +139,7 @@ class KeyValueRevocations(Revocations):
         if self.on_unavailable == WhenUnavailable.ADMIT and self._bypass.is_open():
             return RevocationState()
         try:
-            return self._held(subject, token_id, session, related)
+            return self._read_store(subject, token_id, session, related)
         except StoreUnavailable:
             if self.on_unavailable == WhenUnavailable.REFUSE:
                 raise
@@ -151,7 +149,7 @@ class KeyValueRevocations(Revocations):
 
 
 class InMemoryRevocations(KeyValueRevocations):
-    """Revocations in this process — a test, a CLI, one replica; forgotten when it ends."""
+    """Revocations in this process — a test, a CLI, one replica; lost when it ends."""
 
     def __init__(self, now: Callable[[], datetime] = partial(datetime.now, UTC)) -> None:
         super().__init__(InMemoryKeyValue(now=now), now=now)

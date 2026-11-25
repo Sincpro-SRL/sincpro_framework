@@ -209,7 +209,7 @@ class Rule:
         return self.name
 
 
-type Requirement = Permission | AnyOf | ByField | AssuranceRequirement | RoleRequirement | Rule
+type Requirement = Permission | str | AnyOf | ByField | AssuranceRequirement | RoleRequirement | Rule
 
 
 class DeclarationKind(StrEnum):

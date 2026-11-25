@@ -15,23 +15,22 @@ decided by the providers, applied by the guard.
                 ...
 
 Context: open unless it says otherwise — a use case or hook that declares nothing runs for
-anyone; `authenticated` and `requires` restrict it, and `@entrypoints.internal` keeps a use case
+anyone; `authenticated` and `requires` restrict it, and `@entrypoints.internal` takes a use case
 off every entrypoint. `enabled=False` checks nothing at all. Who acts is
 `security.identity`; an entrypoint that verified the caller with `authenticate(...)` opens
 `security.as_identity(...)`. The provider that authenticated an identity is the one asked about it; an
 identity opened by hand — a test, in-process code — answers with its `permissions`.
 """
 
-import functools
 import time
 from collections.abc import Callable, Iterable, Mapping, Sequence
 from datetime import timedelta
 from typing import TYPE_CHECKING, Any
-from weakref import WeakKeyDictionary, WeakSet
 
 from sincpro_framework.auth.access_control.adapters.added_requirements import (
     KeyValueAddedRequirements,
 )
+from sincpro_framework.auth.access_control.domain.access import Declarations
 from sincpro_framework.auth.access_control.domain.added_requirements import (
     AddedRequirementStore,
 )
@@ -40,13 +39,11 @@ from sincpro_framework.auth.access_control.entrypoint.runtime_requirements impor
 )
 from sincpro_framework.auth.access_control.services import authentication, description
 from sincpro_framework.auth.access_control.services.decisions import Decisions
-from sincpro_framework.auth.access_control.services.guard import (
-    GUARD_SEQUENCE,
-    BusGuard,
-    Declarations,
-    HookGuard,
+from sincpro_framework.auth.access_control.services.guarded_buses import (
+    find_guarding,
     guarded_buses,
 )
+from sincpro_framework.auth.access_control.services.wiring import Wiring, rewire_checks
 from sincpro_framework.auth.common.domain import exceptions
 from sincpro_framework.auth.common.domain.administration import AdministrationPolicy
 from sincpro_framework.auth.common.domain.events import EventPublisher
@@ -68,11 +65,11 @@ from sincpro_framework.auth.common.domain.permissions import (
 )
 from sincpro_framework.auth.common.domain.provider import AuthProvider
 from sincpro_framework.auth.common.infrastructure.security_context import current_identity
-from sincpro_framework.ddd.repositories.hooks import Hooks
 from sincpro_framework.sincpro_logger import logger
 
 if TYPE_CHECKING:
     from sincpro_framework.ddd.criteria import Criteria
+    from sincpro_framework.ddd.repositories.hooks import Hooks
     from sincpro_framework.use_bus import UseFramework
 
 
@@ -112,7 +109,7 @@ class AccessControl[P: Permission]:
         runtime.
 
         `runtime=True` lets administrators require more of a use case without a deploy —
-        `auth.runtime` — kept on the context's store, or on the `AddedRequirementStore` given;
+        `auth.runtime` — stored on the context's store, or on the `AddedRequirementStore` given;
         `administration` bounds who may (`BoundedAdministration()` when not given).
 
             AccessControl(providers=jwt).providers            ->  (jwt,)
@@ -131,7 +128,10 @@ class AccessControl[P: Permission]:
         self.checks: list[Rule] = []
         """What `every_call` registered — asked on every call of every bus guarded."""
         self._decisions = Decisions(self)
+        self._wiring = Wiring(self)
         self._runtime: RuntimeRequirements | None = None
+        self._runtime_check: Rule | None = None
+        """The `every_call` check of `runtime` — swapped by identity in a copy `using` makes."""
         if runtime:
             self._runtime = RuntimeRequirements(
                 self,
@@ -139,16 +139,8 @@ class AccessControl[P: Permission]:
                 policy=administration,
                 publisher=publisher,
             )
-            self.every_call(self._runtime.check, name=RUNTIME_CHECK)
-        self._buses: WeakSet["UseFramework"] = WeakSet()
-        """Every bus guarded — those given to `on` and the generations made of them."""
-        self._guards: "WeakKeyDictionary[UseFramework, BusGuard]" = WeakKeyDictionary()
-        """The guard this object put on each bus — what `on(bus, replaces=this)` replaces."""
-        self._roots: list["UseFramework"] = []
-        self._hooks: list[Hooks] = []
-        self._hook_guard = HookGuard(self)
-        self._noted: set[str] = set()
-        """The provider names a clash was already warned about."""
+            self._runtime_check = Rule(RUNTIME_CHECK, self._runtime.check)
+            self.checks.append(self._runtime_check)
 
     @classmethod
     def of(cls, bus: "UseFramework") -> "AccessControl[Any] | None":
@@ -169,13 +161,7 @@ class AccessControl[P: Permission]:
         Context: an `AccessControl` guarding several buses — the generations `fresh()` makes —
         is listed once, where it first appears.
         """
-        found: list[AccessControl[Any]] = []
-        for _, access in sorted(
-            guarded_buses.items(), key=lambda item: item[0].name != context
-        ):
-            if isinstance(access, AccessControl) and access not in found:
-                found.append(access)
-        return found
+        return [one for one in find_guarding(context) if isinstance(one, AccessControl)]
 
     @property
     def needs_body(self) -> bool:
@@ -198,7 +184,7 @@ class AccessControl[P: Permission]:
 
     def requires(
         self,
-        *requirements: P | Requirement,
+        *requirements: P | str | Requirement,
         when_denied: WhenDenied = WhenDenied.RAISE,
     ):
         """Every requirement listed, and every other `requires` stacked on the same class, is
@@ -348,16 +334,23 @@ class AccessControl[P: Permission]:
 
     # Authenticating
 
-    def authenticate(self, credentials: Credentials) -> Identity:
+    def authenticate(
+        self, credentials: Credentials, bus: "UseFramework | None" = None
+    ) -> Identity:
         """Who the credentials say is calling — the first provider that recognizes them, or
         `Identity.anonymous()` when none does; `Unauthenticated` when one recognizes them and
-        they fail. The identity names the provider that answered: the one asked about it."""
-        return authentication.authenticated(self.providers, credentials)
+        they fail. The identity names the provider that answered: the one asked about it.
+
+        The providers read what auth stores — revocations, refresh tokens — on the store of
+        `bus`, the one the call runs on; without it, of the first bus this object guards."""
+        return authentication.authenticate(
+            self.providers, credentials, bus, self._wiring.roots
+        )
 
     def challenges(self, refusal: exceptions.Unauthenticated | None = None) -> list[str]:
         """The `WWW-Authenticate` values a 401 answers with, one per provider that has one —
         for `refusal` when the wire knows it, so a step-up names what to come back with."""
-        return authentication.challenges(self.providers, refusal)
+        return authentication.build_challenges(self.providers, refusal)
 
     def credentials_for(
         self, identity: Identity | None = None, audience: str | None = None
@@ -369,70 +362,39 @@ class AccessControl[P: Permission]:
                 ->  Credentials(transport="service", headers={"x-sp-service-token": "eyJ…"})
             auth.credentials_for(Identity.anonymous())   ->  None
         """
-        return authentication.credentials_for(
+        return authentication.issue_credentials(
             self.providers, identity or current_identity(), audience
         )
 
     # Deciding
 
-    def refusal(
-        self,
-        identity: Identity,
-        declaration: AccessDeclaration,
-        what: str,
-        resource: Any = None,
-        context: Mapping[str, Any] | None = None,
-        dto: Any = None,
-    ) -> exceptions.AuthError | None:
-        """Why `identity` may not run what `declaration` guards — `None` when it may.
-
-        refusal(ANONYMOUS, AccessDeclaration(DeclarationKind.AUTHENTICATED), "IssueInvoice")
-            ->  Unauthenticated("authenticate to run IssueInvoice")
-        """
-        return self._decisions.refusal(identity, declaration, what, resource, context, dto)
-
-    def allows(self, requirement: P | Requirement, resource: Any = None) -> bool:
+    def allows(self, requirement: P | str | Requirement, resource: Any = None) -> bool:
         """Whether the identity in play meets `requirement` — a permission, a role, a rule,
         `any_of`… — on `resource`, when given. What a handler asks before an optional step.
         Nobody meets none: a rule is never asked for an anonymous caller, as in `requires`.
 
             self.auth.allows(BillingPermission.READ_CREDIT)
             self.auth.allows(self.auth.role("billing.manager"))
+            self.auth.allows("billing.credit.read")       # a permission's value, the same
         """
-        return self._decisions.in_play(requirement, resource) is None
+        return self._decisions.evaluate_current(requirement, resource) is None
 
     def has_role(self, *roles: str) -> bool:
         """Whether the identity in play holds one of `roles` — `allows(role(...))`, said short."""
         return self.allows(self.role(*roles))
 
-    def check(self, requirement: P | Requirement, resource: Any = None) -> None:
+    def check(self, requirement: P | str | Requirement, resource: Any = None) -> None:
         """`allows`, raising `PermissionDenied` — or `Unauthenticated` for nobody — when not.
 
         self.auth.check(BillingPermission.ISSUE_INVOICE)    # holds it  ->  None
         # lacks it   ->  raises PermissionDenied("user:42", "billing.invoice.issue")
         # nobody     ->  raises Unauthenticated("authenticate to billing.invoice.issue")
         """
-        denied = self._decisions.in_play(requirement, resource)
+        denied = self._decisions.evaluate_current(requirement, resource)
         if denied is not None:
             raise denied
 
-    def every_call_refusal(
-        self,
-        identity: Identity,
-        what: str,
-        dto: Any,
-        context: Mapping[str, Any],
-        command: str = "",
-    ) -> exceptions.AuthError | None:
-        """Why one of the `every_call` checks refuses this call — `None` when every one lets it
-        through, or the system acts. What the guard asks after the declaration."""
-        return self._decisions.every_call_refusal(identity, what, dto, context, command)
-
-    def refused(self, identity: Identity, what: str, refusal: exceptions.AuthError) -> None:
-        """Tell the publisher a call was refused — what the guard does before it raises."""
-        self._decisions.refused(identity, what, refusal)
-
-    def permitted(self, permission: P, resources: Sequence[Any]) -> list[bool]:
+    def permitted(self, permission: P | str, resources: Sequence[Any]) -> list[bool]:
         """`allows` for many resources — in one call to the provider when it answers batches.
 
         self.auth.permitted(BillingPermission.READ, [invoice_1, invoice_2])
@@ -451,64 +413,6 @@ class AccessControl[P: Permission]:
 
     # Wiring
 
-    def _identity_for_logs(self) -> dict[str, str]:
-        """The `identity` field every log line of a guarded bus carries — none for nobody."""
-        identity = current_identity()
-        return {} if identity.is_anonymous else {"identity": identity.subject}
-
-    def attach(self, bus: "UseFramework") -> None:
-        """What `on(bus)` wires, and what every generation `fresh()` makes of the bus wires
-        again against itself: the guard, and this object as the handlers' `auth` — and, once
-        per name, a warning when another `AccessControl` of the process gives a provider of
-        another kind the name of one of these."""
-        for name in sorted(authentication.clashing_names(self.providers) - self._noted):
-            self._noted.add(name)
-            logger.warning(
-                "two AccessControls of the process hold providers of different kinds under one "
-                "name: an identity vouched for by one may be asked of the other — name them "
-                "apart",
-                provider=name,
-            )
-        guard = BusGuard(self, bus)
-        bus.interceptor(sequence=GUARD_SEQUENCE)(guard)
-        bus.add_dependency("auth", self)
-        self._guards[bus] = guard
-        self._buses.add(bus)
-        guarded_buses[bus] = self
-
-    def _replacing(self, replaced: "AccessControl[Any]", bus: "UseFramework") -> None:
-        """What `on(bus, replaces=replaced)` wires, and every generation `fresh()` makes of the
-        bus wires again: this object's guard in the place of the one guarding the bus, and this
-        object as the handlers' `auth`.
-
-        1. `replaced` guards the bus: its guard and its `auth` are replaced.
-        2. Another `AccessControl` guards it: that one is replaced, with a warning.
-        3. Nothing guards it: guarded as `on(bus)` guards, with a warning.
-        Final: the one replaced guards the bus no more.
-        """
-        guarding = replaced if bus in replaced._guards else guarded_buses.get(bus)
-        if not isinstance(guarding, AccessControl) or bus not in guarding._guards:
-            logger.warning(
-                "replaces= names an AccessControl and nothing guards the bus: guarded as on() "
-                "guards it",
-                bus=bus.name,
-            )
-            self.attach(bus)
-            return
-        if guarding is not replaced:
-            logger.warning(
-                "replaces= names an AccessControl that does not guard the bus: the one "
-                "guarding it is replaced",
-                bus=bus.name,
-            )
-        guard = BusGuard(self, bus)
-        bus.interceptor(sequence=GUARD_SEQUENCE, replaces=guarding._guards[bus])(guard)
-        bus.add_dependency("auth", self, replaces=guarding)
-        self._guards[bus] = guard
-        self._buses.add(bus)
-        guarding._buses.discard(bus)
-        guarded_buses[bus] = self
-
     def refusal_of(
         self,
         bus: "UseFramework",
@@ -525,11 +429,7 @@ class AccessControl[P: Permission]:
         Context: a bus another `AccessControl` guards is answered by that one, and a bus nobody
         guards runs anything — `None`.
         """
-        guard = self._guards.get(bus)
-        if guard is not None:
-            return guard.refusal_for(command, identity or current_identity(), dto)
-        guarding = AccessControl.of(bus)
-        return None if guarding is None else guarding.refusal_of(bus, command, identity, dto)
+        return self._wiring.find_refusal(bus, command, identity, dto)
 
     def may_run(
         self,
@@ -562,11 +462,11 @@ class AccessControl[P: Permission]:
         other.declarations = self.declarations
         other.checks = list(self.checks)
         if self._runtime is not None:
-            other._runtime = self._runtime.judged_by(other)
-            other.checks = [
-                Rule(one.name, other._runtime.check) if one.name == RUNTIME_CHECK else one
-                for one in other.checks
-            ]
+            other._runtime = self._runtime.with_access(other)
+            other._runtime_check = Rule(RUNTIME_CHECK, other._runtime.check)
+            other.checks = rewire_checks(
+                self.checks, self._runtime_check, other._runtime_check
+            )
         return other
 
     def on(
@@ -582,49 +482,19 @@ class AccessControl[P: Permission]:
 
         `replaces` names the `AccessControl` guarding the bus now — what `fresh()` repeats from
         the bus it was made of — and this one takes its place there: its guard and its `auth`.
-
-        1. Disabled: a warning is logged — the target is wired anyway, and checks nothing.
-        2. A `Hooks` collection:
-           2.1 one already guarded by this object: a warning, guarded once;
-           2.2 else the hook guard is set as its gate and the collection stored.
-        3. A bus already guarded by this object: a warning, guarded once.
-        4. `attach` is registered as an extension of the bus — run on it and on every
-           generation made of it, so the guard and `auth` reach each.
-        5. Each log line of the bus gets the `identity` of who acts.
-        Final: the bus is stored among the roots this object guards.
+        Guarding the same target twice warns and guards it once; a disabled object is wired
+        all the same, with a warning, and checks nothing.
         """
-        if not self.enabled:
-            logger.warning("access control is disabled: nothing it guards is checked")
-        if replaces is not None:
-            if isinstance(target, Hooks):
-                raise exceptions.ProgrammingError(
-                    "replaces= is for a bus: a Hooks collection is gated by one AccessControl"
-                )
-            target.extend(functools.partial(self._replacing, replaces))
-            self._roots.append(target)
-            return
-        if isinstance(target, Hooks):
-            if any(target is one for one in self._hooks):
-                logger.warning("AccessControl already guards this Hooks: guarded once")
-                return
-            target.gate(self._hook_guard)
-            self._hooks.append(target)
-            return
-        if target in self._roots:
-            logger.warning(
-                "AccessControl already guards the bus: guarded once", bus=target.name
-            )
-            return
-        target.extend(self.attach)
-        target.logger.add_context_source(self._identity_for_logs)
-        self._roots.append(target)
+        self._wiring.guard(target, replaces)
 
     # Describing — read without building a bus nor closing a collection
 
     def guarded_use_cases(self) -> set[str]:
         """The dotted name of every Command of every bus this object guards — what a screen
         offers to require more of."""
-        return set(description.declared_use_cases(self.declarations, list(self._buses)))
+        return set(
+            description.find_declared_use_cases(self.declarations, list(self._wiring.buses))
+        )
 
     def requirements_of(
         self, cls: type, bus: "UseFramework | None" = None
@@ -635,7 +505,9 @@ class AccessControl[P: Permission]:
             auth.requirements_of(CommandIssueInvoice)  ->  AccessDeclaration(DeclarationKind.REQUIRES, (ISSUE,))
             auth.requirements_of(QueryHealth)          ->  None    # declared nothing
         """
-        return description.requirements_of(self.declarations, list(self._buses), cls, bus)
+        return description.find_requirements(
+            self.declarations, list(self._wiring.buses), cls, bus
+        )
 
     def verify(self) -> list[str]:
         """What would not work as declared — for a test, or a check once everything is
@@ -647,8 +519,8 @@ class AccessControl[P: Permission]:
                 ->  ["access control is disabled",
                      "billing.Orphan declares access but runs on no bus or hooks this ..."]
         """
-        return description.problems(
-            self.declarations, list(self._buses), self._hooks, self.enabled
+        return description.find_problems(
+            self.declarations, list(self._wiring.buses), self._wiring.hooks, self.enabled
         )
 
     def describe(self) -> AccessDescription:
@@ -660,10 +532,10 @@ class AccessControl[P: Permission]:
                                "billing.QueryHealth": "open"},
                     hooks={"billing.hooks.NotifyCustomer": "authenticated"})
         """
-        return description.description(
+        return description.describe(
             self.declarations,
-            list(self._buses),
-            self._hooks,
+            list(self._wiring.buses),
+            self._wiring.hooks,
             self.enabled,
             self.providers,
             self.checks,

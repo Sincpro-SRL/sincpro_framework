@@ -7,12 +7,17 @@ from datetime import UTC, datetime, timedelta
 
 import fakeredis
 import pytest
+from structlog.testing import capture_logs
 
 from sincpro_framework.auth.common.adapters.revocations import (
     InMemoryRevocations,
     KeyValueRevocations,
 )
-from sincpro_framework.auth.common.domain.revocations import Revocations, WhenUnavailable
+from sincpro_framework.auth.common.domain.revocations import (
+    Revocations,
+    RevocationState,
+    WhenUnavailable,
+)
 from sincpro_framework.data_layer.store import InMemoryKeyValue, StoreUnavailable
 from sincpro_framework.data_layer.store.adapters.redis import RedisKeyValue
 from sincpro_framework.runtime.testing import ManualClock
@@ -60,5 +65,21 @@ def test_a_store_that_does_not_answer_is_refused_by_default() -> None:
 
 def test_a_project_may_admit_while_its_store_is_down() -> None:
     revocations = KeyValueRevocations(DownStore(), on_unavailable=WhenUnavailable.ADMIT)
-    assert revocations.state("user:1", session="s-1").refusal(None) is None
+    assert revocations.state("user:1", session="s-1").revocation_reason(None) is None
     assert revocations.state("user:1").permission_version == 0
+
+
+def test_a_token_of_a_permission_epoch_the_store_lost_is_refused_and_said() -> None:
+    """A permission version only grows; a token carrying a sum greater than the store's can only
+    come from a store that evicted a counter — refused, and logged to fix the store."""
+    state = RevocationState(permission_version=2, versions={"tenant:bo": 1})
+    assert state.revocation_reason(None, permission_epoch=3) is None
+    assert (
+        state.revocation_reason(None, permission_epoch=2)
+        == "permissions changed: refresh the token"
+    )
+    with capture_logs() as logs:
+        assert state.revocation_reason(None, permission_epoch=9) == (
+            "permissions changed: refresh the token"
+        )
+    assert any("evicted" in one["event"] for one in logs)

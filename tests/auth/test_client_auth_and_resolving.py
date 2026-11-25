@@ -22,13 +22,13 @@ from sincpro_framework.auth.client import (
 from sincpro_framework.auth.client.adapters.client_authentication import CLIENT_ASSERTION_TYPE
 from sincpro_framework.auth.common.infrastructure import jws
 from sincpro_framework.auth.grants import RolePermissions
-from sincpro_framework.auth.server import Resolving, StaticProvider
+from sincpro_framework.auth.server import ResolvingProvider, StaticProvider
 
 ENDPOINT = "https://auth.acme.bo/token"
 
 
 def test_basic_form_encodes_the_id_and_secret_before_base64() -> None:
-    fields, headers = ClientSecretBasic("billing api", SecretStr("a:b%c")).applied(
+    fields, headers = ClientSecretBasic("billing api", SecretStr("a:b%c")).apply(
         [("grant_type", "client_credentials")], ENDPOINT
     )
     scheme, encoded = headers["authorization"].split(" ")
@@ -39,7 +39,7 @@ def test_basic_form_encodes_the_id_and_secret_before_base64() -> None:
 
 
 def test_post_puts_the_id_and_secret_in_the_form() -> None:
-    fields, headers = ClientSecretPost("billing", "s3cret").applied([("a", "1")], ENDPOINT)
+    fields, headers = ClientSecretPost("billing", "s3cret").apply([("a", "1")], ENDPOINT)
     assert fields == [("a", "1"), ("client_id", "billing"), ("client_secret", "s3cret")]
     assert headers == {}
 
@@ -47,11 +47,11 @@ def test_post_puts_the_id_and_secret_in_the_form() -> None:
 def test_a_jwt_assertion_is_for_the_endpoint_and_signed_with_the_secret() -> None:
     fields, _ = ClientSecretJwt(
         "billing", "a long shared secret", clock=lambda: 1_900_000_000
-    ).applied([], ENDPOINT)
+    ).apply([], ENDPOINT)
     named = dict(fields)
     assert named["client_assertion_type"] == CLIENT_ASSERTION_TYPE
     assertion = jws.parse(named["client_assertion"])
-    assert jws.HmacKey.of(None, "a long shared secret").verifies(assertion)
+    assert jws.HmacKey.from_secret(None, "a long shared secret").verify_jws(assertion)
     assert (assertion.claims["iss"], assertion.claims["sub"], assertion.claims["aud"]) == (
         "billing",
         "billing",
@@ -68,7 +68,7 @@ def test_no_client_shows_its_secret() -> None:
         PublicClient("c"),
     ):
         assert "s3cret" not in repr(client) and "'c'" in repr(client)
-    assert PublicClient("cli").applied([], ENDPOINT) == ([("client_id", "cli")], {})
+    assert PublicClient("cli").apply([], ENDPOINT) == ([("client_id", "cli")], {})
 
 
 class Perm(Permission):
@@ -86,7 +86,7 @@ class Tagging:
 
 def test_a_project_provider_is_resolved_in_order_and_keeps_its_name() -> None:
     base = StaticProvider({"t-1": Identity.user("user:1", roles={"reader"})}, name="sessions")
-    provider = Resolving(
+    provider = ResolvingProvider(
         base,
         Tagging("editor"),
         RolePermissions({"reader": {Perm.READ}, "editor": {Perm.WRITE}}),

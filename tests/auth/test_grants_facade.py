@@ -80,7 +80,7 @@ def test_what_is_assigned_is_what_a_call_resolves() -> None:
     assert {P.READ, P.ISSUE} <= set(ana.permissions)
     assert resolved(held, "user:ana", "pe").permissions == frozenset()  # another tenant
     assert [type(one) for one in audit.events] == [RoleAssigned]
-    assert [one.role for one in held.assigned("user:ana", "bo")] == ["billing.manager"]
+    assert [one.role for one in held.assignments_of("user:ana", "bo")] == ["billing.manager"]
 
 
 def test_a_tenants_own_role_is_named_by_its_key() -> None:

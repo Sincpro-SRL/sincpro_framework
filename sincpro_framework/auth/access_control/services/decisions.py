@@ -3,35 +3,39 @@ handler asks by hand (`allows`, `check`, `permitted`, `scope_of`) — one decisi
 
 Context: a refusal is answered, never raised here, so an `AnyOf` weighs its members and `allows`
 says no without a traceback; the guard and the facade raise it. Who is asked about an identity
-is its provider (`vouched_by`); an identity opened by hand answers with its own permissions.
+is its provider (`find_provider`); an identity opened by hand answers with its own permissions.
+A permission is a `Permission` member or its value as text — a screen, a policy file.
 """
 
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from typing import TYPE_CHECKING, Any
 
-from sincpro_framework.auth.access_control.services.authentication import vouched_by
-from sincpro_framework.auth.access_control.services.guard import Access
+from sincpro_framework.auth.access_control.domain.access import Access
+from sincpro_framework.auth.access_control.services.authentication import find_provider
 from sincpro_framework.auth.common.domain import exceptions
 from sincpro_framework.auth.common.domain.events import SUBJECT, AccessRefused
 from sincpro_framework.auth.common.domain.identity import Identity, IdentityKind
 from sincpro_framework.auth.common.domain.permissions import (
     AccessCall,
     AccessDeclaration,
-    AnyOf,
     AssuranceRequirement,
     ByField,
-    Permission,
     Requirement,
     RoleRequirement,
     Rule,
     command_name,
 )
-from sincpro_framework.auth.common.infrastructure.announcing import announce
+from sincpro_framework.auth.common.infrastructure.event_publishing import publish_event
 from sincpro_framework.auth.common.infrastructure.security_context import current_identity
 from sincpro_framework.context import context_scopes
 
 if TYPE_CHECKING:
     from sincpro_framework.ddd.criteria import Criteria
+
+UNJUDGED_WITHOUT_COMMAND = (AttributeError, TypeError, LookupError)
+"""What a rule that reads the Command raises when asked with none (`call.dto.owner` on `None`)
+— refused as "cannot be judged". Anything else it raises — a store down (503), a bug — is let
+through: a rule that could not be asked is never a refusal."""
 
 
 class Decisions:
@@ -40,7 +44,7 @@ class Decisions:
     def __init__(self, access: Access) -> None:
         self.access = access
 
-    def _has(
+    def _evaluate_permission(
         self,
         identity: Identity,
         permission: str,
@@ -56,7 +60,7 @@ class Decisions:
         2. Else its provider's `has_permission`, with `resource` and `context`.
         Final: `None` when allowed, else the provider's `PermissionDenied` or a plain one.
         """
-        provider = vouched_by(self.access.providers, identity)
+        provider = find_provider(self.access.providers, identity)
         try:
             if provider is None:
                 allowed = permission in identity.permissions
@@ -66,7 +70,7 @@ class Decisions:
             return denied
         return None if allowed else exceptions.PermissionDenied(identity.subject, permission)
 
-    def _assured(
+    def _evaluate_assurance(
         self, identity: Identity, requirement: AssuranceRequirement
     ) -> exceptions.Unauthenticated | None:
         """The step-up refusal when `identity` authenticated too weakly or too long ago.
@@ -103,23 +107,24 @@ class Decisions:
             ),
         )
 
-    def _ruled(self, rule: Rule, call: AccessCall) -> exceptions.AuthError | None:
+    def _evaluate_rule(self, rule: Rule, call: AccessCall) -> exceptions.AuthError | None:
         """The refusal of a rule that does not hold — `PermissionDenied` naming it, or the
         `AuthError` its check raised to answer otherwise.
 
         1. The check holds: `None`.
         2. It raised an `AuthError`: that refusal.
-        3. Asked with no Command (`may_run`, `allows`, a hook) and it failed reading one:
-           refused — what cannot be judged is never granted. A rule that may be judged
-           without it says so: `lambda call: call.dto is None or call.dto.owner == ...`.
-        Final: `PermissionDenied` naming the rule.
+        3. Asked with no Command (`may_run`, `allows`, a hook) and it failed reading one
+           (`UNJUDGED_WITHOUT_COMMAND`): refused — what cannot be judged is never granted. A
+           rule that may be judged without it says so:
+           `lambda call: call.dto is None or call.dto.owner == ...`.
+        Final: `PermissionDenied` naming the rule; anything else the check raised propagates.
         """
         try:
             if rule.check(call):
                 return None
         except exceptions.AuthError as refused:
             return refused
-        except Exception:
+        except UNJUDGED_WITHOUT_COMMAND:
             if call.dto is not None:
                 raise
             return exceptions.PermissionDenied(
@@ -131,14 +136,14 @@ class Decisions:
             call.identity.subject, rule.name, f"{rule.name} does not hold"
         )
 
-    def denial(
+    def evaluate_requirement(
         self,
         identity: Identity,
-        requirement: Permission | Requirement,
+        requirement: str | Requirement,
         resource: Any,
         context: Mapping[str, Any] | None,
         dto: Any = None,
-        what: str = "",
+        use_case: str = "",
     ) -> exceptions.AuthError | None:
         """The refusal of a requirement — one permission, a role, a rule, or an `AnyOf` refused
         only when every member is.
@@ -155,8 +160,10 @@ class Decisions:
         `Unauthenticated` — a step-up — answers for the whole: authenticating again may meet
         it, a 403 would not say so.
         """
+        if isinstance(requirement, str):
+            return self._evaluate_permission(identity, str(requirement), resource, context)
         if isinstance(requirement, AssuranceRequirement):
-            return self._assured(identity, requirement)
+            return self._evaluate_assurance(identity, requirement)
         if isinstance(requirement, RoleRequirement):
             if identity.roles & set(requirement.roles):
                 return None
@@ -168,13 +175,13 @@ class Decisions:
         if isinstance(requirement, Rule):
             call = AccessCall(
                 identity,
-                what,
+                use_case,
                 dto,
                 resource,
                 dict(context or {}),
                 "" if dto is None else command_name(type(dto)),
             )
-            return self._ruled(requirement, call)
+            return self._evaluate_rule(requirement, call)
         if isinstance(requirement, ByField):
             chosen = requirement.every() if dto is None else requirement.chosen(dto)
             if chosen is None:
@@ -184,12 +191,14 @@ class Decisions:
                     str(requirement),
                     f"{requirement.field}={value!r} names no requirement",
                 )
-            return self.denial(identity, chosen, resource, context, dto, what)
-        if not isinstance(requirement, AnyOf):
-            return self._has(identity, requirement.value, resource, context)
+            return self.evaluate_requirement(
+                identity, chosen, resource, context, dto, use_case
+            )
         refused: list[exceptions.AuthError] = []
         for one in requirement.members:
-            denied = self.denial(identity, one, resource, context, dto, what)
+            denied = self.evaluate_requirement(
+                identity, one, resource, context, dto, use_case
+            )
             if denied is None:
                 return None
             refused.append(denied)
@@ -198,118 +207,138 @@ class Decisions:
         )
         if step_up is not None:
             return step_up
-        each = [getattr(one, "reason", None) or str(one) for one in refused]
-        provider = vouched_by(self.access.providers, identity)
-        permissions = [
-            one.value for one in requirement.members if isinstance(one, Permission)
-        ]
-        said = (
-            provider.refusing_any(identity, permissions, each)
+        reasons = [getattr(one, "reason", None) or str(one) for one in refused]
+        provider = find_provider(self.access.providers, identity)
+        permissions = [str(one) for one in requirement.members if isinstance(one, str)]
+        worded = (
+            provider.refusing_any(identity, permissions, reasons)
             if provider is not None and len(permissions) == len(requirement.members)
             else None
         )
         return exceptions.PermissionDenied(
-            identity.subject, str(requirement), said or " and ".join(each)
+            identity.subject, str(requirement), worded or " and ".join(reasons)
         )
 
-    def refusal(
+    def _evaluate_caller(
+        self,
+        identity: Identity,
+        action: str,
+        evaluate: Callable[[], exceptions.AuthError | None],
+    ) -> exceptions.AuthError | None:
+        """The one exemption every requirement shares: the system passes; nobody is refused
+        before any provider or rule is asked (`authenticate to <action>`); anyone else is
+        answered by `evaluate`."""
+        if identity.kind == IdentityKind.SYSTEM:
+            return None
+        if identity.is_anonymous:
+            return exceptions.Unauthenticated(f"authenticate to {action}", anonymous=True)
+        return evaluate()
+
+    def evaluate_declaration(
         self,
         identity: Identity,
         declaration: AccessDeclaration,
-        what: str,
+        use_case: str,
         resource: Any = None,
         context: Mapping[str, Any] | None = None,
         dto: Any = None,
     ) -> exceptions.AuthError | None:
         """Why `identity` may not run what `declaration` guards — `None` when it may.
 
-            refusal(ANONYMOUS, AccessDeclaration(DeclarationKind.AUTHENTICATED), "IssueInvoice")
+            evaluate_declaration(ANONYMOUS, AccessDeclaration(DeclarationKind.AUTHENTICATED),
+                                 "IssueInvoice")
                 ->  Unauthenticated("authenticate to run IssueInvoice")
-            refusal(user, AccessDeclaration(DeclarationKind.REQUIRES, (ISSUE,)), "IssueInvoice")
+            evaluate_declaration(user, AccessDeclaration(DeclarationKind.REQUIRES, (ISSUE,)),
+                                 "IssueInvoice")
                 ->  PermissionDenied("user:42", "billing.invoice.issue")
 
         Context: the system passes first; nobody is refused before any provider is asked; then
         each requirement in order, the first refused answering — a `by_field` one chosen by
         `dto`, the Command being run, or one among its permissions without it.
         """
-        if identity.kind == IdentityKind.SYSTEM:
-            return None
-        if identity.is_anonymous:
-            return exceptions.Unauthenticated(f"authenticate to run {what}", anonymous=True)
-        for requirement in declaration.requirements:
-            denied = self.denial(identity, requirement, resource, context, dto, what)
-            if denied is not None:
-                return denied
-        return None
 
-    def in_play(
-        self, requirement: Permission | Requirement, resource: Any
+        def first_refusal() -> exceptions.AuthError | None:
+            for requirement in declaration.requirements:
+                denied = self.evaluate_requirement(
+                    identity, requirement, resource, context, dto, use_case
+                )
+                if denied is not None:
+                    return denied
+            return None
+
+        return self._evaluate_caller(identity, f"run {use_case}", first_refusal)
+
+    def evaluate_current(
+        self, requirement: str | Requirement, resource: Any
     ) -> exceptions.AuthError | None:
         """What `allows` and `check` decide for the identity in play — as the guard would: the
         system passes, nobody is refused before any provider or rule is asked, then the
         requirement's own refusal."""
         identity = current_identity()
-        if identity.kind == IdentityKind.SYSTEM:
-            return None
-        if identity.is_anonymous:
-            return exceptions.Unauthenticated(
-                f"authenticate to {requirement}", anonymous=True
-            )
-        return self.denial(identity, requirement, resource, context_scopes.live())
+        return self._evaluate_caller(
+            identity,
+            str(requirement),
+            lambda: self.evaluate_requirement(
+                identity, requirement, resource, context_scopes.live()
+            ),
+        )
 
-    def every_call_refusal(
+    def evaluate_every_call(
         self,
         identity: Identity,
-        what: str,
+        use_case: str,
         dto: Any,
         context: Mapping[str, Any],
         command: str = "",
     ) -> exceptions.AuthError | None:
         """Why one of the `every_call` checks refuses this call — `None` when every one lets it
-        through, or the system acts."""
+        through, or the system acts. Nobody is asked about too: a check speaks for anyone."""
         if identity.kind == IdentityKind.SYSTEM:
             return None
-        call = AccessCall(identity, what, dto, None, dict(context), command)
+        call = AccessCall(identity, use_case, dto, None, dict(context), command)
         for check in self.access.checks:
-            refused = self._ruled(check, call)
+            refused = self._evaluate_rule(check, call)
             if refused is not None:
                 return refused
         return None
 
-    def refused(self, identity: Identity, what: str, refusal: exceptions.AuthError) -> None:
+    def publish_refusal(
+        self, identity: Identity, use_case: str, refusal: exceptions.AuthError
+    ) -> None:
         """Tell the publisher a call was refused — what the guard does before it raises."""
-        said = refusal.refusal_body()
-        announce(
+        body = refusal.refusal_body()
+        publish_event(
             self.access.publisher,
             AccessRefused(
                 entity_type=SUBJECT,
                 entity_id=identity.subject,
-                use_case=what,
-                kind=str(said.get("kind", "")),
-                reason=str(said.get("reason", "")),
-                requirement=str(said.get("requirement", "")),
+                use_case=use_case,
+                kind=refusal.failure_kind,
+                reason=str(body.get("reason", "")),
+                requirement=str(body.get("requirement", "")),
                 tenant=identity.tenant,
             ),
         )
 
-    def permitted(self, permission: Permission, resources: Sequence[Any]) -> list[bool]:
+    def permitted(self, permission: str, resources: Sequence[Any]) -> list[bool]:
         """`allows` for many resources — in one call to the provider when it answers batches.
         A provider that refuses the whole batch with `PermissionDenied` refuses each.
 
             permitted(BillingPermission.READ, [invoice_1, invoice_2])
                 ->  [True, False]      # as the provider answered each
+            permitted("billing.read", [invoice_1])   # a permission's value, the same
             # the system  ->  [True, True]
             # opened by hand: holding READ  ->  [True, True]; not  ->  [False, False]
         """
         identity = current_identity()
         if identity.kind == IdentityKind.SYSTEM:
             return [True] * len(resources)
-        provider = vouched_by(self.access.providers, identity)
+        provider = find_provider(self.access.providers, identity)
         if provider is None:
-            return [permission.value in identity.permissions] * len(resources)
+            return [str(permission) in identity.permissions] * len(resources)
         try:
             return provider.permitted(
-                identity, permission.value, resources, context_scopes.live()
+                identity, str(permission), resources, context_scopes.live()
             )
         except exceptions.PermissionDenied:
             return [False] * len(resources)
@@ -329,11 +358,12 @@ class Decisions:
         context let in is scoped by the provider that let it in.
         """
         identity = current_identity()
-        if identity.kind == IdentityKind.SYSTEM:
-            return None
-        if identity.is_anonymous:
-            raise exceptions.Unauthenticated(
-                f"authenticate to read {aggregate.__name__}", anonymous=True
-            )
-        provider = vouched_by(self.access.providers, identity)
+        refused = self._evaluate_caller(identity, f"read {aggregate.__name__}", lambda: None)
+        if refused is not None:
+            raise refused
+        provider = (
+            None
+            if identity.kind == IdentityKind.SYSTEM
+            else find_provider(self.access.providers, identity)
+        )
         return None if provider is None else provider.scope(identity, aggregate)

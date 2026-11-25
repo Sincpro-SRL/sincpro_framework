@@ -14,14 +14,30 @@ answers whether new headers could help — the caller retries once, never in a l
 
 from abc import ABC, abstractmethod
 from collections.abc import Mapping
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Any, Protocol
 
 from pydantic import ConfigDict, Field
 
-from sincpro_framework.auth.common.domain.http import safe_url
+from sincpro_framework.auth.client.domain.token_response import (
+    TokenResponse,
+    token_renewal_time,
+)
+from sincpro_framework.auth.common.domain.http import redact_url
 from sincpro_framework.auth.common.domain.identity import Identity
 from sincpro_framework.sincpro_abstractions import DataTransferObject
+
+
+def parse_bearer_token(
+    headers: Mapping[str, str], header: str = "authorization"
+) -> str | None:
+    """The token of `<scheme> <token>` in `header` — `Bearer` or `DPoP` — if any.
+
+    parse_bearer_token({"Authorization": "Bearer at-1"})  ->  "at-1"
+    """
+    value = {name.lower(): one for name, one in dict(headers).items()}.get(header, "")
+    _, _, token = value.partition(" ")
+    return token.strip() or None
 
 
 class OutgoingRequest(DataTransferObject):
@@ -38,8 +54,18 @@ class OutgoingRequest(DataTransferObject):
     identity: Identity | None = None
     """Who the call acts for — the identity in play when not given."""
 
+    def bind_caller(self, identity: Identity) -> "OutgoingRequest":
+        """This request acting for its own identity, else `identity`; for its own tenant, else
+        that identity's."""
+        acting = self.identity or identity
+        return self.model_copy(
+            update={"identity": acting, "tenant": self.tenant or acting.tenant}
+        )
+
     def __repr__(self) -> str:
-        return f"OutgoingRequest({self.method} {safe_url(self.url)}, tenant={self.tenant!r})"
+        return (
+            f"OutgoingRequest({self.method} {redact_url(self.url)}, tenant={self.tenant!r})"
+        )
 
     __str__ = __repr__
 
@@ -72,38 +98,66 @@ class TokenSource(ABC):
 
 
 class Sealer(Protocol):
-    """Seals what a shared store holds of a secret — a token cached on Redis — and opens it."""
+    """Encrypts what a shared store holds of a secret — a token cached on Redis — and decrypts
+    it."""
 
-    def seal(self, plain: bytes) -> bytes:
+    def encrypt(self, plain: bytes) -> bytes:
         """`plain` encrypted and authenticated — nothing about it readable without the key."""
         ...
 
-    def open(self, sealed: bytes) -> bytes:
-        """What `seal` sealed — `ValueError` for what another key sealed, or was changed."""
+    def decrypt(self, sealed: bytes) -> bytes:
+        """What `encrypt` encrypted — `ValueError` for what another key encrypted, or was
+        changed."""
         ...
 
 
-class HeldGrant(DataTransferObject):
-    """A grant this service holds for an API that issues refresh tokens — the refresh token, the
-    access token it last got, when that one expires. Its `version` counts the refreshes."""
+class OAuthGrant(DataTransferObject):
+    """A grant this service holds from another authorization server — the refresh token, the
+    access token it last got, when that one arrived and expires. `version` counts the writes of
+    a refresh token: a compare-and-set is judged on it, never on the access token's expiry."""
 
     model_config = ConfigDict(frozen=True)
 
     refresh_token: str = Field(repr=False)
     access_token: str | None = Field(default=None, repr=False)
+    token_type: str = "Bearer"
+    received_at: datetime | None = None
     expires_at: datetime | None = None
     version: int = 0
 
+    @classmethod
+    def build(cls, issued: TokenResponse, refresh_token: str, version: int) -> "OAuthGrant":
+        """The grant `issued` holds, with `refresh_token` — the rotated one, or the one spent
+        when the server does not rotate."""
+        return cls(
+            refresh_token=refresh_token,
+            access_token=issued.access_token.get_secret_value(),
+            token_type=issued.token_type,
+            received_at=issued.received_at,
+            expires_at=issued.expires_at,
+            version=version,
+        )
 
-class HeldGrants(ABC):
-    """The port: where held grants live, written by compare-and-set — two replicas refreshing
-    at once never both store their answer."""
+    def is_valid(self, now: datetime, skew: timedelta) -> bool:
+        """Whether its access token is still used at `now` — `token_renewal_time` not reached."""
+        return (
+            self.access_token is not None
+            and self.expires_at is not None
+            and now < token_renewal_time(self.received_at, self.expires_at, skew)
+        )
+
+
+class OAuthGrantStore(ABC):
+    """The port: where the OAuth grants this service holds live, written by compare-and-set on
+    their `version` — two replicas refreshing at once never both store their answer."""
 
     @abstractmethod
-    def current(self, key: str) -> HeldGrant | None:
-        """The grant held under `key`, if any."""
+    def get(self, key: str) -> OAuthGrant | None:
+        """The grant stored under `key`, if any."""
 
     @abstractmethod
-    def replace(self, key: str, expected: HeldGrant | None, new: HeldGrant | None) -> bool:
-        """Write `new` (`None` drops it) only when `key` holds `expected` now — `True` when it
-        was written."""
+    def compare_and_set(
+        self, key: str, expected_version: int | None, grant: OAuthGrant | None
+    ) -> bool:
+        """Write `grant` (`None` deletes it) only when the grant stored under `key` has
+        `expected_version` — `None`: there is none — `True` when it was written."""

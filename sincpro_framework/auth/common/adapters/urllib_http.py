@@ -54,7 +54,7 @@ class UrllibHttp:
         self.allow_insecure = allow_insecure
         self._opener = urllib.request.build_opener(_NoRedirects())
 
-    def _judged(self, request: HttpRequest) -> None:
+    def _validate_url(self, request: HttpRequest) -> None:
         """A URL that is not https, nor http to the loopback, is a `ProgrammingError` — a
         configuration to fix, never a request to try."""
         parts = urlsplit(request.url)
@@ -86,7 +86,7 @@ class UrllibHttp:
         3. A host not reached, a time run out, a connection lost: `EndpointUnavailable`.
         Final: the answer, its body capped at `max_bytes`.
         """
-        self._judged(request)
+        self._validate_url(request)
         prepared = urllib.request.Request(
             request.url,
             data=request.body,

@@ -1,5 +1,5 @@
 """What an administrator requires of a use case at runtime, beside what its code declares — for
-every tenant or for one — kept in a store, read per tenant, and judged on every call as an
+every tenant or for one — stored, read per tenant, and judged on every call as an
 `every_call` check.
 
 Context: it only restricts. What the code declares holds whatever is required here, so a mistake
@@ -11,7 +11,7 @@ replica's, a renamed one — is never met. Changing them is bounded as every adm
 administration lease: the platform for every tenant; a tenant's administrator for its own, and
 only requiring, replacing or releasing what it holds itself. A requirement still refuses every
 administrator who lacks it — whoever holds it, or the platform, releases it. Read at most once
-each `check_every` per tenant, one caller each; the writer's instance at once. A store that does
+each `check_interval` per tenant, one caller each; the writer's instance at once. A store that does
 not answer leaves the last requirements read in effect — and a tenant never read is refused (503)
 until it answers: what only restricts fails closed.
 """
@@ -22,18 +22,20 @@ from collections.abc import Callable, Hashable, Iterable
 from datetime import timedelta
 from typing import Any
 
+from sincpro_framework.auth.access_control.domain.access import Access
 from sincpro_framework.auth.access_control.domain.added_requirements import (
     AddedRequirement,
     AddedRequirements,
     AddedRequirementStore,
 )
-from sincpro_framework.auth.access_control.services.guard import Access
+from sincpro_framework.auth.access_control.services.decisions import Decisions
+from sincpro_framework.auth.common.adapters.locks import AdministrationLocks
 from sincpro_framework.auth.common.domain import exceptions
 from sincpro_framework.auth.common.domain.administration import (
     AdministrationPolicy,
     BoundedAdministration,
 )
-from sincpro_framework.auth.common.domain.documents import fingerprint, rewritten
+from sincpro_framework.auth.common.domain.documents import fingerprint, update_document
 from sincpro_framework.auth.common.domain.events import (
     USE_CASE,
     EventPublisher,
@@ -52,20 +54,19 @@ from sincpro_framework.auth.common.domain.permissions import (
     command_name,
     declared_permissions,
 )
-from sincpro_framework.auth.common.infrastructure.announcing import announce
-from sincpro_framework.auth.common.infrastructure.locks import AdministrationLocks
-from sincpro_framework.auth.common.infrastructure.refreshed import Refreshed
+from sincpro_framework.auth.common.infrastructure.event_publishing import publish_event
+from sincpro_framework.auth.common.infrastructure.scoped_cache import ScopedCache
 from sincpro_framework.auth.common.infrastructure.security_context import current_identity
 from sincpro_framework.sincpro_logger import logger
 
-Scoped = dict[str, list[Requirement]]
+RequirementsByCommand = dict[str, list[Requirement]]
 """What holds for a tenant, by Command: every tenant's and its own."""
 
 
-def _wanted(
+def _build_added_requirement(
     command: str, tenant: str | None, required: Iterable[str | RoleRequirement]
 ) -> AddedRequirement:
-    """What `require` was given, as it is kept: the permissions by value, the roles of the one
+    """What `require` was given, as it is stored: the permissions by value, the roles of the one
     `auth.role(...)` — any other requirement is the code's to declare."""
     roles = [one for one in required if isinstance(one, RoleRequirement)]
     if len(roles) > 1:
@@ -85,13 +86,13 @@ def _wanted(
     )
 
 
-def _unknown(value: str) -> Rule:
+def _unknown_permission(value: str) -> Rule:
     """A requirement never met: a permission this replica's code does not declare."""
     return Rule(f"{value}, which this service does not know", lambda call: False)
 
 
 class RequirementAdministration:
-    """The requirements `store` keeps, judged by `access` on every call."""
+    """The requirements `store` holds, judged by `access` on every call."""
 
     def __init__(
         self,
@@ -100,13 +101,13 @@ class RequirementAdministration:
         permissions: Iterable[Permission] | None = None,
         policy: AdministrationPolicy | None = None,
         locks: AdministrationLocks | None = None,
-        check_every: timedelta = timedelta(seconds=1),
+        check_interval: timedelta = timedelta(seconds=1),
         clock: Callable[[], float] = time.monotonic,
         publisher: EventPublisher | None = None,
     ) -> None:
         """`permissions` is what may be required — every `Permission` the code declares when not
         given, read when asked: a permission no code declares protects nothing."""
-        self.access = access
+        self.decisions = Decisions(access)
         self.store = store
         self._permissions = (
             None if permissions is None else {member.value: member for member in permissions}
@@ -114,33 +115,33 @@ class RequirementAdministration:
         self.policy = policy or BoundedAdministration()
         self.locks = locks or AdministrationLocks()
         self.publisher = publisher
-        self._held: Refreshed[Scoped] = Refreshed(
-            read=self._read,
-            build=self._scoped,
+        self._cache: ScopedCache[RequirementsByCommand] = ScopedCache(
+            read=self._load,
+            build=self._index_by_command,
             what="the requirements added at runtime",
-            check_every=check_every,
+            check_interval=check_interval,
             clock=clock,
         )
 
-    def judged_by(self, access: Access) -> "RequirementAdministration":
+    def with_access(self, access: Access) -> "RequirementAdministration":
         """These requirements — the same store, bound, leases and what was read — judged by
         `access`: what `AccessControl.using` gives the copy it makes."""
-        judged = copy.copy(self)
-        judged.access = access
-        return judged
+        copied = copy.copy(self)
+        copied.decisions = Decisions(access)
+        return copied
 
     @property
     def permissions(self) -> dict[str, Permission]:
         """What may be required, by value."""
         return declared_permissions() if self._permissions is None else self._permissions
 
-    def _read(self, tenant: str | None) -> tuple[tuple[Hashable, ...], Any]:
+    def _load(self, tenant: str | None) -> tuple[tuple[Hashable, ...], Any]:
         """The fingerprint and the requirements of every tenant and of `tenant`."""
         shared = self.store.read(None)
         own = AddedRequirements() if tenant is None else self.store.read(tenant)
         return fingerprint(shared, own), (shared.requirements, own.requirements)
 
-    def _requirements(self, added: AddedRequirement) -> list[Requirement]:
+    def _to_requirements(self, added: AddedRequirement) -> list[Requirement]:
         """`added` as `requires` takes it: every permission — one this replica does not know
         never met, and logged — and one of the roles."""
         required: list[Requirement] = []
@@ -154,33 +155,35 @@ class RequirementAdministration:
                     command=added.command,
                     permission=value,
                 )
-                required.append(_unknown(value))
+                required.append(_unknown_permission(value))
             else:
                 required.append(member)
         if added.roles:
             required.append(RoleRequirement(tuple(sorted(added.roles))))
         return required
 
-    def _scoped(self, content: tuple[Iterable[AddedRequirement], ...]) -> Scoped:
+    def _index_by_command(
+        self, content: tuple[Iterable[AddedRequirement], ...]
+    ) -> RequirementsByCommand:
         """What every tenant and the tenant require, by Command, as `requires` takes it.
 
         Context: converted once per read of the store — never on each call — so a permission
         this replica does not know is logged once per change, not on every request.
         """
-        by_command: Scoped = {}
+        by_command: RequirementsByCommand = {}
         for requirements in content:
             for one in requirements:
-                by_command.setdefault(one.command, []).extend(self._requirements(one))
+                by_command.setdefault(one.command, []).extend(self._to_requirements(one))
         return by_command
 
     def check(self, call: AccessCall) -> bool:
         """The `every_call` check: what is required of `call.command` for the caller's tenant,
         judged as `requires` judges — its refusal raised, so it names what was missing; the
         store's error raised for a tenant never read while it does not answer."""
-        required = self._held.get(call.identity.tenant).get(call.command, [])
+        required = self._cache.get(call.identity.tenant).get(call.command, [])
         if not required:
             return True
-        refused = self.access.refusal(
+        refused = self.decisions.evaluate_declaration(
             call.identity,
             AccessDeclaration(DeclarationKind.REQUIRES, tuple(required)),
             call.use_case,
@@ -196,20 +199,24 @@ class RequirementAdministration:
         """The requirements added for exactly this scope — what a screen lists."""
         return self.store.read(tenant).requirements
 
-    def _holding(self, actor: Identity, added: AddedRequirement | None, what: str) -> None:
+    def _validate_holds(
+        self, actor: Identity, added: AddedRequirement | None, action: str
+    ) -> None:
         """`actor` holds every permission and role `added` names — what it may require or
         release."""
         if added is not None:
-            self.policy.holding(actor, what, permissions=added.permissions, roles=added.roles)
+            self.policy.validate_holds(
+                actor, action, permissions=added.permissions, roles=added.roles
+            )
 
     def _write(
         self, tenant: str | None, change: Callable[[AddedRequirements], AddedRequirements]
     ) -> None:
         """Apply `change` under the tenant's lease, over the version read; this instance reads
         again on its next call."""
-        with self.locks.held(tenant):
-            rewritten(self.store, tenant, change)
-        self._held.stale(tenant, everything=tenant is None)
+        with self.locks.acquire(tenant):
+            update_document(self.store, tenant, change)
+        self._cache.invalidate(tenant, everything=tenant is None)
 
     def require(
         self,
@@ -233,10 +240,10 @@ class RequirementAdministration:
         """
         name = command if isinstance(command, str) else command_name(command)
         actor = current_identity()
-        what = f"requiring more of {name}"
-        self.policy.in_scope(actor, tenant, what)
-        wanted = _wanted(name, tenant, required)
-        if name not in self.access.guarded_use_cases():
+        action = f"requiring more of {name}"
+        self.policy.validate_tenant(actor, tenant, action)
+        wanted = _build_added_requirement(name, tenant, required)
+        if name not in self.decisions.access.guarded_use_cases():
             raise exceptions.InvalidGrant(f"{name} is not a use case of a bus guarded")
         unknown = sorted(wanted.permissions - self.permissions.keys())
         if unknown:
@@ -245,12 +252,12 @@ class RequirementAdministration:
             raise exceptions.InvalidGrant(f"{name}: name a permission or a role to require")
 
         def requiring(added: AddedRequirements) -> AddedRequirements:
-            self._holding(actor, added.of(name), what)
-            self._holding(actor, wanted, what)
-            return added.replacing(wanted)
+            self._validate_holds(actor, added.find(name), action)
+            self._validate_holds(actor, wanted, action)
+            return added.replace(wanted)
 
         self._write(tenant, requiring)
-        announce(
+        publish_event(
             self.publisher,
             RequirementAdded(
                 entity_type=USE_CASE,
@@ -268,21 +275,21 @@ class RequirementAdministration:
         Nothing when nothing was required."""
         name = command if isinstance(command, str) else command_name(command)
         actor = current_identity()
-        what = f"releasing {name}"
-        self.policy.in_scope(actor, tenant, what)
+        action = f"releasing {name}"
+        self.policy.validate_tenant(actor, tenant, action)
         released = [False]
 
         def releasing(added: AddedRequirements) -> AddedRequirements:
-            before = added.of(name)
-            self._holding(actor, before, what)
+            before = added.find(name)
+            self._validate_holds(actor, before, action)
             released[0] = before is not None
-            return added.without(name)
+            return added.remove(name)
 
-        if self.store.read(tenant).of(name) is None:
+        if self.store.read(tenant).find(name) is None:
             return
         self._write(tenant, releasing)
         if released[0]:
-            announce(
+            publish_event(
                 self.publisher,
                 RequirementRemoved(entity_type=USE_CASE, entity_id=name, tenant=tenant),
             )

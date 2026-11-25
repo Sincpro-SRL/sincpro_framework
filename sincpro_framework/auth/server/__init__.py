@@ -18,9 +18,9 @@
 | a call from another service of this platform | `ServiceTokenProvider` |
 | a webhook signed with HMAC | `SignatureProvider` |
 | a static token (a test, a script) | `StaticProvider` |
-| a decision taken elsewhere (AuthZEN, OPA, OpenFGA) | `DecidedBy`, `PolicyEngine` and its engines |
+| a decision taken elsewhere (AuthZEN, OPA, OpenFGA) | `PolicyEngineProvider`, `PolicyEngine` and its engines |
 
-`Resolving(provider, *resolvers)` gives a provider of the project's the resolvers the shipped ones
+`ResolvingProvider(provider, *resolvers)` gives a provider of the project's the resolvers the shipped ones
 take (`resolvers=`): roles to permissions (`auth.grants`), a tenant's own. `ProtectedResource`
 says what this service is, for a client to discover (RFC 9728). HTTP Basic against accounts of the
 service's own is `auth.accounts.BasicProvider`.
@@ -32,9 +32,9 @@ are imported when first asked for.
 import importlib
 from typing import TYPE_CHECKING, Any
 
-from sincpro_framework.auth.server.adapters.authorization_server.clients import (
-    InMemoryClients,
-    KeyValueClients,
+from sincpro_framework.auth.server.adapters.authorization_server.oauth_clients import (
+    InMemoryOAuthClients,
+    KeyValueOAuthClients,
 )
 from sincpro_framework.auth.server.adapters.resource_server.api_keys import (
     ApiKey,
@@ -71,9 +71,13 @@ from sincpro_framework.auth.server.domain.authorization_server.authorization imp
     PkcePolicy,
 )
 from sincpro_framework.auth.server.domain.authorization_server.clients import (
+    ClientAuthMethod,
     ClientRegistry,
     GrantType,
     OAuthClient,
+)
+from sincpro_framework.auth.server.domain.authorization_server.endpoints import (
+    AuthorizationServerEndpoint,
 )
 from sincpro_framework.auth.server.domain.resource_server.policy import PolicyEngine
 from sincpro_framework.auth.server.domain.resource_server.protected_resource import (
@@ -99,8 +103,12 @@ from sincpro_framework.auth.server.services.authorization_server.registration im
 from sincpro_framework.auth.server.services.authorization_server.revocation import (
     TokenRevocation,
 )
-from sincpro_framework.auth.server.services.resource_server.decided_by import DecidedBy
-from sincpro_framework.auth.server.services.resource_server.resolving import Resolving
+from sincpro_framework.auth.server.services.resource_server.policy_engine_provider import (
+    PolicyEngineProvider,
+)
+from sincpro_framework.auth.server.services.resource_server.resolving_provider import (
+    ResolvingProvider,
+)
 
 __all__ = [
     "api_key_digest",
@@ -112,17 +120,19 @@ __all__ = [
     "AuthorizationRequest",
     "AuthorizationServer",
     "AuthorizationServerCore",
+    "AuthorizationServerEndpoint",
     "AuthZenEngine",
+    "ClientAuthMethod",
     "ClientRegistration",
     "ClientRegistry",
     "CodeChallengeMethod",
-    "DecidedBy",
+    "PolicyEngineProvider",
     "GrantType",
     "InMemoryApiKeys",
-    "InMemoryClients",
+    "InMemoryOAuthClients",
     "IntrospectionProvider",
     "JwtProvider",
-    "KeyValueClients",
+    "KeyValueOAuthClients",
     "OAuthClient",
     "OpaEngine",
     "OpenFgaEngine",
@@ -132,7 +142,7 @@ __all__ = [
     "ProtectedResource",
     "RefreshTokenGrant",
     "RegisteredClient",
-    "Resolving",
+    "ResolvingProvider",
     "AuthorizationServerMetadata",
     "ServiceTokenProvider",
     "SignatureProvider",

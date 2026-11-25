@@ -218,7 +218,7 @@ class DatabaseRefreshTokens(RefreshTokens):
     def _values(self, record: RefreshRecord) -> dict[str, object]:
         return {
             "digest": record.digest,
-            "family": record.family,
+            "session": record.session,
             "subject": record.subject,
             "record": record.model_dump_json(),
             "rotated_at": _stored(record.rotated_at),

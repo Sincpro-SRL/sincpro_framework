@@ -7,7 +7,7 @@ import contextlib
 import threading
 import time
 from collections.abc import Callable, Sequence
-from datetime import timedelta
+from datetime import UTC, datetime, timedelta
 
 import pytest
 
@@ -22,8 +22,15 @@ from sincpro_framework.auth.accounts import (
     ScryptCost,
 )
 from sincpro_framework.auth.accounts.adapters import password_hasher
+from sincpro_framework.auth.accounts.services.login_attempts import TURN_TTL
 from sincpro_framework.auth.common.domain import exceptions
-from sincpro_framework.data_layer.store import InMemoryKeyValue, StoreUnavailable
+from sincpro_framework.auth.common.infrastructure.digests import digest
+from sincpro_framework.data_layer.store import (
+    InMemoryKeyValue,
+    Leases,
+    LeaseState,
+    StoreUnavailable,
+)
 from sincpro_framework.rate_limiter import RateLimited
 from sincpro_framework.runtime.testing import AuthProviderContract
 
@@ -122,7 +129,7 @@ def fail(attempts: LoginAttempts, key: str) -> None:
 def test_an_account_locks_after_its_failures_and_opens_after_a_while() -> None:
     clock = Clock()
     attempts = LoginAttempts(
-        InMemoryKeyValue(), max_failures=3, lock_for=timedelta(minutes=15), clock=clock
+        InMemoryKeyValue(), max_failures=3, lock_ttl=timedelta(minutes=15), clock=clock
     )
     for _ in range(3):
         fail(attempts, "ana@acme.bo")
@@ -133,6 +140,24 @@ def test_an_account_locks_after_its_failures_and_opens_after_a_while() -> None:
     clock.now += 15 * 60
     with attempts.attempt("ana@acme.bo"):
         pass
+
+
+def test_an_attempt_slower_than_its_turn_never_releases_the_next_attempts_turn() -> None:
+    """The turn is a lease: the attempt whose lease ran out gives back nothing — the next
+    attempt, holding the turn now, holds it until it ends."""
+    now = [datetime(2026, 11, 25, tzinfo=UTC)]
+    store = InMemoryKeyValue(now=lambda: now[0])
+    attempts = LoginAttempts(store)
+    turns = Leases(store, prefix=f"{attempts.prefix}:turn")
+    turn = digest("ana")
+    with contextlib.ExitStack() as slow:
+        slow.enter_context(attempts.attempt("ana"))
+        now[0] += TURN_TTL + timedelta(seconds=1)
+        with contextlib.ExitStack() as next_attempt:
+            next_attempt.enter_context(attempts.attempt("ana"))
+            slow.close()
+            assert turns.state(turn) == LeaseState.HELD
+        assert turns.state(turn) == LeaseState.FREE
 
 
 def test_a_success_starts_the_count_over_and_unknown_names_lock_alike() -> None:

@@ -84,7 +84,6 @@ from sincpro_framework.auth.common.domain.exceptions import (
     PasswordRejected,
     PermissionDenied,
     Unauthenticated,
-    refusal_from,
 )
 from sincpro_framework.auth.common.domain.http import (
     ClientAuthentication,
@@ -95,9 +94,11 @@ from sincpro_framework.auth.common.domain.http import (
 from sincpro_framework.auth.common.domain.identity import (
     Assurance,
     Credentials,
+    CredentialTransport,
     Identity,
     IdentityKind,
 )
+from sincpro_framework.auth.common.domain.keys import JwsAlgorithm
 from sincpro_framework.auth.common.domain.permissions import (
     OPEN,
     AccessCall,
@@ -118,12 +119,15 @@ from sincpro_framework.auth.common.domain.revocations import (
     Revocations,
     RevocationState,
     WhenUnavailable,
-    remembering_versions,
 )
 from sincpro_framework.auth.common.infrastructure.claim_mapping import ClaimMapping, ClaimTest
+from sincpro_framework.auth.common.infrastructure.permission_versions import (
+    CachingRevocations,
+    cached_permission_versions,
+)
 from sincpro_framework.auth.common.infrastructure.signatures import (
     HexDigest,
-    SignatureStyle,
+    SignatureScheme,
     TimestampedSignature,
 )
 from sincpro_framework.auth.common.infrastructure.trusted_issuer import TrustedIssuer
@@ -152,10 +156,12 @@ __all__ = [
     "AuthProvider",
     "BoundedAdministration",
     "ByField",
+    "CachingRevocations",
     "ClientAuthentication",
     "ConcurrentChange",
     "Credentials",
     "CredentialsRejected",
+    "CredentialTransport",
     "DeclarationKind",
     "EndpointUnavailable",
     "EventPublisher",
@@ -168,6 +174,7 @@ __all__ = [
     "IdentityKind",
     "IdentityMiddleware",
     "IdentityResolver",
+    "JwsAlgorithm",
     "InMemoryAddedRequirements",
     "InMemoryRevocations",
     "InvalidGrant",
@@ -186,15 +193,14 @@ __all__ = [
     "Rule",
     "RuntimeRequirements",
     "ServerMetadata",
-    "SignatureStyle",
+    "SignatureScheme",
     "TimestampedSignature",
     "TrustedAdministration",
     "Unauthenticated",
     "UrllibHttp",
     "WhenDenied",
     "WhenUnavailable",
-    "refusal_from",
-    "remembering_versions",
+    "cached_permission_versions",
     "security",
 ]
 """Every name loaded with the package; the `[jwt]` extra's are in `_LAZY`, imported on first use."""

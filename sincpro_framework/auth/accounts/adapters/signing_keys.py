@@ -46,7 +46,7 @@ class SigningKeys:
     def private(cls, keys: Mapping[str, Any], algorithm: str = "ES256") -> "SigningKeys":
         """Private keys by id — `PrivateKey`s or PEM text — the `[jwt]` extra; `jwks()` publishes
         their public halves."""
-        from sincpro_framework.auth.common.adapters.jose_keys import PrivateKey
+        from sincpro_framework.auth.common.adapters.jose_keys import PrivateKey  # [jwt] extra
         from sincpro_framework.auth.common.adapters.public_keys import PublicKeys
 
         loaded = {
@@ -79,6 +79,11 @@ class SigningKeys:
     def verification(self) -> KeySource:
         """What verifies the tokens these keys sign."""
         return self._verification
+
+    @property
+    def has_public_keys(self) -> bool:
+        """Whether there is a JWKS to publish — asymmetric keys; HMAC keys are secrets."""
+        return self._public is not None
 
     def jwks(self) -> dict[str, Any]:
         """The public keys to publish — `ProgrammingError` for HMAC keys, which are secrets."""

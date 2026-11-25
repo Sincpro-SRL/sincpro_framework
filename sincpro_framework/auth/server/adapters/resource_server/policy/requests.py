@@ -38,7 +38,7 @@ def resource_of(resource: Any, permission: str) -> dict[str, Any]:
     }
 
 
-def posted(
+def post_json(
     http: HttpClient,
     url: str,
     body: Mapping[str, Any],
@@ -69,7 +69,7 @@ def posted(
         raise exceptions.EndpointUnavailable(
             target, f"answered {answer.status}", answer.status, answer.retry_after()
         )
-    said = answer.json_object()
-    if not said:
+    response = answer.json_object()
+    if not response:
         raise exceptions.EndpointUnavailable(target, "answered no JSON object")
-    return said
+    return response

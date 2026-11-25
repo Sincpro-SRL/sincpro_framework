@@ -1,4 +1,4 @@
-"""`RefreshTokensContract`: what every `RefreshTokens` must do — a project keeping them its own
+"""`RefreshTokensContract`: what every `RefreshTokens` must do — a project storing them its own
 way proves it by inheriting this class.
 
     class TestMyRefreshTokens(RefreshTokensContract):
@@ -12,12 +12,12 @@ from datetime import UTC, datetime, timedelta
 from sincpro_framework.auth.accounts import RefreshRecord, RefreshTokens
 
 
-def record(digest: str, family: str = "s-1", subject: str = "user:ana") -> RefreshRecord:
-    """A live record of `family` — what a test saves and rotates."""
+def record(digest: str, session: str = "s-1", subject: str = "user:ana") -> RefreshRecord:
+    """A live record of `session` — what a test saves and rotates."""
     now = datetime.now(UTC)
     return RefreshRecord(
         digest=digest,
-        family=family,
+        session=session,
         subject=subject,
         authenticated_at=now,
         issued_at=now,
@@ -40,11 +40,11 @@ class RefreshTokensContract:
         store = self.make_store()
         store.save(record("d-1"))
         found = store.find("d-1")
-        assert found is not None and found.family == "s-1" and found.rotated_at is None
+        assert found is not None and found.session == "s-1" and found.rotated_at is None
         assert store.find("d-2") is None
 
-    def test_rotating_marks_the_token_and_keeps_its_successor(self) -> None:
-        """Rotating marks the token and keeps its successor; a token rotated already is never
+    def test_rotating_marks_the_token_and_stores_its_successor(self) -> None:
+        """Rotating marks the token and stores its successor; a token rotated already is never
         rotated again."""
         store = self.make_store()
         store.save(record("d-1"))
@@ -78,8 +78,8 @@ class RefreshTokensContract:
         """The sessions of a subject are its tokens not rotated — another subject's are not
         among them."""
         store = self.make_store()
-        store.save(record("a-1", family="s-a"))
-        store.save(record("b-1", family="s-b"))
-        store.save(record("c-1", family="s-c", subject="user:bea"))
-        store.rotate("a-1", record("a-2", family="s-a"), datetime.now(UTC))
+        store.save(record("a-1", session="s-a"))
+        store.save(record("b-1", session="s-b"))
+        store.save(record("c-1", session="s-c", subject="user:bea"))
+        store.rotate("a-1", record("a-2", session="s-a"), datetime.now(UTC))
         assert sorted(one.digest for one in store.sessions_of("user:ana")) == ["a-2", "b-1"]

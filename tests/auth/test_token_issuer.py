@@ -28,11 +28,14 @@ from sincpro_framework.auth.accounts import (
     InMemoryRefreshTokens,
     IssuedTokens,
     KeyValueRefreshTokens,
+    RefreshRecord,
     RefreshTokens,
+    SignedOut,
     SigningKeys,
     TokenIssuer,
 )
 from sincpro_framework.auth.common.domain import exceptions
+from sincpro_framework.auth.common.infrastructure import jws
 from sincpro_framework.auth.common.infrastructure.digests import digest
 from sincpro_framework.auth.grants import GrantCatalog, Grants, Role
 from sincpro_framework.auth.server import JwtProvider
@@ -106,7 +109,7 @@ def test_what_the_issuer_signs_its_provider_reads_as_the_same_person() -> None:
     )
 
 
-def test_a_refresh_spends_the_token_and_keeps_the_session() -> None:
+def test_a_refresh_rotates_the_token_and_continues_the_session() -> None:
     sessions = issuer()
     first = sessions.issue(ANA)
     second = sessions.refresh(refresh_of(first))
@@ -124,7 +127,7 @@ def test_two_tabs_refreshing_at_once_both_stay_signed_in_on_one_session() -> Non
     other_tab = sessions.refresh(spent)
     assert one_tab.session == other_tab.session == first.session
     assert sessions.refresh(refresh_of(one_tab)) and sessions.refresh(refresh_of(other_tab))
-    assert [one.family for one in sessions.sessions_of(ANA.subject)] == [first.session]
+    assert [one.session for one in sessions.sessions_of(ANA.subject)] == [first.session]
 
 
 def test_a_refresh_token_replayed_later_revokes_the_whole_session() -> None:
@@ -173,6 +176,105 @@ def test_a_logout_refuses_the_access_token_at_once() -> None:
         JwtProvider.for_token_issuer(sessions).authenticate(bearer(other))
 
 
+def test_refresh_tokens_without_revocations_are_refused_at_construction() -> None:
+    """A replay revokes its session in `revocations`: without them the thief who refreshed
+    first would go on refreshing."""
+    with pytest.raises(exceptions.ProgrammingError, match="needs revocations="):
+        issuer(revocations=None)
+
+
+def test_a_refresh_token_issued_to_one_client_is_refused_to_another_and_left_unused() -> None:
+    sessions = issuer()
+    tokens = sessions.issue(ANA, client="colegio-web")
+    with pytest.raises(exceptions.Unauthenticated, match="another client"):
+        sessions.refresh(refresh_of(tokens), client="reports")
+    assert (
+        sessions.refresh(refresh_of(tokens), client="colegio-web").session == tokens.session
+    )
+
+
+def test_a_client_revoking_another_clients_tokens_leaves_them_alone() -> None:
+    sessions = issuer()
+    tokens = sessions.issue(ANA, client="colegio-web")
+    sessions.revoke(tokens.access_token.get_secret_value(), client="reports")
+    sessions.revoke(refresh_of(tokens), client="reports")
+    assert JwtProvider.for_token_issuer(sessions).authenticate(bearer(tokens)) is not None
+    assert sessions.refresh(refresh_of(tokens)).session == tokens.session
+
+
+def test_an_audience_asked_for_is_in_the_access_token_and_every_refresh_carries_it() -> None:
+    sessions = issuer()
+    tokens = sessions.issue(ANA, audience="https://reports.colegio.bo")
+    assert jws.parse(tokens.access_token.get_secret_value()).claims["aud"] == (
+        "https://reports.colegio.bo"
+    )
+    renewed = sessions.refresh(refresh_of(tokens))
+    assert jws.parse(renewed.access_token.get_secret_value()).claims["aud"] == (
+        "https://reports.colegio.bo"
+    )
+    own = sessions.issue(ANA)
+    assert jws.parse(own.access_token.get_secret_value()).claims["aud"] == "colegio"
+
+
+class Audit:
+    def __init__(self) -> None:
+        self.events: list[object] = []
+
+    def publish(self, event: object, /) -> None:
+        self.events.append(event)
+
+
+def test_a_session_revoked_by_its_id_refuses_its_tokens_and_is_announced() -> None:
+    audit = Audit()
+    sessions = issuer(publisher=audit)
+    tokens, other = sessions.issue(ANA), sessions.issue(ANA)
+    sessions.revoke_session(tokens.session, ANA.subject)
+    with pytest.raises(exceptions.Unauthenticated, match="session revoked"):
+        JwtProvider.for_token_issuer(sessions).authenticate(bearer(tokens))
+    with pytest.raises(exceptions.Unauthenticated, match="session revoked"):
+        sessions.refresh(refresh_of(tokens))
+    assert [one.session for one in sessions.sessions_of(ANA.subject)] == [other.session]
+    signed_out = [one for one in audit.events if isinstance(one, SignedOut)]
+    assert [(one.entity_id, one.session) for one in signed_out] == [
+        (ANA.subject, tokens.session)
+    ]
+    with pytest.raises(exceptions.ProgrammingError, match="needs revocations="):
+        issuer(refresh_tokens=None, revocations=None).revoke_session(tokens.session)
+
+
+def test_a_refresh_token_in_memory_is_gone_once_its_session_ends() -> None:
+    """Stored with its session's lifetime: the store in memory never grows with every session."""
+    clock = Clock()
+    moment = lambda: datetime.fromtimestamp(clock.now, UTC)  # noqa: E731 — the test's clock
+    refresh_tokens = InMemoryRefreshTokens(now=moment)
+    sessions = issuer(clock, refresh_tokens=refresh_tokens)
+    tokens = sessions.issue(ANA)
+    assert refresh_tokens.find(digest(refresh_of(tokens))) is not None
+    clock.now += timedelta(days=31).total_seconds()
+    assert refresh_tokens.find(digest(refresh_of(tokens))) is None
+
+
+def test_a_record_whose_session_already_ended_is_still_stored_with_an_expiry() -> None:
+    clock = Clock()
+    moment = lambda: datetime.fromtimestamp(clock.now, UTC)  # noqa: E731 — the test's clock
+    store = InMemoryKeyValue(now=moment)
+    refresh_tokens = KeyValueRefreshTokens(store, now=moment)
+    ended = moment() - timedelta(minutes=1)
+    refresh_tokens.save(
+        RefreshRecord(
+            digest="d-1",
+            session="s-1",
+            subject=ANA.subject,
+            authenticated_at=ended,
+            issued_at=ended,
+            expires_at=ended,
+            session_ends=ended,
+        )
+    )
+    clock.now += 2
+    assert refresh_tokens.find("d-1") is None
+
+
 def test_signing_out_everywhere_ends_every_session_and_a_new_sign_in_works() -> None:
     clock = Clock()
     sessions = issuer(clock)
@@ -196,34 +298,37 @@ def test_a_token_of_an_identity_provider_signed_out_everywhere_is_refused_by_the
     revocations.revoke_subject(ANA.subject, until=datetime.fromtimestamp(clock.now + 60, UTC))
     same_second = datetime.fromtimestamp(int(clock.now), UTC)
     second_before = datetime.fromtimestamp(int(clock.now) - 1, UTC)
-    assert revocations.state(ANA.subject).refusal(same_second) is None
-    assert revocations.state(ANA.subject).refusal(second_before) == "signed out"
+    assert revocations.state(ANA.subject).revocation_reason(same_second) is None
+    assert revocations.state(ANA.subject).revocation_reason(second_before) == "signed out"
 
 
-def test_a_session_ends_idle_or_at_most() -> None:
+def test_a_session_ends_idle_or_at_its_session_ttl() -> None:
     clock = Clock()
-    sessions = issuer(clock, idle_for=timedelta(hours=1), at_most=timedelta(hours=3))
+    sessions = issuer(clock, idle_ttl=timedelta(hours=1), session_ttl=timedelta(hours=3))
     tokens = sessions.issue(ANA)
     clock.now += 3601
     with pytest.raises(exceptions.Unauthenticated, match="session expired"):
         sessions.refresh(refresh_of(tokens))
-    kept = sessions.issue(ANA)
+    current = sessions.issue(ANA)
     for _ in range(5):
         clock.now += 3000
         try:
-            kept = sessions.refresh(refresh_of(kept))
+            current = sessions.refresh(refresh_of(current))
         except exceptions.Unauthenticated as ended:
-            assert "expired" in ended.reason
+            assert ended.reason in (
+                "session expired",
+                "unknown refresh token",
+            )  # stored until its end
             break
     else:
-        raise AssertionError("a session outlived at_most")
+        raise AssertionError("a session outlived session_ttl")
 
 
 def test_the_sessions_a_person_is_signed_in_on() -> None:
     sessions = issuer()
     one, two = sessions.issue(ANA), sessions.issue(ANA)
     sessions.refresh(refresh_of(one))
-    assert sorted(one.family for one in sessions.sessions_of(ANA.subject)) == sorted(
+    assert sorted(one.session for one in sessions.sessions_of(ANA.subject)) == sorted(
         [one.session, two.session]
     )
 
@@ -291,7 +396,7 @@ class Granted:
         )
 
 
-def test_a_refreshed_token_keeps_its_roles_and_resolves_its_permissions_anew() -> None:
+def test_a_refreshed_token_carries_its_roles_and_resolves_its_permissions_anew() -> None:
     clock = Clock()
     granted = Granted({"dues.pay"})
     sessions = issuer(clock, embed_permissions=True, resolvers=[granted])
@@ -352,27 +457,27 @@ def test_a_role_given_in_the_store_holds_and_taken_away_is_gone_from_the_session
 
 def test_a_session_signed_out_of_is_off_the_list() -> None:
     sessions = issuer()
-    left, kept = sessions.issue(ANA), sessions.issue(ANA)
+    left, current = sessions.issue(ANA), sessions.issue(ANA)
     sessions.revoke(left.access_token.get_secret_value())
-    assert [one.family for one in sessions.sessions_of(ANA.subject)] == [kept.session]
+    assert [one.session for one in sessions.sessions_of(ANA.subject)] == [current.session]
     sessions.revoke_subject(ANA.subject)
     assert sessions.sessions_of(ANA.subject) == []
 
 
-def test_the_index_of_sessions_keeps_only_the_live_ones_and_ends_with_the_last() -> None:
+def test_the_index_of_sessions_lists_only_the_live_ones_and_ends_with_the_last() -> None:
     clock = Clock()
     moment = lambda: datetime.fromtimestamp(clock.now, UTC)  # noqa: E731 — the test's clock
     store = InMemoryKeyValue(now=moment)
-    kept = KeyValueRefreshTokens(store, now=moment)
-    sessions = issuer(clock, refresh_tokens=kept)
+    refresh_tokens = KeyValueRefreshTokens(store, now=moment)
+    sessions = issuer(clock, refresh_tokens=refresh_tokens)
     sessions.issue(ANA)
     clock.now += timedelta(days=31).total_seconds()
     later = sessions.issue(ANA)
     sessions.refresh(refresh_of(later))
-    index = store.get(kept._index_key(ANA.subject))
+    index = store.get(refresh_tokens._index_key(ANA.subject))
     assert index is not None and list(json.loads(index)) == [later.session]
     clock.now += timedelta(days=31).total_seconds()
-    assert store.get(kept._index_key(ANA.subject)) is None
+    assert store.get(refresh_tokens._index_key(ANA.subject)) is None
 
 
 class FailingWrites(InMemoryKeyValue):

@@ -17,6 +17,7 @@ from dataclasses import dataclass, field
 from typing import Any, Protocol
 
 from sincpro_framework.ddd.events import DeliverableEventMixin, DomainEvent
+from sincpro_framework.exceptions import FailureKind
 
 SUBJECT = "auth.subject"
 """The `entity_type` of a fact about a person, a service or an API key — `entity_id` its subject."""
@@ -47,8 +48,8 @@ class AccessRefused(DeliverableEventMixin, AuthEvent):
     )
     use_case: str = ""
     """The Command's name, or `Hook.moment` for a hook."""
-    kind: str = ""
-    """`unauthenticated` or `permission_denied`."""
+    kind: FailureKind = FailureKind.PERMISSION_DENIED
+    """`FailureKind.UNAUTHENTICATED` or `FailureKind.PERMISSION_DENIED`."""
     reason: str = ""
     requirement: str = ""
     """What was not met — empty when nobody was known."""

@@ -27,9 +27,9 @@ from sincpro_framework.auth.client import (
     ClientSecretPost,
     OutgoingRequest,
     StaticToken,
+    TenantTokenSources,
     TokenCache,
     TokenSource,
-    TokenSources,
     call_with_credentials,
     httpx_auth,
     requests_auth,
@@ -184,7 +184,9 @@ def test_a_server_asking_to_wait_is_not_asked_before_then() -> None:
 
 
 def test_credentials_per_tenant_are_never_another_tenants() -> None:
-    sources = TokenSources({"bo": StaticToken("bo-token"), "pe": StaticToken("pe-token")})
+    sources = TenantTokenSources(
+        {"bo": StaticToken("bo-token"), "pe": StaticToken("pe-token")}
+    )
     with security.as_identity(Identity.user("user:ana", tenant="pe")):
         answer = call_with_credentials(sources, API, lambda headers: headers)
     assert answer == {"authorization": "Bearer pe-token"}
@@ -193,7 +195,7 @@ def test_credentials_per_tenant_are_never_another_tenants() -> None:
     assert isinstance(refused.value, NoCredentialsFor) and refused.value.tenant == "cl"
     with pytest.raises(exceptions.ProgrammingError, match="names no tenant"):
         sources.headers_for(API)
-    resolved = TokenSources(
+    resolved = TenantTokenSources(
         lambda tenant: StaticToken(f"{tenant}-t") if tenant != "x" else None, max_tenants=2
     )
     for tenant in ("a", "b", "c"):

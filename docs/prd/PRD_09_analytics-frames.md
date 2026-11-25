@@ -113,7 +113,7 @@ The caller cannot tell which answered, except by `snapshot` in the response.
   `narrowed()` scope, so a snapshot never shows what the repository would not — and writing it to
   Parquet through DuckDB (`ATTACH` the database, `COPY … TO parquet`: 2.6 s for 200 000 rows).
 - **Identified** by a hash of the definition, the watermark and the scope. That id is the ETag.
-- **Refreshed** by the schedule, or on demand with a Command (`CommandRefreshFrame`), through the bus.
+- **ScopedCache** by the schedule, or on demand with a Command (`CommandRefreshFrame`), through the bus.
 - **Merged**: joins across aggregates and contexts are joins between snapshots inside DuckDB.
 
 ## What the frontend receives

@@ -7,6 +7,7 @@ context — a legitimate orchestration refused halfway, and a provider of the pr
 guard misreads.
 """
 
+import gc
 import threading
 from collections.abc import Mapping
 from dataclasses import dataclass
@@ -32,6 +33,7 @@ from sincpro_framework.auth import (
     WhenDenied,
     security,
 )
+from sincpro_framework.auth.access_control.services.guard import BusGuard
 from sincpro_framework.auth.common.domain import exceptions as auth_exceptions
 from sincpro_framework.auth.grants import RolePermissions
 from sincpro_framework.auth.server import StaticProvider
@@ -780,3 +782,53 @@ def test_the_rest_of_the_credential_is_read_typed() -> None:
     identity = Identity.service("stock").model_copy(update={"claims": {"company": "bo"}})
     assert identity.subject == "service:stock"
     assert identity.claims_as(_TokenClaims).company == "bo"
+
+
+def test_a_permission_is_asked_by_its_value_as_by_its_member() -> None:
+    """The incident: `auth.allows("billing.credit.read")` — a permission read from a screen —
+    crashed reading `.value` of a plain text."""
+    auth = AccessControl[BillingPermission]()
+    holder = Identity.user("user:9", permissions={BillingPermission.READ_CREDIT})
+    with security.as_identity(holder):
+        assert auth.allows("billing.credit.read")
+        assert not auth.allows("billing.audit")
+        assert auth.allows(auth.any_of("billing.audit", "billing.credit.read"))
+        auth.check("billing.credit.read")
+        with pytest.raises(auth_exceptions.PermissionDenied):
+            auth.check("billing.audit")
+        assert auth.permitted("billing.credit.read", [1, 2]) == [True, True]
+        assert auth.permitted("billing.audit", [1]) == [False]
+
+
+def test_the_guard_lets_a_use_case_loaded_again_go() -> None:
+    """The guard caches each declaration by Command and handler: a use case replaced at runtime
+    must not stay alive in that cache."""
+
+    class Bus:
+        name = "weak-guard"
+
+        def __init__(self) -> None:
+            self.handler: Any = None
+
+        def handler_of(self, command: type) -> Any:
+            return self.handler
+
+        def replaced_for(self, command: type) -> tuple[str, ...]:
+            return ()
+
+    auth = AccessControl[BillingPermission]()
+    bus = Bus()
+    guard = BusGuard(auth, bus)  # type: ignore[arg-type]
+
+    class CommandLoaded(DataTransferObject):
+        pass
+
+    class Loaded(Feature):
+        pass
+
+    bus.handler = auth.requires(BillingPermission.AUDIT)(Loaded)
+    assert guard.find_declaration(CommandLoaded) is not None
+    del CommandLoaded, Loaded
+    bus.handler = None
+    gc.collect()
+    assert len(guard._declared) == 0

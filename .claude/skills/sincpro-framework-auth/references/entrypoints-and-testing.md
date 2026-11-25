@@ -17,7 +17,7 @@ identity is what the host opened.
 | A context hosted for another service | the caller's `ServiceTokenProvider` token | the refusal raised on the caller |
 
 - **Open by default:** a published use case that declares nothing is open — anybody may call it;
-  `@auth.authenticated` / `@auth.requires` restrict it, `@entrypoints.internal` keeps it off every
+  `@auth.authenticated` / `@auth.requires` restrict it, `@entrypoints.internal` excludes it from every
   wire. A gateway never refuses to build over access; it logs each use case it publishes open, and
   the manifest and OpenAPI say `open`.
 - **Order:** `auth.on(bus)` before any gateway — a gateway reads the bus's `AccessControl` when

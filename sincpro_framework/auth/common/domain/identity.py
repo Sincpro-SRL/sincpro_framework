@@ -31,6 +31,19 @@ class IdentityKind(StrEnum):
     ANONYMOUS = "anonymous"
 
 
+class CredentialTransport(StrEnum):
+    """Where a call's credentials came from — what `Credentials.transport` says."""
+
+    HTTP = "http"
+    """REST, FastAPI, JSON-RPC over HTTP, an ASGI app of the project's."""
+    GRPC = "grpc"
+    MCP = "mcp"
+    QUEUE = "queue"
+    """A message's headers — Kafka, RabbitMQ, NATS."""
+    SERVICE = "service"
+    """Another service of the platform — `remote_execution`, an identity sent onwards."""
+
+
 def _first(values: Iterable[tuple[str, str]]) -> dict[str, str]:
     """Name/value pairs as a dict holding the first value of a repeated name.
 
@@ -52,8 +65,19 @@ class Credentials(DataTransferObject):
 
     model_config = ConfigDict(frozen=True)
 
-    transport: str
-    """`http`, `grpc`, `mcp`, `queue` — where the call came from."""
+    transport: CredentialTransport | str
+    """Where the call came from — a `CredentialTransport` (given as the member or its value,
+    `"http"`), or a transport of the project's own: any other text is taken as it is."""
+
+    @field_validator("transport", mode="before")
+    @classmethod
+    def _known_transport(cls, value: object) -> object:
+        """A known transport's value as its member — `"http"` is `CredentialTransport.HTTP`."""
+        try:
+            return CredentialTransport(value)
+        except ValueError:
+            return value
+
     headers: Mapping[str, str] = Field(default_factory=dict)
     """Lower-case names: HTTP headers, gRPC metadata, a message's headers."""
     cookies: Mapping[str, str] = Field(default_factory=dict)
@@ -80,7 +104,7 @@ class Credentials(DataTransferObject):
     @classmethod
     def from_headers(
         cls,
-        transport: str,
+        transport: CredentialTransport | str,
         headers: Iterable[tuple[str, Any]] | Mapping[str, Any],
         peer_certificate: bytes | None = None,
     ) -> "Credentials":
@@ -115,7 +139,10 @@ class Credentials(DataTransferObject):
 
     @classmethod
     def from_asgi(
-        cls, scope: Mapping[str, Any], transport: str = "http", body: bytes | None = None
+        cls,
+        scope: Mapping[str, Any],
+        transport: CredentialTransport | str = CredentialTransport.HTTP,
+        body: bytes | None = None,
     ) -> "Credentials":
         """Credentials out of an ASGI scope — headers, cookies, query, method and target; the
         client certificate when the server hands the TLS extension.
@@ -162,7 +189,9 @@ class Credentials(DataTransferObject):
             Credentials(transport="http", headers={"Authorization": "Bearer x"})
                 ->  "Credentials(transport='http', headers=['authorization'])"
         """
-        return f"Credentials(transport={self.transport!r}, headers={sorted(self.headers)})"
+        return (
+            f"Credentials(transport={str(self.transport)!r}, headers={sorted(self.headers)})"
+        )
 
     __str__ = __repr__
 

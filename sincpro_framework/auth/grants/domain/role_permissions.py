@@ -14,6 +14,7 @@ those of every role it implies, transitively. A role nobody declared grants noth
 from collections.abc import Iterable, Mapping
 
 from sincpro_framework.auth.common.domain.identity import Identity
+from sincpro_framework.auth.grants.domain.catalog import implied_closure
 
 
 class RolePermissions:
@@ -39,17 +40,11 @@ class RolePermissions:
             RolePermissions({}, implies={"admin": {"accountant"}, "accountant": {"viewer"}})
                 .roles_held({"admin"})   ->  {"admin", "accountant", "viewer"}
 
-        Context: a walk with a worklist, not recursion — a cycle of implied roles ends because
-        a role already held is not expanded again.
+        Context: the catalog's own walk (`implied_closure`) — a cycle of implied roles ends.
         """
-        held: set[str] = set()
-        pending = [str(role) for role in roles]
-        while pending:
-            role = pending.pop()
-            if role not in held:
-                held.add(role)
-                pending.extend(self.implies.get(role, ()))
-        return frozenset(held)
+        return implied_closure(
+            (str(role) for role in roles), lambda role: self.implies.get(role, frozenset())
+        )
 
     def permissions_of(self, roles: Iterable[str]) -> frozenset[str]:
         """The union of what every role held grants — a role nobody declared adds nothing."""

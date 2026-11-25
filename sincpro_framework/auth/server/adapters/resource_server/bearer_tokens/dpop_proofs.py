@@ -29,7 +29,7 @@ DEFAULT_ALGORITHMS = ("ES256", "PS256", "EdDSA", "RS256")
 
 def access_token_hash(token: str) -> str:
     """`ath`: the base64url SHA-256 of the access token."""
-    return jws.encoded(hashlib.sha256(token.encode()).digest())
+    return jws.base64url_encode(hashlib.sha256(token.encode()).digest())
 
 
 class DpopProofs:

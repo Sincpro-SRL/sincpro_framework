@@ -1,9 +1,9 @@
-"""Versioned documents per scope — how what an administrator changes at runtime is kept: one
+"""Versioned documents per scope — how what an administrator changes at runtime is stored: one
 document for what every tenant shares (`None`), one per tenant, each written only over the version
 it was read at.
 
     roles: ScopedDocuments[DefinedRoles]
-    written = rewritten(roles, "bo", lambda current: current.replacing(definition))
+    written = update_document(roles, "bo", lambda current: current.replacing(definition))
 
 Context: a write that finds another came first reads again and is asked again — the change is
 judged over what is there now, never over what was read before. Five collisions in a row are a
@@ -35,7 +35,7 @@ class ScopedDocuments[D](ABC):
 
     @abstractmethod
     def write(self, scope: str | None, document: D) -> bool:
-        """Keep `document` as the scope's — only when the version kept now is the one before
+        """Store `document` as the scope's — only when the version stored now is the one before
         `document.version`, atomically. `False` when another write came first."""
 
 
@@ -46,7 +46,7 @@ def fingerprint(*documents: Versioned) -> tuple[Hashable, ...]:
     return tuple((one.version, hash(repr(one))) for one in documents)
 
 
-def rewritten[D](
+def update_document[D](
     documents: ScopedDocuments[D],
     scope: str | None,
     change: Callable[[D], D],

@@ -5,23 +5,28 @@ subject had, and the permissions a subject held when its credential was issued.
     revocations.revoke_subject("user:42", until=now + longest)   "sign out everywhere"
     revocations.bump_permissions("user:42")                      a role taken away: the next
                                                                  call resolves them anew
-    revocations.state("user:42", token_id="jti-1", session="sid-7").refusal(issued_at)
+    revocations.state("user:42", token_id="jti-1", session="sid-7").revocation_reason(issued_at)
         ->  "session revoked"   or None
 
 Context: a JWT is checked by its signature and lives until it expires; this is what lets one be
 refused earlier, with one read per call: `state` reads the credential's revocations and the
-permission versions of its subject and its tenant at once, and inside `remembering_versions()` —
-which a provider opens around its authentication — the resolvers that ask a version afterwards
-are answered from that read, never the store again. An entry lives only until the last moment a
-credential it covers could still be accepted — `until` — so the store holds what matters and no
-more. A permission version, bumped by every change of a subject's roles, keys the cache of
-resolved permissions: the next call on any replica resolves them anew.
+permission versions of its subject and its tenant at once (an implementation on
+`CachingRevocations` answers the versions asked again inside `cached_permission_versions()` from that
+read). An entry lives only until the last moment a credential it covers could still be accepted
+— `until` — so the store holds what matters and no more. A permission version, bumped by every
+change of a subject's roles, keys the cache of resolved permissions: the next call on any
+replica resolves them anew.
+
+The permission versions are counters that only grow, and a token carries their sum (`pv`): a
+store that evicts one sets it back to 0, and a token of an older sum could match again. Store
+them where nothing is evicted — Redis with `maxmemory-policy noeviction` or a `volatile-*`
+policy (the counters carry no expiry, so a `volatile-*` one never picks them). A token whose
+`pv` is greater than the current sum can only come from such an eviction: it is refused and
+logged (`RevocationState.refusal`).
 """
 
 from abc import ABC, abstractmethod
-from collections.abc import Iterable, Iterator
-from contextlib import contextmanager
-from contextvars import ContextVar
+from collections.abc import Iterable
 from datetime import datetime
 from enum import StrEnum
 
@@ -29,10 +34,7 @@ from pydantic import ConfigDict, Field
 
 from sincpro_framework.auth.common.domain.identity import Identity
 from sincpro_framework.sincpro_abstractions import DataTransferObject
-
-_VERSIONS_READ: ContextVar[dict[tuple[int, str], int] | None] = ContextVar(
-    "sincpro_auth_versions_read", default=None
-)
+from sincpro_framework.sincpro_logger import logger
 
 
 class WhenUnavailable(StrEnum):
@@ -45,7 +47,7 @@ class WhenUnavailable(StrEnum):
 
 
 def tenant_subject(tenant: str) -> str:
-    """The subject a tenant's permission version is kept under — bumped when its entitlements
+    """The subject a tenant's permission version is stored under — bumped when its entitlements
     change: `tenant_subject("bo")` -> `"tenant:bo"`."""
     return f"tenant:{tenant}"
 
@@ -55,7 +57,7 @@ EVERY_TENANT = tenant_subject("*")
 shares is changed or removed."""
 
 
-def related_of(identity: Identity) -> tuple[str, ...]:
+def related_subjects(identity: Identity) -> tuple[str, ...]:
     """The subjects whose permission versions a credential's check reads with its own: its
     tenant's, when it has one, and every tenant's."""
     return (
@@ -63,23 +65,6 @@ def related_of(identity: Identity) -> tuple[str, ...]:
         if identity.tenant
         else (EVERY_TENANT,)
     )
-
-
-@contextmanager
-def remembering_versions() -> Iterator[None]:
-    """Within it, every permission version a `Revocations` reads is remembered — asked again,
-    it is answered without the store. A provider opens it around one authentication, so its
-    revocation check and its resolvers share one read.
-
-        with remembering_versions():
-            revocations.state("user:42", related=["tenant:bo"])     one get_many
-            revocations.permission_version("tenant:bo")             none
-    """
-    token = _VERSIONS_READ.set({})
-    try:
-        yield
-    finally:
-        _VERSIONS_READ.reset(token)
 
 
 class RevocationState(DataTransferObject):
@@ -104,14 +89,21 @@ class RevocationState(DataTransferObject):
         the sum moves whenever one does."""
         return self.permission_version + sum(self.versions.values())
 
-    def refusal(self, issued_at: datetime | None) -> str | None:
-        """Why a credential issued at `issued_at` is no longer good — `None` when it is.
+    def revocation_reason(
+        self, issued_at: datetime | None, permission_epoch: int | None = None
+    ) -> str | None:
+        """Why a credential issued at `issued_at`, carrying the permissions of
+        `permission_epoch` (`pv`) when it carries any, is no longer good — `None` when it is.
 
-            RevocationState(not_before=10:00).refusal(issued_at=09:59)   ->  "signed out"
-            RevocationState(not_before=10:00).refusal(issued_at=None)    ->  "signed out"
+            RevocationState(not_before=10:00).revocation_reason(issued_at=09:59)   ->  "signed out"
+            RevocationState(not_before=10:00).revocation_reason(issued_at=None)    ->  "signed out"
+            RevocationState(permission_version=2).revocation_reason(now, permission_epoch=1)
+                ->  "permissions changed: refresh the token"
 
         Context: a credential that cannot say when it was issued is refused once its subject
-        signed out everywhere — it cannot prove it is newer.
+        signed out everywhere — it cannot prove it is newer. A `permission_epoch` greater than
+        the current one is impossible unless the store evicted a counter (see the module): it
+        is refused too, and logged as an error to fix the store's eviction policy.
         """
         if self.token_revoked:
             return "token revoked"
@@ -119,7 +111,17 @@ class RevocationState(DataTransferObject):
             return "session revoked"
         if self.not_before is not None and (issued_at is None or issued_at < self.not_before):
             return "signed out"
-        return None
+        if permission_epoch is None or permission_epoch == self.permission_epoch:
+            return None
+        if permission_epoch > self.permission_epoch:
+            logger.error(
+                "a token carries permissions of a version newer than the store holds: the "
+                "store evicted a permission version — store them with no eviction "
+                "(maxmemory-policy noeviction or volatile-*)",
+                carried=permission_epoch,
+                current=self.permission_epoch,
+            )
+        return "permissions changed: refresh the token"
 
 
 class Revocations(ABC):
@@ -163,41 +165,24 @@ class Revocations(ABC):
         related: Iterable[str] = (),
     ) -> RevocationState:
         """Everything revoked about this credential of `subject`, and the permission versions of
-        `related` subjects (`tenant:<id>`), in one read — remembered inside
-        `remembering_versions()`.
+        `related` subjects (`tenant:<id>`), in one read.
 
             state("user:42", token_id="jti-1", session="sid-7", related=["tenant:bo"])
                 ->  RevocationState(session_revoked=True, permission_version=3,
                                     versions={"tenant:bo": 1})
         """
-        state = self.read(subject, token_id, session, tuple(related))
-        remembered = _VERSIONS_READ.get()
-        if remembered is not None:
-            remembered[(id(self), subject)] = state.permission_version
-            remembered.update({(id(self), one): v for one, v in state.versions.items()})
-        return state
+        return self.read(subject, token_id, session, tuple(related))
 
     def permission_versions(self, *subjects: str) -> dict[str, int]:
-        """The permission version of each of `subjects` — 0 before any change: what this
-        authentication already read, else read now, all at once.
-
-        1. Inside `remembering_versions()`: the versions already read answered from it.
-        2. The rest, if any, in one `state` of the first with the others related.
-        Final: a version per subject asked.
-        """
-        remembered = _VERSIONS_READ.get() or {}
-        known = {
-            one: remembered[(id(self), one)]
-            for one in subjects
-            if (id(self), one) in remembered
+        """The permission version of each of `subjects` — 0 before any change — in one `state`
+        of the first with the others related."""
+        if not subjects:
+            return {}
+        first, *others = subjects
+        state = self.state(first, related=others)
+        return {first: state.permission_version} | {
+            one: state.versions.get(one, 0) for one in others
         }
-        missing = [one for one in subjects if one not in known]
-        if missing:
-            first, *others = missing
-            state = self.state(first, related=others)
-            known[first] = state.permission_version
-            known.update({one: state.versions.get(one, 0) for one in others})
-        return {one: known[one] for one in subjects}
 
     def permission_version(self, subject: str) -> int:
         """The permission version of `subject` — 0 before any change."""
@@ -207,4 +192,6 @@ class Revocations(ABC):
         """What a token carrying `identity`'s permissions carries (`pv`): its version, its
         tenant's and every tenant's, summed — as `RevocationState.permission_epoch` reads it.
         """
-        return sum(self.permission_versions(identity.subject, *related_of(identity)).values())
+        return sum(
+            self.permission_versions(identity.subject, *related_subjects(identity)).values()
+        )
