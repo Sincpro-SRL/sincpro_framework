@@ -12,11 +12,13 @@ from sincpro_framework.auth import (
     Assurance,
     Identity,
     Permission,
+    SharedSecrets,
+    TrustedIssuer,
     Unauthenticated,
     WhenDenied,
     security,
 )
-from sincpro_framework.auth.server import JwtProvider, SharedSecrets, TrustedIssuer
+from sincpro_framework.auth.server import JwtProvider
 
 NOW = datetime(2026, 11, 20, 12, tzinfo=UTC)
 

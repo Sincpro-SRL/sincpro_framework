@@ -25,7 +25,8 @@ against what the token says about itself.
 import time
 
 from sincpro_framework.auth import Credentials
-from sincpro_framework.auth.server import ClaimMapping, JwtProvider, SharedSecrets, TrustedIssuer
+from sincpro_framework.auth.server import JwtProvider
+from sincpro_framework.auth import ClaimMapping, SharedSecrets, TrustedIssuer
 from sincpro_framework.auth import Unauthenticated
 from sincpro_framework.runtime.testing import signed_token
 

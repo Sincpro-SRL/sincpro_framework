@@ -17,13 +17,14 @@ SUB_CONTEXTS = ("common", "access_control", *DOORS)
 MAY_IMPORT = {
     "common": set(),
     "access_control": {"common"},
-    "server": {"common"},
+    "server": {"common", "accounts"},
     "client": {"common"},
     "grants": {"common"},
-    "accounts": {"common", "server"},
+    "accounts": {"common"},
 }
-"""The sub-contexts each one builds on: the shared kernel builds on none, and the issuer of
-accounts verifies what it issued with the server's `JwtProvider`."""
+"""The sub-contexts each one builds on: the shared kernel builds on none; the server builds
+on accounts too — its authorization server issues with accounts' `TokenIssuer`, and its
+`JwtProvider.for_token_issuer` verifies what that issuer signed."""
 
 
 def _sub_contexts_imported(path: Path) -> set[str]:

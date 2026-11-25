@@ -1,9 +1,7 @@
-"""The public keys of an issuer — published as a JWKS and fetched (`Jwks`), or given by hand
-(`PublicKeys`): the `[jwt]` extra.
+"""The public keys of an issuer published as a JWKS and fetched (`Jwks`) — the `[jwt]` extra.
 
     Jwks("https://auth.sincpro.com.bo/realms/sincpro/protocol/openid-connect/certs")
     Jwks.discovered("https://auth.sincpro.com.bo/realms/sincpro")   the URL by OIDC discovery
-    PublicKeys([pem_of_partner], algorithm="RS256")
 
 Context: the set is fetched once and cached (`refresh_every`, ten minutes); an identity provider
 that rotates its keys publishes the new one before it signs with it, so a token naming a `kid`
@@ -19,7 +17,8 @@ from collections.abc import Callable, Iterable, Mapping, Sequence
 from datetime import timedelta
 from typing import Any
 
-from sincpro_framework.auth.common.adapters.jose_keys import ASYMMETRIC, PublicKey, fits
+from sincpro_framework.auth.common.adapters.jose_keys import PublicKey, fits
+from sincpro_framework.auth.common.adapters.public_keys import asymmetric_algorithms
 from sincpro_framework.auth.common.adapters.server_metadata import (
     OidcDiscovery,
     discovery_for,
@@ -41,16 +40,6 @@ from sincpro_framework.sincpro_logger import logger
 DEFAULT_ALGORITHMS = ("RS256", "PS256", "ES256", "EdDSA")
 
 
-def _asymmetric(algorithms: Iterable[str]) -> frozenset[str]:
-    """`algorithms` as a set — `ProgrammingError` for one that is not asymmetric."""
-    chosen = frozenset(algorithms)
-    if not chosen or not chosen <= ASYMMETRIC:
-        raise exceptions.ProgrammingError(
-            f"public keys verify asymmetric algorithms only: {sorted(chosen - ASYMMETRIC)}"
-        )
-    return chosen
-
-
 def _matching(
     keys: Sequence[Mapping[str, Any]], key_id: str | None, algorithm: str
 ) -> Mapping[str, Any] | None:
@@ -60,47 +49,6 @@ def _matching(
     if key_id is not None:
         return next((one for one in fitting if one.get("kid") == key_id), None)
     return fitting[0] if len(fitting) == 1 else None
-
-
-class PublicKeys(KeySource):
-    """Public keys given by hand — a partner's PEM, a JWK copied from its documentation."""
-
-    symmetric = False
-
-    def __init__(
-        self,
-        keys: Sequence[PublicKey | Mapping[str, Any] | str | bytes],
-        algorithm: str | None = None,
-    ) -> None:
-        """A JWK is read for its own `alg` (or `algorithm`); a PEM needs `algorithm`."""
-        built: list[PublicKey] = []
-        for one in keys:
-            if isinstance(one, PublicKey):
-                built.append(one)
-            elif isinstance(one, Mapping):
-                named = one.get("alg") or algorithm
-                if named is None:
-                    raise exceptions.ProgrammingError("a JWK naming no alg needs algorithm=")
-                built.append(PublicKey.from_jwk(one, named))
-            else:
-                if algorithm is None:
-                    raise exceptions.ProgrammingError("a PEM key needs algorithm=")
-                built.append(PublicKey.from_pem(one, algorithm))
-        if not built:
-            raise exceptions.ProgrammingError("PublicKeys needs at least one key")
-        self.keys = built
-        self.algorithms = _asymmetric(one.algorithm for one in built)
-
-    def key_for(self, key_id: str | None, algorithm: str) -> VerificationKey:
-        """The key named `key_id` for `algorithm` — or the only one for it when none is named."""
-        fitting = [one for one in self.keys if one.algorithm == algorithm]
-        if key_id is not None:
-            found = next((one for one in fitting if one.key_id == key_id), None)
-        else:
-            found = fitting[0] if len(fitting) == 1 else None
-        if found is None:
-            raise exceptions.Unauthenticated("token signed with an unknown key")
-        return found
 
 
 class Jwks(KeySource):
@@ -122,7 +70,7 @@ class Jwks(KeySource):
         """`url` is the JWKS's — or a function answering it, asked on the first token
         (discovery); nothing is fetched here."""
         self._url = url
-        self.algorithms = _asymmetric(algorithms)
+        self.algorithms = asymmetric_algorithms(algorithms)
         self.http: HttpClient = http or UrllibHttp()
         self.cache = cache or Cache(namespace="auth-jwks")
         self.unknown_kid_cooldown = unknown_kid_cooldown

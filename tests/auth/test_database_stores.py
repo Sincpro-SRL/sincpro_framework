@@ -19,7 +19,7 @@ from sincpro_framework.auth import (
 )
 from sincpro_framework.auth.accounts import RefreshTokens, SigningKeys, TokenIssuer
 from sincpro_framework.auth.grants import GrantStore
-from sincpro_framework.auth.server import ApiKeyStore
+from sincpro_framework.auth.server import ApiKeyStore, JwtProvider
 from sincpro_framework.data_layer.orm import (
     Database,
     DatabaseApiKeys,
@@ -102,4 +102,4 @@ def test_the_token_issuer_on_a_database_signs_in_refreshes_and_logs_out() -> Non
         headers={"authorization": f"Bearer {renewed.access_token.get_secret_value()}"},
     )
     with pytest.raises(Unauthenticated, match="session revoked"):
-        sessions.provider().authenticate(caller)
+        JwtProvider.for_token_issuer(sessions).authenticate(caller)

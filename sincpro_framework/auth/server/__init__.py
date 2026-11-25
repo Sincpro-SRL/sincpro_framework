@@ -1,6 +1,7 @@
 """What arrives, verified — the providers an `AccessControl` asks who is calling.
 
-    from sincpro_framework.auth.server import ClaimMapping, JwtProvider
+    from sincpro_framework.auth import ClaimMapping
+    from sincpro_framework.auth.server import JwtProvider
 
     auth = AccessControl[P](providers=[
         JwtProvider.from_issuer(KEYCLOAK, audience="billing", mapping=ClaimMapping.keycloak()),
@@ -10,7 +11,7 @@
 
 | Arrives | Provider |
 |---|---|
-| a bearer JWT of Keycloak, Entra, Google — several issuers | `JwtProvider`, `TrustedIssuer`, `ClaimMapping`, keys by `Jwks` / `PublicKeys` / `SharedSecrets` |
+| a bearer JWT of Keycloak, Entra, Google — several issuers | `JwtProvider` over a `TrustedIssuer`, `ClaimMapping` and keys by `Jwks` (here) or `PublicKeys` / `SharedSecrets` (`sincpro_framework.auth`) |
 | an opaque token (RFC 7662) | `IntrospectionProvider` |
 | a token bound to a key (RFC 9449) or a certificate (RFC 8705) | `DpopProofs`, `CertificateProvider` |
 | an API key | `ApiKeyProvider`, `ApiKey`, `ApiKeyStore`, `InMemoryApiKeys` |
@@ -24,7 +25,7 @@ take (`resolvers=`): roles to permissions (`auth.grants`), a tenant's own. `Prot
 says what this service is, for a client to discover (RFC 9728). HTTP Basic against accounts of the
 service's own is `auth.accounts.BasicProvider`.
 
-Context: `Jwks`, `PublicKeys`, `DpopProofs` and `CertificateProvider` need the `[jwt]` extra and
+Context: `Jwks`, `DpopProofs` and `CertificateProvider` need the `[jwt]` extra and
 are imported when first asked for.
 """
 
@@ -43,10 +44,6 @@ from sincpro_framework.auth.server.adapters.resource_server.bearer_tokens.intros
 )
 from sincpro_framework.auth.server.adapters.resource_server.bearer_tokens.jwt_provider import (
     JwtProvider,
-    TrustedIssuer,
-)
-from sincpro_framework.auth.server.adapters.resource_server.bearer_tokens.shared_secrets import (
-    SharedSecrets,
 )
 from sincpro_framework.auth.server.adapters.resource_server.policy.engines import (
     AuthZenEngine,
@@ -62,10 +59,6 @@ from sincpro_framework.auth.server.adapters.resource_server.static_tokens import
 from sincpro_framework.auth.server.adapters.resource_server.webhook_signatures import (
     SignatureProvider,
 )
-from sincpro_framework.auth.server.domain.resource_server.claim_mapping import (
-    ClaimMapping,
-    ClaimTest,
-)
 from sincpro_framework.auth.server.domain.resource_server.policy import PolicyEngine
 from sincpro_framework.auth.server.domain.resource_server.protected_resource import (
     ProtectedResource,
@@ -78,8 +71,6 @@ __all__ = [
     "ApiKeyProvider",
     "ApiKeyStore",
     "AuthZenEngine",
-    "ClaimMapping",
-    "ClaimTest",
     "DecidedBy",
     "InMemoryApiKeys",
     "IntrospectionProvider",
@@ -90,10 +81,8 @@ __all__ = [
     "ProtectedResource",
     "Resolving",
     "ServiceTokenProvider",
-    "SharedSecrets",
     "SignatureProvider",
     "StaticProvider",
-    "TrustedIssuer",
     "api_key_digest",
 ]
 """Every name loaded with the package; the `[jwt]` extra's are in `_LAZY`, imported on first use."""
@@ -102,7 +91,6 @@ _LAZY = {
     "CertificateProvider": "sincpro_framework.auth.server.adapters.resource_server.certificates",
     "DpopProofs": "sincpro_framework.auth.server.adapters.resource_server.bearer_tokens.dpop_proofs",
     "Jwks": "sincpro_framework.auth.server.adapters.resource_server.bearer_tokens.jwks",
-    "PublicKeys": "sincpro_framework.auth.server.adapters.resource_server.bearer_tokens.jwks",
 }
 """Names of the `[jwt]` extra, by the module that holds them — loaded on first use."""
 
@@ -110,10 +98,7 @@ if TYPE_CHECKING:
     from sincpro_framework.auth.server.adapters.resource_server.bearer_tokens.dpop_proofs import (
         DpopProofs,
     )
-    from sincpro_framework.auth.server.adapters.resource_server.bearer_tokens.jwks import (
-        Jwks,
-        PublicKeys,
-    )
+    from sincpro_framework.auth.server.adapters.resource_server.bearer_tokens.jwks import Jwks
     from sincpro_framework.auth.server.adapters.resource_server.certificates import (
         CertificateProvider,
     )

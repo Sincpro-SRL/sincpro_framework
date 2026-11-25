@@ -12,7 +12,7 @@ its accounts as entities of its own, and these pieces hash, lock, link and issue
 | a second factor | `Totp` (RFC 6238), `TotpAlgorithm` |
 | tokens of its own | `TokenIssuer`, `IssuedTokens`, `SigningKeys`; refresh tokens in `RefreshTokens` (`InMemoryRefreshTokens`, `KeyValueRefreshTokens`; `DatabaseRefreshTokens` in `data_layer.orm`) |
 
-`TokenIssuer.provider()` is the `auth.server.JwtProvider` that verifies what it issued.
+`auth.server.JwtProvider.for_token_issuer(issuer)` verifies what a `TokenIssuer` issued, by its `trusted_issuer()`.
 """
 
 from sincpro_framework.auth.accounts.adapters.password_hasher import (

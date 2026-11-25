@@ -42,8 +42,8 @@ from sincpro_framework.auth.common.domain.revocations import (
     remembering_versions,
 )
 from sincpro_framework.auth.common.infrastructure import jws
+from sincpro_framework.auth.common.infrastructure.claim_mapping import ClaimMapping
 from sincpro_framework.auth.common.infrastructure.digests import digest
-from sincpro_framework.auth.server.domain.resource_server.claim_mapping import ClaimMapping
 from sincpro_framework.data_layer.caching import Cache, CachePolicy, JsonCodec, TimeToLive
 from sincpro_framework.sincpro_logger import logger
 
