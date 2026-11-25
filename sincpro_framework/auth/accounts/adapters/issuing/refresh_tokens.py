@@ -4,7 +4,8 @@ every replica shares. A table of the project's is `DatabaseRefreshTokens`, in `d
 Context: kept by digest, each record lives until its session ends; rotating is a
 compare-and-set on the record, so of two refreshes racing with one token exactly one wins — the
 other is told the token was already used. The live token of each session is indexed per subject
-for a "signed in on" screen.
+for a "signed in on" screen: the index drops the sessions that ended and lives as long as its
+last one, so it never grows with every session a person ever opened.
 """
 
 import json
@@ -18,6 +19,7 @@ from sincpro_framework.auth.infrastructure.digests import digest
 from sincpro_framework.context.entrypoint.resolution import current_store, key_value_store_of
 from sincpro_framework.data_layer.store import KeyValueStore
 from sincpro_framework.exceptions import ServiceUnavailableError
+from sincpro_framework.sincpro_logger import logger
 
 
 class InMemoryRefreshTokens(RefreshTokens):
@@ -94,17 +96,29 @@ class KeyValueRefreshTokens(RefreshTokens):
         return left if left > timedelta(0) else None
 
     def _indexed(self, record: RefreshRecord) -> None:
-        """The subject's index maps the record's session to its live token — compare-and-set."""
+        """The subject's index maps each live session to its token and its end — the record's
+        session written in, the ended ones dropped, the index living until its last session
+        ends — by compare-and-set. An entry it cannot read is dropped too: its session works,
+        and is indexed again at its next refresh."""
         store = self.store()
         key = self._index_key(record.subject)
         for _ in range(64):
             raw = store.get(key)
-            sessions = {} if raw is None else json.loads(raw)
-            sessions[record.family] = record.digest
+            now = self.now().timestamp()
+            sessions = {
+                family: entry
+                for family, entry in ({} if raw is None else json.loads(raw)).items()
+                if isinstance(entry, dict) and entry["ends"] > now
+            }
+            sessions[record.family] = {
+                "token": record.digest,
+                "ends": record.session_ends.timestamp(),
+            }
+            lives = timedelta(seconds=max(one["ends"] for one in sessions.values()) - now)
             written = json.dumps(sessions, sort_keys=True).encode()
-            if raw is None and store.add(key, written, self._ttl(record)):
+            if raw is None and store.add(key, written, lives):
                 return
-            if raw is not None and store.replace(key, raw, written):
+            if raw is not None and store.replace(key, raw, written, lives):
                 return
         raise ServiceUnavailableError("refresh token sessions are contended: try again")
 
@@ -122,8 +136,16 @@ class KeyValueRefreshTokens(RefreshTokens):
         return None if raw is None else RefreshRecord.model_validate_json(raw)
 
     def rotate(self, digest: str, successor: RefreshRecord, at: datetime) -> bool:
-        """Compare-and-set: the record marked rotated only if it still holds what was read —
-        of racing rotations one wins — and the successor saved after."""
+        """The record marked rotated only if it still holds what was read — of racing rotations
+        one wins — its successor kept before it.
+
+        1. Unknown, or rotated already: `False`.
+        2. The successor kept first: a store failing before the mark leaves the token unspent
+           — the client retries with it — never a session whose live token was never kept.
+        3. The mark, by compare-and-set; lost, the successor is dropped: `False`.
+        Final: the subject's index pointed at the successor — a store failing there leaves the
+        session working, only missing from "signed in on" until its next refresh.
+        """
         store = self.store()
         raw = store.get(self._key(digest))
         if raw is None:
@@ -131,10 +153,22 @@ class KeyValueRefreshTokens(RefreshTokens):
         held = RefreshRecord.model_validate_json(raw)
         if held.rotated_at is not None:
             return False
+        store.set(
+            self._key(successor.digest),
+            successor.model_dump_json().encode(),
+            self._ttl(successor),
+        )
         rotated = held.model_copy(update={"rotated_at": at}).model_dump_json().encode()
         if not store.replace(self._key(digest), raw, rotated, self._ttl(held)):
+            store.delete(self._key(successor.digest))
             return False
-        self.save(successor)
+        try:
+            self._indexed(successor)
+        except ServiceUnavailableError:
+            logger.warning(
+                "a refreshed session was not indexed: it works, missing from its subject's list",
+                session=successor.family[:12],
+            )
         return True
 
     def sessions_of(self, subject: str) -> list[RefreshRecord]:
@@ -144,7 +178,11 @@ class KeyValueRefreshTokens(RefreshTokens):
         if raw is None:
             return []
         now = self.now()
-        found = [self.find(one) for one in json.loads(raw).values()]
+        found = [
+            self.find(one["token"])
+            for one in json.loads(raw).values()
+            if isinstance(one, dict)
+        ]
         return sorted(
             (
                 one

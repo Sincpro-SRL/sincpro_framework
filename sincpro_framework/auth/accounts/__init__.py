@@ -9,7 +9,7 @@ its accounts as entities of its own, and these pieces hash, lock, link and issue
 | guessing | `LoginAttempts` — a username locked after too many failures |
 | HTTP Basic | `BasicProvider` over a `CredentialVerifier` — the project's accounts, or `HashedCredentials` |
 | a link sent by email | `OneTimeTokens`, `OneTimeGrant` |
-| a second factor | `Totp` (RFC 6238) |
+| a second factor | `Totp` (RFC 6238), `TotpAlgorithm` |
 | tokens of its own | `TokenIssuer`, `IssuedTokens`, `SigningKeys`; refresh tokens in `RefreshTokens` (`InMemoryRefreshTokens`, `KeyValueRefreshTokens`; `DatabaseRefreshTokens` in `data_layer.orm`) |
 
 `TokenIssuer.provider()` is the `auth.server.JwtProvider` that verifies what it issued.
@@ -38,7 +38,7 @@ from sincpro_framework.auth.accounts.adapters.passwords.http_basic import (
     HashedCredentials,
 )
 from sincpro_framework.auth.accounts.adapters.passwords.login_attempts import LoginAttempts
-from sincpro_framework.auth.accounts.adapters.totp import Totp
+from sincpro_framework.auth.accounts.adapters.totp import Totp, TotpAlgorithm
 from sincpro_framework.auth.accounts.domain.credential_verifier import CredentialVerifier
 from sincpro_framework.auth.accounts.domain.events import (
     AccountLocked,
@@ -76,4 +76,5 @@ __all__ = [
     "SigningKeys",
     "TokenIssuer",
     "Totp",
+    "TotpAlgorithm",
 ]

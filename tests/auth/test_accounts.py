@@ -3,8 +3,10 @@ time, rehashed when the cost rises or the format is old; accounts locked after f
 atomically, the same for names nobody holds; HTTP Basic credentials checked once a minute."""
 
 import base64
+import contextlib
 import threading
-from collections.abc import Sequence
+import time
+from collections.abc import Callable, Sequence
 from datetime import timedelta
 
 import pytest
@@ -111,46 +113,90 @@ class Clock:
         return self.now
 
 
+def fail(attempts: LoginAttempts, key: str) -> None:
+    """One attempt at `key` whose password was wrong."""
+    with pytest.raises(exceptions.Unauthenticated), attempts.attempt(key):
+        raise exceptions.Unauthenticated("wrong username or password")
+
+
 def test_an_account_locks_after_its_failures_and_opens_after_a_while() -> None:
     clock = Clock()
     attempts = LoginAttempts(
         InMemoryKeyValue(), max_failures=3, lock_for=timedelta(minutes=15), clock=clock
     )
-    assert [attempts.failed("ana@acme.bo") for _ in range(3)] == [
-        None,
-        None,
-        timedelta(minutes=15),
-    ]
-    with pytest.raises(RateLimited) as refused:
-        attempts.refuse_if_locked("ANA@acme.bo ")
+    for _ in range(3):
+        fail(attempts, "ana@acme.bo")
+    assert attempts.locked_for("ANA@acme.bo ") == timedelta(minutes=15)
+    with pytest.raises(RateLimited) as refused, attempts.attempt("ana@acme.bo"):
+        pytest.fail("a locked account is never checked")
     assert refused.value.retry_after == timedelta(minutes=15)
     clock.now += 15 * 60
-    attempts.refuse_if_locked("ana@acme.bo")
+    with attempts.attempt("ana@acme.bo"):
+        pass
 
 
 def test_a_success_starts_the_count_over_and_unknown_names_lock_alike() -> None:
     attempts = LoginAttempts(InMemoryKeyValue(), max_failures=2)
-    attempts.failed("ana")
-    attempts.succeeded("ana")
-    assert attempts.failed("ana") is None
-    assert [attempts.failed("nobody-has-this-name") for _ in range(2)][-1] is not None
+    fail(attempts, "ana")
+    with attempts.attempt("ana"):
+        pass
+    fail(attempts, "ana")
+    assert attempts.locked_for("ana") is None
+    for _ in range(2):
+        fail(attempts, "nobody-has-this-name")
+    assert attempts.locked_for("nobody-has-this-name") is not None
 
 
-def test_failures_at_once_are_all_counted_and_lock_once() -> None:
-    attempts = LoginAttempts(InMemoryKeyValue(), max_failures=16)
-    barrier = threading.Barrier(16)
-    locked: list[timedelta | None] = []
+def at_once(count: int, attempt: Callable[[], None]) -> None:
+    """`attempt` run by `count` threads released together."""
+    barrier = threading.Barrier(count)
 
-    def fail() -> None:
+    def run() -> None:
         barrier.wait()
-        locked.append(attempts.failed("ana"))
+        attempt()
 
-    threads = [threading.Thread(target=fail) for _ in range(16)]
+    threads = [threading.Thread(target=run) for _ in range(count)]
     for thread in threads:
         thread.start()
     for thread in threads:
         thread.join()
-    assert sum(1 for one in locked if one is not None) == 1
+
+
+def test_guesses_at_once_take_turns_and_never_pass_the_limit() -> None:
+    attempts = LoginAttempts(InMemoryKeyValue(), max_failures=5)
+    checked: list[int] = []
+
+    def guess() -> None:
+        with contextlib.suppress(RateLimited, exceptions.Unauthenticated):
+            with attempts.attempt("ana"):
+                checked.append(1)
+                time.sleep(0.01)  # a hash's time: the others arrive while it runs
+                raise exceptions.Unauthenticated("wrong username or password")
+
+    at_once(50, guess)
+    assert len(checked) == 5
+    assert attempts.locked_for("ana") is not None
+
+
+def test_the_right_password_sent_at_once_is_never_refused() -> None:
+    attempts = LoginAttempts(InMemoryKeyValue(), max_failures=2)
+    signed_in: list[int] = []
+
+    def sign_in() -> None:
+        with attempts.attempt("reports"):
+            time.sleep(0.01)
+            signed_in.append(1)
+
+    at_once(10, sign_in)
+    assert len(signed_in) == 10
+
+
+def test_a_failure_that_is_not_a_wrong_password_counts_nothing() -> None:
+    attempts = LoginAttempts(InMemoryKeyValue(), max_failures=1)
+    for _ in range(3):
+        with pytest.raises(StoreUnavailable), attempts.attempt("ana"):
+            raise StoreUnavailable("the accounts table did not answer")
+    assert attempts.locked_for("ana") is None
 
 
 class DownStore(InMemoryKeyValue):
@@ -163,8 +209,9 @@ class DownStore(InMemoryKeyValue):
 
 def test_a_store_down_never_locks_everyone_out() -> None:
     attempts = LoginAttempts(DownStore(), max_failures=1)
-    assert attempts.failed("ana") is None
-    attempts.refuse_if_locked("ana")
+    fail(attempts, "ana")
+    with attempts.attempt("ana"):
+        pass
 
 
 class Counting(CredentialVerifier):

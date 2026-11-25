@@ -50,10 +50,10 @@ class ScryptCost:
 def _argon2() -> Any:
     """argon2-cffi's `PasswordHasher` class — `None` when it is not installed."""
     try:
-        from argon2 import PasswordHasher as Argon2Hasher
+        import argon2
     except ImportError:
         return None
-    return Argon2Hasher
+    return argon2.PasswordHasher
 
 
 def _b64(raw: bytes) -> str:

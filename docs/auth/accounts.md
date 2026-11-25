@@ -37,28 +37,44 @@ assert PasswordHasher(scheme=HashScheme.SCRYPT).needs_rehash(stored)      # the 
 ```python
 from datetime import timedelta
 
+from sincpro_framework.auth import Unauthenticated
 from sincpro_framework.auth.accounts import LoginAttempts
 from sincpro_framework.data_layer.store import InMemoryKeyValue
 from sincpro_framework.rate_limiter import RateLimited
 
 attempts = LoginAttempts(InMemoryKeyValue(), max_failures=3, lock_for=timedelta(minutes=15))
 for _ in range(3):
-    attempts.failed("ana@colegio.bo")
+    try:
+        with attempts.attempt("ana@colegio.bo"):            # its turn: one attempt at a time
+            raise Unauthenticated("wrong username or password")
+    except Unauthenticated:
+        pass
 try:
-    attempts.refuse_if_locked("ana@colegio.bo")
+    with attempts.attempt("ana@colegio.bo"):
+        pass                                                # never runs: the account is locked
 except RateLimited as locked:
     assert locked.retry_after <= timedelta(minutes=15)      # 429 with Retry-After, on every wire
+assert attempts.locked_for("ana@colegio.bo") is not None    # what a screen shows
 ```
 
-The count is an atomic increment on the store every replica shares — two failures at once are
-two — keyed by the username's digest, so an email never lands in Redis and a name nobody holds is
-counted and locked like a real one. A store that does not answer lets the attempt through, logged:
-a Redis restart never locks everyone out.
+| `with attempts.attempt(key):` | |
+|---|---|
+| before the block | the account's turn: another attempt at it running — on any replica — is waited for; locked: `RateLimited`, the block never runs |
+| the block raises `Unauthenticated` | one failure; the one that reaches `max_failures` locks the key |
+| the block raises anything else | nothing counted: the project's database down is not a guess |
+| the block ends well | the count starts over |
+
+Attempts at one account take turns, so its failures are counted exactly: fifty guesses sent at
+once are checked one after the other, and once `max_failures` of them failed the rest find the
+account locked. The count is an atomic increment on the store every replica shares, keyed by the
+username's digest, so an email never lands in Redis and a name nobody holds is counted and locked
+like a real one. A store that does not answer lets the attempt through, logged: a Redis restart
+never locks everyone out.
 
 ## A login use case
 
-The account is the project's; the use case puts the pieces together — the lock checked before the
-password, one answer whatever failed.
+The account is the project's; the use case puts the pieces together — the password checked in the
+account's turn, one answer whatever failed.
 
 ```python
 from dataclasses import dataclass
@@ -95,13 +111,11 @@ class SignedIn(DataTransferObject):
 @members.feature(CommandSignIn)
 class SignIn(Feature):                                              # declares nothing: open
     def execute(self, dto: CommandSignIn) -> SignedIn:
-        attempts.refuse_if_locked(dto.username)                     # before any hash
-        account = accounts.get(dto.username)
-        good = hasher.verify(account.password_hash if account else None, dto.password)
-        if not good or account is None or not account.active:
-            attempts.failed(dto.username)
-            raise Unauthenticated("wrong username or password")    # one answer, whatever failed
-        attempts.succeeded(dto.username)
+        with attempts.attempt(dto.username):                        # locked: refused, no hash
+            account = accounts.get(dto.username)
+            good = hasher.verify(account.password_hash if account else None, dto.password)
+            if not good or account is None or not account.active:
+                raise Unauthenticated("wrong username or password")  # one answer, whatever failed
         if hasher.needs_rehash(account.password_hash):
             account.password_hash = hasher.hash(dto.password)
         return SignedIn(subject=f"user:{account.username}")
@@ -154,9 +168,9 @@ except Unauthenticated as refused:
 | the refresh token | random, stored by digest, rotated on every use; used twice past `reuse_grace` (ten seconds — two tabs) it is a replay, and the whole session is revoked |
 | a session | ends `idle_for` (14 days) after the last refresh and `at_most` (30 days) after it began |
 | a logout | `revoke(token)` — an access or a refresh token — ends its session, its access tokens refused at once |
-| the roles | the ones the identity carried at sign-in, kept with the session and carried by every refreshed token |
+| the roles | the ones the identity carried at sign-in, kept with the session and carried by every refreshed token — never the ones a resolver added from a store: those are resolved again by whoever verifies the token, so a role taken away there is gone at once |
 | "sign out everywhere" | `revoke_subject(subject)`: a password changed, an account disabled — every session of the subject ends; a new sign-in in that same second works |
-| "signed in on…" | `sessions_of(subject)` |
+| "signed in on…" | `sessions_of(subject)` — the live sessions, none signed out of |
 | other services | `SigningKeys.private({...}, "ES256")` (`[jwt]`): they verify with `jwks()` and `TrustedIssuer(..., mapping=TokenIssuer.mapping)`, no secret shared |
 
 ## Links that work once, and a second factor
@@ -185,7 +199,9 @@ assert not totp.verify(secret, totp.now(secret), subject="user:MFAQ0123")   # on
 
 `Totp` is RFC 6238 on the standard library — its own test vectors pass — accepting a code within
 one step either side; with `replay`, a step accepted for a subject is never accepted again, nor
-an older one. Six digits can be guessed: count failed codes with `LoginAttempts`. After a code,
+an older one — `verify(secret, code, subject=...)`; without the subject a warning says the code
+may be used twice. Six digits can be guessed: check each code inside `attempts.attempt(subject)`,
+raising `Unauthenticated` when it is wrong, as a password. After a code,
 the identity's `assurance` says `otp` — what a [step-up](server.md#step-up-how-strongly-how-recently--rfc-9470) asks for.
 
 ## HTTP Basic: service accounts

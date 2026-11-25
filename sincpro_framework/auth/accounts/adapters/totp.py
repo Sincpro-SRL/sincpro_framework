@@ -20,13 +20,30 @@ import secrets
 import struct
 import time
 from collections.abc import Callable
+from datetime import timedelta
+from enum import StrEnum
 from urllib.parse import quote, urlencode
 
 from sincpro_framework.auth.domain import exceptions
 from sincpro_framework.auth.infrastructure.digests import digest
 from sincpro_framework.data_layer.store import KeyValueStore
+from sincpro_framework.sincpro_logger import logger
 
-ALGORITHMS = {"SHA1": hashlib.sha1, "SHA256": hashlib.sha256, "SHA512": hashlib.sha512}
+
+class TotpAlgorithm(StrEnum):
+    """The HMAC a code is computed with — what the authenticator app is told in the QR code.
+    SHA1 is what every app reads; the others only some."""
+
+    SHA1 = "SHA1"
+    SHA256 = "SHA256"
+    SHA512 = "SHA512"
+
+
+ALGORITHMS = {
+    TotpAlgorithm.SHA1: hashlib.sha1,
+    TotpAlgorithm.SHA256: hashlib.sha256,
+    TotpAlgorithm.SHA512: hashlib.sha512,
+}
 
 
 class Totp:
@@ -37,22 +54,23 @@ class Totp:
         issuer: str,
         digits: int = 6,
         period: int = 30,
-        algorithm: str = "SHA1",
+        algorithm: TotpAlgorithm = TotpAlgorithm.SHA1,
         window: int = 1,
         replay: KeyValueStore | None = None,
         clock: Callable[[], float] = time.time,
     ) -> None:
         if algorithm not in ALGORITHMS:
             raise exceptions.ProgrammingError(
-                f"TOTP algorithm is one of {sorted(ALGORITHMS)}"
+                f"TOTP algorithm is one of {[one.value for one in TotpAlgorithm]}"
             )
         self.issuer = issuer
         self.digits = digits
         self.period = period
-        self.algorithm = algorithm
+        self.algorithm = TotpAlgorithm(algorithm)
         self.window = window
         self.replay = replay
         self.clock = clock
+        self._warned = False
 
     def new_secret(self, length: int = 20) -> str:
         """A new secret, base32 — what the authenticator app and the account keep."""
@@ -91,22 +109,40 @@ class Totp:
 
     def _first_use(self, replay: KeyValueStore, subject: str, step: int) -> bool:
         """Whether `step` is later than the last step `replay` accepted for `subject` — and, when
-        it is, recorded as the last, by compare-and-set."""
+        it is, recorded as the last, by compare-and-set.
+
+        Context: the record lives as long as a step it refuses could still verify — up to
+        `window` steps ahead accepted now, valid `window` steps after it, one more for the
+        moment within the step — and is gone after, so the store holds no key per subject
+        forever.
+        """
         key = f"sincpro:auth:totp:{digest(subject)}"
+        lives = timedelta(seconds=self.period * (2 * self.window + 2))
         for _ in range(16):
             held = replay.get(key)
             if held is not None and int(held) >= step:
                 return False
             written = str(step).encode()
-            if held is None and replay.add(key, written):
+            if held is None and replay.add(key, written, lives):
                 return True
-            if held is not None and replay.replace(key, held, written):
+            if held is not None and replay.replace(key, held, written, lives):
                 return True
         return False
 
     def verify(self, secret: str, code: str, subject: str | None = None) -> bool:
-        """Whether `code` is the secret's within `window` steps of now — and, with `replay` and a
-        `subject`, the first use of that step. A code of anything but ASCII digits is not."""
+        """Whether `code` is the secret's within `window` steps of now — and, with `replay`, the
+        first use of that step by `subject`. A code of anything but ASCII digits is not.
+
+        Context: a `Totp` given `replay` was asked never to accept a code twice, which needs
+        the `subject`; without it the code is verified all the same and a warning says, once,
+        that a code may be used twice.
+        """
+        if self.replay is not None and subject is None and not self._warned:
+            self._warned = True
+            logger.warning(
+                f"Totp({self.issuer!r}) was given replay= but verify() no subject: a code may "
+                "be used twice — pass verify(secret, code, subject=...)"
+            )
         if not (code.isascii() and code.isdigit()) or len(code) != self.digits:
             return False
         current = int(self.clock() // self.period)
