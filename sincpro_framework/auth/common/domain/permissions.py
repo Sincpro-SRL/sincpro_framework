@@ -13,7 +13,6 @@ it, so changing it is a breaking change. The base is empty on purpose: Python le
 no members be extended.
 """
 
-import warnings
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
 from datetime import timedelta
@@ -64,18 +63,6 @@ class AnyOf:
     """
 
     members: "tuple[Requirement, ...]"
-
-    @property
-    def permissions(self) -> "tuple[Requirement, ...]":
-        """Its `members` — the name 3.40 gave them, kept until 4.0 with a `DeprecationWarning`
-        (#334): a member may now be a role or a rule, not only a permission."""
-        warnings.warn(
-            "AnyOf.permissions is AnyOf.members since 3.41 — a member may be a role or a rule; "
-            "the old name is removed in 4.0",
-            DeprecationWarning,
-            stacklevel=2,
-        )
-        return self.members
 
     def __str__(self) -> str:
         """Its members joined by `or` — `billing.read or billing.admin`."""

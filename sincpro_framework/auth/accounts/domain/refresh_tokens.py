@@ -39,7 +39,7 @@ class RefreshRecord(DataTransferObject):
     rotated_at: datetime | None = None
     idle_ttl: timedelta | None = None
     """How long each of the session's tokens lives unused — chosen at sign-in
-    (`TokenIssuer.lifetime_for`); `None` for a record of 3.41, which takes the issuer's."""
+    (`TokenIssuer.lifetime_for`); `None`, the issuer's `idle_ttl`."""
 
     @property
     def ends_at(self) -> datetime:

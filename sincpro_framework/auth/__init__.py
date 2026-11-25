@@ -125,7 +125,6 @@ from sincpro_framework.auth.common.domain.revocations import (
     RevocationState,
     WhenUnavailable,
 )
-from sincpro_framework.auth.common.infrastructure import moved_names
 from sincpro_framework.auth.common.infrastructure.claim_mapping import ClaimMapping, ClaimTest
 from sincpro_framework.auth.common.infrastructure.permission_versions import (
     CachingRevocations,
@@ -228,13 +227,7 @@ if TYPE_CHECKING:
 
 def __getattr__(name: str) -> Any:
     """A name of the `[jwt]` extra, imported now — `ImportError` naming the extra when it is
-    not installed —, or one 3.40 exported here that a door holds now, with a
-    `DeprecationWarning` naming the door (#334)."""
+    not installed."""
     if name in _LAZY:
         return getattr(importlib.import_module(_LAZY[name]), name)
-    if name in moved_names.MOVED_FROM_ROOT:
-        return moved_names.moved_name(__name__, name, moved_names.MOVED_FROM_ROOT[name], name)
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
-
-
-moved_names.install()

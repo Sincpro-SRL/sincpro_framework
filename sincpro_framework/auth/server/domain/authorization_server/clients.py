@@ -83,7 +83,7 @@ class OAuthClient(DataTransferObject):
     """The digest of a confidential client's secret — `None` for a public client."""
     token_endpoint_auth_method: ClientAuthMethod | None = None
     """How it registered to prove itself at the token endpoint — answered back as it asked
-    (RFC 7591 §2, #340); `None` for a client of 3.41, read from whether it holds a secret."""
+    (RFC 7591 §2); `None`, read from whether it holds a secret."""
     tenant: str | None = None
     """The tenant it belongs to — `None`, every tenant's: only sign-ins of its tenant are
     issued to it (#339)."""
