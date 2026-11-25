@@ -712,8 +712,10 @@ def test_stale_marked_during_a_read_is_never_lost() -> None:
     held = Refreshed(read=read, build=lambda content: content, what="a test", clock=Clock())
     first = threading.Thread(target=held.get, args=("bo",))
     first.start()
-    reading.wait(5)
-    held.stale("bo")  # the writer's instance, while the read is on its way
+    assert reading.wait(5)
+    marking = threading.Thread(target=held.stale, args=("bo",))  # the writer's, mid-read
+    marking.start()
     release.set()
-    first.join()
+    first.join(5)
+    marking.join(5)
     assert held.get("bo") == (2,)  # read again, not kept for check_every
