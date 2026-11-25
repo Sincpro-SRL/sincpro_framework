@@ -19,8 +19,16 @@ project's login completes at once for someone already signed in, show which clie
 (`PendingAuthorization.client_name`) and let the person accept or `deny` — otherwise a
 registered impostor receives a code for a person who never saw it.
 
-Extend: override `issue_tokens` to issue differently — another issuer per resource, claims
-stored server-side —, `OAuthClient.allows_redirect_uri` to match redirects another way.
+Resources (RFC 8707): a `resource` the server does not serve is `invalid_target` at `/authorize`,
+and the tokens of one it serves name it, canonical, as their `aud` — the `ResourcePolicy` of the
+`TokenIssuer`, the one its verifier reads too; with none, only the issuer's own audience.
+
+Tenants: a client bound to a tenant (`OAuthClient.tenant`) serves only authorizations for it, and
+`complete` refuses a sign-in of another tenant than the authorization's (`accepts_identity`).
+
+Extend: override `issue_tokens` to issue differently — another issuer per resource —,
+`audience_for` to decide the audience another way, `accepts_identity` to decide who may complete
+an authorization, `OAuthClient.allows_redirect_uri` to match redirects another way.
 """
 
 import json
@@ -31,6 +39,9 @@ from urllib.parse import urlsplit
 from sincpro_framework.auth.accounts import IssuedTokens
 from sincpro_framework.auth.common.domain.exceptions import OAuthError, OAuthErrorCode
 from sincpro_framework.auth.common.domain.identity import Assurance, Identity
+from sincpro_framework.auth.common.domain.resources import (
+    canonical_resource,
+)
 from sincpro_framework.auth.common.infrastructure.digests import digest
 from sincpro_framework.auth.server.domain.authorization_server.authorization import (
     AuthorizationCode,
@@ -55,13 +66,40 @@ from sincpro_framework.auth.server.services.authorization_server.core import (
 class AuthorizationCodeGrant(AuthorizationServerCore):
     """The authorization code grant."""
 
+    def audience_for(self, request: AuthorizationRequest, client: OAuthClient) -> str | None:
+        """The audience the tokens of `request` are issued for — `None`, the issuer's own: no
+        `resource` was asked for.
+
+        1. The `TokenIssuer`'s `resources` decide, with the client and the tenant.
+        2. With none, only the issuer's own audience is served.
+        Final: a resource not served is `invalid_target` — never a token its verifier refuses.
+        """
+        if request.resource is None:
+            return None
+        policy = self.token_issuer.resources
+        if policy is not None:
+            audience = policy.audience_for(request.resource, client.client_id, request.tenant)
+        elif canonical_resource(request.resource) == canonical_resource(
+            self.token_issuer.audience
+        ):
+            audience = self.token_issuer.audience
+        else:
+            audience = None
+        if audience is None:
+            raise OAuthError(
+                OAuthErrorCode.INVALID_TARGET,
+                f"{request.resource} is not a resource this server issues tokens for",
+            )
+        return audience
+
     def _validate_request(self, request: AuthorizationRequest, client: OAuthClient) -> None:
         """What a request must meet once its client and redirect are known — `OAuthError` else.
 
         1. `response_type=code`.
         2. A challenge when the `PkcePolicy` asks this client for one, by a method accepted.
         3. The grant and every scope, ones the client may use.
-        4. A `resource`, when given, an absolute URI with no fragment (RFC 8707 §2).
+        4. A `resource`, when given, an absolute URI with no fragment that the server serves
+           (`audience_for`, RFC 8707 §2).
         """
         if request.response_type != "code":
             raise OAuthError(
@@ -99,13 +137,33 @@ class AuthorizationCodeGrant(AuthorizationServerCore):
                     OAuthErrorCode.INVALID_TARGET,
                     "resource is an absolute URI with no fragment",
                 )
+            self.audience_for(request, client)
+
+    def _bind_tenant(
+        self, request: AuthorizationRequest, client: OAuthClient
+    ) -> AuthorizationRequest:
+        """`request` for its client's tenant — `invalid_request` when it names another; inheriting
+        it when it names none."""
+        if client.tenant is None:
+            return request
+        if request.tenant is not None and request.tenant != client.tenant:
+            raise OAuthError(
+                OAuthErrorCode.INVALID_REQUEST, "the client belongs to another tenant"
+            )
+        return request.model_copy(update={"tenant": client.tenant})
+
+    def accepts_identity(self, request: AuthorizationRequest, identity: Identity) -> bool:
+        """Whether `identity`, just signed in, may complete `request` — of the request's tenant,
+        when it names one. Override to decide otherwise: a platform administrator, say."""
+        return request.tenant is None or identity.tenant == request.tenant
 
     def authorize(self, request: AuthorizationRequest) -> PendingAuthorization:
         """A pending authorization for `request`, for the person to sign in to.
 
         1. The client known and the redirect one it registered — else refused, never redirected.
-        2. What the server's policy and the client's registration ask (`_validate_request`) —
-           refused with `redirect_uri` set: the client hears the error at its redirect.
+        2. Its tenant, the client's (`_bind_tenant`), and what the server's policy and the
+           client's registration ask (`_validate_request`) — refused with `redirect_uri` set:
+           the client hears the error at its redirect.
         Final: the authorization, waiting `authorization_ttl` under a new id.
         """
         client = self.client_registry.find(request.client_id)
@@ -117,6 +175,7 @@ class AuthorizationCodeGrant(AuthorizationServerCore):
                 "redirect_uri is not one the client registered",
             )
         try:
+            request = self._bind_tenant(request, client)
             self._validate_request(request, client)
         except OAuthError as refused:
             refused.redirect_uri = request.build_redirect_uri(
@@ -159,8 +218,22 @@ class AuthorizationCodeGrant(AuthorizationServerCore):
         self, pending_id: str, identity: Identity, assurance: Assurance | None = None
     ) -> str:
         """The person signed in as `identity` — how strongly, `assurance`: a code for the client,
-        and the URL the browser goes to with it (`?code=…&state=…&iss=…`, RFC 9207)."""
+        and the URL the browser goes to with it (`?code=…&state=…&iss=…`, RFC 9207). An identity
+        `accepts_identity` refuses — another tenant's — is `access_denied` at the client's
+        redirect; the authorization is spent either way."""
         request = self._pop_pending(pending_id)
+        if not self.accepts_identity(request, identity):
+            raise OAuthError(
+                OAuthErrorCode.ACCESS_DENIED,
+                "the person signed in to another tenant",
+                redirect_uri=request.build_redirect_uri(
+                    {
+                        "error": OAuthErrorCode.ACCESS_DENIED.value,
+                        "state": request.state,
+                        "iss": self.issuer,
+                    }
+                ),
+            )
         authorization_code = AuthorizationCode(
             request=request, identity=identity, assurance=assurance or identity.assurance
         )
@@ -188,14 +261,16 @@ class AuthorizationCodeGrant(AuthorizationServerCore):
         self, authorization_code: AuthorizationCode, client: OAuthClient
     ) -> IssuedTokens:
         """What a code grants: a new session, for whoever signed in, to this client, with the
-        scopes asked, for the resource asked (`aud`, RFC 8707). Override to issue differently.
+        scopes asked, for the resource asked (`aud` — `audience_for`, RFC 8707). What the
+        identity carries in `claims` is kept server-side when the issuer has
+        `session_attributes`. Override to issue differently.
         """
         return self.token_issuer.issue(
             authorization_code.identity,
             scopes=authorization_code.request.scopes,
             assurance=authorization_code.assurance,
             client=client.client_id,
-            audience=authorization_code.request.resource,
+            audience=self.audience_for(authorization_code.request, client),
         )
 
     def _revoke_replayed_code(self, code: str) -> None:

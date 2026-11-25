@@ -3,7 +3,7 @@ the keys that verify them, how their claims read and how much clock skew is tole
 issuer and its verifiers agree on, so the issuer publishes it (`TokenIssuer.trusted_issuer()`)
 and a verifier (`JwtProvider`) checks by it."""
 
-from collections.abc import Iterable
+from collections.abc import Callable, Iterable
 from dataclasses import dataclass, field
 from datetime import timedelta
 
@@ -28,6 +28,9 @@ class TrustedIssuer:
     """The clients (`azp`) whose tokens are accepted — every client when `None`."""
     algorithms: frozenset[str] | None = None
     """The algorithms accepted — the key source's when `None`; a subset of them otherwise."""
+    accepts_audience: Callable[[str], bool] | None = field(default=None, compare=False)
+    """An audience accepted besides `audience` — what a `TokenIssuer`'s `resources` serve,
+    a fixed list or one per tenant (RFC 8707, #335)."""
 
     def __post_init__(self) -> None:
         """Checked once, at construction — a `ProgrammingError` each:
@@ -72,4 +75,5 @@ class TrustedIssuer:
             audiences=self.audiences,
             leeway=self.leeway.total_seconds(),
             required=self.required,
+            accepts_audience=self.accepts_audience,
         )

@@ -94,16 +94,21 @@ class JwtProvider(AuthProvider):
         resolvers: Sequence[IdentityResolver] | None = None,
         name: str = "sessions",
     ) -> "JwtProvider":
-        """The provider that accepts what `issuer` signed — by its `trusted_issuer()`, checking
-        its revocations, and the permission version when it embeds permissions. `resolvers` are
-        the issuer's own when not given: what a store grants is resolved on every call, as it
-        was at sign-in.
+        """The provider that accepts what `issuer` signed — by its `trusted_issuer()`: its
+        audience and every resource it serves (RFC 8707), checking its revocations, and the
+        permission version when it embeds permissions. `resolvers` are the issuer's own when not
+        given: what a store grants is resolved on every call, as it was at sign-in. What the
+        session keeps on the server (`session_attributes`) is given back first, so every
+        resolver reads it.
 
             auth = AccessControl(providers=[JwtProvider.for_token_issuer(sessions)])
         """
         return cls(
             issuer.trusted_issuer(),
-            resolvers=issuer.resolvers if resolvers is None else resolvers,
+            resolvers=(
+                *issuer.verification_resolvers(),
+                *(issuer.resolvers if resolvers is None else resolvers),
+            ),
             revocations=issuer.revocations,
             name=name,
             clock=issuer.clock,

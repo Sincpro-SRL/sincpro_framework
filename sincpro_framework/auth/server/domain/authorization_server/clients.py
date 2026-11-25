@@ -52,6 +52,20 @@ def is_loopback_host(host: str) -> bool:
         return False
 
 
+def is_registrable_redirect_uri(uri: str) -> bool:
+    """Whether `uri` may be a client's redirect — https; http to a loopback address (a desktop
+    app, RFC 8252 §7.3); a private-use scheme with a dot (a mobile app, RFC 8252 §7.1); never a
+    fragment (RFC 6749 §3.1.2) nor user information."""
+    parts = urlsplit(uri)
+    if "#" in uri or not parts.scheme or parts.username is not None:
+        return False
+    if parts.scheme == "https":
+        return bool(parts.hostname)
+    if parts.scheme == "http":
+        return is_loopback_host(parts.hostname or "")
+    return "." in parts.scheme
+
+
 class OAuthClient(DataTransferObject):
     """A client of the authorization server, as it was registered."""
 
@@ -67,6 +81,12 @@ class OAuthClient(DataTransferObject):
     """The scopes it may ask for — any when empty."""
     secret_digest: str | None = None
     """The digest of a confidential client's secret — `None` for a public client."""
+    token_endpoint_auth_method: ClientAuthMethod | None = None
+    """How it registered to prove itself at the token endpoint — answered back as it asked
+    (RFC 7591 §2, #340); `None` for a client of 3.41, read from whether it holds a secret."""
+    tenant: str | None = None
+    """The tenant it belongs to — `None`, every tenant's: only sign-ins of its tenant are
+    issued to it (#339)."""
 
     @property
     def is_public(self) -> bool:
@@ -75,7 +95,10 @@ class OAuthClient(DataTransferObject):
 
     @property
     def auth_method(self) -> ClientAuthMethod:
-        """How it proves itself at the token endpoint — `client_secret_basic` with a secret."""
+        """How it proves itself at the token endpoint — as it registered; `client_secret_basic`
+        with a secret when it said nothing."""
+        if self.token_endpoint_auth_method is not None:
+            return self.token_endpoint_auth_method
         return (
             ClientAuthMethod.NONE if self.is_public else ClientAuthMethod.CLIENT_SECRET_BASIC
         )
@@ -110,6 +133,10 @@ class OAuthClient(DataTransferObject):
 
 class ClientRegistry(ABC):
     """The port: the clients by their id."""
+
+    supports_metadata_documents: bool = False
+    """Whether a `client_id` may be the URL of the client's metadata document (CIMD, #338) —
+    published in the server's metadata as `client_id_metadata_document_supported`."""
 
     @abstractmethod
     def find(self, client_id: str) -> OAuthClient | None:

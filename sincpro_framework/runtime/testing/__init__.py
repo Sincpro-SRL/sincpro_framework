@@ -37,6 +37,7 @@ from .contracts.key_value_store import KeyValueStoreContract
 from .contracts.object_store import ObjectStoreContract
 from .contracts.refresh_tokens import RefreshTokensContract
 from .contracts.revocations import RevocationsContract
+from .contracts.session_attributes import SessionAttributesContract
 from .contracts.token_source import TokenSourceContract
 from .doubles.auth import RecordingProvider, granting, signed_token
 from .doubles.clock import ManualClock
@@ -64,6 +65,7 @@ __all__ = [
     "RecordingProvider",
     "RecordingQueue",
     "RevocationsContract",
+    "SessionAttributesContract",
     "ScriptedHttp",
     "TokenSourceContract",
     "FakeResource",

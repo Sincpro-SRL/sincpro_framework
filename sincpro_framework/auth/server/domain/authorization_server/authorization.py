@@ -33,6 +33,7 @@ from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
 from pydantic import ConfigDict
 
+from sincpro_framework.auth.common.domain.exceptions import OAuthError, OAuthErrorCode
 from sincpro_framework.auth.common.domain.identity import Assurance, Identity
 from sincpro_framework.sincpro_abstractions import DataTransferObject
 
@@ -73,6 +74,50 @@ class AuthorizationRequest(DataTransferObject):
     state: str = ""
     resource: str | None = None
     """The resource the token is for — RFC 8707."""
+    tenant: str | None = None
+    """The tenant the authorization is for — what the transport knows (the host, the path, a
+    parameter); a client bound to a tenant sets it when the request does not (#339)."""
+
+    @classmethod
+    def from_query(
+        cls, parameters: Mapping[str, str], tenant: str | None = None
+    ) -> "AuthorizationRequest":
+        """The request a client sent to `/authorize`, from its query, as the RFCs read it — what
+        a transport builds it with (#340).
+
+            AuthorizationRequest.from_query(dict(request.query_params), tenant=tenant_of(host))
+
+        1. `client_id` and `redirect_uri` are required — `invalid_request`.
+        2. `code_challenge_method` omitted with a challenge is `plain` (RFC 7636 §4.3), which the
+           server refuses unless it accepts plain; an unknown one is `invalid_request`.
+        Final: `scope` split on spaces; every other parameter as it came.
+        """
+        missing = [name for name in ("client_id", "redirect_uri") if not parameters.get(name)]
+        if missing:
+            raise OAuthError(OAuthErrorCode.INVALID_REQUEST, f"{missing[0]} is required")
+        challenge = parameters.get("code_challenge", "")
+        named = parameters.get("code_challenge_method")
+        try:
+            method = (
+                CodeChallengeMethod(named)
+                if named
+                else (CodeChallengeMethod.PLAIN if challenge else CodeChallengeMethod.S256)
+            )
+        except ValueError as unknown:
+            raise OAuthError(
+                OAuthErrorCode.INVALID_REQUEST, f"code_challenge_method {named!r} is unknown"
+            ) from unknown
+        return cls(
+            client_id=parameters["client_id"],
+            redirect_uri=parameters["redirect_uri"],
+            response_type=parameters.get("response_type", "code"),
+            code_challenge=challenge,
+            code_challenge_method=method,
+            scopes=frozenset(parameters.get("scope", "").split()),
+            state=parameters.get("state", ""),
+            resource=parameters.get("resource") or None,
+            tenant=tenant,
+        )
 
     def build_redirect_uri(self, parameters: Mapping[str, str]) -> str:
         """Its `redirect_uri` with `parameters` added to the query it already had; an empty value
