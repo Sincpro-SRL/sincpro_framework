@@ -309,10 +309,12 @@ class TokenIssuer:
             raise self._replayed(spent)
         refresh_tokens.save(successor)
 
-    def refresh(self, refresh_token: str) -> IssuedTokens:
-        """A new pair for a refresh token, which is spent.
+    def refresh(self, refresh_token: str, client: str | None = None) -> IssuedTokens:
+        """A new pair for a refresh token, which is spent — for `client` alone when it is named:
+        a refresh token issued to one client is never another's (RFC 6749 §6).
 
-        1. Unknown, past its idle time or its session's end: `Unauthenticated`.
+        1. Unknown, past its idle time or its session's end, or issued to another client than
+           the one named: `Unauthenticated`, the token left unspent.
         2. Its session revoked, or its subject signed out everywhere since: `Unauthenticated`.
         3. Spent: rotated — or, used again within `reuse_grace`, a token beside the first
            refresh's — and past it, a replay that revokes the session.
@@ -327,6 +329,8 @@ class TokenIssuer:
             raise exceptions.Unauthenticated("unknown refresh token")
         if now >= record.expires_at or now >= record.session_ends:
             raise exceptions.Unauthenticated("session expired")
+        if client is not None and record.client != client:
+            raise exceptions.Unauthenticated("refresh token issued to another client")
         if self.revocations is not None:
             refusal = self.revocations.state(record.subject, session=record.family).refusal(
                 record.authenticated_at

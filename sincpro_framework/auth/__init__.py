@@ -79,6 +79,8 @@ from sincpro_framework.auth.common.domain.exceptions import (
     GrantRejected,
     InvalidGrant,
     NoCredentialsFor,
+    OAuthError,
+    OAuthErrorCode,
     PasswordRejected,
     PermissionDenied,
     Unauthenticated,
@@ -127,6 +129,8 @@ from sincpro_framework.auth.common.infrastructure.signatures import (
 from sincpro_framework.auth.common.infrastructure.trusted_issuer import TrustedIssuer
 
 __all__ = [
+    "OAuthError",
+    "OAuthErrorCode",
     "TrustedIssuer",
     "SharedSecrets",
     "ClaimTest",

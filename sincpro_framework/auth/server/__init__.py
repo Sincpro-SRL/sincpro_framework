@@ -32,6 +32,10 @@ are imported when first asked for.
 import importlib
 from typing import TYPE_CHECKING, Any
 
+from sincpro_framework.auth.server.adapters.authorization_server.clients import (
+    InMemoryClients,
+    KeyValueClients,
+)
 from sincpro_framework.auth.server.adapters.resource_server.api_keys import (
     ApiKey,
     ApiKeyProvider,
@@ -59,31 +63,81 @@ from sincpro_framework.auth.server.adapters.resource_server.static_tokens import
 from sincpro_framework.auth.server.adapters.resource_server.webhook_signatures import (
     SignatureProvider,
 )
+from sincpro_framework.auth.server.domain.authorization_server.authorization import (
+    AuthorizationCode,
+    AuthorizationRequest,
+    CodeChallengeMethod,
+    PendingAuthorization,
+    PkcePolicy,
+)
+from sincpro_framework.auth.server.domain.authorization_server.clients import (
+    ClientRegistry,
+    GrantType,
+    OAuthClient,
+)
 from sincpro_framework.auth.server.domain.resource_server.policy import PolicyEngine
 from sincpro_framework.auth.server.domain.resource_server.protected_resource import (
     ProtectedResource,
+)
+from sincpro_framework.auth.server.entrypoint.authorization_server import AuthorizationServer
+from sincpro_framework.auth.server.services.authorization_server.authorization_code import (
+    AuthorizationCodeGrant,
+)
+from sincpro_framework.auth.server.services.authorization_server.core import (
+    AuthorizationServerCore,
+)
+from sincpro_framework.auth.server.services.authorization_server.metadata import (
+    AuthorizationServerMetadata,
+)
+from sincpro_framework.auth.server.services.authorization_server.refresh import (
+    RefreshTokenGrant,
+)
+from sincpro_framework.auth.server.services.authorization_server.registration import (
+    ClientRegistration,
+    RegisteredClient,
+)
+from sincpro_framework.auth.server.services.authorization_server.revocation import (
+    TokenRevocation,
 )
 from sincpro_framework.auth.server.services.resource_server.decided_by import DecidedBy
 from sincpro_framework.auth.server.services.resource_server.resolving import Resolving
 
 __all__ = [
+    "api_key_digest",
     "ApiKey",
     "ApiKeyProvider",
     "ApiKeyStore",
+    "AuthorizationCode",
+    "AuthorizationCodeGrant",
+    "AuthorizationRequest",
+    "AuthorizationServer",
+    "AuthorizationServerCore",
     "AuthZenEngine",
+    "ClientRegistration",
+    "ClientRegistry",
+    "CodeChallengeMethod",
     "DecidedBy",
+    "GrantType",
     "InMemoryApiKeys",
+    "InMemoryClients",
     "IntrospectionProvider",
     "JwtProvider",
+    "KeyValueClients",
+    "OAuthClient",
     "OpaEngine",
     "OpenFgaEngine",
+    "PendingAuthorization",
+    "PkcePolicy",
     "PolicyEngine",
     "ProtectedResource",
+    "RefreshTokenGrant",
+    "RegisteredClient",
     "Resolving",
+    "AuthorizationServerMetadata",
     "ServiceTokenProvider",
     "SignatureProvider",
     "StaticProvider",
-    "api_key_digest",
+    "TokenRevocation",
 ]
 """Every name loaded with the package; the `[jwt]` extra's are in `_LAZY`, imported on first use."""
 
