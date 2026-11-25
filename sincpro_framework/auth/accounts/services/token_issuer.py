@@ -46,7 +46,12 @@ from sincpro_framework.auth.common.domain.revocations import Revocations
 from sincpro_framework.auth.common.infrastructure import jws
 from sincpro_framework.auth.common.infrastructure.announcing import announce
 from sincpro_framework.auth.common.infrastructure.digests import digest, random_token
-from sincpro_framework.auth.server import ClaimMapping, ClaimTest, JwtProvider, TrustedIssuer
+from sincpro_framework.auth.server import (
+    ClaimMapping,
+    ClaimTest,
+    JwtProvider,
+    TrustedIssuer,
+)
 from sincpro_framework.sincpro_abstractions import DataTransferObject
 from sincpro_framework.sincpro_logger import logger
 

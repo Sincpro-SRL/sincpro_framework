@@ -36,13 +36,15 @@ from sincpro_framework.auth.common.domain.revocations import (
     remembering_versions,
 )
 from sincpro_framework.auth.common.infrastructure import jws
-from sincpro_framework.auth.server.domain.claim_mapping import ClaimMapping
-from sincpro_framework.auth.server.domain.protected_resource import (
+from sincpro_framework.auth.server.domain.resource_server.claim_mapping import ClaimMapping
+from sincpro_framework.auth.server.domain.resource_server.protected_resource import (
     ProtectedResource,
 )
 
 if TYPE_CHECKING:
-    from sincpro_framework.auth.server.adapters.bearer_tokens.dpop_proofs import DpopProofs
+    from sincpro_framework.auth.server.adapters.resource_server.bearer_tokens.dpop_proofs import (
+        DpopProofs,
+    )
 
 HMAC_ALGORITHMS = frozenset(jws.HMAC_DIGESTS)
 """The headers read are `alg` and `kid`. `crit` names an extension that must be understood —
@@ -166,7 +168,9 @@ class JwtProvider(AuthProvider):
         Context: nothing is fetched here — the discovery document and the keys are read on the
         first token, so a service starts while its identity provider is down.
         """
-        from sincpro_framework.auth.server.adapters.bearer_tokens.jwks import Jwks
+        from sincpro_framework.auth.server.adapters.resource_server.bearer_tokens.jwks import (
+            Jwks,
+        )
 
         keys = Jwks.discovered(issuer, algorithms=algorithms, http=http, discovery=discovery)
         provider_options = {

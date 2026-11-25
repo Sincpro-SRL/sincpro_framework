@@ -15,7 +15,7 @@ from sincpro_framework.auth.server import (
     InMemoryApiKeys,
     ServiceTokenProvider,
 )
-from sincpro_framework.auth.server.adapters.service_tokens import HEADER
+from sincpro_framework.auth.server.adapters.resource_server.service_tokens import HEADER
 
 
 def test_an_identity_built_the_old_way_has_every_new_field_at_its_default() -> None:

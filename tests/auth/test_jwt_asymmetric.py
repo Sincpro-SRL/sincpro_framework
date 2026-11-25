@@ -18,7 +18,7 @@ from sincpro_framework.auth.server import (
     PublicKeys,
     TrustedIssuer,
 )
-from sincpro_framework.auth.server.adapters.bearer_tokens.jwks import Jwks
+from sincpro_framework.auth.server.adapters.resource_server.bearer_tokens.jwks import Jwks
 from sincpro_framework.runtime.testing import ScriptedHttp
 
 ISSUER = "https://auth.acme.bo/realms/acme"

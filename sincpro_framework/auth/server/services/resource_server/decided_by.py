@@ -14,7 +14,7 @@ from typing import TYPE_CHECKING, Any
 from sincpro_framework.auth.common.domain import exceptions
 from sincpro_framework.auth.common.domain.identity import Credentials, Identity
 from sincpro_framework.auth.common.domain.provider import AuthProvider
-from sincpro_framework.auth.server.domain.policy import PolicyEngine
+from sincpro_framework.auth.server.domain.resource_server.policy import PolicyEngine
 
 if TYPE_CHECKING:
     from sincpro_framework.ddd.criteria import Criteria

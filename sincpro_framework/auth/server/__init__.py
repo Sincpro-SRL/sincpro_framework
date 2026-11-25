@@ -31,39 +31,47 @@ are imported when first asked for.
 import importlib
 from typing import TYPE_CHECKING, Any
 
-from sincpro_framework.auth.server.adapters.api_keys import (
+from sincpro_framework.auth.server.adapters.resource_server.api_keys import (
     ApiKey,
     ApiKeyProvider,
     ApiKeyStore,
     InMemoryApiKeys,
     api_key_digest,
 )
-from sincpro_framework.auth.server.adapters.bearer_tokens.introspection import (
+from sincpro_framework.auth.server.adapters.resource_server.bearer_tokens.introspection import (
     IntrospectionProvider,
 )
-from sincpro_framework.auth.server.adapters.bearer_tokens.jwt_provider import (
+from sincpro_framework.auth.server.adapters.resource_server.bearer_tokens.jwt_provider import (
     JwtProvider,
     TrustedIssuer,
 )
-from sincpro_framework.auth.server.adapters.bearer_tokens.shared_secrets import SharedSecrets
-from sincpro_framework.auth.server.adapters.policy.engines import (
+from sincpro_framework.auth.server.adapters.resource_server.bearer_tokens.shared_secrets import (
+    SharedSecrets,
+)
+from sincpro_framework.auth.server.adapters.resource_server.policy.engines import (
     AuthZenEngine,
     OpaEngine,
     OpenFgaEngine,
 )
-from sincpro_framework.auth.server.adapters.service_tokens import ServiceTokenProvider
-from sincpro_framework.auth.server.adapters.static_tokens import StaticProvider
-from sincpro_framework.auth.server.adapters.webhook_signatures import SignatureProvider
-from sincpro_framework.auth.server.domain.claim_mapping import (
+from sincpro_framework.auth.server.adapters.resource_server.service_tokens import (
+    ServiceTokenProvider,
+)
+from sincpro_framework.auth.server.adapters.resource_server.static_tokens import (
+    StaticProvider,
+)
+from sincpro_framework.auth.server.adapters.resource_server.webhook_signatures import (
+    SignatureProvider,
+)
+from sincpro_framework.auth.server.domain.resource_server.claim_mapping import (
     ClaimMapping,
     ClaimTest,
 )
-from sincpro_framework.auth.server.domain.policy import PolicyEngine
-from sincpro_framework.auth.server.domain.protected_resource import (
+from sincpro_framework.auth.server.domain.resource_server.policy import PolicyEngine
+from sincpro_framework.auth.server.domain.resource_server.protected_resource import (
     ProtectedResource,
 )
-from sincpro_framework.auth.server.services.decided_by import DecidedBy
-from sincpro_framework.auth.server.services.resolving import Resolving
+from sincpro_framework.auth.server.services.resource_server.decided_by import DecidedBy
+from sincpro_framework.auth.server.services.resource_server.resolving import Resolving
 
 __all__ = [
     "ApiKey",
@@ -91,17 +99,24 @@ __all__ = [
 """Every name loaded with the package; the `[jwt]` extra's are in `_LAZY`, imported on first use."""
 
 _LAZY = {
-    "CertificateProvider": "sincpro_framework.auth.server.adapters.certificates",
-    "DpopProofs": "sincpro_framework.auth.server.adapters.bearer_tokens.dpop_proofs",
-    "Jwks": "sincpro_framework.auth.server.adapters.bearer_tokens.jwks",
-    "PublicKeys": "sincpro_framework.auth.server.adapters.bearer_tokens.jwks",
+    "CertificateProvider": "sincpro_framework.auth.server.adapters.resource_server.certificates",
+    "DpopProofs": "sincpro_framework.auth.server.adapters.resource_server.bearer_tokens.dpop_proofs",
+    "Jwks": "sincpro_framework.auth.server.adapters.resource_server.bearer_tokens.jwks",
+    "PublicKeys": "sincpro_framework.auth.server.adapters.resource_server.bearer_tokens.jwks",
 }
 """Names of the `[jwt]` extra, by the module that holds them — loaded on first use."""
 
 if TYPE_CHECKING:
-    from sincpro_framework.auth.server.adapters.bearer_tokens.dpop_proofs import DpopProofs
-    from sincpro_framework.auth.server.adapters.bearer_tokens.jwks import Jwks, PublicKeys
-    from sincpro_framework.auth.server.adapters.certificates import CertificateProvider
+    from sincpro_framework.auth.server.adapters.resource_server.bearer_tokens.dpop_proofs import (
+        DpopProofs,
+    )
+    from sincpro_framework.auth.server.adapters.resource_server.bearer_tokens.jwks import (
+        Jwks,
+        PublicKeys,
+    )
+    from sincpro_framework.auth.server.adapters.resource_server.certificates import (
+        CertificateProvider,
+    )
 
 
 def __getattr__(name: str) -> Any:

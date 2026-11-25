@@ -40,7 +40,7 @@ from sincpro_framework.auth.server import (
     ServiceTokenProvider,
     StaticProvider,
 )
-from sincpro_framework.auth.server.adapters.service_tokens import HEADER
+from sincpro_framework.auth.server.adapters.resource_server.service_tokens import HEADER
 from sincpro_framework.common.serialization import rebuilt
 from sincpro_framework.entrypoints import GrpcGateway, RpcGateway
 from sincpro_framework.entrypoints.adapters.grpc.wire import (
