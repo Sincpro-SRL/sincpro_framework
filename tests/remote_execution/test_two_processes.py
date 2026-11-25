@@ -3,7 +3,7 @@
 The context is written to disk and imported by both. Service B hosts it — `billing.serve(...)`
 over gRPC, or the HTTP route on an app of its own — and service A has no line of code about B:
 only `SINCPRO_CONTEXT_MAP` in its environment. A executes the context's use cases as it always
-would, 64 MiB of bytes included, and prints what it got back — and what crossed the wire: the
+would, a payload past gRPC's per-message limit included, and prints what it got back — and what crossed the wire: the
 command, the response and the domain error, each one JSON message and never a pickle.
 """
 
@@ -169,12 +169,12 @@ except InvoiceRefused as error:
     refused = str(error)
 
 try:
-    billing(CommandSlow(seconds=4))  # past the 3 s the environment gives every call
+    billing(CommandSlow(seconds=1.5))  # past the 1 s the environment gives every call
     timed_out = False
 except ContextTimeout:
     timed_out = True
 
-large = bytes(range(256)) * (16 * 1024 * 1024 // 256)
+large = bytes(range(256)) * (6 * 1024 * 1024 // 256)  # past gRPC's 4 MB
 echoed = billing(CommandEcho(data=large), ResponseEcho)
 
 print(json.dumps({
@@ -245,7 +245,7 @@ def test_a_service_configured_only_by_its_environment_is_answered_by_the_other(
     environment = {
         **os.environ,
         "PYTHONPATH": str(context_on_disk),
-        "SINCPRO_CONTEXT_MAP": f"billing-two-processes={service_b}?timeout=3",
+        "SINCPRO_CONTEXT_MAP": f"billing-two-processes={service_b}?timeout=1",
     }
 
     finished = subprocess.run(
@@ -266,7 +266,7 @@ def test_a_service_configured_only_by_its_environment_is_answered_by_the_other(
         "issued_by": 7,
         "refused": "over the credit limit",
         "timed_out": True,
-        "large_size": 16 * 1024 * 1024,
+        "large_size": 6 * 1024 * 1024,
         "on_the_wire": 7,  # four commands, two responses, one domain error
         "all_json": True,
         "any_pickle": False,
