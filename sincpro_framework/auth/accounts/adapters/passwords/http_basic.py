@@ -20,6 +20,7 @@ import secrets
 import threading
 import time
 from collections.abc import Callable, Mapping, Sequence
+from contextlib import nullcontext
 from datetime import timedelta
 from typing import Any
 
@@ -30,6 +31,7 @@ from sincpro_framework.auth.domain import exceptions
 from sincpro_framework.auth.domain.identity import Credentials, Identity
 from sincpro_framework.auth.domain.provider import AuthProvider
 from sincpro_framework.auth.domain.resolver import IdentityResolver, resolved
+from sincpro_framework.rate_limiter import RateLimited
 
 
 class HashedCredentials(CredentialVerifier):
@@ -104,13 +106,39 @@ class BasicProvider(AuthProvider):
             self._key, f"{username}\x00{password}".encode(), hashlib.sha256
         ).hexdigest()
 
+    def _verified(self, username: str, password: str) -> Identity:
+        """The identity the verifier answers for the pair — `Unauthenticated` when it answers
+        none, or the username is locked: an attempt counted before the hash, so pairs sent at
+        once never pass the limit together."""
+        counting = (
+            self.attempts.attempt(username) if self.attempts is not None else nullcontext()
+        )
+        try:
+            with counting:
+                found = self.verifier.verify(username, password)
+                if found is None:
+                    raise exceptions.Unauthenticated("wrong username or password")
+        except RateLimited as locked:
+            raise exceptions.Unauthenticated("too many failed attempts") from locked
+        return found
+
+    def _remember(self, memo: str, identity: Identity) -> None:
+        """`identity` remembered under `memo` for `remember_for` — the pairs past theirs
+        forgotten, so the memory holds a minute of pairs, never every pair ever sent."""
+        now = self.clock()
+        with self._lock:
+            self._remembered = {
+                one: held for one, held in self._remembered.items() if held[1] > now
+            }
+            self._remembered[memo] = (identity, now + self.remember_for.total_seconds())
+
     def authenticate(self, credentials: Credentials) -> Identity | None:
         """Who the Basic pair belongs to.
 
         1. Another scheme: `None`.
         2. Remembered and not past `remember_for`: that identity.
-        3. A locked username: `Unauthenticated("too many failed attempts")`, nothing hashed.
-        4. Verified; a wrong pair counted as a failure and refused.
+        3. Verified, the attempt counted first: a locked username is refused before any hash,
+           a wrong pair counted and refused — 401 both, with the Basic challenge.
         Final: the identity, resolved and remembered.
         """
         pair = self._pair(credentials)
@@ -122,19 +150,7 @@ class BasicProvider(AuthProvider):
             known = self._remembered.get(memo)
         if known is not None and self.clock() < known[1]:
             return known[0]
-        if self.attempts is not None and self.attempts.locked_for(username) is not None:
-            raise exceptions.Unauthenticated("too many failed attempts")
-        found = self.verifier.verify(username, password)
-        if found is None:
-            if self.attempts is not None:
-                self.attempts.failed(username)
-            raise exceptions.Unauthenticated("wrong username or password")
-        if self.attempts is not None:
-            self.attempts.succeeded(username)
+        found = self._verified(username, password)
         identity = resolved(found.model_copy(update={"provider": self.name}), self.resolvers)
-        with self._lock:
-            self._remembered[memo] = (
-                identity,
-                self.clock() + self.remember_for.total_seconds(),
-            )
+        self._remember(memo, identity)
         return identity

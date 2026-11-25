@@ -258,7 +258,8 @@ def test_a_locked_account_and_a_one_time_link_are_published_never_the_link() -> 
     audit = Recorder()
     attempts = LoginAttempts(InMemoryKeyValue(), max_failures=3, publisher=audit)
     for _ in range(3):
-        attempts.failed("ana@colegio.bo")
+        with pytest.raises(Unauthenticated), attempts.attempt("ana@colegio.bo"):
+            raise Unauthenticated("wrong username or password")
     links = OneTimeTokens(InMemoryKeyValue(), publisher=audit)
     link = links.issue("password-reset", "user:ana", timedelta(hours=1))
     links.redeem("password-reset", link)

@@ -12,7 +12,9 @@ them back: a logout, "sign out everywhere", a permission changed.
     auth = AccessControl(providers=[issuer.provider(resolvers=[GrantResolver(...)])])
 
 Context: the access token lives ten minutes and carries who and how — no permissions by default:
-the provider resolves them on every call, so a role taken away holds at once. With
+the provider resolves them on every call, so a role taken away holds at once. A session keeps
+the identity as the sign-in gave it, never what `resolvers` added from a store: a role assigned
+there is resolved again by whoever reads the token, and one taken away is gone at once. With
 `embed_permissions`, the issuer's own `resolvers` resolve them at sign-in and again at every
 refresh — never copied from the token before, which a role taken away would outlive. A refresh token is
 random, stored by its digest, and rotated: used twice past `reuse_grace` (ten seconds — two tabs
@@ -137,6 +139,16 @@ class TokenIssuer:
         """This moment, by `clock`."""
         return datetime.fromtimestamp(self.clock(), UTC)
 
+    def _carried(self, signed_in: Identity) -> Identity:
+        """What a token of `signed_in` carries: resolved by `resolvers` — its roles as the
+        sign-in gave them unless permissions are embedded. A role a store assigns is resolved
+        again by whoever verifies the token, so one taken away there is gone at once; embedded,
+        the permission version refuses the token instead."""
+        issued = resolved(signed_in, self.resolvers)
+        if self.embed_permissions:
+            return issued
+        return issued.model_copy(update={"roles": signed_in.roles})
+
     def _access(
         self,
         identity: Identity,
@@ -198,14 +210,20 @@ class TokenIssuer:
         assurance: Assurance | None = None,
         client: str | None = None,
     ) -> IssuedTokens:
-        """A new session for `identity` — just authenticated, resolved by `resolvers`: an access
-        token, and a refresh token when refresh tokens are kept, remembering its roles."""
-        identity = resolved(identity, self.resolvers)
+        """A new session for `identity` — just authenticated: an access token, and a refresh
+        token when refresh tokens are kept, remembering the identity as the sign-in gave it.
+
+        Context: what `resolvers` see is what a verifier and every refresh see — the scopes
+        chosen and the client, the identity's own when `client` is not given — so a scope
+        ceiling decides the same at sign-in and after.
+        """
+        chosen = frozenset(scopes)
+        client = identity.client if client is None else client
+        signed_in = identity.model_copy(update={"scopes": chosen, "client": client})
         now = self._now()
         session = random_token("sid_", 16)
         how = assurance or identity.assurance
-        chosen = frozenset(scopes)
-        access = self._access(identity, session, now, how, chosen, client)
+        access = self._access(self._carried(signed_in), session, now, how, chosen, client)
         refresh: str | None = None
         if self.refresh_tokens is not None:
             refresh = random_token("rt_")
@@ -275,7 +293,7 @@ class TokenIssuer:
         2. Its session revoked, or its subject signed out everywhere since: `Unauthenticated`.
         3. Already rotated: refused — and past `reuse_grace`, the session revoked.
         4. Rotated atomically; losing the race is step 3.
-        Final: a new access token of the same session — the roles of its sign-in, resolved
+        Final: a new access token of the same session — the identity of its sign-in, resolved
         again by `resolvers` — and a new refresh token.
         """
         if self.refresh_tokens is None:
@@ -301,18 +319,16 @@ class TokenIssuer:
             if again is None or again.rotated_at is None:
                 raise exceptions.Unauthenticated("unknown refresh token")
             raise self._reused(again, again.rotated_at, now)
-        identity = resolved(
-            Identity(
-                subject=record.subject,
-                kind=IdentityKind(record.kind),
-                tenant=record.tenant,
-                roles=record.roles,
-                scopes=record.scopes,
-            ),
-            self.resolvers,
+        signed_in = Identity(
+            subject=record.subject,
+            kind=IdentityKind(record.kind),
+            tenant=record.tenant,
+            roles=record.roles,
+            scopes=record.scopes,
+            client=record.client,
         )
         access = self._access(
-            identity,
+            self._carried(signed_in),
             record.family,
             record.authenticated_at,
             record.assurance,
@@ -371,8 +387,18 @@ class TokenIssuer:
             )
 
     def sessions_of(self, subject: str) -> list[RefreshRecord]:
-        """The sessions `subject` is signed in on."""
-        return [] if self.refresh_tokens is None else self.refresh_tokens.sessions_of(subject)
+        """The sessions `subject` is signed in on — none it signed out of, nor any begun before
+        it signed out everywhere."""
+        if self.refresh_tokens is None:
+            return []
+        revocations = self.revocations
+        return [
+            one
+            for one in self.refresh_tokens.sessions_of(subject)
+            if revocations is None
+            or revocations.state(subject, session=one.family).refusal(one.authenticated_at)
+            is None
+        ]
 
     def revoke_subject(self, subject: str) -> None:
         """ "Sign out everywhere": every token of `subject` issued until now is refused — a
@@ -383,7 +409,8 @@ class TokenIssuer:
         """
         revocations = self._revocations()
         revocations.revoke_subject(subject, self._now() + self.at_most)
-        for record in self.sessions_of(subject):
+        held = [] if self.refresh_tokens is None else self.refresh_tokens.sessions_of(subject)
+        for record in held:
             revocations.revoke_session(record.family, record.session_ends)
         announce(
             self.publisher,
@@ -391,10 +418,11 @@ class TokenIssuer:
         )
 
     def provider(
-        self, resolvers: Sequence[IdentityResolver] = (), name: str = "sessions"
+        self, resolvers: Sequence[IdentityResolver] | None = None, name: str = "sessions"
     ) -> JwtProvider:
         """The `JwtProvider` that accepts what this issuer signed — checking revocations, and the
-        permission version when permissions are embedded."""
+        permission version when permissions are embedded. `resolvers` are the issuer's own when
+        not given: what a store grants is resolved on every call, as it was at sign-in."""
         return JwtProvider(
             TrustedIssuer(
                 self.issuer,
@@ -403,7 +431,7 @@ class TokenIssuer:
                 mapping=OWN_MAPPING,
                 required=frozenset({"exp", "sub", "sid"}),
             ),
-            resolvers=resolvers,
+            resolvers=self.resolvers if resolvers is None else resolvers,
             revocations=self.revocations,
             name=name,
             clock=self.clock,

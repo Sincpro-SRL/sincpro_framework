@@ -3,19 +3,24 @@ provider accepts, an opaque refresh token rotated on every use — a replay revo
 a logout and "sign out everywhere" holding at once, and other services verifying with the JWKS.
 """
 
+import json
 import threading
 from datetime import UTC, datetime, timedelta
 
 import fakeredis
 import pytest
 
+from sincpro_framework import DataTransferObject, Feature, UseFramework
 from sincpro_framework.auth import (
+    AccessControl,
     Assurance,
     Credentials,
     Identity,
     IdentityKind,
     InMemoryRevocations,
+    KeyValueRevocations,
     PrivateKey,
+    security,
 )
 from sincpro_framework.auth.accounts import (
     InMemoryRefreshTokens,
@@ -26,8 +31,11 @@ from sincpro_framework.auth.accounts import (
     TokenIssuer,
 )
 from sincpro_framework.auth.domain import exceptions
+from sincpro_framework.auth.grants import GrantCatalog, Grants, Role
+from sincpro_framework.auth.infrastructure.digests import digest
 from sincpro_framework.auth.server import JwtProvider, PublicKeys, TrustedIssuer
-from sincpro_framework.data_layer.store import InMemoryKeyValue
+from sincpro_framework.context import KeyValueContexts
+from sincpro_framework.data_layer.store import InMemoryKeyValue, StoreUnavailable
 from sincpro_framework.data_layer.store.adapters.redis import RedisKeyValue
 from sincpro_framework.runtime.testing.contracts.refresh_tokens import RefreshTokensContract
 
@@ -45,14 +53,16 @@ class Clock:
 def issuer(clock: Clock | None = None, **options) -> TokenIssuer:
     clock = clock or Clock()
     moment = lambda: datetime.fromtimestamp(clock.now, UTC)  # noqa: E731 — the test's clock
+    stores = {
+        "refresh_tokens": InMemoryRefreshTokens(now=moment),
+        "revocations": InMemoryRevocations(now=moment),
+    }
     return TokenIssuer(
         "https://colegio.bo",
         audience="colegio",
         keys=SigningKeys.hmac({"2026-09": SECRET}),
-        refresh_tokens=InMemoryRefreshTokens(now=moment),
-        revocations=InMemoryRevocations(now=moment),
         clock=clock,
-        **options,
+        **{**stores, **options},
     )
 
 
@@ -316,3 +326,148 @@ def test_embedded_permissions_are_refused_once_its_tenants_or_every_tenants_chan
 def test_embedding_permissions_with_refresh_tokens_needs_resolvers() -> None:
     with pytest.raises(exceptions.ProgrammingError, match="needs resolvers="):
         issuer(embed_permissions=True)
+
+
+def test_a_role_given_in_the_store_holds_and_taken_away_is_gone_from_the_session() -> None:
+    catalog = GrantCatalog([Role("dues.approver", "Approver", grants={"dues.approve"})])
+    grants = Grants(catalog, store=InMemoryKeyValue())
+    with security.as_system("the treasurer approves dues"):
+        grants.assign(ANA.subject, "dues.approver", tenant="cauor")
+    sessions = issuer(resolvers=[grants])
+    provider = sessions.provider()  # resolves as the issuer does
+    tokens = sessions.issue(ANA)
+    held = provider.authenticate(bearer(tokens))
+    assert held is not None and held.roles == {"colegiado", "dues.approver"}
+    with security.as_system("the treasurer left"):
+        grants.unassign(ANA.subject, "dues.approver", tenant="cauor")
+    for token in (tokens, sessions.refresh(refresh_of(tokens))):
+        identity = provider.authenticate(bearer(token))
+        assert identity is not None
+        assert (identity.roles, identity.permissions) == ({"colegiado"}, frozenset())
+
+
+def test_a_session_signed_out_of_is_off_the_list() -> None:
+    sessions = issuer()
+    left, kept = sessions.issue(ANA), sessions.issue(ANA)
+    sessions.revoke(left.access_token.get_secret_value())
+    assert [one.family for one in sessions.sessions_of(ANA.subject)] == [kept.session]
+    sessions.revoke_subject(ANA.subject)
+    assert sessions.sessions_of(ANA.subject) == []
+
+
+def test_the_index_of_sessions_keeps_only_the_live_ones_and_ends_with_the_last() -> None:
+    clock = Clock()
+    moment = lambda: datetime.fromtimestamp(clock.now, UTC)  # noqa: E731 — the test's clock
+    store = InMemoryKeyValue(now=moment)
+    kept = KeyValueRefreshTokens(store, now=moment)
+    sessions = issuer(clock, refresh_tokens=kept)
+    sessions.issue(ANA)
+    clock.now += timedelta(days=31).total_seconds()
+    later = sessions.issue(ANA)
+    sessions.refresh(refresh_of(later))
+    index = store.get(kept._index_key(ANA.subject))
+    assert index is not None and list(json.loads(index)) == [later.session]
+    clock.now += timedelta(days=31).total_seconds()
+    assert store.get(kept._index_key(ANA.subject)) is None
+
+
+def test_an_index_entry_it_cannot_read_is_dropped_never_a_failed_sign_in() -> None:
+    store = InMemoryKeyValue()
+    kept = KeyValueRefreshTokens(store)
+    store.set(kept._index_key(ANA.subject), json.dumps({"sid_older": "a-digest"}).encode())
+    sessions = issuer(refresh_tokens=kept)
+    tokens = sessions.issue(ANA)
+    assert [one.family for one in sessions.sessions_of(ANA.subject)] == [tokens.session]
+
+
+class FailingWrites(InMemoryKeyValue):
+    """A store that stops answering writes while `down`."""
+
+    down = False
+
+    def set(self, key: str, value: bytes, ttl: timedelta | None = None) -> None:
+        if self.down:
+            raise StoreUnavailable("down")
+        super().set(key, value, ttl)
+
+
+def test_a_store_failing_in_a_refresh_leaves_the_token_to_retry() -> None:
+    clock = Clock()
+    store = FailingWrites()
+    sessions = issuer(clock, refresh_tokens=KeyValueRefreshTokens(store))
+    spent = refresh_of(sessions.issue(ANA))
+    store.down = True
+    with pytest.raises(StoreUnavailable):
+        sessions.refresh(spent)
+    store.down = False
+    clock.now += 60
+    assert sessions.refresh(spent).refresh_token is not None
+
+
+def test_a_logout_holds_on_a_bounded_context_with_a_store_of_its_own() -> None:
+    sessions = TokenIssuer(
+        "https://colegio.bo",
+        audience="colegio",
+        keys=SigningKeys.hmac({"2026-09": SECRET}),
+        refresh_tokens=KeyValueRefreshTokens(),
+        revocations=KeyValueRevocations(),
+    )
+    members = UseFramework("members-own-store", log_after_execution=False)
+    members.store_context_in(KeyValueContexts(InMemoryKeyValue()))
+    access = AccessControl(providers=[sessions.provider()])
+
+    class CommandSignOut(DataTransferObject):
+        token: str
+
+    @members.feature(CommandSignOut)
+    class SignOut(Feature):
+        def execute(self, dto: CommandSignOut) -> None:
+            sessions.revoke(dto.token)
+
+    access.on(members)
+    tokens = sessions.issue(ANA)
+    members(CommandSignOut(token=tokens.access_token.get_secret_value()))
+    with pytest.raises(exceptions.Unauthenticated, match="session revoked"):
+        with security.authenticated_as(members, bearer(tokens)):
+            pass
+
+
+def test_replicas_of_a_bounded_context_share_its_sessions_through_its_own_store() -> None:
+    shared = InMemoryKeyValue()  # the Redis only the bounded context was given
+
+    class CommandSignIn(DataTransferObject):
+        subject: str
+
+    class CommandRenew(DataTransferObject):
+        refresh_token: str
+
+    class Renewed(DataTransferObject):
+        refresh_token: str
+
+    def replica(name: str) -> UseFramework:
+        sessions = TokenIssuer(
+            "https://colegio.bo",
+            audience="colegio",
+            keys=SigningKeys.hmac({"2026-09": SECRET}),
+            refresh_tokens=KeyValueRefreshTokens(),
+            revocations=KeyValueRevocations(),
+        )
+        members = UseFramework(name, log_after_execution=False)
+        members.store_context_in(KeyValueContexts(shared))
+
+        @members.feature(CommandSignIn)
+        class SignIn(Feature):
+            def execute(self, dto: CommandSignIn) -> Renewed:
+                return Renewed(refresh_token=refresh_of(sessions.issue(ANA)))
+
+        @members.feature(CommandRenew)
+        class Renew(Feature):
+            def execute(self, dto: CommandRenew) -> Renewed:
+                return Renewed(refresh_token=refresh_of(sessions.refresh(dto.refresh_token)))
+
+        return members
+
+    first, second = replica("members-replica-a"), replica("members-replica-b")
+    signed_in = first(CommandSignIn(subject=ANA.subject), Renewed)
+    assert KeyValueRefreshTokens(shared).find(digest(signed_in.refresh_token)) is not None
+    assert second(CommandRenew(refresh_token=signed_in.refresh_token), Renewed).refresh_token

@@ -42,6 +42,14 @@ Nothing is forced: a use case or hook that declares nothing is not checked, and 
 Lambda fed by SQS included), an ASGI app of the project's and a context hosted for another
 service — authenticates by itself when the bus is guarded — see [Entrypoints](#entrypoints-authenticate-by-themselves).
 
+**Where auth keeps what it keeps.** Revocations, refresh tokens, login attempts, one-time links
+and role assignments live where the context is stored — the bus's own store when it has one
+(`bus.store_context_in`), else the process's (`store_context_in`) — unless a piece is handed a
+store of its own. An entrypoint authenticates a call with the store of the bus it calls, so what
+a sign-out writes inside a use case is what the next request reads. One store for the process is
+one login for every bounded context; a bounded context with a store of its own has a login of
+its own, and signing out there leaves the others signed in.
+
 Every block on this page runs, in order, in `tests/docs/test_persistence_guide.py`.
 
 ## Permissions of a bounded context

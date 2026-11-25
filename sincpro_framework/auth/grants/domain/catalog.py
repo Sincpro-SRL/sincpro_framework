@@ -24,8 +24,7 @@ too. An entitlement gates permissions behind what a tenant bought: without it, a
 gates is never granted, whoever holds the role.
 """
 
-from collections.abc import Iterable, Mapping
-from collections.abc import Set as AbstractSet
+from collections.abc import Iterable, Mapping, Set
 from dataclasses import dataclass, field
 from functools import lru_cache
 from typing import Protocol
@@ -65,12 +64,12 @@ class Role:
 
     key: str
     name: str = ""
-    grants: AbstractSet[str] = frozenset()
+    grants: Set[str] = frozenset()
     implies: tuple["Role", ...] = ()
     privilege: Privilege | None = None
     sequence: int = 0
     """Its place among its privilege's levels — the higher, the more it holds."""
-    disjoint: AbstractSet[str] = frozenset()
+    disjoint: Set[str] = frozenset()
     """Roles never held together with this one — internal and portal."""
     description: str = ""
 
@@ -86,7 +85,7 @@ class Entitlement:
 
     key: str
     name: str = ""
-    gates: AbstractSet[str] = field(default_factory=frozenset)
+    gates: Set[str] = field(default_factory=frozenset)
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "gates", frozenset(self.gates))

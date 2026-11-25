@@ -3,13 +3,14 @@ and a second factor whose codes are RFC 6238's own, accepted once each."""
 
 import base64
 import threading
-from datetime import timedelta
+from datetime import UTC, datetime, timedelta
 from urllib.parse import parse_qs, urlsplit
 
 import pytest
 
 from sincpro_framework.auth.accounts import OneTimeTokens, Totp
 from sincpro_framework.auth.domain import exceptions
+from sincpro_framework.auth.infrastructure.digests import digest
 from sincpro_framework.data_layer.store import InMemoryKeyValue
 
 RFC6238 = [
@@ -118,6 +119,25 @@ def test_a_code_is_accepted_once_and_never_an_older_one() -> None:
     assert totp.verify(secret, code, subject="user:bea")
     older = totp.code_at(secret, int(now[0] // 30) - 1)
     assert not totp.verify(secret, older, subject="user:ana")
+    later = totp.code_at(secret, int(now[0] // 30) + 1)
+    assert totp.verify(
+        secret, later
+    )  # no subject: verified, and a warning says why it may repeat
+
+
+def test_a_code_is_refused_again_while_it_could_verify_and_forgotten_after() -> None:
+    now = [1_900_000_000.0]
+    store = InMemoryKeyValue(now=lambda: datetime.fromtimestamp(now[0], UTC))
+    totp = Totp("CAUOR", replay=store, clock=lambda: now[0])
+    secret = totp.new_secret()
+    ahead = totp.code_at(secret, int(now[0] // 30) + 1)  # a phone whose clock runs ahead
+    accepted = now[0]
+    assert totp.verify(secret, ahead, subject="user:ana")
+    while Totp("CAUOR", clock=lambda: now[0]).verify(secret, ahead):
+        assert not totp.verify(secret, ahead, subject="user:ana")
+        now[0] += 10
+    now[0] = accepted + 4 * 30  # (2 × window + 2) steps
+    assert store.get(f"sincpro:auth:totp:{digest('user:ana')}") is None
 
 
 def test_the_qr_code_says_what_the_app_needs() -> None:

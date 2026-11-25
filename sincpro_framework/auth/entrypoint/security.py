@@ -32,6 +32,7 @@ from sincpro_framework.auth.infrastructure.security_context import (
     presented_credential,
     presenting,
 )
+from sincpro_framework.context import ContextStore, use_context
 
 if TYPE_CHECKING:
     from sincpro_framework.use_bus import UseFramework
@@ -77,17 +78,20 @@ class SecurityContext:
             with security.authenticated_as(unguarded_bus, credentials) as identity:
                 identity           ->  security.identity, unchanged
 
-        Context: the identity is yielded, so the transport can log or answer with it.
+        Context: the identity is yielded, so the transport can log or answer with it. The
+        providers read what auth keeps — revocations, refresh tokens, grants — on the store
+        `bus` keeps its context in, where its use cases wrote it: a sign-out inside a bounded
+        context with a store of its own is what its next request reads; a bus with none reads
+        the process's.
         """
         access = AccessControl.of(bus)
         if credentials is None or access is None:
             with nullcontext(current_identity()) as unchanged:
                 yield unchanged
             return
-        with (
-            as_identity(access.authenticate(credentials)) as identity,
-            presenting(credentials.bearer),
-        ):
+        with use_context().scoped({ContextStore: bus.current_context().store()}):
+            caller = access.authenticate(credentials)
+        with as_identity(caller) as identity, presenting(credentials.bearer):
             yield identity
 
     def challenges(
