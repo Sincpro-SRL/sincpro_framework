@@ -6,8 +6,8 @@ import json
 
 import pytest
 
-from sincpro_framework.auth.domain import exceptions
-from sincpro_framework.auth.infrastructure import jws
+from sincpro_framework.auth.common.domain import exceptions
+from sincpro_framework.auth.common.infrastructure import jws
 
 RFC7515_A1 = (
     "eyJ0eXAiOiJKV1QiLA0KICJhbGciOiJIUzI1NiJ9"

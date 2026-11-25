@@ -18,8 +18,8 @@ from datetime import UTC, datetime
 from functools import partial
 from typing import Any
 
+from sincpro_framework.auth.common.infrastructure.digests import digest
 from sincpro_framework.auth.grants.domain.assignments import Assignment, GrantStore
-from sincpro_framework.auth.infrastructure.digests import digest
 from sincpro_framework.context.entrypoint.resolution import current_store, key_value_store_of
 from sincpro_framework.data_layer.store import KeyValueStore
 from sincpro_framework.exceptions import ServiceUnavailableError

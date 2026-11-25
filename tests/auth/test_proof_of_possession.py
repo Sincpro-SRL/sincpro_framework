@@ -22,8 +22,8 @@ from sincpro_framework.auth.client import (
     OutgoingRequest,
     TokenCache,
 )
-from sincpro_framework.auth.domain import exceptions
-from sincpro_framework.auth.infrastructure import jws
+from sincpro_framework.auth.common.domain import exceptions
+from sincpro_framework.auth.common.infrastructure import jws
 from sincpro_framework.auth.server import (
     CertificateProvider,
     DpopProofs,

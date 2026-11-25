@@ -33,19 +33,22 @@ write can be asked again: a removal asked again finishes what a failure left.
 from collections.abc import Callable
 from typing import Any, Protocol
 
-from sincpro_framework.auth.domain import exceptions
-from sincpro_framework.auth.domain.administration import (
+from sincpro_framework.auth.common.domain import exceptions
+from sincpro_framework.auth.common.domain.administration import (
     AdministrationPolicy,
     BoundedAdministration,
 )
-from sincpro_framework.auth.domain.documents import rewritten
-from sincpro_framework.auth.domain.events import SUBJECT, EventPublisher
-from sincpro_framework.auth.domain.identity import Identity
-from sincpro_framework.auth.domain.revocations import (
+from sincpro_framework.auth.common.domain.documents import rewritten
+from sincpro_framework.auth.common.domain.events import SUBJECT, EventPublisher
+from sincpro_framework.auth.common.domain.identity import Identity
+from sincpro_framework.auth.common.domain.revocations import (
     EVERY_TENANT,
     Revocations,
     tenant_subject,
 )
+from sincpro_framework.auth.common.infrastructure.announcing import announce
+from sincpro_framework.auth.common.infrastructure.locks import AdministrationLocks
+from sincpro_framework.auth.common.infrastructure.security_context import current_identity
 from sincpro_framework.auth.grants.domain.assignments import GrantStore
 from sincpro_framework.auth.grants.domain.catalog import Composition, GrantCatalog
 from sincpro_framework.auth.grants.domain.composition import compose
@@ -64,9 +67,6 @@ from sincpro_framework.auth.grants.domain.events import (
     RoleUnassigned,
 )
 from sincpro_framework.auth.grants.domain.giving import definable
-from sincpro_framework.auth.infrastructure.announcing import announce
-from sincpro_framework.auth.infrastructure.locks import AdministrationLocks
-from sincpro_framework.auth.infrastructure.security_context import current_identity
 
 
 def _shape(definition: RoleDefinition) -> dict[str, Any]:

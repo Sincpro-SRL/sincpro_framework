@@ -26,9 +26,9 @@ from sincpro_framework.auth import (
     Permission,
     security,
 )
-from sincpro_framework.auth.domain import exceptions
+from sincpro_framework.auth.common.domain import exceptions
+from sincpro_framework.auth.common.infrastructure import jws
 from sincpro_framework.auth.grants import RolePermissions
-from sincpro_framework.auth.infrastructure import jws
 from sincpro_framework.auth.server import (
     ClaimMapping,
     JwtProvider,

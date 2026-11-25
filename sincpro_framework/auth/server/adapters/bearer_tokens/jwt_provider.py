@@ -25,19 +25,19 @@ from dataclasses import dataclass, field
 from datetime import timedelta
 from typing import TYPE_CHECKING, Any
 
-from sincpro_framework.auth.domain import exceptions
-from sincpro_framework.auth.domain.identity import Credentials, Identity
-from sincpro_framework.auth.domain.keys import KeySource
-from sincpro_framework.auth.domain.provider import AuthProvider
-from sincpro_framework.auth.domain.resolver import IdentityResolver, resolved
-from sincpro_framework.auth.domain.revocations import (
+from sincpro_framework.auth.common.domain import exceptions
+from sincpro_framework.auth.common.domain.identity import Credentials, Identity
+from sincpro_framework.auth.common.domain.keys import KeySource
+from sincpro_framework.auth.common.domain.provider import AuthProvider
+from sincpro_framework.auth.common.domain.resolver import IdentityResolver, resolved
+from sincpro_framework.auth.common.domain.revocations import (
     Revocations,
     related_of,
     remembering_versions,
 )
-from sincpro_framework.auth.infrastructure import jws
-from sincpro_framework.auth.server.adapters.bearer_tokens.claim_mapping import ClaimMapping
-from sincpro_framework.auth.server.adapters.bearer_tokens.protected_resource import (
+from sincpro_framework.auth.common.infrastructure import jws
+from sincpro_framework.auth.server.domain.claim_mapping import ClaimMapping
+from sincpro_framework.auth.server.domain.protected_resource import (
     ProtectedResource,
 )
 

@@ -17,7 +17,7 @@ from contextlib import contextmanager
 from typing import TYPE_CHECKING, Any
 
 from sincpro_framework.auth import AuthProvider, Credentials, Identity, security
-from sincpro_framework.auth.infrastructure import jws
+from sincpro_framework.auth.common.infrastructure import jws
 
 if TYPE_CHECKING:
     from sincpro_framework.auth import PrivateKey

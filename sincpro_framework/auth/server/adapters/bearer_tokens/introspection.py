@@ -21,25 +21,29 @@ from collections.abc import Callable, Iterable, Sequence
 from datetime import timedelta
 from typing import Any
 
-from sincpro_framework.auth.domain import exceptions
-from sincpro_framework.auth.domain.http import ClientAuthentication, HttpClient, HttpRequest
-from sincpro_framework.auth.domain.identity import Credentials, Identity
-from sincpro_framework.auth.domain.provider import AuthProvider
-from sincpro_framework.auth.domain.resolver import IdentityResolver, resolved
-from sincpro_framework.auth.domain.revocations import (
-    Revocations,
-    related_of,
-    remembering_versions,
-)
-from sincpro_framework.auth.infrastructure import jws
-from sincpro_framework.auth.infrastructure.digests import digest
-from sincpro_framework.auth.infrastructure.server_metadata import (
+from sincpro_framework.auth.common.adapters.server_metadata import (
     OidcDiscovery,
     discovery_for,
     located,
 )
-from sincpro_framework.auth.infrastructure.urllib_http import UrllibHttp
-from sincpro_framework.auth.server.adapters.bearer_tokens.claim_mapping import ClaimMapping
+from sincpro_framework.auth.common.adapters.urllib_http import UrllibHttp
+from sincpro_framework.auth.common.domain import exceptions
+from sincpro_framework.auth.common.domain.http import (
+    ClientAuthentication,
+    HttpClient,
+    HttpRequest,
+)
+from sincpro_framework.auth.common.domain.identity import Credentials, Identity
+from sincpro_framework.auth.common.domain.provider import AuthProvider
+from sincpro_framework.auth.common.domain.resolver import IdentityResolver, resolved
+from sincpro_framework.auth.common.domain.revocations import (
+    Revocations,
+    related_of,
+    remembering_versions,
+)
+from sincpro_framework.auth.common.infrastructure import jws
+from sincpro_framework.auth.common.infrastructure.digests import digest
+from sincpro_framework.auth.server.domain.claim_mapping import ClaimMapping
 from sincpro_framework.data_layer.caching import Cache, CachePolicy, JsonCodec, TimeToLive
 from sincpro_framework.sincpro_logger import logger
 

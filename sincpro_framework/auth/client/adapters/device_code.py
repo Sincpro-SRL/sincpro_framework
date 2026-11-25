@@ -21,14 +21,18 @@ from sincpro_framework.auth.client.infrastructure.token_endpoint import (
     TokenEndpoint,
     TokenResponse,
 )
-from sincpro_framework.auth.domain import exceptions
-from sincpro_framework.auth.domain.http import ClientAuthentication, HttpClient, HttpRequest
-from sincpro_framework.auth.infrastructure.server_metadata import (
+from sincpro_framework.auth.common.adapters.server_metadata import (
     OidcDiscovery,
     discovery_for,
     located,
 )
-from sincpro_framework.auth.infrastructure.urllib_http import UrllibHttp
+from sincpro_framework.auth.common.adapters.urllib_http import UrllibHttp
+from sincpro_framework.auth.common.domain import exceptions
+from sincpro_framework.auth.common.domain.http import (
+    ClientAuthentication,
+    HttpClient,
+    HttpRequest,
+)
 from sincpro_framework.sincpro_abstractions import DataTransferObject
 
 DEVICE_CODE = "urn:ietf:params:oauth:grant-type:device_code"

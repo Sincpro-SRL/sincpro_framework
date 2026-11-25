@@ -8,7 +8,7 @@ framework never keeps a user table; the project keeps its accounts as entities o
 
 from abc import ABC, abstractmethod
 
-from sincpro_framework.auth.domain.identity import Identity
+from sincpro_framework.auth.common.domain.identity import Identity
 
 
 class CredentialVerifier(ABC):

@@ -5,9 +5,9 @@ import json
 from collections.abc import Callable, Mapping
 from typing import Any
 
-from sincpro_framework.auth.domain import exceptions
-from sincpro_framework.auth.domain.http import HttpClient, HttpRequest
-from sincpro_framework.auth.domain.identity import Identity
+from sincpro_framework.auth.common.domain import exceptions
+from sincpro_framework.auth.common.domain.http import HttpClient, HttpRequest
+from sincpro_framework.auth.common.domain.identity import Identity
 from sincpro_framework.sincpro_logger import logger
 
 type DescribeResource = Callable[[Any, str], dict[str, Any]]

@@ -12,8 +12,8 @@ from collections.abc import Callable
 from typing import Any
 
 from sincpro_framework.auth.client.domain.outbound import OutgoingRequest, TokenSource
-from sincpro_framework.auth.infrastructure.digests import revealed
-from sincpro_framework.auth.infrastructure.signatures import SignatureStyle
+from sincpro_framework.auth.common.infrastructure.digests import revealed
+from sincpro_framework.auth.common.infrastructure.signatures import SignatureStyle
 
 
 class RequestSigner(TokenSource):

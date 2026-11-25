@@ -24,7 +24,7 @@ from sincpro_framework.auth import (
     Unauthenticated,
     security,
 )
-from sincpro_framework.auth.domain.added_requirements import AddedRequirements
+from sincpro_framework.auth.access_control.domain.added_requirements import AddedRequirements
 from sincpro_framework.auth.server import StaticProvider
 from sincpro_framework.data_layer.store import InMemoryKeyValue, StoreUnavailable
 from sincpro_framework.exceptions import ProgrammingError

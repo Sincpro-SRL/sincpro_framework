@@ -30,9 +30,9 @@ from sincpro_framework.auth.accounts import (
     SigningKeys,
     TokenIssuer,
 )
-from sincpro_framework.auth.domain import exceptions
+from sincpro_framework.auth.common.domain import exceptions
+from sincpro_framework.auth.common.infrastructure.digests import digest
 from sincpro_framework.auth.grants import GrantCatalog, Grants, Role
-from sincpro_framework.auth.infrastructure.digests import digest
 from sincpro_framework.auth.server import JwtProvider, PublicKeys, TrustedIssuer
 from sincpro_framework.context import KeyValueContexts
 from sincpro_framework.data_layer.store import InMemoryKeyValue, StoreUnavailable

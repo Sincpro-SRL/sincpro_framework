@@ -3,7 +3,7 @@ guard takes, so a catalog lists exactly what its caller may call."""
 
 from sincpro_framework import DataTransferObject, Feature, UseFramework
 from sincpro_framework.auth import AccessControl, Identity, Permission, security
-from sincpro_framework.auth.domain import exceptions
+from sincpro_framework.auth.common.domain import exceptions
 
 
 class SalesPermission(Permission):

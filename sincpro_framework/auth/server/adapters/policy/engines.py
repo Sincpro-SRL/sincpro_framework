@@ -13,10 +13,10 @@ answering one (`lambda: token_source.headers_for(request)`).
 from collections.abc import Callable, Mapping, Sequence
 from typing import Any
 
-from sincpro_framework.auth.domain import exceptions
-from sincpro_framework.auth.domain.http import HttpClient
-from sincpro_framework.auth.domain.identity import Identity
-from sincpro_framework.auth.infrastructure.urllib_http import UrllibHttp
+from sincpro_framework.auth.common.adapters.urllib_http import UrllibHttp
+from sincpro_framework.auth.common.domain import exceptions
+from sincpro_framework.auth.common.domain.http import HttpClient
+from sincpro_framework.auth.common.domain.identity import Identity
 from sincpro_framework.auth.server.adapters.policy.requests import (
     DescribeResource,
     posted,

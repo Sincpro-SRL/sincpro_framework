@@ -19,8 +19,8 @@ from typing import Any, Protocol
 
 from pydantic import ConfigDict, Field
 
-from sincpro_framework.auth.domain.http import safe_url
-from sincpro_framework.auth.domain.identity import Identity
+from sincpro_framework.auth.common.domain.http import safe_url
+from sincpro_framework.auth.common.domain.identity import Identity
 from sincpro_framework.sincpro_abstractions import DataTransferObject
 
 

@@ -10,9 +10,9 @@ it does not know is refused, as a real issuer would refuse a token it never sign
 from collections.abc import Mapping
 from typing import Any
 
-from sincpro_framework.auth.domain import exceptions
-from sincpro_framework.auth.domain.identity import Credentials, Identity
-from sincpro_framework.auth.domain.provider import AuthProvider
+from sincpro_framework.auth.common.domain import exceptions
+from sincpro_framework.auth.common.domain.identity import Credentials, Identity
+from sincpro_framework.auth.common.domain.provider import AuthProvider
 
 
 class StaticProvider(AuthProvider):

@@ -14,8 +14,8 @@ from collections.abc import Callable, Iterable
 from dataclasses import dataclass
 from enum import StrEnum
 
-from sincpro_framework.auth.domain import exceptions
-from sincpro_framework.auth.domain.identity import Identity, IdentityKind
+from sincpro_framework.auth.common.domain import exceptions
+from sincpro_framework.auth.common.domain.identity import Identity, IdentityKind
 from sincpro_framework.auth.grants.domain.definitions import RoleDefinition
 
 

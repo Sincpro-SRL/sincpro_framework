@@ -12,9 +12,9 @@ algorithm's hash (32 bytes for HS256, RFC 7518 §3.2) is accepted and warned abo
 from collections.abc import Mapping
 from typing import Any
 
-from sincpro_framework.auth.domain import exceptions
-from sincpro_framework.auth.domain.keys import KeySource, VerificationKey
-from sincpro_framework.auth.infrastructure import jws
+from sincpro_framework.auth.common.domain import exceptions
+from sincpro_framework.auth.common.domain.keys import KeySource, VerificationKey
+from sincpro_framework.auth.common.infrastructure import jws
 from sincpro_framework.sincpro_logger import logger
 
 MINIMUM_SECRET = {"HS256": 32, "HS384": 48, "HS512": 64}

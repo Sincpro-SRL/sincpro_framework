@@ -1,0 +1,86 @@
+"""Who the execution in progress acts as — held beside the request context, never in it.
+
+    with as_identity(Identity.user("user:42", tenant="bo", permissions={...})):
+        billing(CommandIssueInvoice(...))
+
+Context: a `ContextVar` of its own rather than a key of `bus.context(...)`. The context is a dict
+anyone writes — a handler's `self.context = ...`, a header `remote_execution` adopts as it came —
+so an identity stored there could be forged by writing it. Here only `as_identity` and `as_system`
+set it; it follows the execution into every bus it calls and into `thread_context()`, and it does
+not cross to another service: that is `AuthProvider.credentials_for`'s job.
+"""
+
+from collections.abc import Generator
+from contextlib import contextmanager
+from contextvars import ContextVar
+from typing import Any
+
+from sincpro_framework.auth.common.domain.identity import ANONYMOUS, Identity
+from sincpro_framework.sincpro_logger import logger
+
+_current: ContextVar[Identity] = ContextVar("sincpro_identity", default=ANONYMOUS)
+
+_access_in_play: ContextVar[Any] = ContextVar("sincpro_access_in_play", default=None)
+"""The `AccessControl` guarding the use case in progress — what an outgoing call asks first for
+the credentials it carries, before any other of the process."""
+
+
+def access_in_play() -> Any:
+    """The `AccessControl` guarding the use case in progress — `None` outside a guarded one."""
+    return _access_in_play.get()
+
+
+_presented: ContextVar[str | None] = ContextVar("sincpro_presented_credential", default=None)
+"""The bearer token the caller presented, while the call it authenticated runs — what a token
+exchange acts for. Never on the `Identity`: it is serialized, logged and carried to other
+services, and a token must be none of those."""
+
+
+def presented_credential() -> str | None:
+    """The bearer token the caller of the execution in progress presented — `None` outside an
+    authenticated call, or when it presented none."""
+    return _presented.get()
+
+
+@contextmanager
+def presenting(token: str | None) -> Generator[None, None, None]:
+    """`token` is the presented credential inside the block — set by the entrypoint that
+    authenticated it, and restored on leaving."""
+    held = _presented.set(token)
+    try:
+        yield
+    finally:
+        _presented.reset(held)
+
+
+def current_identity() -> Identity:
+    """Who the execution in progress acts as — `Identity.anonymous()` outside any
+    `as_identity`, never `None`."""
+    return _current.get()
+
+
+@contextmanager
+def as_identity(identity: Identity) -> Generator[Identity, None, None]:
+    """Act as `identity` inside the block — what an entrypoint opens once it authenticated the
+    caller, and what a test opens to be someone. A use case called inside is decided anew.
+
+        with as_identity(Identity.user("user:42", tenant="bo")) as identity:
+            current_identity().subject   ->  "user:42"
+        current_identity().subject       ->  "anonymous"    # as it was before the block
+
+    Context: the identity is restored on leaving, even when the block raises.
+    """
+    current = _current.set(identity)
+    try:
+        yield identity
+    finally:
+        _current.reset(current)
+
+
+@contextmanager
+def as_system(reason: str) -> Generator[Identity, None, None]:
+    """Act as the system — a cron, a migration, a consumer — which every requirement admits.
+    Context: `reason` is required and logged, the one trace an elevation leaves."""
+    logger.info(f"acting as the system: {reason}")
+    with as_identity(Identity.system(reason)) as system:
+        yield system

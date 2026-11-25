@@ -34,7 +34,7 @@ from sincpro_framework.auth.client import (
     httpx_auth,
     requests_auth,
 )
-from sincpro_framework.auth.domain import exceptions
+from sincpro_framework.auth.common.domain import exceptions
 from sincpro_framework.data_layer.store import InMemoryKeyValue
 from sincpro_framework.runtime.testing import (
     FakeTokenEndpoint,

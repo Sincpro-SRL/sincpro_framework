@@ -29,22 +29,18 @@ from collections.abc import Callable, Iterable
 from datetime import datetime, timedelta
 from typing import Any
 
-from sincpro_framework.auth.adapters.revocations import KeyValueRevocations
-from sincpro_framework.auth.domain.administration import (
+from sincpro_framework.auth.common.adapters.revocations import KeyValueRevocations
+from sincpro_framework.auth.common.domain.administration import (
     AdministrationPolicy,
     BoundedAdministration,
 )
-from sincpro_framework.auth.domain.events import EventPublisher
-from sincpro_framework.auth.domain.identity import Identity
-from sincpro_framework.auth.domain.permissions import declared_permissions
-from sincpro_framework.auth.domain.revocations import Revocations
+from sincpro_framework.auth.common.domain.events import EventPublisher
+from sincpro_framework.auth.common.domain.identity import Identity
+from sincpro_framework.auth.common.domain.permissions import declared_permissions
+from sincpro_framework.auth.common.domain.revocations import Revocations
+from sincpro_framework.auth.common.infrastructure.locks import AdministrationLocks
+from sincpro_framework.auth.common.infrastructure.security_context import current_identity
 from sincpro_framework.auth.grants.adapters.definitions import KeyValueRoleDefinitions
-from sincpro_framework.auth.grants.adapters.live_catalog import LiveCatalog
-from sincpro_framework.auth.grants.adapters.resolver import (
-    GrantResolver,
-    RoleMapping,
-    ScopeCeiling,
-)
 from sincpro_framework.auth.grants.adapters.stores import KeyValueGrants
 from sincpro_framework.auth.grants.domain.assignments import Assignment, GrantStore
 from sincpro_framework.auth.grants.domain.catalog import GrantCatalog
@@ -60,9 +56,13 @@ from sincpro_framework.auth.grants.domain.definitions import (
     catalog_key,
 )
 from sincpro_framework.auth.grants.services.administration import GrantAdministration
+from sincpro_framework.auth.grants.services.live_catalog import LiveCatalog
+from sincpro_framework.auth.grants.services.resolution import (
+    GrantResolver,
+    RoleMapping,
+    ScopeCeiling,
+)
 from sincpro_framework.auth.grants.services.role_administration import RoleAdministration
-from sincpro_framework.auth.infrastructure.locks import AdministrationLocks
-from sincpro_framework.auth.infrastructure.security_context import current_identity
 from sincpro_framework.data_layer.store import KeyValueStore
 
 

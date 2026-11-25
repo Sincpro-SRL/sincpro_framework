@@ -20,10 +20,10 @@ from typing import Any
 
 from pydantic import ConfigDict
 
-from sincpro_framework.auth.domain import exceptions
-from sincpro_framework.auth.domain.identity import Credentials, Identity, IdentityKind
-from sincpro_framework.auth.domain.provider import AuthProvider
-from sincpro_framework.auth.infrastructure.digests import digest
+from sincpro_framework.auth.common.domain import exceptions
+from sincpro_framework.auth.common.domain.identity import Credentials, Identity, IdentityKind
+from sincpro_framework.auth.common.domain.provider import AuthProvider
+from sincpro_framework.auth.common.infrastructure.digests import digest
 from sincpro_framework.sincpro_abstractions import DataTransferObject
 
 

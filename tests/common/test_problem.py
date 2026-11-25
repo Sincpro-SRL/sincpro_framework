@@ -7,7 +7,7 @@ import pytest
 from pydantic import ValidationError
 
 from sincpro_framework import DataTransferObject, UseFramework, exceptions
-from sincpro_framework.auth.domain.exceptions import PermissionDenied, Unauthenticated
+from sincpro_framework.auth.common.domain.exceptions import PermissionDenied, Unauthenticated
 from sincpro_framework.common.failures import (
     GUIDANCE_OF,
     NEXT_STEP_OF,

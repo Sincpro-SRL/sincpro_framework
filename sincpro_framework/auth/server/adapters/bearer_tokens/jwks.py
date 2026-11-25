@@ -19,12 +19,15 @@ from collections.abc import Callable, Iterable, Mapping, Sequence
 from datetime import timedelta
 from typing import Any
 
-from sincpro_framework.auth.domain import exceptions
-from sincpro_framework.auth.domain.http import HttpClient, HttpRequest, safe_url
-from sincpro_framework.auth.domain.keys import KeySource, VerificationKey
-from sincpro_framework.auth.infrastructure.jose_keys import ASYMMETRIC, PublicKey, fits
-from sincpro_framework.auth.infrastructure.server_metadata import OidcDiscovery, discovery_for
-from sincpro_framework.auth.infrastructure.urllib_http import UrllibHttp
+from sincpro_framework.auth.common.adapters.jose_keys import ASYMMETRIC, PublicKey, fits
+from sincpro_framework.auth.common.adapters.server_metadata import (
+    OidcDiscovery,
+    discovery_for,
+)
+from sincpro_framework.auth.common.adapters.urllib_http import UrllibHttp
+from sincpro_framework.auth.common.domain import exceptions
+from sincpro_framework.auth.common.domain.http import HttpClient, HttpRequest, safe_url
+from sincpro_framework.auth.common.domain.keys import KeySource, VerificationKey
 from sincpro_framework.data_layer.caching import (
     Cache,
     CachePolicy,

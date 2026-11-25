@@ -21,11 +21,11 @@ from collections.abc import Callable, Iterable, Mapping
 from datetime import timedelta
 from typing import Any
 
-from sincpro_framework.auth.domain import exceptions
-from sincpro_framework.auth.domain.identity import Credentials, Identity, IdentityKind
-from sincpro_framework.auth.domain.provider import AuthProvider
-from sincpro_framework.auth.infrastructure.digests import digest, revealed
-from sincpro_framework.auth.infrastructure.signatures import SignatureStyle
+from sincpro_framework.auth.common.domain import exceptions
+from sincpro_framework.auth.common.domain.identity import Credentials, Identity, IdentityKind
+from sincpro_framework.auth.common.domain.provider import AuthProvider
+from sincpro_framework.auth.common.infrastructure.digests import digest, revealed
+from sincpro_framework.auth.common.infrastructure.signatures import SignatureStyle
 from sincpro_framework.data_layer.store import KeyValueStore
 
 

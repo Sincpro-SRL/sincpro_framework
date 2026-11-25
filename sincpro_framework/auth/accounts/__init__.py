@@ -15,30 +15,16 @@ its accounts as entities of its own, and these pieces hash, lock, link and issue
 `TokenIssuer.provider()` is the `auth.server.JwtProvider` that verifies what it issued.
 """
 
-from sincpro_framework.auth.accounts.adapters.issuing.refresh_tokens import (
-    InMemoryRefreshTokens,
-    KeyValueRefreshTokens,
-)
-from sincpro_framework.auth.accounts.adapters.issuing.signing_keys import SigningKeys
-from sincpro_framework.auth.accounts.adapters.issuing.token_issuer import (
-    IssuedTokens,
-    TokenIssuer,
-)
-from sincpro_framework.auth.accounts.adapters.one_time_tokens import (
-    OneTimeGrant,
-    OneTimeTokens,
-)
-from sincpro_framework.auth.accounts.adapters.passwords.hasher import (
+from sincpro_framework.auth.accounts.adapters.password_hasher import (
     HashScheme,
     PasswordHasher,
     ScryptCost,
 )
-from sincpro_framework.auth.accounts.adapters.passwords.http_basic import (
-    BasicProvider,
-    HashedCredentials,
+from sincpro_framework.auth.accounts.adapters.refresh_tokens import (
+    InMemoryRefreshTokens,
+    KeyValueRefreshTokens,
 )
-from sincpro_framework.auth.accounts.adapters.passwords.login_attempts import LoginAttempts
-from sincpro_framework.auth.accounts.adapters.totp import Totp, TotpAlgorithm
+from sincpro_framework.auth.accounts.adapters.signing_keys import SigningKeys
 from sincpro_framework.auth.accounts.domain.credential_verifier import CredentialVerifier
 from sincpro_framework.auth.accounts.domain.events import (
     AccountLocked,
@@ -50,6 +36,20 @@ from sincpro_framework.auth.accounts.domain.events import (
     SignedOutEverywhere,
 )
 from sincpro_framework.auth.accounts.domain.refresh_tokens import RefreshRecord, RefreshTokens
+from sincpro_framework.auth.accounts.services.http_basic import (
+    BasicProvider,
+    HashedCredentials,
+)
+from sincpro_framework.auth.accounts.services.login_attempts import LoginAttempts
+from sincpro_framework.auth.accounts.services.one_time_tokens import (
+    OneTimeGrant,
+    OneTimeTokens,
+)
+from sincpro_framework.auth.accounts.services.token_issuer import (
+    IssuedTokens,
+    TokenIssuer,
+)
+from sincpro_framework.auth.accounts.services.totp import Totp, TotpAlgorithm
 
 __all__ = [
     "AccountLocked",

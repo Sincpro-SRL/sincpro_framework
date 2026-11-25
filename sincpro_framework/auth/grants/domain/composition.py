@@ -13,7 +13,7 @@ grants nothing and the others still do, decided the same way on every replica.
 
 from collections.abc import Iterable, Sequence
 
-from sincpro_framework.auth.domain import exceptions
+from sincpro_framework.auth.common.domain import exceptions
 from sincpro_framework.auth.grants.domain.catalog import (
     Composition,
     GrantCatalog,

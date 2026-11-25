@@ -32,7 +32,7 @@ from sincpro_framework.auth import (
     Permission,
     security,
 )
-from sincpro_framework.auth.domain import exceptions
+from sincpro_framework.auth.common.domain import exceptions
 from sincpro_framework.auth.server import (
     ApiKey,
     ApiKeyProvider,

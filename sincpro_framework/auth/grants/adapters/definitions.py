@@ -6,7 +6,10 @@ versioned document per scope, written by compare-and-swap.
     KeyValueRoleDefinitions(DatabaseKeyValue(...))    a table the project migrates
 """
 
-from sincpro_framework.auth.adapters.documents import InMemoryDocuments, KeyValueDocuments
+from sincpro_framework.auth.common.adapters.documents import (
+    InMemoryDocuments,
+    KeyValueDocuments,
+)
 from sincpro_framework.auth.grants.domain.definitions import DefinedRoles, RoleDefinitions
 from sincpro_framework.data_layer.store import KeyValueStore
 

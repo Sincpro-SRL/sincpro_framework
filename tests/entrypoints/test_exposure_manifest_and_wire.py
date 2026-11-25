@@ -14,7 +14,7 @@ from pydantic import ValidationError
 
 from sincpro_framework import DataTransferObject, Feature, UseFramework, exceptions
 from sincpro_framework.auth import AccessControl, Permission
-from sincpro_framework.auth.domain import exceptions as auth_exceptions
+from sincpro_framework.auth.common.domain import exceptions as auth_exceptions
 from sincpro_framework.ddd import Query
 from sincpro_framework.entrypoints import Gateway, Group, declare
 from sincpro_framework.entrypoints.domain.bindings import Binding, Deprecation

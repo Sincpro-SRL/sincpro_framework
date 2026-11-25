@@ -17,9 +17,9 @@ from collections.abc import Callable, Sequence
 from typing import Any
 from urllib.parse import quote
 
-from sincpro_framework.auth.domain.http import ClientAuthentication
-from sincpro_framework.auth.infrastructure import jws
-from sincpro_framework.auth.infrastructure.digests import random_token, revealed
+from sincpro_framework.auth.common.domain.http import ClientAuthentication
+from sincpro_framework.auth.common.infrastructure import jws
+from sincpro_framework.auth.common.infrastructure.digests import random_token, revealed
 
 CLIENT_ASSERTION_TYPE = "urn:ietf:params:oauth:client-assertion-type:jwt-bearer"
 

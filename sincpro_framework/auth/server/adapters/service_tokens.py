@@ -17,11 +17,11 @@ import time
 from collections.abc import Callable, Mapping
 from typing import Any
 
-from sincpro_framework.auth.domain import exceptions
-from sincpro_framework.auth.domain.identity import Credentials, Identity, IdentityKind
-from sincpro_framework.auth.domain.provider import AuthProvider
-from sincpro_framework.auth.infrastructure import jws
-from sincpro_framework.auth.infrastructure.digests import random_token
+from sincpro_framework.auth.common.domain import exceptions
+from sincpro_framework.auth.common.domain.identity import Credentials, Identity, IdentityKind
+from sincpro_framework.auth.common.domain.provider import AuthProvider
+from sincpro_framework.auth.common.infrastructure import jws
+from sincpro_framework.auth.common.infrastructure.digests import random_token
 
 HEADER = "x-sp-service-token"
 """Its own header, so a user's `Authorization` travels untouched beside it."""

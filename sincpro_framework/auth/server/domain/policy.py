@@ -14,7 +14,7 @@ from abc import ABC, abstractmethod
 from collections.abc import Mapping, Sequence
 from typing import TYPE_CHECKING, Any
 
-from sincpro_framework.auth.domain.identity import Identity
+from sincpro_framework.auth.common.domain.identity import Identity
 
 if TYPE_CHECKING:
     from sincpro_framework.ddd.criteria import Criteria

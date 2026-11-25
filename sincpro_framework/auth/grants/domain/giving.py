@@ -18,9 +18,9 @@ away; a weaker administrator never strips a stronger one. The system and a super
 without the catalog being asked.
 """
 
-from sincpro_framework.auth.domain import exceptions
-from sincpro_framework.auth.domain.administration import AdministrationPolicy
-from sincpro_framework.auth.domain.identity import Identity
+from sincpro_framework.auth.common.domain import exceptions
+from sincpro_framework.auth.common.domain.administration import AdministrationPolicy
+from sincpro_framework.auth.common.domain.identity import Identity
 from sincpro_framework.auth.grants.domain.catalog import Composition
 from sincpro_framework.auth.grants.domain.definitions import RoleDefinition
 

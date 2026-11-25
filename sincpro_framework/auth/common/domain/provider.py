@@ -1,0 +1,132 @@
+"""`AuthProvider`: the one contract a way of authenticating and authorizing implements — a JWT
+issuer, an API key table, Odoo, a policy engine, a relationship store.
+
+    class OdooProvider(AuthProvider):
+        name = "odoo"
+
+        def authenticate(self, credentials: Credentials) -> Identity | None:
+            if credentials.bearer is None:
+                return None                              # not mine: the next provider is tried
+            ...
+
+Context: one method is required, `authenticate`; every other has a default that holds for the
+common case and is overridden only when the protocol needs it. An abstract class, like
+`KeyValueStore`: a provider of the project's proves itself with
+`sincpro_framework.runtime.testing.AuthProviderContract`. Synchronous, like the bus — an entrypoint runs
+the bus on a worker thread, so a provider that calls the network blocks that thread only.
+"""
+
+from abc import ABC, abstractmethod
+from collections.abc import Mapping, Sequence
+from typing import TYPE_CHECKING, Any
+
+from sincpro_framework.auth.common.domain import exceptions
+from sincpro_framework.auth.common.domain.identity import Credentials, Identity
+
+if TYPE_CHECKING:
+    from sincpro_framework.ddd.criteria import Criteria
+
+
+class AuthProvider(ABC):
+    """The port every way of authenticating implements — see the module for the contract."""
+
+    name: str = "provider"
+    """What `Identity.provider`, the logs and `describe()` call it."""
+
+    needs_body: bool = False
+    """Whether the entrypoint has to hand it the raw body — an HMAC signature over it."""
+
+    @abstractmethod
+    def authenticate(self, credentials: Credentials) -> Identity | None:
+        """Who the credentials say is calling. `None` when they are not this provider's kind —
+        the next provider is tried; raise `Unauthenticated` when they are, and fail.
+
+        A backend the provider asks that does not answer — a registry, a key store, an identity
+        server down — is never the caller's credentials failing: raise `ServiceUnavailableError`
+        (`sincpro_framework.exceptions`), and every entrypoint answers 503 to retry, never 401.
+        """
+
+    def refusing_any(
+        self, identity: Identity, permissions: Sequence[str], reasons: Sequence[str]
+    ) -> str | None:
+        """The reason told when `identity` holds none of `permissions` — an `any_of` refused
+        whole — given each one's own `reasons`, in order. `None`, the default, joins those:
+        "lacks a and lacks b"; a provider answers its own words for the whole requirement.
+
+            refusing_any(ana, ["agents.sales", "agents.crm"], [...])
+                ->  "this tenant has none of these agents enabled: sales, crm"
+        """
+        return None
+
+    def has_permission(
+        self,
+        identity: Identity,
+        permission: str,
+        resource: Any = None,
+        context: Mapping[str, Any] | None = None,
+    ) -> bool:
+        """Whether `identity` may `permission` — on `resource` once it is loaded, with the
+        request's `context`. `False`, or raise `PermissionDenied` to say why. By default the
+        permissions resolved at authentication are the answer."""
+        return permission in identity.permissions
+
+    def _permits(
+        self,
+        identity: Identity,
+        permission: str,
+        resource: Any,
+        context: Mapping[str, Any] | None,
+    ) -> bool:
+        """`has_permission`, a `PermissionDenied` read as `False` — one item of a batch."""
+        try:
+            return self.has_permission(identity, permission, resource, context)
+        except exceptions.PermissionDenied:
+            return False
+
+    def permitted(
+        self,
+        identity: Identity,
+        permission: str,
+        resources: Sequence[Any],
+        context: Mapping[str, Any] | None = None,
+    ) -> list[bool]:
+        """`has_permission` for many resources at once — overridden by a provider that answers
+        a batch in one call, a relationship store. A resource refused with `PermissionDenied` is
+        `False`, so one refusal never takes the batch down."""
+        return [
+            self._permits(identity, permission, resource, context) for resource in resources
+        ]
+
+    def scope(self, identity: Identity, aggregate: type) -> "Criteria | None":
+        """Which records of `aggregate` the identity may read, as a filter the repository
+        applies — `None` for all of them."""
+        return None
+
+    def security_scheme(self) -> dict[str, Any] | None:
+        """How this provider is described in an OpenAPI document — `{"type": "http", "scheme":
+        "bearer"}`, an `apiKey` in a header — or `None` to leave it undescribed."""
+        return None
+
+    def challenge(self) -> str | None:
+        """The `WWW-Authenticate` value an entrypoint answers a 401 with — where to get a
+        credential this provider accepts (RFC 9728 for MCP)."""
+        return None
+
+    def challenge_for(self, refusal: exceptions.Unauthenticated | None) -> str | None:
+        """The `WWW-Authenticate` value for this very refusal — a step-up names what to come
+        back with (RFC 9470), an expired token says `invalid_token`. By default `challenge()`,
+        so a provider that only overrides that one answers as before."""
+        return self.challenge()
+
+    def credentials_for(self, identity: Identity) -> Credentials | None:
+        """What to send another service so it knows who this call acts for — a signed token,
+        an exchanged one (RFC 8693). `None` when this provider does not issue any."""
+        return None
+
+    def outbound_for(
+        self, identity: Identity, audience: str | None = None
+    ) -> Credentials | None:
+        """What to send the service named `audience` for a call acting as `identity` — a token
+        exchanged for that audience, say. By default `credentials_for(identity)`, whatever the
+        audience, so a provider that only overrides that one answers as before."""
+        return self.credentials_for(identity)

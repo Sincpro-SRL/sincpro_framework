@@ -27,12 +27,6 @@ from sincpro_framework.auth.grants.adapters.definitions import (
     InMemoryRoleDefinitions,
     KeyValueRoleDefinitions,
 )
-from sincpro_framework.auth.grants.adapters.resolver import (
-    GrantResolver,
-    RoleMapping,
-    ScopeCeiling,
-)
-from sincpro_framework.auth.grants.adapters.role_permissions import RolePermissions
 from sincpro_framework.auth.grants.adapters.stores import InMemoryGrants, KeyValueGrants
 from sincpro_framework.auth.grants.domain.assignments import (
     Assignment,
@@ -63,7 +57,13 @@ from sincpro_framework.auth.grants.domain.events import (
     RoleUnassigned,
     TenantEntitled,
 )
+from sincpro_framework.auth.grants.domain.role_permissions import RolePermissions
 from sincpro_framework.auth.grants.entrypoint.grants import Grants
+from sincpro_framework.auth.grants.services.resolution import (
+    GrantResolver,
+    RoleMapping,
+    ScopeCeiling,
+)
 
 __all__ = [
     "Assignment",

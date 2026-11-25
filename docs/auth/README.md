@@ -14,15 +14,20 @@ presents one that goes out.
 
 | Door | Folder | Job | Page | Extra |
 |---|---|---|---|---|
-| `sincpro_framework.auth` | `auth/` | **the contract** — what a use case declares and asks, who calls, the ports a project implements, every error, and what the doors share | this page | — |
+| `sincpro_framework.auth` | `auth/access_control/`, `auth/common/` | **the contract** — what a use case declares and asks (`access_control`), who calls, the ports a project implements, every error, and what the doors share (`common`) | this page | — |
 | `sincpro_framework.auth.server` | `auth/server/` | verify what arrives: `JwtProvider` (Keycloak, Entra, Google, several issuers, JWKS by discovery), introspection (RFC 7662), API keys, service tokens, webhook signatures, DPoP proofs (RFC 9449), mTLS and SPIFFE, policy engines (AuthZEN, OPA, OpenFGA) | [Verifying what arrives](server.md) | asymmetric keys, DPoP, mTLS: `[jwt]` |
 | `sincpro_framework.auth.client` | `auth/client/` | present what goes out: static credentials, client credentials shared by every replica, a credential per tenant, token exchange (RFC 8693), refresh tokens held and rotated, device code (RFC 8628), request signing, `call_with_credentials`, `requests`/`httpx` hooks | [Presenting what goes out](client.md) | `private_key_jwt`, DPoP: `[jwt]` |
 | `sincpro_framework.auth.grants` | `auth/grants/` | roles declared in code the Odoo 20 way — categories, privileges, exclusive levels, disjoint roles, entitlements — assignments per tenant, resolved per call | [Grants](grants.md) | — |
 | `sincpro_framework.auth.accounts` | `auth/accounts/` | accounts the service manages itself: password hashing, lockout, HTTP Basic, one-time links, TOTP, the token issuer with refresh rotation and logout | [Accounts](accounts.md) | argon2: `[argon2]` |
 
-The root never imports a door; `server`, `client` and `grants` build on the root alone, and
-`accounts` on the root and the server (its issuer verifies what it issued with a `JwtProvider`).
-`tests/auth/test_doors.py` holds it.
+Inside, auth is one sub-context per job — `common` (the shared kernel), `access_control` (the
+guard on the bus), `server`, `client`, `grants`, `accounts` — each in the framework's layers:
+`domain` (its abstractions and ports), `services` (its operations), `adapters` (what is external:
+a library, an authorization server, a store), `infrastructure` (the low-level mechanism) and
+`entrypoint` (its facades), only the layers it has. The root of auth is only its public door.
+`common` builds on nothing; `access_control`, `server`, `client` and `grants` on `common` alone;
+`accounts` on `common` and `server` (its issuer verifies what it issued with a `JwtProvider`).
+`tests/auth/test_doors.py` and `tests/runtime/test_layer_direction.py` hold it.
 
 **In the root** — the rest of this page:
 

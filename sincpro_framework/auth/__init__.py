@@ -35,31 +35,42 @@ extra is asked for (`PublicKey`, `PrivateKey` here). JSON-RPC, REST, FastAPI, gR
 import importlib
 from typing import TYPE_CHECKING, Any
 
-from sincpro_framework.auth.adapters.added_requirements import (
+from sincpro_framework.auth.access_control.adapters.added_requirements import (
     InMemoryAddedRequirements,
     KeyValueAddedRequirements,
 )
-from sincpro_framework.auth.adapters.revocations import (
-    InMemoryRevocations,
-    KeyValueRevocations,
-)
-from sincpro_framework.auth.domain.added_requirements import (
+from sincpro_framework.auth.access_control.domain.added_requirements import (
     AddedRequirement,
     AddedRequirementStore,
 )
-from sincpro_framework.auth.domain.administration import (
+from sincpro_framework.auth.access_control.entrypoint.access_control import AccessControl
+from sincpro_framework.auth.access_control.entrypoint.asgi import IdentityMiddleware
+from sincpro_framework.auth.access_control.entrypoint.runtime_requirements import (
+    RuntimeRequirements,
+)
+from sincpro_framework.auth.access_control.entrypoint.security import security
+from sincpro_framework.auth.common.adapters.revocations import (
+    InMemoryRevocations,
+    KeyValueRevocations,
+)
+from sincpro_framework.auth.common.adapters.server_metadata import (
+    OidcDiscovery,
+    ServerMetadata,
+)
+from sincpro_framework.auth.common.adapters.urllib_http import UrllibHttp
+from sincpro_framework.auth.common.domain.administration import (
     AdministrationPolicy,
     BoundedAdministration,
     TrustedAdministration,
 )
-from sincpro_framework.auth.domain.events import (
+from sincpro_framework.auth.common.domain.events import (
     AccessRefused,
     AuthEvent,
     EventPublisher,
     RequirementAdded,
     RequirementRemoved,
 )
-from sincpro_framework.auth.domain.exceptions import (
+from sincpro_framework.auth.common.domain.exceptions import (
     AuthError,
     ConcurrentChange,
     CredentialsRejected,
@@ -72,19 +83,19 @@ from sincpro_framework.auth.domain.exceptions import (
     Unauthenticated,
     refusal_from,
 )
-from sincpro_framework.auth.domain.http import (
+from sincpro_framework.auth.common.domain.http import (
     ClientAuthentication,
     HttpAnswer,
     HttpClient,
     HttpRequest,
 )
-from sincpro_framework.auth.domain.identity import (
+from sincpro_framework.auth.common.domain.identity import (
     Assurance,
     Credentials,
     Identity,
     IdentityKind,
 )
-from sincpro_framework.auth.domain.permissions import (
+from sincpro_framework.auth.common.domain.permissions import (
     OPEN,
     AccessCall,
     AccessDeclaration,
@@ -98,30 +109,19 @@ from sincpro_framework.auth.domain.permissions import (
     Rule,
     WhenDenied,
 )
-from sincpro_framework.auth.domain.provider import AuthProvider
-from sincpro_framework.auth.domain.resolver import IdentityResolver
-from sincpro_framework.auth.domain.revocations import (
+from sincpro_framework.auth.common.domain.provider import AuthProvider
+from sincpro_framework.auth.common.domain.resolver import IdentityResolver
+from sincpro_framework.auth.common.domain.revocations import (
     Revocations,
     RevocationState,
     WhenUnavailable,
     remembering_versions,
 )
-from sincpro_framework.auth.entrypoint.access_control import AccessControl
-from sincpro_framework.auth.entrypoint.asgi import IdentityMiddleware
-from sincpro_framework.auth.entrypoint.runtime_requirements import (
-    RuntimeRequirements,
-)
-from sincpro_framework.auth.entrypoint.security import security
-from sincpro_framework.auth.infrastructure.server_metadata import (
-    OidcDiscovery,
-    ServerMetadata,
-)
-from sincpro_framework.auth.infrastructure.signatures import (
+from sincpro_framework.auth.common.infrastructure.signatures import (
     HexDigest,
     SignatureStyle,
     TimestampedSignature,
 )
-from sincpro_framework.auth.infrastructure.urllib_http import UrllibHttp
 
 __all__ = [
     "OPEN",
@@ -189,13 +189,13 @@ __all__ = [
 """Every name loaded with the package; the `[jwt]` extra's are in `_LAZY`, imported on first use."""
 
 _LAZY = {
-    "PrivateKey": "sincpro_framework.auth.infrastructure.jose_keys",
-    "PublicKey": "sincpro_framework.auth.infrastructure.jose_keys",
+    "PrivateKey": "sincpro_framework.auth.common.adapters.jose_keys",
+    "PublicKey": "sincpro_framework.auth.common.adapters.jose_keys",
 }
 """Names of the `[jwt]` extra, by the module that holds them — loaded on first use."""
 
 if TYPE_CHECKING:
-    from sincpro_framework.auth.infrastructure.jose_keys import PrivateKey, PublicKey
+    from sincpro_framework.auth.common.adapters.jose_keys import PrivateKey, PublicKey
 
 
 def __getattr__(name: str) -> Any:

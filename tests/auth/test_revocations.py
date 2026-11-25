@@ -8,11 +8,11 @@ from datetime import UTC, datetime, timedelta
 import fakeredis
 import pytest
 
-from sincpro_framework.auth.adapters.revocations import (
+from sincpro_framework.auth.common.adapters.revocations import (
     InMemoryRevocations,
     KeyValueRevocations,
 )
-from sincpro_framework.auth.domain.revocations import Revocations, WhenUnavailable
+from sincpro_framework.auth.common.domain.revocations import Revocations, WhenUnavailable
 from sincpro_framework.data_layer.store import InMemoryKeyValue, StoreUnavailable
 from sincpro_framework.data_layer.store.adapters.redis import RedisKeyValue
 from sincpro_framework.runtime.testing import ManualClock
