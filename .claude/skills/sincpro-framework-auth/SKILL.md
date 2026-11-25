@@ -112,7 +112,7 @@ anybody (`open`); `@auth.authenticated` anybody *known*. `security.as_system(rea
 - HS256 and HMAC, scrypt, TOTP and the HTTP client (`UrllibHttp`) are the standard library;
   asymmetric JOSE (RS/PS/ES/EdDSA, JWKS, DPoP, mTLS, AES-GCM) is the `[jwt]` extra (PyJWT +
   cryptography), argon2 the `[argon2]` one. PyJWT only signs and verifies: claims are always
-  checked by `auth/infrastructure/jws.py`. `import sincpro_framework.auth` never loads an extra.
+  checked by `auth/common/infrastructure/jws.py`. `import sincpro_framework.auth` never loads an extra.
 
 **Inside a consumer service** (one `UseFramework` per bounded context, created in
 `infrastructure/framework.py` before `services/` is imported; `auth.on(bus)` before any gateway):

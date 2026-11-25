@@ -76,7 +76,7 @@ import jwt                                            # the project's dependency
 from sincpro_framework.auth import AuthProvider, Credentials, Identity
 from sincpro_framework.auth.grants import RolePermissions
 
-from sincpro_framework.auth.domain import exceptions
+from sincpro_framework.auth.common.domain import exceptions
 
 
 class KeycloakProvider(AuthProvider):

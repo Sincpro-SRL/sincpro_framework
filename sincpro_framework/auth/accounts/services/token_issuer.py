@@ -30,7 +30,7 @@ from typing import Any
 
 from pydantic import ConfigDict, SecretStr
 
-from sincpro_framework.auth.accounts.adapters.issuing.signing_keys import SigningKeys
+from sincpro_framework.auth.accounts.adapters.signing_keys import SigningKeys
 from sincpro_framework.auth.accounts.domain.events import (
     RefreshTokenReused,
     SignedIn,

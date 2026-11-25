@@ -24,9 +24,9 @@ from contextlib import nullcontext
 from datetime import timedelta
 from typing import Any
 
-from sincpro_framework.auth.accounts.adapters.passwords.hasher import PasswordHasher
-from sincpro_framework.auth.accounts.adapters.passwords.login_attempts import LoginAttempts
+from sincpro_framework.auth.accounts.adapters.password_hasher import PasswordHasher
 from sincpro_framework.auth.accounts.domain.credential_verifier import CredentialVerifier
+from sincpro_framework.auth.accounts.services.login_attempts import LoginAttempts
 from sincpro_framework.auth.common.domain import exceptions
 from sincpro_framework.auth.common.domain.identity import Credentials, Identity
 from sincpro_framework.auth.common.domain.provider import AuthProvider
