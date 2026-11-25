@@ -43,7 +43,7 @@ from sincpro_framework.auth.common.domain.revocations import (
 )
 from sincpro_framework.auth.common.infrastructure import jws
 from sincpro_framework.auth.common.infrastructure.digests import digest
-from sincpro_framework.auth.server.adapters.bearer_tokens.claim_mapping import ClaimMapping
+from sincpro_framework.auth.server.domain.claim_mapping import ClaimMapping
 from sincpro_framework.data_layer.caching import Cache, CachePolicy, JsonCodec, TimeToLive
 from sincpro_framework.sincpro_logger import logger
 

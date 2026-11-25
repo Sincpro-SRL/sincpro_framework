@@ -38,10 +38,6 @@ from sincpro_framework.auth.server.adapters.api_keys import (
     InMemoryApiKeys,
     api_key_digest,
 )
-from sincpro_framework.auth.server.adapters.bearer_tokens.claim_mapping import (
-    ClaimMapping,
-    ClaimTest,
-)
 from sincpro_framework.auth.server.adapters.bearer_tokens.introspection import (
     IntrospectionProvider,
 )
@@ -49,21 +45,25 @@ from sincpro_framework.auth.server.adapters.bearer_tokens.jwt_provider import (
     JwtProvider,
     TrustedIssuer,
 )
-from sincpro_framework.auth.server.adapters.bearer_tokens.protected_resource import (
-    ProtectedResource,
-)
 from sincpro_framework.auth.server.adapters.bearer_tokens.shared_secrets import SharedSecrets
-from sincpro_framework.auth.server.adapters.policy.decided_by import DecidedBy
 from sincpro_framework.auth.server.adapters.policy.engines import (
     AuthZenEngine,
     OpaEngine,
     OpenFgaEngine,
 )
-from sincpro_framework.auth.server.adapters.resolving import Resolving
 from sincpro_framework.auth.server.adapters.service_tokens import ServiceTokenProvider
 from sincpro_framework.auth.server.adapters.static_tokens import StaticProvider
 from sincpro_framework.auth.server.adapters.webhook_signatures import SignatureProvider
+from sincpro_framework.auth.server.domain.claim_mapping import (
+    ClaimMapping,
+    ClaimTest,
+)
 from sincpro_framework.auth.server.domain.policy import PolicyEngine
+from sincpro_framework.auth.server.domain.protected_resource import (
+    ProtectedResource,
+)
+from sincpro_framework.auth.server.services.decided_by import DecidedBy
+from sincpro_framework.auth.server.services.resolving import Resolving
 
 __all__ = [
     "ApiKey",

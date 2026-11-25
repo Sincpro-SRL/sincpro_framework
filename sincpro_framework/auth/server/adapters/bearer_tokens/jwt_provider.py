@@ -36,8 +36,8 @@ from sincpro_framework.auth.common.domain.revocations import (
     remembering_versions,
 )
 from sincpro_framework.auth.common.infrastructure import jws
-from sincpro_framework.auth.server.adapters.bearer_tokens.claim_mapping import ClaimMapping
-from sincpro_framework.auth.server.adapters.bearer_tokens.protected_resource import (
+from sincpro_framework.auth.server.domain.claim_mapping import ClaimMapping
+from sincpro_framework.auth.server.domain.protected_resource import (
     ProtectedResource,
 )
 
