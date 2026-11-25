@@ -15,7 +15,7 @@ code declares holds whatever is added here.
 
 from pydantic import ConfigDict
 
-from sincpro_framework.auth.domain.documents import ScopedDocuments
+from sincpro_framework.auth.common.domain.documents import ScopedDocuments
 from sincpro_framework.sincpro_abstractions import DataTransferObject
 
 

@@ -18,7 +18,7 @@ name. A role the code declares is never redefined here: it changes in code.
 
 from pydantic import ConfigDict
 
-from sincpro_framework.auth.domain.documents import ScopedDocuments
+from sincpro_framework.auth.common.domain.documents import ScopedDocuments
 from sincpro_framework.sincpro_abstractions import DataTransferObject
 
 TENANT_MARK = "@"

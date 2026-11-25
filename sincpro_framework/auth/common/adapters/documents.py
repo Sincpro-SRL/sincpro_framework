@@ -5,8 +5,8 @@ key per scope: `<key>` for what every tenant shares, `<key>:<tenant>` for one.""
 import threading
 from collections.abc import Callable
 
-from sincpro_framework.auth.domain.documents import ScopedDocuments, Versioned
-from sincpro_framework.auth.infrastructure.documents import KeyValueDocument
+from sincpro_framework.auth.common.domain.documents import ScopedDocuments, Versioned
+from sincpro_framework.auth.common.infrastructure.documents import KeyValueDocument
 from sincpro_framework.data_layer.store import KeyValueStore
 from sincpro_framework.sincpro_abstractions import DataTransferObject
 

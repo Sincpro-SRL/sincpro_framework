@@ -11,7 +11,7 @@ refresh token with an older one — which a server rotating refresh tokens would
 import threading
 
 from sincpro_framework.auth.client.domain.outbound import HeldGrant, HeldGrants, Sealer
-from sincpro_framework.auth.infrastructure.digests import digest
+from sincpro_framework.auth.common.infrastructure.digests import digest
 from sincpro_framework.context.entrypoint.resolution import current_store, key_value_store_of
 from sincpro_framework.data_layer.store import KeyValueStore
 

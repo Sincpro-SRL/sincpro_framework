@@ -15,9 +15,9 @@ import time
 from collections.abc import Callable, Mapping
 from urllib.parse import urlsplit, urlunsplit
 
-from sincpro_framework.auth.infrastructure import jws
-from sincpro_framework.auth.infrastructure.digests import random_token
-from sincpro_framework.auth.infrastructure.jose_keys import PrivateKey
+from sincpro_framework.auth.common.adapters.jose_keys import PrivateKey
+from sincpro_framework.auth.common.infrastructure import jws
+from sincpro_framework.auth.common.infrastructure.digests import random_token
 
 
 def _origin(url: str) -> str:

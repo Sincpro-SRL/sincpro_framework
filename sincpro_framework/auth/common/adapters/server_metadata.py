@@ -23,9 +23,9 @@ from urllib.parse import urlsplit, urlunsplit
 
 from pydantic import ConfigDict, Field
 
-from sincpro_framework.auth.domain import exceptions
-from sincpro_framework.auth.domain.http import HttpClient, HttpRequest, safe_url
-from sincpro_framework.auth.infrastructure.urllib_http import UrllibHttp
+from sincpro_framework.auth.common.adapters.urllib_http import UrllibHttp
+from sincpro_framework.auth.common.domain import exceptions
+from sincpro_framework.auth.common.domain.http import HttpClient, HttpRequest, safe_url
 from sincpro_framework.data_layer.caching import (
     Cache,
     CachePolicy,

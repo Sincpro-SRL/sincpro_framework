@@ -21,14 +21,17 @@ never held together, two levels of one privilege: `InvalidGrant` (400), nothing 
 
 from datetime import datetime
 
-from sincpro_framework.auth.domain import exceptions
-from sincpro_framework.auth.domain.administration import (
+from sincpro_framework.auth.common.domain import exceptions
+from sincpro_framework.auth.common.domain.administration import (
     AdministrationPolicy,
     BoundedAdministration,
 )
-from sincpro_framework.auth.domain.events import SUBJECT, TENANT, EventPublisher
-from sincpro_framework.auth.domain.identity import Identity
-from sincpro_framework.auth.domain.revocations import Revocations, tenant_subject
+from sincpro_framework.auth.common.domain.events import SUBJECT, TENANT, EventPublisher
+from sincpro_framework.auth.common.domain.identity import Identity
+from sincpro_framework.auth.common.domain.revocations import Revocations, tenant_subject
+from sincpro_framework.auth.common.infrastructure.announcing import announce
+from sincpro_framework.auth.common.infrastructure.locks import AdministrationLocks
+from sincpro_framework.auth.common.infrastructure.security_context import current_identity
 from sincpro_framework.auth.grants.domain.assignments import Assignment, GrantStore
 from sincpro_framework.auth.grants.domain.catalog import CatalogSource, Composition
 from sincpro_framework.auth.grants.domain.events import (
@@ -39,9 +42,6 @@ from sincpro_framework.auth.grants.domain.events import (
     TenantEntitled,
 )
 from sincpro_framework.auth.grants.domain.giving import givable
-from sincpro_framework.auth.infrastructure.announcing import announce
-from sincpro_framework.auth.infrastructure.locks import AdministrationLocks
-from sincpro_framework.auth.infrastructure.security_context import current_identity
 
 
 def _givable_key(composition: Composition, role: str) -> None:

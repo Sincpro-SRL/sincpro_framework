@@ -6,8 +6,8 @@ the flow it belongs to, and never undoing what was already written.
 
 import dataclasses
 
-from sincpro_framework.auth.domain.events import AuthEvent, EventPublisher
-from sincpro_framework.auth.infrastructure.security_context import current_identity
+from sincpro_framework.auth.common.domain.events import AuthEvent, EventPublisher
+from sincpro_framework.auth.common.infrastructure.security_context import current_identity
 from sincpro_framework.context import context_executions
 from sincpro_framework.sincpro_logger import logger
 

@@ -21,7 +21,8 @@ from sincpro_framework.auth import (
     PermissionDenied,
     security,
 )
-from sincpro_framework.auth.domain import exceptions
+from sincpro_framework.auth.common.domain import exceptions
+from sincpro_framework.auth.common.infrastructure import jws
 from sincpro_framework.auth.grants import (
     Assignment,
     Category,
@@ -38,7 +39,6 @@ from sincpro_framework.auth.grants import (
     ScopeCeiling,
 )
 from sincpro_framework.auth.grants.services.administration import GrantAdministration
-from sincpro_framework.auth.infrastructure import jws
 from sincpro_framework.auth.server import (
     ClaimMapping,
     JwtProvider,

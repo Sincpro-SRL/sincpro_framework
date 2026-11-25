@@ -13,7 +13,7 @@ its grace, so it was stolen or leaked, and its whole session was revoked.
 
 from dataclasses import dataclass, field
 
-from sincpro_framework.auth.domain.events import AuthEvent
+from sincpro_framework.auth.common.domain.events import AuthEvent
 from sincpro_framework.ddd.events import DeliverableEventMixin
 
 

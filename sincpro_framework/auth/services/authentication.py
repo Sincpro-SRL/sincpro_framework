@@ -11,10 +11,10 @@ elsewhere: every identity in play was verified by this process or opened by its 
 
 from collections.abc import Iterable, Sequence
 
-from sincpro_framework.auth.domain import exceptions
-from sincpro_framework.auth.domain.identity import Credentials, Identity
-from sincpro_framework.auth.domain.provider import AuthProvider
-from sincpro_framework.auth.infrastructure.security_context import access_in_play
+from sincpro_framework.auth.common.domain import exceptions
+from sincpro_framework.auth.common.domain.identity import Credentials, Identity
+from sincpro_framework.auth.common.domain.provider import AuthProvider
+from sincpro_framework.auth.common.infrastructure.security_context import access_in_play
 from sincpro_framework.auth.services.guard import guarded_buses
 
 

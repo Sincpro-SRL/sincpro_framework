@@ -27,7 +27,7 @@ from enum import StrEnum
 
 from pydantic import ConfigDict, Field
 
-from sincpro_framework.auth.domain.identity import Identity
+from sincpro_framework.auth.common.domain.identity import Identity
 from sincpro_framework.sincpro_abstractions import DataTransferObject
 
 _VERSIONS_READ: ContextVar[dict[tuple[int, str], int] | None] = ContextVar(

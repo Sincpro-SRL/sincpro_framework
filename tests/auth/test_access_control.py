@@ -32,7 +32,7 @@ from sincpro_framework.auth import (
     WhenDenied,
     security,
 )
-from sincpro_framework.auth.domain import exceptions as auth_exceptions
+from sincpro_framework.auth.common.domain import exceptions as auth_exceptions
 from sincpro_framework.auth.grants import RolePermissions
 from sincpro_framework.auth.server import StaticProvider
 from sincpro_framework.data_layer.repositories import MemoryRepository

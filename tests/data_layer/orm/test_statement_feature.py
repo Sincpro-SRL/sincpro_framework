@@ -13,7 +13,7 @@ from sqlalchemy import Column, MetaData, Table, Text, column, text
 
 from sincpro_framework import Feature, UseFramework
 from sincpro_framework.auth import AccessControl, Identity, Permission, security
-from sincpro_framework.auth.domain import exceptions as auth_exceptions
+from sincpro_framework.auth.common.domain import exceptions as auth_exceptions
 from sincpro_framework.data_layer.orm.sqlalchemy.entrypoint.repository import Repository
 from sincpro_framework.ddd import Criteria, Query, ResponsePaginatedQuery
 from sincpro_framework.ddd.criteria import Pagination

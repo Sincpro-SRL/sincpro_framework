@@ -12,7 +12,7 @@ import pytest
 
 from sincpro_framework import UseFramework, exceptions
 from sincpro_framework.auth import AccessControl, Identity, Permission, security
-from sincpro_framework.auth.domain import exceptions as auth_exceptions
+from sincpro_framework.auth.common.domain import exceptions as auth_exceptions
 from sincpro_framework.data_layer.repositories import MemoryRepository
 from sincpro_framework.ddd import (
     Entity,

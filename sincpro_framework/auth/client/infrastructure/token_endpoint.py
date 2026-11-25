@@ -19,8 +19,12 @@ from functools import partial
 
 from pydantic import ConfigDict, Field, SecretStr
 
-from sincpro_framework.auth.domain import exceptions
-from sincpro_framework.auth.domain.http import ClientAuthentication, HttpClient, HttpRequest
+from sincpro_framework.auth.common.domain import exceptions
+from sincpro_framework.auth.common.domain.http import (
+    ClientAuthentication,
+    HttpClient,
+    HttpRequest,
+)
 from sincpro_framework.sincpro_abstractions import DataTransferObject
 from sincpro_framework.sincpro_logger import logger
 

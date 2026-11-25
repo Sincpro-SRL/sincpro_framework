@@ -20,8 +20,8 @@ from sincpro_framework.auth.client import (
     PublicClient,
 )
 from sincpro_framework.auth.client.adapters.client_authentication import CLIENT_ASSERTION_TYPE
+from sincpro_framework.auth.common.infrastructure import jws
 from sincpro_framework.auth.grants import RolePermissions
-from sincpro_framework.auth.infrastructure import jws
 from sincpro_framework.auth.server import Resolving, StaticProvider
 
 ENDPOINT = "https://auth.acme.bo/token"

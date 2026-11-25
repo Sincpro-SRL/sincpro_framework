@@ -27,10 +27,10 @@ from typing import Any
 from sincpro_framework.auth.accounts.adapters.passwords.hasher import PasswordHasher
 from sincpro_framework.auth.accounts.adapters.passwords.login_attempts import LoginAttempts
 from sincpro_framework.auth.accounts.domain.credential_verifier import CredentialVerifier
-from sincpro_framework.auth.domain import exceptions
-from sincpro_framework.auth.domain.identity import Credentials, Identity
-from sincpro_framework.auth.domain.provider import AuthProvider
-from sincpro_framework.auth.domain.resolver import IdentityResolver, resolved
+from sincpro_framework.auth.common.domain import exceptions
+from sincpro_framework.auth.common.domain.identity import Credentials, Identity
+from sincpro_framework.auth.common.domain.provider import AuthProvider
+from sincpro_framework.auth.common.domain.resolver import IdentityResolver, resolved
 from sincpro_framework.rate_limiter import RateLimited
 
 

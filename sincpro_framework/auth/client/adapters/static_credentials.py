@@ -14,8 +14,8 @@ import base64
 from typing import Any
 
 from sincpro_framework.auth.client.domain.outbound import OutgoingRequest, TokenSource
-from sincpro_framework.auth.domain import exceptions
-from sincpro_framework.auth.infrastructure.digests import revealed
+from sincpro_framework.auth.common.domain import exceptions
+from sincpro_framework.auth.common.infrastructure.digests import revealed
 
 
 class StaticToken(TokenSource):

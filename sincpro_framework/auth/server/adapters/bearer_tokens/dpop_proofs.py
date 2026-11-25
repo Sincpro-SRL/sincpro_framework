@@ -17,11 +17,11 @@ from datetime import timedelta
 from typing import Any
 from urllib.parse import urlsplit
 
-from sincpro_framework.auth.domain import exceptions
-from sincpro_framework.auth.domain.identity import Credentials
-from sincpro_framework.auth.infrastructure import jws
-from sincpro_framework.auth.infrastructure.digests import digest
-from sincpro_framework.auth.infrastructure.jose_keys import PublicKey
+from sincpro_framework.auth.common.adapters.jose_keys import PublicKey
+from sincpro_framework.auth.common.domain import exceptions
+from sincpro_framework.auth.common.domain.identity import Credentials
+from sincpro_framework.auth.common.infrastructure import jws
+from sincpro_framework.auth.common.infrastructure.digests import digest
 from sincpro_framework.data_layer.store import KeyValueStore
 
 DEFAULT_ALGORITHMS = ("ES256", "PS256", "EdDSA", "RS256")

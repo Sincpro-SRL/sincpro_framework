@@ -30,12 +30,11 @@ from typing import TYPE_CHECKING, Any
 from weakref import WeakKeyDictionary, WeakSet
 
 from sincpro_framework.auth.adapters.added_requirements import KeyValueAddedRequirements
-from sincpro_framework.auth.domain import exceptions
-from sincpro_framework.auth.domain.added_requirements import AddedRequirementStore
-from sincpro_framework.auth.domain.administration import AdministrationPolicy
-from sincpro_framework.auth.domain.events import EventPublisher
-from sincpro_framework.auth.domain.identity import Credentials, Identity
-from sincpro_framework.auth.domain.permissions import (
+from sincpro_framework.auth.common.domain import exceptions
+from sincpro_framework.auth.common.domain.administration import AdministrationPolicy
+from sincpro_framework.auth.common.domain.events import EventPublisher
+from sincpro_framework.auth.common.domain.identity import Credentials, Identity
+from sincpro_framework.auth.common.domain.permissions import (
     OPEN,
     AccessCall,
     AccessDeclaration,
@@ -50,9 +49,10 @@ from sincpro_framework.auth.domain.permissions import (
     Rule,
     WhenDenied,
 )
-from sincpro_framework.auth.domain.provider import AuthProvider
+from sincpro_framework.auth.common.domain.provider import AuthProvider
+from sincpro_framework.auth.common.infrastructure.security_context import current_identity
+from sincpro_framework.auth.domain.added_requirements import AddedRequirementStore
 from sincpro_framework.auth.entrypoint.runtime_requirements import RuntimeRequirements
-from sincpro_framework.auth.infrastructure.security_context import current_identity
 from sincpro_framework.auth.services import authentication, description
 from sincpro_framework.auth.services.decisions import Decisions
 from sincpro_framework.auth.services.guard import (

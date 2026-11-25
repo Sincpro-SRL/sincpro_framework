@@ -11,7 +11,7 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any
 
-from sincpro_framework.auth.domain.events import AuthEvent
+from sincpro_framework.auth.common.domain.events import AuthEvent
 from sincpro_framework.ddd.events import DeliverableEventMixin
 
 

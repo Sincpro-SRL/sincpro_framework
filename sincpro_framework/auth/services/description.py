@@ -9,14 +9,14 @@ these early changes nothing; it only sees less.
 from collections.abc import Iterable
 from typing import TYPE_CHECKING
 
-from sincpro_framework.auth.domain.permissions import (
+from sincpro_framework.auth.common.domain.permissions import (
     OPEN,
     AccessDeclaration,
     AccessDescription,
     Rule,
     command_name,
 )
-from sincpro_framework.auth.domain.provider import AuthProvider
+from sincpro_framework.auth.common.domain.provider import AuthProvider
 from sincpro_framework.auth.services.guard import Declarations
 
 if TYPE_CHECKING:

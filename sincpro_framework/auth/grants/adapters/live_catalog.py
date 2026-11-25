@@ -20,7 +20,8 @@ from collections.abc import Callable, Hashable, Iterable
 from datetime import timedelta
 from typing import Any
 
-from sincpro_framework.auth.domain.documents import fingerprint
+from sincpro_framework.auth.common.domain.documents import fingerprint
+from sincpro_framework.auth.common.infrastructure.refreshed import Refreshed
 from sincpro_framework.auth.grants.domain.catalog import Composition, GrantCatalog
 from sincpro_framework.auth.grants.domain.composition import compose
 from sincpro_framework.auth.grants.domain.definitions import (
@@ -28,7 +29,6 @@ from sincpro_framework.auth.grants.domain.definitions import (
     RoleDefinition,
     RoleDefinitions,
 )
-from sincpro_framework.auth.infrastructure.refreshed import Refreshed
 from sincpro_framework.sincpro_logger import logger
 
 

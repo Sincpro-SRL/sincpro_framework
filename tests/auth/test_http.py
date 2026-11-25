@@ -11,8 +11,8 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import pytest
 
 from sincpro_framework.auth import EndpointUnavailable, HttpAnswer, HttpRequest, UrllibHttp
-from sincpro_framework.auth.domain import exceptions
-from sincpro_framework.auth.domain.http import safe_url
+from sincpro_framework.auth.common.domain import exceptions
+from sincpro_framework.auth.common.domain.http import safe_url
 
 hits: list[str] = []
 

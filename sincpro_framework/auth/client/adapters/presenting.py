@@ -16,8 +16,8 @@ of the source named for that audience, so `remote_execution` — which asks
 from collections.abc import Mapping
 
 from sincpro_framework.auth.client.domain.outbound import OutgoingRequest, TokenSource
-from sincpro_framework.auth.domain.identity import Credentials, Identity
-from sincpro_framework.auth.domain.provider import AuthProvider
+from sincpro_framework.auth.common.domain.identity import Credentials, Identity
+from sincpro_framework.auth.common.domain.provider import AuthProvider
 
 
 class PresentingProvider(AuthProvider):

@@ -10,9 +10,9 @@ from collections.abc import Callable, Sequence
 from typing import Any
 
 from sincpro_framework.auth.client.adapters.client_authentication import assertion_fields
-from sincpro_framework.auth.domain.http import ClientAuthentication
-from sincpro_framework.auth.infrastructure import jws
-from sincpro_framework.auth.infrastructure.jose_keys import PrivateKey
+from sincpro_framework.auth.common.adapters.jose_keys import PrivateKey
+from sincpro_framework.auth.common.domain.http import ClientAuthentication
+from sincpro_framework.auth.common.infrastructure import jws
 
 
 class PrivateKeyJwt(ClientAuthentication):

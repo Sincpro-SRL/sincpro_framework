@@ -24,9 +24,9 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import Any
 
-from sincpro_framework.auth.domain import exceptions
-from sincpro_framework.auth.domain.keys import VerificationKey
-from sincpro_framework.auth.infrastructure.digests import revealed
+from sincpro_framework.auth.common.domain import exceptions
+from sincpro_framework.auth.common.domain.keys import VerificationKey
+from sincpro_framework.auth.common.infrastructure.digests import revealed
 
 MAX_TOKEN_LENGTH = 16_384
 """Longer than any token an identity provider issues: a bigger one is refused before it is

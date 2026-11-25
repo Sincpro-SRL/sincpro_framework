@@ -15,8 +15,8 @@ import json
 from collections.abc import Mapping
 from typing import Any
 
-from sincpro_framework.auth.domain import exceptions
-from sincpro_framework.auth.domain.keys import VerificationKey
+from sincpro_framework.auth.common.domain import exceptions
+from sincpro_framework.auth.common.domain.keys import VerificationKey
 
 JWT_MISSING = (
     "asymmetric JOSE keys need PyJWT and cryptography. "

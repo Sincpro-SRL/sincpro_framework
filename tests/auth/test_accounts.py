@@ -22,7 +22,7 @@ from sincpro_framework.auth.accounts import (
     ScryptCost,
 )
 from sincpro_framework.auth.accounts.adapters.passwords import hasher
-from sincpro_framework.auth.domain import exceptions
+from sincpro_framework.auth.common.domain import exceptions
 from sincpro_framework.data_layer.store import InMemoryKeyValue, StoreUnavailable
 from sincpro_framework.rate_limiter import RateLimited
 from sincpro_framework.runtime.testing import AuthProviderContract

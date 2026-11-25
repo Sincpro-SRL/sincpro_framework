@@ -13,7 +13,7 @@ from typing import Any
 import pytest
 
 from sincpro_framework import DataTransferObject, Feature, UseFramework, exceptions
-from sincpro_framework.auth.domain import exceptions as auth_exceptions
+from sincpro_framework.auth.common.domain import exceptions as auth_exceptions
 from sincpro_framework.common.failures import GUIDANCE_OF
 from sincpro_framework.common.naming import upper_snake
 from sincpro_framework.data_layer.caching.domain import exceptions as caching_exceptions

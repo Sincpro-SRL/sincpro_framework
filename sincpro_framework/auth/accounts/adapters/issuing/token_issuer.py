@@ -38,14 +38,14 @@ from sincpro_framework.auth.accounts.domain.events import (
     SignedOutEverywhere,
 )
 from sincpro_framework.auth.accounts.domain.refresh_tokens import RefreshRecord, RefreshTokens
-from sincpro_framework.auth.domain import exceptions
-from sincpro_framework.auth.domain.events import SUBJECT, EventPublisher
-from sincpro_framework.auth.domain.identity import Assurance, Identity, IdentityKind
-from sincpro_framework.auth.domain.resolver import IdentityResolver, resolved
-from sincpro_framework.auth.domain.revocations import Revocations
-from sincpro_framework.auth.infrastructure import jws
-from sincpro_framework.auth.infrastructure.announcing import announce
-from sincpro_framework.auth.infrastructure.digests import digest, random_token
+from sincpro_framework.auth.common.domain import exceptions
+from sincpro_framework.auth.common.domain.events import SUBJECT, EventPublisher
+from sincpro_framework.auth.common.domain.identity import Assurance, Identity, IdentityKind
+from sincpro_framework.auth.common.domain.resolver import IdentityResolver, resolved
+from sincpro_framework.auth.common.domain.revocations import Revocations
+from sincpro_framework.auth.common.infrastructure import jws
+from sincpro_framework.auth.common.infrastructure.announcing import announce
+from sincpro_framework.auth.common.infrastructure.digests import digest, random_token
 from sincpro_framework.auth.server import ClaimMapping, ClaimTest, JwtProvider, TrustedIssuer
 from sincpro_framework.sincpro_abstractions import DataTransferObject
 from sincpro_framework.sincpro_logger import logger

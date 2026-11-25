@@ -9,8 +9,8 @@ from typing import Any
 import pytest
 
 from sincpro_framework.auth import Credentials, EndpointUnavailable, PrivateKey, PublicKey
-from sincpro_framework.auth.domain import exceptions
-from sincpro_framework.auth.infrastructure import jws
+from sincpro_framework.auth.common.domain import exceptions
+from sincpro_framework.auth.common.infrastructure import jws
 from sincpro_framework.auth.server import (
     ClaimMapping,
     DpopProofs,

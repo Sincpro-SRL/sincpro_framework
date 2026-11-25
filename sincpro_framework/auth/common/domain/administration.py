@@ -21,8 +21,8 @@ A project with rules of its own implements `AdministrationPolicy`.
 from abc import ABC, abstractmethod
 from collections.abc import Iterable
 
-from sincpro_framework.auth.domain import exceptions
-from sincpro_framework.auth.domain.identity import Identity, IdentityKind
+from sincpro_framework.auth.common.domain import exceptions
+from sincpro_framework.auth.common.domain.identity import Identity, IdentityKind
 
 
 class AdministrationPolicy(ABC):

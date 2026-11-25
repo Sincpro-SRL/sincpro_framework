@@ -19,7 +19,7 @@ is one, unchanged.
 from collections.abc import Iterable
 from typing import Protocol
 
-from sincpro_framework.auth.domain.identity import Identity
+from sincpro_framework.auth.common.domain.identity import Identity
 
 
 class IdentityResolver(Protocol):

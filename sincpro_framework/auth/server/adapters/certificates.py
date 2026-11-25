@@ -16,12 +16,12 @@ from collections.abc import Callable, Iterable, Mapping, Sequence
 from datetime import UTC, datetime
 from typing import Any
 
-from sincpro_framework.auth.domain import exceptions
-from sincpro_framework.auth.domain.identity import Credentials, Identity, IdentityKind
-from sincpro_framework.auth.domain.provider import AuthProvider
-from sincpro_framework.auth.domain.resolver import IdentityResolver, resolved
-from sincpro_framework.auth.infrastructure import jws
-from sincpro_framework.auth.infrastructure.jose_keys import JWT_MISSING
+from sincpro_framework.auth.common.adapters.jose_keys import JWT_MISSING
+from sincpro_framework.auth.common.domain import exceptions
+from sincpro_framework.auth.common.domain.identity import Credentials, Identity, IdentityKind
+from sincpro_framework.auth.common.domain.provider import AuthProvider
+from sincpro_framework.auth.common.domain.resolver import IdentityResolver, resolved
+from sincpro_framework.auth.common.infrastructure import jws
 
 try:  # pragma: no cover - tests/core/test_core_without_extras.py
     from cryptography import x509

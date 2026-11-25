@@ -19,7 +19,7 @@ from datetime import timedelta
 from enum import StrEnum
 from typing import Any
 
-from sincpro_framework.auth.domain.identity import Identity
+from sincpro_framework.auth.common.domain.identity import Identity
 from sincpro_framework.sincpro_abstractions import DataTransferObject
 
 

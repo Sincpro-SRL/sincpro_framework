@@ -7,7 +7,7 @@ from datetime import datetime
 
 from pydantic import ConfigDict
 
-from sincpro_framework.auth.domain.identity import Assurance
+from sincpro_framework.auth.common.domain.identity import Assurance
 from sincpro_framework.sincpro_abstractions import DataTransferObject
 
 

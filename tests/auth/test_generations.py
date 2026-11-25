@@ -9,7 +9,7 @@ new version of a stored use case inheriting — or refused for — what the prev
 import pytest
 
 from sincpro_framework.auth import security
-from sincpro_framework.auth.domain import exceptions
+from sincpro_framework.auth.common.domain import exceptions
 from sincpro_framework.runtime.runtime_use_cases import (
     BusRegistry,
     InMemoryUseCases,

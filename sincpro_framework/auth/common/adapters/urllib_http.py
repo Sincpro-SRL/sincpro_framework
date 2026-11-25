@@ -18,8 +18,8 @@ import urllib.request
 from typing import Any
 from urllib.parse import urlsplit
 
-from sincpro_framework.auth.domain import exceptions
-from sincpro_framework.auth.domain.http import HttpAnswer, HttpRequest
+from sincpro_framework.auth.common.domain import exceptions
+from sincpro_framework.auth.common.domain.http import HttpAnswer, HttpRequest
 
 LOOPBACK_NAMES = frozenset({"localhost"})
 

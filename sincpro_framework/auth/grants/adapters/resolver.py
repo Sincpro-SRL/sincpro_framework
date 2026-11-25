@@ -22,8 +22,8 @@ from collections.abc import Iterable, Mapping
 from datetime import timedelta
 from fnmatch import fnmatchcase
 
-from sincpro_framework.auth.domain.identity import Identity
-from sincpro_framework.auth.domain.revocations import Revocations, tenant_subject
+from sincpro_framework.auth.common.domain.identity import Identity
+from sincpro_framework.auth.common.domain.revocations import Revocations, tenant_subject
 from sincpro_framework.auth.grants.domain.assignments import GrantSource, Held
 from sincpro_framework.auth.grants.domain.catalog import CatalogSource
 from sincpro_framework.data_layer.caching import Cache, CachePolicy, JsonCodec, TimeToLive

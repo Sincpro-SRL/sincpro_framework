@@ -15,7 +15,7 @@ from contextlib import contextmanager
 from contextvars import ContextVar
 from typing import Any
 
-from sincpro_framework.auth.domain.identity import ANONYMOUS, Identity
+from sincpro_framework.auth.common.domain.identity import ANONYMOUS, Identity
 from sincpro_framework.sincpro_logger import logger
 
 _current: ContextVar[Identity] = ContextVar("sincpro_identity", default=ANONYMOUS)

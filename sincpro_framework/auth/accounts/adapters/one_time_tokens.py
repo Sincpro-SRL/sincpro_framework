@@ -24,10 +24,10 @@ from sincpro_framework.auth.accounts.domain.events import (
     OneTimeTokenIssued,
     OneTimeTokenRedeemed,
 )
-from sincpro_framework.auth.domain import exceptions
-from sincpro_framework.auth.domain.events import SUBJECT, EventPublisher
-from sincpro_framework.auth.infrastructure.announcing import announce
-from sincpro_framework.auth.infrastructure.digests import digest, random_token
+from sincpro_framework.auth.common.domain import exceptions
+from sincpro_framework.auth.common.domain.events import SUBJECT, EventPublisher
+from sincpro_framework.auth.common.infrastructure.announcing import announce
+from sincpro_framework.auth.common.infrastructure.digests import digest, random_token
 from sincpro_framework.context.entrypoint.resolution import current_store, key_value_store_of
 from sincpro_framework.data_layer.store import KeyValueStore
 from sincpro_framework.sincpro_abstractions import DataTransferObject

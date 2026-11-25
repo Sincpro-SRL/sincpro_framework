@@ -15,18 +15,18 @@ from collections.abc import Callable, Iterable, Mapping
 from typing import TYPE_CHECKING, Any, Protocol
 from weakref import WeakKeyDictionary, WeakValueDictionary
 
-from sincpro_framework.auth.domain import exceptions
-from sincpro_framework.auth.domain.events import EventPublisher
-from sincpro_framework.auth.domain.identity import Identity, IdentityKind
-from sincpro_framework.auth.domain.permissions import (
+from sincpro_framework.auth.common.domain import exceptions
+from sincpro_framework.auth.common.domain.events import EventPublisher
+from sincpro_framework.auth.common.domain.identity import Identity, IdentityKind
+from sincpro_framework.auth.common.domain.permissions import (
     AccessDeclaration,
     DeclarationKind,
     Rule,
     WhenDenied,
     command_name,
 )
-from sincpro_framework.auth.domain.provider import AuthProvider
-from sincpro_framework.auth.infrastructure.security_context import (
+from sincpro_framework.auth.common.domain.provider import AuthProvider
+from sincpro_framework.auth.common.infrastructure.security_context import (
     _access_in_play,
     current_identity,
 )

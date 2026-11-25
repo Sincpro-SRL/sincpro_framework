@@ -16,7 +16,7 @@ from google.rpc import error_details_pb2  # pyright: ignore[reportMissingImports
 from grpc_status import rpc_status  # pyright: ignore[reportMissingImports]
 
 from sincpro_framework import DataTransferObject, Feature, UseFramework, exceptions
-from sincpro_framework.auth.domain import exceptions as auth_exceptions
+from sincpro_framework.auth.common.domain import exceptions as auth_exceptions
 from sincpro_framework.data_layer.caching.domain import exceptions as caching_exceptions
 from sincpro_framework.ddd import exceptions as ddd_exceptions
 from sincpro_framework.entrypoints import GrpcGateway

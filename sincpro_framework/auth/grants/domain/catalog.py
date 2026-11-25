@@ -29,7 +29,7 @@ from dataclasses import dataclass, field
 from functools import lru_cache
 from typing import Protocol
 
-from sincpro_framework.auth.domain import exceptions
+from sincpro_framework.auth.common.domain import exceptions
 from sincpro_framework.sincpro_abstractions import DataTransferObject
 
 

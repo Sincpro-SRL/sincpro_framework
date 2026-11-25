@@ -26,7 +26,7 @@ from sincpro_framework.auth import (
     security,
 )
 from sincpro_framework.auth.client import OutgoingRequest, RequestSigner
-from sincpro_framework.auth.domain import exceptions
+from sincpro_framework.auth.common.domain import exceptions
 from sincpro_framework.auth.server import SignatureProvider
 from sincpro_framework.data_layer.store import InMemoryKeyValue
 from sincpro_framework.entrypoints import RpcGateway

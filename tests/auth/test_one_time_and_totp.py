@@ -9,8 +9,8 @@ from urllib.parse import parse_qs, urlsplit
 import pytest
 
 from sincpro_framework.auth.accounts import OneTimeTokens, Totp
-from sincpro_framework.auth.domain import exceptions
-from sincpro_framework.auth.infrastructure.digests import digest
+from sincpro_framework.auth.common.domain import exceptions
+from sincpro_framework.auth.common.infrastructure.digests import digest
 from sincpro_framework.data_layer.store import InMemoryKeyValue
 
 RFC6238 = [

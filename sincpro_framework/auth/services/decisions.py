@@ -9,10 +9,10 @@ is its provider (`vouched_by`); an identity opened by hand answers with its own 
 from collections.abc import Mapping, Sequence
 from typing import TYPE_CHECKING, Any
 
-from sincpro_framework.auth.domain import exceptions
-from sincpro_framework.auth.domain.events import SUBJECT, AccessRefused
-from sincpro_framework.auth.domain.identity import Identity, IdentityKind
-from sincpro_framework.auth.domain.permissions import (
+from sincpro_framework.auth.common.domain import exceptions
+from sincpro_framework.auth.common.domain.events import SUBJECT, AccessRefused
+from sincpro_framework.auth.common.domain.identity import Identity, IdentityKind
+from sincpro_framework.auth.common.domain.permissions import (
     AccessCall,
     AccessDeclaration,
     AnyOf,
@@ -24,8 +24,8 @@ from sincpro_framework.auth.domain.permissions import (
     Rule,
     command_name,
 )
-from sincpro_framework.auth.infrastructure.announcing import announce
-from sincpro_framework.auth.infrastructure.security_context import current_identity
+from sincpro_framework.auth.common.infrastructure.announcing import announce
+from sincpro_framework.auth.common.infrastructure.security_context import current_identity
 from sincpro_framework.auth.services.authentication import vouched_by
 from sincpro_framework.auth.services.guard import Access
 from sincpro_framework.context import context_scopes

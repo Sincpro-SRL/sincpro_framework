@@ -18,7 +18,7 @@ from collections.abc import AsyncGenerator, Callable, Generator, Mapping
 from typing import Any
 
 from sincpro_framework.auth.client.domain.outbound import OutgoingRequest, TokenSource
-from sincpro_framework.auth.infrastructure.security_context import current_identity
+from sincpro_framework.auth.common.infrastructure.security_context import current_identity
 
 RETRIED = "_sincpro_auth_retried"
 

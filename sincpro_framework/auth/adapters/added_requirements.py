@@ -2,7 +2,10 @@
 running context's when none is given (Redis), or `DatabaseKeyValue` on the project's database —
 one versioned document per scope, written by compare-and-swap."""
 
-from sincpro_framework.auth.adapters.documents import InMemoryDocuments, KeyValueDocuments
+from sincpro_framework.auth.common.adapters.documents import (
+    InMemoryDocuments,
+    KeyValueDocuments,
+)
 from sincpro_framework.auth.domain.added_requirements import (
     AddedRequirements,
     AddedRequirementStore,

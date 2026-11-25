@@ -15,7 +15,7 @@ from datetime import UTC, datetime, timedelta
 from functools import partial
 
 from sincpro_framework.auth.accounts.domain.refresh_tokens import RefreshRecord, RefreshTokens
-from sincpro_framework.auth.infrastructure.digests import digest
+from sincpro_framework.auth.common.infrastructure.digests import digest
 from sincpro_framework.context.entrypoint.resolution import current_store, key_value_store_of
 from sincpro_framework.data_layer.store import KeyValueStore
 from sincpro_framework.exceptions import ServiceUnavailableError

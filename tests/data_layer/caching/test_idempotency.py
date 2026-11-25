@@ -14,7 +14,7 @@ import pytest
 from structlog.testing import capture_logs
 
 from sincpro_framework import DataTransferObject, Feature, UseFramework, exceptions
-from sincpro_framework.auth.domain import exceptions as auth_exceptions
+from sincpro_framework.auth.common.domain import exceptions as auth_exceptions
 from sincpro_framework.data_layer.caching import (
     IDEMPOTENCY_KEY,
     Idempotency,

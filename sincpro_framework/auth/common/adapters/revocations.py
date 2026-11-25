@@ -18,12 +18,12 @@ from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
 from functools import partial
 
-from sincpro_framework.auth.domain.revocations import (
+from sincpro_framework.auth.common.domain.revocations import (
     Revocations,
     RevocationState,
     WhenUnavailable,
 )
-from sincpro_framework.auth.infrastructure.digests import digest
+from sincpro_framework.auth.common.infrastructure.digests import digest
 from sincpro_framework.context.entrypoint.resolution import current_store, key_value_store_of
 from sincpro_framework.data_layer.store import (
     InMemoryKeyValue,

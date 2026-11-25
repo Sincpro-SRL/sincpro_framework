@@ -8,8 +8,8 @@ import pytest
 
 from sincpro_framework.auth import EndpointUnavailable, OidcDiscovery
 from sincpro_framework.auth.client import ClientCredentials, ClientSecretBasic
-from sincpro_framework.auth.domain import exceptions
-from sincpro_framework.auth.infrastructure.server_metadata import discovery_for, located
+from sincpro_framework.auth.common.adapters.server_metadata import discovery_for, located
+from sincpro_framework.auth.common.domain import exceptions
 from sincpro_framework.auth.server import IntrospectionProvider
 from sincpro_framework.data_layer.caching import Cache
 from sincpro_framework.runtime.testing import ManualClock, ScriptedHttp

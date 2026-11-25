@@ -19,7 +19,7 @@ from sincpro_framework.auth import (
     Permission,
     security,
 )
-from sincpro_framework.auth.domain import exceptions
+from sincpro_framework.auth.common.domain import exceptions
 from sincpro_framework.auth.server import StaticProvider
 from sincpro_framework.exceptions import ServiceUnavailableError
 from sincpro_framework.runtime.testing import AuthProviderContract

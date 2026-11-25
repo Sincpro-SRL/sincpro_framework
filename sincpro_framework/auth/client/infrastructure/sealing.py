@@ -14,9 +14,9 @@ import binascii
 import secrets
 from typing import Any
 
-from sincpro_framework.auth.domain import exceptions
-from sincpro_framework.auth.infrastructure.digests import revealed
-from sincpro_framework.auth.infrastructure.jose_keys import JWT_MISSING
+from sincpro_framework.auth.common.adapters.jose_keys import JWT_MISSING
+from sincpro_framework.auth.common.domain import exceptions
+from sincpro_framework.auth.common.infrastructure.digests import revealed
 
 try:  # pragma: no cover - tests/core/test_core_without_extras.py
     from cryptography.exceptions import InvalidTag

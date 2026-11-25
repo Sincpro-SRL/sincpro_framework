@@ -8,7 +8,7 @@ import pytest
 from pydantic import SecretStr
 
 from sincpro_framework.auth import Assurance, Credentials, Identity
-from sincpro_framework.auth.domain import exceptions
+from sincpro_framework.auth.common.domain import exceptions
 from sincpro_framework.auth.server import (
     ApiKey,
     ApiKeyProvider,
