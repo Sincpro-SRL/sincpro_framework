@@ -17,8 +17,9 @@ the identity as the sign-in gave it, never what `resolvers` added from a store: 
 there is resolved again by whoever reads the token, and one taken away is gone at once. With
 `embed_permissions`, the issuer's own `resolvers` resolve them at sign-in and again at every
 refresh — never copied from the token before, which a role taken away would outlive. A refresh token is
-random, stored by its digest, and rotated: used twice past `reuse_grace` (ten seconds — two tabs
-refreshing at once), it is a stolen token being replayed, and the whole session is revoked.
+random, stored by its digest, and rotated: used again within `reuse_grace` (ten seconds — two
+tabs refreshing at once) it is answered with a pair of the same session; past it, it is a stolen
+token being replayed, and the whole session is revoked.
 Sessions end `idle_for` after the last refresh and `at_most` after they began, whatever is done.
 """
 
@@ -263,14 +264,9 @@ class TokenIssuer:
             scope=chosen,
         )
 
-    def _reused(
-        self, record: RefreshRecord, rotated_at: datetime, now: datetime
-    ) -> exceptions.Unauthenticated:
-        """A refresh token used again, `rotated_at` the moment it was first: within `reuse_grace`
-        a race of the same client — refused, the session kept; past it a replay — the whole
-        session revoked."""
-        if now - rotated_at <= self.reuse_grace:
-            return exceptions.Unauthenticated("refresh token already used")
+    def _replayed(self, record: RefreshRecord) -> exceptions.Unauthenticated:
+        """A refresh token used again past `reuse_grace` — stolen or leaked: its whole session
+        revoked, logged and announced."""
         logger.warning(
             "a refresh token was reused: its session is revoked",
             subject=record.subject,
@@ -286,13 +282,39 @@ class TokenIssuer:
         )
         return exceptions.Unauthenticated("refresh token reused: the session was revoked")
 
+    def _spent(
+        self,
+        refresh_tokens: RefreshTokens,
+        record: RefreshRecord,
+        successor: RefreshRecord,
+        now: datetime,
+    ) -> None:
+        """`record` spent for `successor`.
+
+        1. Not rotated yet: rotated atomically, `successor` kept.
+        2. Rotated — earlier, or by a refresh racing this one —: within `reuse_grace` of it,
+           one client refreshing twice at once (two tabs, requests in parallel), so
+           `successor` is kept beside the token the first refresh got, in the same session.
+        3. Past `reuse_grace`: a replay — the session revoked.
+        """
+        if record.rotated_at is None and refresh_tokens.rotate(record.digest, successor, now):
+            return
+        spent = (
+            record if record.rotated_at is not None else refresh_tokens.find(record.digest)
+        )
+        if spent is None or spent.rotated_at is None:
+            raise exceptions.Unauthenticated("unknown refresh token")
+        if now - spent.rotated_at > self.reuse_grace:
+            raise self._replayed(spent)
+        refresh_tokens.save(successor)
+
     def refresh(self, refresh_token: str) -> IssuedTokens:
         """A new pair for a refresh token, which is spent.
 
         1. Unknown, past its idle time or its session's end: `Unauthenticated`.
         2. Its session revoked, or its subject signed out everywhere since: `Unauthenticated`.
-        3. Already rotated: refused — and past `reuse_grace`, the session revoked.
-        4. Rotated atomically; losing the race is step 3.
+        3. Spent: rotated — or, used again within `reuse_grace`, a token beside the first
+           refresh's — and past it, a replay that revokes the session.
         Final: a new access token of the same session — the identity of its sign-in, resolved
         again by `resolvers` — and a new refresh token.
         """
@@ -310,15 +332,9 @@ class TokenIssuer:
             )
             if refusal is not None:
                 raise exceptions.Unauthenticated(refusal)
-        if record.rotated_at is not None:
-            raise self._reused(record, record.rotated_at, now)
         successor_token = random_token("rt_")
         successor = self._refresh_record(successor_token, record, now)
-        if not self.refresh_tokens.rotate(record.digest, successor, now):
-            again = self.refresh_tokens.find(record.digest)
-            if again is None or again.rotated_at is None:
-                raise exceptions.Unauthenticated("unknown refresh token")
-            raise self._reused(again, again.rotated_at, now)
+        self._spent(self.refresh_tokens, record, successor, now)
         signed_in = Identity(
             subject=record.subject,
             kind=IdentityKind(record.kind),
@@ -387,18 +403,28 @@ class TokenIssuer:
             )
 
     def sessions_of(self, subject: str) -> list[RefreshRecord]:
-        """The sessions `subject` is signed in on — none it signed out of, nor any begun before
-        it signed out everywhere."""
+        """The sessions `subject` is signed in on — one each, its newest token; none it signed
+        out of, nor any begun before it signed out everywhere — oldest first."""
         if self.refresh_tokens is None:
             return []
+        newest: dict[str, RefreshRecord] = {}
+        for one in self.refresh_tokens.sessions_of(subject):
+            held = newest.get(one.family)
+            if held is None or one.issued_at >= held.issued_at:
+                newest[one.family] = one
         revocations = self.revocations
-        return [
-            one
-            for one in self.refresh_tokens.sessions_of(subject)
-            if revocations is None
-            or revocations.state(subject, session=one.family).refusal(one.authenticated_at)
-            is None
-        ]
+        return sorted(
+            (
+                one
+                for one in newest.values()
+                if revocations is None
+                or revocations.state(subject, session=one.family).refusal(
+                    one.authenticated_at
+                )
+                is None
+            ),
+            key=lambda one: one.authenticated_at,
+        )
 
     def revoke_subject(self, subject: str) -> None:
         """ "Sign out everywhere": every token of `subject` issued until now is refused — a

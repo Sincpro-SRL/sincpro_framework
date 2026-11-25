@@ -165,12 +165,12 @@ except Unauthenticated as refused:
 | | |
 |---|---|
 | the access token | ten minutes; who, which session, when and how they authenticated, the scopes — no permissions: the provider's resolvers give them per call, so a role taken away holds at once (`embed_permissions=True` carries them with a version a change refuses, resolved by the issuer's `resolvers=` at sign-in and again at every refresh — with refresh tokens and no `resolvers=` it is refused at construction: a refresh never copies permissions a role taken away would outlive) |
-| the refresh token | random, stored by digest, rotated on every use; used twice past `reuse_grace` (ten seconds — two tabs) it is a replay, and the whole session is revoked |
+| the refresh token | random, stored by digest, rotated on every use; used again within `reuse_grace` (ten seconds — two tabs refreshing at once) it answers a pair of the same session; past it, it is a replay, and the whole session is revoked |
 | a session | ends `idle_for` (14 days) after the last refresh and `at_most` (30 days) after it began |
 | a logout | `revoke(token)` — an access or a refresh token — ends its session, its access tokens refused at once |
 | the roles | the ones the identity carried at sign-in, kept with the session and carried by every refreshed token — never the ones a resolver added from a store: those are resolved again by whoever verifies the token, so a role taken away there is gone at once |
 | "sign out everywhere" | `revoke_subject(subject)`: a password changed, an account disabled — every session of the subject ends; a new sign-in in that same second works |
-| "signed in on…" | `sessions_of(subject)` — the live sessions, none signed out of |
+| "signed in on…" | `sessions_of(subject)` — one per live session, none signed out of |
 | other services | `SigningKeys.private({...}, "ES256")` (`[jwt]`): they verify with `jwks()` and `TrustedIssuer(..., mapping=TokenIssuer.mapping)`, no secret shared |
 
 ## Links that work once, and a second factor
@@ -183,11 +183,11 @@ reset = links.issue("password-reset", "user:MFAQ0123", ttl=timedelta(minutes=30)
 # … emailed as https://colegio.bo/restablecer?token=<reset> …
 assert links.redeem("password-reset", reset).subject == "user:MFAQ0123"
 
-totp = Totp(issuer="CAUOR", replay=InMemoryKeyValue())
+totp = Totp(issuer="CAUOR", store=InMemoryKeyValue())     # the context's store in production
 secret = totp.new_secret()                                 # kept encrypted with the account
 uri = totp.provisioning_uri(secret, "MFAQ0123")            # the QR code the app scans
-assert totp.verify(secret, totp.now(secret), subject="user:MFAQ0123")
-assert not totp.verify(secret, totp.now(secret), subject="user:MFAQ0123")   # once only
+assert totp.verify(secret, totp.now(secret), "user:MFAQ0123")
+assert not totp.verify(secret, totp.now(secret), "user:MFAQ0123")   # once only
 ```
 
 | `OneTimeTokens` | |
@@ -198,10 +198,9 @@ assert not totp.verify(secret, totp.now(secret), subject="user:MFAQ0123")   # on
 | replaces | an administrator handing a temporary password in an HTTP answer |
 
 `Totp` is RFC 6238 on the standard library — its own test vectors pass — accepting a code within
-one step either side; with `replay`, a step accepted for a subject is never accepted again, nor
-an older one — `verify(secret, code, subject=...)`; without the subject a warning says the code
-may be used twice. Six digits can be guessed: check each code inside `attempts.attempt(subject)`,
-raising `Unauthenticated` when it is wrong, as a password. After a code,
+one step either side, and once: a step accepted for a subject is never accepted again, nor an
+older one, on the store every replica shares. Six digits can be guessed: check each code inside
+`attempts.attempt(subject)`, raising `Unauthenticated` when it is wrong, as a password. After a code,
 the identity's `assurance` says `otp` — what a [step-up](server.md#step-up-how-strongly-how-recently--rfc-9470) asks for.
 
 ## HTTP Basic: service accounts
@@ -272,7 +271,7 @@ assert on_database.issue(Identity.user("user:MFAQ0123")).refresh_token is not No
 
 | Table (`template_table.…`) | Store |
 |---|---|
-| `key_value_table` | `DatabaseKeyValue` — any `KeyValueStore` user: revocations, `LoginAttempts`, `OneTimeTokens`, `Totp`'s replay, leases |
+| `key_value_table` | `DatabaseKeyValue` — any `KeyValueStore` user: revocations, `LoginAttempts`, `OneTimeTokens`, `Totp`, leases |
 | `api_key_table` | `DatabaseApiKeys` |
 | `grant_assignment_table`, `entitlement_table` | `DatabaseGrants` |
 | `refresh_token_table` | `DatabaseRefreshTokens` |

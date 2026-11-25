@@ -98,8 +98,7 @@ class KeyValueRefreshTokens(RefreshTokens):
     def _indexed(self, record: RefreshRecord) -> None:
         """The subject's index maps each live session to its token and its end — the record's
         session written in, the ended ones dropped, the index living until its last session
-        ends — by compare-and-set. An entry it cannot read is dropped too: its session works,
-        and is indexed again at its next refresh."""
+        ends — by compare-and-set."""
         store = self.store()
         key = self._index_key(record.subject)
         for _ in range(64):
@@ -108,7 +107,7 @@ class KeyValueRefreshTokens(RefreshTokens):
             sessions = {
                 family: entry
                 for family, entry in ({} if raw is None else json.loads(raw)).items()
-                if isinstance(entry, dict) and entry["ends"] > now
+                if entry["ends"] > now
             }
             sessions[record.family] = {
                 "token": record.digest,
@@ -178,11 +177,7 @@ class KeyValueRefreshTokens(RefreshTokens):
         if raw is None:
             return []
         now = self.now()
-        found = [
-            self.find(one["token"])
-            for one in json.loads(raw).values()
-            if isinstance(one, dict)
-        ]
+        found = [self.find(one["token"]) for one in json.loads(raw).values()]
         return sorted(
             (
                 one

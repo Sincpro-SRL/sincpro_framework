@@ -65,7 +65,8 @@ with mcp.context({"tenant_id": "acme"}):
 
 On the `KeyValueStore` the context is stored on — the bounded context's own (`bus.store_context_in`),
 else the process's (`store_context_in`), else this process's memory — under
-`session:<namespace>:<id>`. Every replica on the store reads the same session; `namespace` keeps
+`session:<namespace>:<sha256 of the id>` — a copy of the store opens no session. Every replica on
+the store reads the same session; `namespace` keeps
 apart the sessions of different purposes on one store. `Sessions(store, idle_for, at_most,
 namespace, now)` builds them on any `KeyValueStore`, with a clock of the test's own.
 

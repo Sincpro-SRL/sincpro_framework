@@ -91,50 +91,51 @@ def test_no_link_is_stored_as_issued() -> None:
 @pytest.mark.parametrize(("moment", "code"), RFC6238)
 def test_codes_are_rfc_6238s_own(moment: int, code: str) -> None:
     secret = base64.b32encode(b"12345678901234567890").decode()
-    totp = Totp("x", digits=8, clock=lambda: moment)
+    totp = Totp("x", digits=8, store=InMemoryKeyValue(), clock=lambda: moment)
     assert totp.now(secret) == code
-    assert totp.verify(secret, code)
+    assert totp.verify(secret, code, "user:ana")
 
 
 def test_a_code_is_accepted_within_one_step_either_side_and_never_beyond() -> None:
     now = [1_900_000_000.0]
-    totp = Totp("CAUOR", clock=lambda: now[0])
+    totp = Totp("CAUOR", store=InMemoryKeyValue(), clock=lambda: now[0])
     secret = totp.new_secret()
     code = totp.now(secret)
     now[0] += 30
-    assert totp.verify(secret, code)
+    assert totp.verify(secret, code, "user:ana")
     now[0] += 30
-    assert not totp.verify(secret, code)
-    assert not totp.verify(secret, "12345") and not totp.verify(secret, "abcdef")
-    assert not totp.verify(secret, "\u0661\u0662\u0663\u0664\u0665\u0666")  # not ASCII
+    assert not totp.verify(secret, code, "user:bea")
+    assert not totp.verify(secret, "12345", "user:bea")
+    assert not totp.verify(secret, "abcdef", "user:bea")
+    assert not totp.verify(
+        secret, "\u0661\u0662\u0663\u0664\u0665\u0666", "user:bea"
+    )  # not ASCII
 
 
 def test_a_code_is_accepted_once_and_never_an_older_one() -> None:
     now = [1_900_000_000.0]
-    totp = Totp("CAUOR", replay=InMemoryKeyValue(), clock=lambda: now[0])
+    totp = Totp("CAUOR", store=InMemoryKeyValue(), clock=lambda: now[0])
     secret = totp.new_secret()
     code = totp.now(secret)
-    assert totp.verify(secret, code, subject="user:ana")
-    assert not totp.verify(secret, code, subject="user:ana")
-    assert totp.verify(secret, code, subject="user:bea")
+    assert totp.verify(secret, code, "user:ana")
+    assert not totp.verify(secret, code, "user:ana")
+    assert totp.verify(secret, code, "user:bea")
     older = totp.code_at(secret, int(now[0] // 30) - 1)
-    assert not totp.verify(secret, older, subject="user:ana")
-    later = totp.code_at(secret, int(now[0] // 30) + 1)
-    assert totp.verify(
-        secret, later
-    )  # no subject: verified, and a warning says why it may repeat
+    assert not totp.verify(secret, older, "user:ana")
 
 
 def test_a_code_is_refused_again_while_it_could_verify_and_forgotten_after() -> None:
     now = [1_900_000_000.0]
     store = InMemoryKeyValue(now=lambda: datetime.fromtimestamp(now[0], UTC))
-    totp = Totp("CAUOR", replay=store, clock=lambda: now[0])
+    totp = Totp("CAUOR", store=store, clock=lambda: now[0])
     secret = totp.new_secret()
     ahead = totp.code_at(secret, int(now[0] // 30) + 1)  # a phone whose clock runs ahead
     accepted = now[0]
-    assert totp.verify(secret, ahead, subject="user:ana")
-    while Totp("CAUOR", clock=lambda: now[0]).verify(secret, ahead):
-        assert not totp.verify(secret, ahead, subject="user:ana")
+    assert totp.verify(secret, ahead, "user:ana")
+    while Totp("CAUOR", store=InMemoryKeyValue(), clock=lambda: now[0]).verify(
+        secret, ahead, "user:bea"
+    ):
+        assert not totp.verify(secret, ahead, "user:ana")
         now[0] += 10
     now[0] = accepted + 4 * 30  # (2 × window + 2) steps
     assert store.get(f"sincpro:auth:totp:{digest('user:ana')}") is None
