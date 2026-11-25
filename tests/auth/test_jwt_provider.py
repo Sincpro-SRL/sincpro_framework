@@ -49,7 +49,9 @@ def mint(
     header: dict[str, Any] | None = None,
 ) -> str:
     head = {"alg": alg, "typ": "JWT", **({"kid": kid} if kid else {}), **(header or {})}
-    signing = jws.HmacKey.of(kid, secret, alg if alg in jws.HMAC_DIGESTS else "HS256").sign
+    signing = jws.HmacKey.from_secret(
+        kid, secret, alg if alg in jws.HMAC_DIGESTS else "HS256"
+    ).sign
     return jws.encode(head, claims, signing)
 
 

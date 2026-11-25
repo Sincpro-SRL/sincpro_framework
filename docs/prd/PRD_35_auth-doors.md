@@ -53,13 +53,13 @@ A service in the middle of a chain both verifies and presents, and its setup say
 
 ```python
 from sincpro_framework.auth import AccessControl
-from sincpro_framework.auth.client import PresentingProvider, TokenExchange
+from sincpro_framework.auth.client import OutboundCredentialsProvider, TokenExchange
 from sincpro_framework.auth.server import JwtProvider, ServiceTokenProvider
 
 auth = AccessControl(providers=[
     JwtProvider.from_issuer(KEYCLOAK, audience="orders"),            # people, through a gateway
     ServiceTokenProvider("orders", keys),                             # this platform's services
-    PresentingProvider({"billing": TokenExchange(client, audience="billing-api", issuer=KEYCLOAK)}),
+    OutboundCredentialsProvider({"billing": TokenExchange("billing-api", client, issuer=KEYCLOAK)}),
 ])
 ```
 

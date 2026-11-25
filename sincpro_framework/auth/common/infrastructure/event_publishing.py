@@ -1,7 +1,7 @@
 """Handing an auth event to the publisher a component was given — stamped with who did it and
 the flow it belongs to, and never undoing what was already written.
 
-    announce(self.publisher, RoleAssigned(entity_id="user:ana", role="billing.manager"))
+    publish_event(self.publisher, RoleAssigned(entity_id="user:ana", role="billing.manager"))
 """
 
 import dataclasses
@@ -12,7 +12,7 @@ from sincpro_framework.context import context_executions
 from sincpro_framework.sincpro_logger import logger
 
 
-def announce(publisher: EventPublisher | None, event: AuthEvent) -> None:
+def publish_event(publisher: EventPublisher | None, event: AuthEvent) -> None:
     """Publish `event` — nothing without a publisher.
 
     Context: who did it is the identity in play — verified by a provider, or opened by

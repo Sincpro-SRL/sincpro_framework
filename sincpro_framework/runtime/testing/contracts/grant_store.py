@@ -25,9 +25,9 @@ class GrantStoreContract:
         """A role given in one tenant is held there, never in another nor by another subject."""
         store = self.make_store()
         store.assign(Assignment(subject="user:ana", tenant="bo", role="clerk"))
-        assert store.held("user:ana", "bo").roles == {"clerk"}
-        assert store.held("user:ana", "pe").roles == frozenset()
-        assert store.held("user:bea", "bo").roles == frozenset()
+        assert store.grants_of("user:ana", "bo").roles == {"clerk"}
+        assert store.grants_of("user:ana", "pe").roles == frozenset()
+        assert store.grants_of("user:bea", "bo").roles == frozenset()
 
     def test_a_role_taken_back_is_no_longer_held(self) -> None:
         """Unassigning leaves the subject's other roles; unassigning nothing is fine."""
@@ -36,7 +36,7 @@ class GrantStoreContract:
         store.assign(Assignment(subject="user:ana", tenant="bo", role="auditor"))
         store.unassign("user:ana", "bo", "clerk")
         store.unassign("user:ana", "bo", "nobody-gave-it")
-        assert store.held("user:ana", "bo").roles == {"auditor"}
+        assert store.grants_of("user:ana", "bo").roles == {"auditor"}
 
     def test_an_assignment_past_its_end_is_kept_but_not_held(self) -> None:
         """A temporary role whose moment passed is still listed, never held."""
@@ -45,7 +45,7 @@ class GrantStoreContract:
         store.assign(
             Assignment(subject="user:ana", tenant="bo", role="admin", valid_until=past)
         )
-        assert store.held("user:ana", "bo").roles == frozenset()
+        assert store.grants_of("user:ana", "bo").roles == frozenset()
         assert [one.role for one in store.assignments_of("user:ana", "bo")] == ["admin"]
 
     def test_who_holds_a_role_is_answered_per_tenant(self) -> None:
@@ -65,7 +65,7 @@ class GrantStoreContract:
         store.entitle("bo", "e-invoicing")
         store.entitle("bo", "payroll")
         store.withdraw("bo", "payroll")
-        assert store.held("user:ana", "bo").entitlements == {"e-invoicing"}
+        assert store.grants_of("user:ana", "bo").entitlements == {"e-invoicing"}
         assert store.entitlements_of("pe") == frozenset()
 
     def test_racing_assignments_to_one_subject_are_all_kept(self) -> None:
@@ -84,4 +84,6 @@ class GrantStoreContract:
             thread.start()
         for thread in threads:
             thread.join()
-        assert store.held("user:ana", "bo").roles == {f"role-{i}" for i in range(self.racers)}
+        assert store.grants_of("user:ana", "bo").roles == {
+            f"role-{i}" for i in range(self.racers)
+        }

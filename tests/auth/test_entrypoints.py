@@ -42,6 +42,8 @@ from sincpro_framework.auth.server import (
 )
 from sincpro_framework.auth.server.adapters.resource_server.service_tokens import HEADER
 from sincpro_framework.common.serialization import rebuilt
+from sincpro_framework.context import KeyValueContexts, use_context
+from sincpro_framework.data_layer.store import InMemoryKeyValue
 from sincpro_framework.entrypoints import GrpcGateway, RpcGateway
 from sincpro_framework.entrypoints.adapters.grpc.wire import (
     scalar_to_struct,
@@ -466,3 +468,39 @@ class TestServiceTokenProvider(AuthProviderContract):
 
     def granted_permission(self) -> str | None:
         return Perm.ISSUE
+
+
+def test_every_door_authenticates_on_the_store_of_the_bus_it_guards() -> None:
+    """The incident: a sign-out on a bounded context with a store of its own held for REST and
+    JSON-RPC — `security.authenticated_as` — and not for a project's ASGI app, whose
+    `IdentityMiddleware` read the process's store: the revoked session was let in there."""
+    own = KeyValueContexts(InMemoryKeyValue())
+    seen: list[Any] = []
+
+    class SeeingStore(AuthProvider):
+        name = "sees-store"
+
+        def authenticate(self, credentials: Credentials) -> Identity | None:
+            seen.append(use_context().store())
+            return ISSUER
+
+    members = UseFramework("members-middleware-store", log_after_execution=False)
+    members.store_context_in(own)
+    auth = AccessControl[Perm](providers=[SeeingStore()])
+    auth.on(members)
+
+    async def app(scope: Any, receive: Any, send: Any) -> None:
+        await send({"type": "http.response.start", "status": 204, "headers": []})
+        await send({"type": "http.response.body", "body": b""})
+
+    async def receive() -> dict[str, Any]:
+        return {"type": "http.request", "body": b"", "more_body": False}
+
+    async def send(message: Any) -> None:
+        return None
+
+    scope = {"type": "http", "method": "GET", "path": "/", "headers": []}
+    asyncio.run(IdentityMiddleware(app, access=auth)(scope, receive, send))
+    with security.authenticated_as(members, Credentials(transport="http")):
+        pass
+    assert seen == [own, own]

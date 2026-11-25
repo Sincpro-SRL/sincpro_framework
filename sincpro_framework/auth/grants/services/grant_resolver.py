@@ -24,7 +24,7 @@ from fnmatch import fnmatchcase
 
 from sincpro_framework.auth.common.domain.identity import Identity
 from sincpro_framework.auth.common.domain.revocations import Revocations, tenant_subject
-from sincpro_framework.auth.grants.domain.assignments import GrantSource, Held
+from sincpro_framework.auth.grants.domain.assignments import GrantSource, SubjectGrants
 from sincpro_framework.auth.grants.domain.catalog import CatalogSource
 from sincpro_framework.data_layer.caching import Cache, CachePolicy, JsonCodec, TimeToLive
 
@@ -33,26 +33,26 @@ class RoleMapping:
     """The roles a token carries, named as the catalog names them.
 
     RoleMapping({"app:billing": "billing.clerk", "sincpro:finance": ["billing.manager"]})
-        .mapped({"app:billing", "offline_access"})   ->  {"billing.clerk"}
+        .map_roles({"app:billing", "offline_access"})   ->  {"billing.clerk"}
     """
 
     def __init__(
-        self, mapping: Mapping[str, str | Iterable[str]], keep_unmapped: bool = False
+        self, mapping: Mapping[str, str | Iterable[str]], include_unmapped: bool = False
     ) -> None:
-        """`keep_unmapped` keeps a role the mapping does not name, as it came."""
+        """`include_unmapped` includes a role the mapping does not name, as it came."""
         self.mapping = {
             key: frozenset({value}) if isinstance(value, str) else frozenset(value)
             for key, value in mapping.items()
         }
-        self.keep_unmapped = keep_unmapped
+        self.include_unmapped = include_unmapped
 
-    def mapped(self, roles: Iterable[str]) -> frozenset[str]:
+    def map_roles(self, roles: Iterable[str]) -> frozenset[str]:
         """The catalog's roles for `roles`."""
         found: set[str] = set()
         for role in roles:
             if role in self.mapping:
                 found |= self.mapping[role]
-            elif self.keep_unmapped:
+            elif self.include_unmapped:
                 found.add(role)
         return frozenset(found)
 
@@ -74,7 +74,7 @@ class ScopeCeiling:
         self.scopes = {scope: tuple(patterns) for scope, patterns in scopes.items()}
         self.first_party = frozenset(first_party)
 
-    def narrowed(self, permissions: frozenset[str], identity: Identity) -> frozenset[str]:
+    def restrict(self, permissions: frozenset[str], identity: Identity) -> frozenset[str]:
         """`permissions` a pattern of the identity's scopes allows — all of them for a
         first-party client."""
         if identity.client is not None and identity.client in self.first_party:
@@ -88,7 +88,7 @@ class ScopeCeiling:
 
 
 class GrantResolver:
-    """An `IdentityResolver` over a catalog — a `GrantCatalog`, or a `LiveCatalog` with the
+    """An `IdentityResolver` over a catalog — a `GrantCatalog`, or `TenantCatalogs` with the
     roles defined at runtime — and, given one, a `GrantSource`."""
 
     def __init__(
@@ -100,10 +100,10 @@ class GrantResolver:
         entitlements: bool = False,
         revocations: Revocations | None = None,
         cache: Cache | None = None,
-        cache_for: timedelta = timedelta(minutes=5),
+        cache_ttl: timedelta = timedelta(minutes=5),
     ) -> None:
-        """`entitlements` gates permissions by the tenant's — kept by `source`; `revocations`
-        keys the cache by the permission versions it keeps."""
+        """`entitlements` filters permissions by the tenant's — recorded by `source`;
+        `revocations` keys the cache by the permission versions it stores."""
         self.catalog = catalog
         self.source = source
         self.role_mapping = role_mapping
@@ -111,8 +111,10 @@ class GrantResolver:
         self.entitlements = entitlements
         self.revocations = revocations
         self.cache = cache or Cache(namespace="auth-grants")
-        self._policy: CachePolicy[Held] = CachePolicy(freshness=TimeToLive(ttl=cache_for))
-        self._codec = JsonCodec(Held)
+        self._policy: CachePolicy[SubjectGrants] = CachePolicy(
+            freshness=TimeToLive(ttl=cache_ttl)
+        )
+        self._codec = JsonCodec(SubjectGrants)
 
     def _versions(self, identity: Identity) -> tuple[int, int]:
         """The subject's and the tenant's permission versions — 0 without revocations; the ones
@@ -125,15 +127,15 @@ class GrantResolver:
         versions = self.revocations.permission_versions(identity.subject, tenant)
         return versions[identity.subject], versions[tenant]
 
-    def held(self, identity: Identity) -> Held:
+    def load_grants(self, identity: Identity) -> SubjectGrants:
         """What the source says `identity` holds — cached per subject, tenant and versions."""
         source = self.source
         if source is None:
-            return Held()
+            return SubjectGrants()
         key = ("held", identity.subject, identity.tenant, *self._versions(identity))
         return self.cache.get_or_compute(
             key,
-            lambda: source.held(identity.subject, identity.tenant),
+            lambda: source.grants_of(identity.subject, identity.tenant),
             self._policy,
             self._codec,
         )
@@ -145,30 +147,30 @@ class GrantResolver:
         2. The roles the source assigns that the tenant's catalog declares, unioned — an
            assignment of a role removed, or retired, grants nothing, nor passes `auth.role(...)`.
         3. Their closure, and what it grants — beside what the token itself carried.
-        4. Gated by the tenant's entitlements, when asked and the source keeps them.
-        5. Narrowed by the scope ceiling, when there is one.
+        4. Filtered by the tenant's entitlements, when asked and the source records them.
+        5. Restricted by the scope ceiling, when there is one.
         Final: when 4 or 5 took a permission away, only the roles whose every grant is left —
         `auth.role(...)` never admits a client, or a tenant, the permissions refuse: a reports
         app scoped to `billing:read` acts as a clerk, never as the manager its person is.
         """
         from_token = (
-            self.role_mapping.mapped(identity.roles) if self.role_mapping else identity.roles
+            self.role_mapping.map_roles(identity.roles)
+            if self.role_mapping
+            else identity.roles
         )
-        held = self.held(identity)
-        composition = self.catalog.in_effect(identity.tenant)
-        catalog = composition.catalog
+        held = self.load_grants(identity)
+        effective = self.catalog.cached(identity.tenant)
+        catalog = effective.catalog
         assigned = frozenset(
-            one
-            for one in held.roles
-            if one in catalog.roles and one not in composition.retired
+            one for one in held.roles if one in catalog.roles and one not in effective.retired
         )
         roles = catalog.closure(from_token | assigned)
         granted = identity.permissions | catalog.permissions_of(roles)
         permissions = granted
         if self.entitlements and held.entitlements is not None:
-            permissions = catalog.gated(permissions, held.entitlements)
+            permissions = catalog.filter_by_entitlements(permissions, held.entitlements)
         if self.scope_ceiling is not None:
-            permissions = self.scope_ceiling.narrowed(permissions, identity)
+            permissions = self.scope_ceiling.restrict(permissions, identity)
         if permissions != granted:
             roles = frozenset(
                 one for one in roles if catalog.permissions_of({one}) <= permissions

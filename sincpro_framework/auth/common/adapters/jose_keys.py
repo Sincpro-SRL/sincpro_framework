@@ -16,7 +16,13 @@ from collections.abc import Mapping
 from typing import Any
 
 from sincpro_framework.auth.common.domain import exceptions
-from sincpro_framework.auth.common.domain.keys import VerificationKey
+from sincpro_framework.auth.common.domain.keys import (
+    ASYMMETRIC_ALGORITHMS,
+    EC_CURVES,
+    RSA_ALGORITHMS,
+    JwsAlgorithm,
+    VerificationKey,
+)
 
 JWT_MISSING = (
     "asymmetric JOSE keys need PyJWT and cryptography. "
@@ -30,18 +36,14 @@ try:  # pragma: no cover - tests/core/test_core_without_extras.py
 except ImportError as error:  # pragma: no cover
     raise ImportError(JWT_MISSING) from error
 
-RSA_ALGORITHMS = frozenset({"RS256", "RS384", "RS512", "PS256", "PS384", "PS512"})
-EC_CURVES = {"ES256": "P-256", "ES384": "P-384", "ES512": "P-521"}
-ASYMMETRIC = RSA_ALGORITHMS | frozenset(EC_CURVES) | frozenset({"EdDSA"})
 
-
-def fits(jwk: Mapping[str, Any], algorithm: str) -> bool:
+def is_compatible(jwk: Mapping[str, Any], algorithm: str) -> bool:
     """Whether the JWK's type — and curve — can verify `algorithm`, and its own `alg`, when it
     names one, is that algorithm.
 
-        fits({"kty": "EC", "crv": "P-256"}, "ES256")   ->  True
-        fits({"kty": "EC", "crv": "P-256"}, "ES384")   ->  False
-        fits({"kty": "RSA", "alg": "RS256"}, "PS256")  ->  False
+        is_compatible({"kty": "EC", "crv": "P-256"}, "ES256")   ->  True
+        is_compatible({"kty": "EC", "crv": "P-256"}, "ES384")   ->  False
+        is_compatible({"kty": "RSA", "alg": "RS256"}, "PS256")  ->  False
     """
     named = jwk.get("alg")
     if named is not None and named != algorithm:
@@ -51,12 +53,16 @@ def fits(jwk: Mapping[str, Any], algorithm: str) -> bool:
         return kty == "RSA"
     if algorithm in EC_CURVES:
         return kty == "EC" and jwk.get("crv") == EC_CURVES[algorithm]
-    return algorithm == "EdDSA" and kty == "OKP" and jwk.get("crv") in ("Ed25519", "Ed448")
+    return (
+        algorithm == JwsAlgorithm.EDDSA
+        and kty == "OKP"
+        and jwk.get("crv") in ("Ed25519", "Ed448")
+    )
 
 
 def _algorithm(algorithm: str) -> Any:
     """PyJWT's implementation of `algorithm`, asymmetric ones only."""
-    if algorithm not in ASYMMETRIC:
+    if algorithm not in ASYMMETRIC_ALGORITHMS:
         raise exceptions.ProgrammingError(f"{algorithm} is not an asymmetric JOSE algorithm")
     return jwt.get_algorithm_by_name(algorithm)
 
@@ -79,7 +85,7 @@ class PublicKey(VerificationKey):
             raise exceptions.ProgrammingError(
                 "a published JWK holds a private key — refused; rotate it, it leaked"
             )
-        if not fits(jwk, algorithm):
+        if not is_compatible(jwk, algorithm):
             raise exceptions.ProgrammingError(
                 f"the JWK {jwk.get('kid')!r} does not verify {algorithm}"
             )
@@ -142,18 +148,20 @@ class PrivateKey:
         )
 
     @classmethod
-    def generate(cls, algorithm: str = "ES256", key_id: str | None = None) -> "PrivateKey":
+    def generate(
+        cls, algorithm: str = JwsAlgorithm.ES256, key_id: str | None = None
+    ) -> "PrivateKey":
         """A new key for `algorithm` — RSA 2048 for `RS*`/`PS*`, the curve for `ES*`, Ed25519."""
         if algorithm in RSA_ALGORITHMS:
             key: Any = rsa.generate_private_key(public_exponent=65537, key_size=2048)
         elif algorithm in EC_CURVES:
-            curve = {
-                "ES256": ec.SECP256R1(),
-                "ES384": ec.SECP384R1(),
-                "ES512": ec.SECP521R1(),
+            curve: dict[str, ec.EllipticCurve] = {
+                JwsAlgorithm.ES256: ec.SECP256R1(),
+                JwsAlgorithm.ES384: ec.SECP384R1(),
+                JwsAlgorithm.ES512: ec.SECP521R1(),
             }
             key = ec.generate_private_key(curve[algorithm])
-        elif algorithm == "EdDSA":
+        elif algorithm == JwsAlgorithm.EDDSA:
             key = ed25519.Ed25519PrivateKey.generate()
         else:
             raise exceptions.ProgrammingError(

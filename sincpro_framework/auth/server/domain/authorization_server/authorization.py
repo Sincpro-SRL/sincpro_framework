@@ -15,6 +15,10 @@ secret `code_verifier`, at `/authorize`, and the verifier itself at `/token`. `s
 client's own value, returned as it came, so it recognizes its answer; `iss` names the server
 that answers (RFC 9207), so a client talking to several never mixes them up.
 
+What a client may ask for is checked once its client and redirect are verified; a request refused
+after that goes back to the client's redirect with the error (RFC 6749 §4.1.2.1), never to an
+error page of the server's.
+
 How strict PKCE is, is the server's choice (`PkcePolicy`): required of every client by default —
 OAuth 2.1 — or of public clients only, as RFC 6749 + 7636 had it, or optional. `S256` is the
 method accepted by default; `plain` (the verifier as the challenge) only where a server allows it.
@@ -60,6 +64,8 @@ class AuthorizationRequest(DataTransferObject):
 
     client_id: str
     redirect_uri: str
+    response_type: str = "code"
+    """`code` — the only one OAuth 2.1 retains; any other is `unsupported_response_type`."""
     code_challenge: str = ""
     """Empty when the client sent none — what the server's `PkcePolicy` decides about."""
     code_challenge_method: CodeChallengeMethod = CodeChallengeMethod.S256
@@ -68,11 +74,12 @@ class AuthorizationRequest(DataTransferObject):
     resource: str | None = None
     """The resource the token is for — RFC 8707."""
 
-    def redirect_with(self, parameters: Mapping[str, str]) -> str:
+    def build_redirect_uri(self, parameters: Mapping[str, str]) -> str:
         """Its `redirect_uri` with `parameters` added to the query it already had; an empty value
         is left out.
 
-            redirect_with({"code": "c-1", "state": "xyz"})  ->  "https://app/cb?code=c-1&state=xyz"
+            build_redirect_uri({"code": "c-1", "state": "xyz"})
+                ->  "https://app/cb?code=c-1&state=xyz"
         """
         parts = urlsplit(self.redirect_uri)
         query = parse_qsl(parts.query, keep_blank_values=True)
@@ -100,7 +107,7 @@ class AuthorizationCode(DataTransferObject):
     identity: Identity
     assurance: Assurance = Assurance()
 
-    def verifies(self, code_verifier: str | None) -> bool:
+    def verify_pkce(self, code_verifier: str | None) -> bool:
         """Whether `code_verifier` proves the request — RFC 7636 §4.6, in constant time.
 
         no challenge was sent            ->  True when no verifier comes either

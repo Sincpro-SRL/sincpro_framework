@@ -13,7 +13,11 @@ on this page runs, in order, in `tests/docs/test_persistence_guide.py`, against
 |---|---|---|
 | a fixed token, an API key, a username and password | `StaticToken`, `ApiKeyHeader`, `BasicCredentials` | — |
 | a token from its authorization server, for this service | `ClientCredentials` (RFC 6749 §4.4) | `private_key_jwt`: `[jwt]` |
-| a credential per tenant | `TokenSources` | — |
+| a credential per tenant | `TenantTokenSources` | — |
+| a token exchanged for the caller (RFC 8693) | `TokenExchange`, `OutboundCredentialsProvider` | — |
+| a user's grant, stored and refreshed | `RefreshTokenSource`, `DeviceAuthorization` (RFC 8628) | — |
+| a token bound to this service's key (RFC 9449) | `dpop=DpopProver()` on any of them | `[jwt]` |
+| a project's own grant, cached the same way | a subclass of `CachedTokenSource` | — |
 
 **Where a source lives.** In the adapter that calls the API, injected with `add_dependency` in
 `infrastructure/dependencies.py` — never in a use case, never in the context (whose values
@@ -67,16 +71,20 @@ assert server.grants("client_credentials") == 1                     # fetched on
 | Behaviour | How |
 |---|---|
 | one fetch for every thread and replica | `TokenCache` is the framework's `Cache` on the running context's store: one caller fetches, the others wait for it |
-| served until shortly before it expires | `expires_at - skew` (30 s, at most half its life); the expiry is when the answer arrived plus `expires_in` — five minutes when not said, never forever |
+| served until shortly before it expires | `expires_at - skew` (30 s, at most half its life — a token living 20 s is used for 10, never fetched on every call); the expiry is when the answer arrived plus `expires_in` (a number, or a numeric string) — five minutes when not said, never forever |
 | fetched again when the API refuses it | `call_with_credentials` (or `requests_auth`, `httpx_auth`) sends once more after a 401 — never after a 403, never in a loop |
-| an API refusing every token | a token younger than `min_reuse` (10 s) is not fetched again: one retry per call, not a fetch per request |
-| the token endpoint asks to wait | `Retry-After` remembered: the same `EndpointUnavailable` (503) until then, the endpoint not asked |
+| an API refusing every token | a token younger than `refetch_grace` (10 s) is not fetched again: one retry per call, not a fetch per request |
+| a token refused (401) | dropped when it is still the one cached — judged on the cache, so another replica, or a source built again, drops it too |
+| the token endpoint asks to wait | `Retry-After` stored: the same `EndpointUnavailable` (503) until then, the endpoint not asked; forgotten once the wait is over |
 | this service's client refused | `CredentialsRejected` — this service's configuration, never `Unauthenticated` (the caller would be told to log in again, and loop) |
-| cached on Redis | the token itself is stored; `TokenCache(seal=AesGcmSealer(key))` keeps it encrypted (`[jwt]`) |
+| cached on Redis | the token itself is stored; `TokenCache(sealer=AesGcmSealer(key))` stores it encrypted (`[jwt]`) |
 
 `client=` takes any `ClientAuthentication`: `ClientSecretBasic` (the default for an id and a
-secret), `ClientSecretPost`, `ClientSecretJwt`, `PrivateKeyJwt` (`[jwt]`). `audience=` and
-`resources=` (RFC 8707) name the API the token is for.
+secret), `ClientSecretPost`, `ClientSecretJwt`, `PrivateKeyJwt` (`[jwt]`), `PublicClient` (the
+default for an id with no secret). Every source that asks a token endpoint — `ClientCredentials`,
+`TokenExchange`, `RefreshTokenSource`, `DeviceAuthorization` — takes the same `client=` or
+`client_id=`/`client_secret=`, `token_endpoint=` or `issuer=`, `scope=`, `timeout=` and `dpop=`.
+`audience=` and `resources=` (RFC 8707) name the API the token is for.
 
 ## Any HTTP client
 
@@ -94,15 +102,16 @@ with httpx.Client(transport=transport, auth=httpx_auth(bank)) as client:
 
 `requests_auth(bank)` is the same for `requests` (`requests.post(url, auth=requests_auth(bank))`);
 `httpx_auth` serves `httpx.AsyncClient` too, the source running on a thread, never on the event
-loop. Neither library is imported until its hook is asked for.
+loop. Neither library is imported until its hook is asked for. Like `call_with_credentials`, a hook
+sends once more only with headers other than those refused.
 
 ## A credential per tenant — never another's
 
 ```python
 from sincpro_framework.auth import Identity, NoCredentialsFor, security
-from sincpro_framework.auth.client import TokenSources
+from sincpro_framework.auth.client import TenantTokenSources
 
-siat_by_tenant = TokenSources({
+siat_by_tenant = TenantTokenSources({
     "bo-001": StaticToken("token-of-001", header="apikey", scheme="TokenApi"),
     "bo-002": StaticToken("token-of-002", header="apikey", scheme="TokenApi"),
 })
@@ -116,34 +125,38 @@ except NoCredentialsFor:
     pass                                       # 403 — never a default token
 ```
 
-The tenant is the request's, else the identity's in play. `TokenSources(function)` resolves a
-source per tenant, keeps the least recently used `max_tenants`, keyed by the tenant — never by a
-token.
+The tenant is the request's, else the identity's in play. `TenantTokenSources(function)` resolves
+a source per tenant and caches the `max_tenants` most recently used, keyed by the tenant — never by
+a token; two threads resolving one tenant at once get the same source.
 
 ## Acting for the caller: token exchange — RFC 8693
 
 A call to another service can carry a token for that service acting for the caller in play —
 exchanged for the bearer the caller presented, which the entrypoint holds while the call runs
-(`security.presented`), never on the identity. `PresentingProvider` names the source per service,
-so `remote_execution` — which sends `security.identity_headers(context)` — carries it with no
-change to its transports.
+(`security.presented`), never on the identity. `OutboundCredentialsProvider` names the source per
+service, so `remote_execution` — which sends `security.identity_headers(context)` — carries it with
+no change to its transports; a call that names no service carries nothing.
 
 ```python
 from sincpro_framework import DataTransferObject, Feature, UseFramework
 from sincpro_framework.auth import AccessControl, Credentials
-from sincpro_framework.auth.client import ClientSecretBasic, PresentingProvider, TokenExchange
+from sincpro_framework.auth.client import (
+    ClientSecretBasic,
+    OutboundCredentialsProvider,
+    TokenExchange,
+)
 from sincpro_framework.auth.server import StaticProvider
 
 orders_token = TokenExchange(
+    "orders-api",
     ClientSecretBasic("billing", "s3cret"),
-    audience="orders-api",
     issuer="https://auth.bank.bo",
     http=server,
     cache=TokenCache(InMemoryKeyValue()),
 )
 exchange_auth = AccessControl(providers=[
     StaticProvider({"ana-token": Identity.user("user:ana", tenant="bo-001")}),
-    PresentingProvider({"orders": orders_token}),        # calls to the "orders" context
+    OutboundCredentialsProvider({"orders": orders_token}),   # calls to the "orders" context
 ])
 billing = UseFramework("billing-exchanges", log_after_execution=False)
 
@@ -170,40 +183,52 @@ with security.authenticated_as(billing, Credentials(transport="http",
 assert carried.headers["authorization"].startswith("Bearer at-")
 ```
 
-A caller's token the server will not exchange is the caller's to fix: `Unauthenticated`. Outside
-an authenticated call there is nothing to exchange: `ProgrammingError`.
+Each exchanged token is cached per subject token and per what is asked — the audience, the
+`requested_token_type` (`TokenTypeIdentifier`), the `actor` — and never past the subject token's
+own `exp` when it is a JWT. A caller's token the server will not exchange is the caller's to fix:
+`Unauthenticated` — `invalid_grant`, or `invalid_request` whose description names the subject
+token (RFC 8693 §2.2.2 says an invalid subject token with `invalid_request`, which also covers a
+malformed request: only the description tells them apart). Outside an authenticated call there is
+nothing to exchange: `ProgrammingError`.
 
-## Holding consent: refresh tokens and device code
+## Consent: refresh tokens and device authorization
 
-`RefreshingToken` keeps the grant of an API that issues refresh tokens — a tenant's Odoo consented
-once, a CLI authorized by device code (`DeviceCode`, RFC 8628) — in `HeldGrants`
-(`KeyValueHeldGrants` on the context's store, sealed when given a `Sealer`). A refresh runs under a
-lease, so one replica refreshes while the others wait for its answer — past `wait` with the
-refresh still running elsewhere, they answer `EndpointUnavailable` (503) and never refresh without
-the lease — and it is stored by compare-and-set: a server that rotates refresh tokens never sees
-one used twice (and revokes the grant for it). `invalid_grant` drops the grant: `GrantRejected`, consent to be given again.
+`RefreshTokenSource` presents the grant of an API that issues refresh tokens — a tenant's Odoo
+consented once, a CLI authorized by device code (`DeviceAuthorization`, RFC 8628) — stored in an
+`OAuthGrantStore` (`KeyValueOAuthGrants` on the context's store by default, encrypted when given a
+`Sealer`). A refresh runs under a lease, so one replica refreshes while the others wait for its
+answer — past `lease_timeout` with the refresh still running elsewhere, they answer
+`EndpointUnavailable` (503) and never refresh without the lease — and it is stored by
+compare-and-set on the grant's `version`: a server that rotates refresh tokens never sees one used
+twice (and revokes the grant for it), and a 401 marking the access token expired while a refresh
+runs never costs the rotated refresh token. `invalid_grant` deletes the grant: `GrantRejected`,
+consent to be given again. A refresh token deleted or replaced is not revoked at the server
+(RFC 7009): revoke it there when that matters.
+
+`DeviceAuthorization` polls every `interval`, five seconds more after each `slow_down`; past the
+code's `expires_in` — by this service's clock or the server's `expired_token` — it is
+`GrantRejected`: authorize again. A person who refused is `Unauthenticated`.
 
 ```python
 from sincpro_framework.auth.client import (
-    DeviceCode,
-    InMemoryHeldGrants,
-    PublicClient,
-    RefreshingToken,
+    DeviceAuthorization,
+    InMemoryOAuthGrants,
+    RefreshTokenSource,
 )
 
 device_server = FakeTokenEndpoint("https://auth.sincpro.dev", clients={"sincpro-cli": ""})
 shown = []
-issued = DeviceCode(
-    PublicClient("sincpro-cli"),
-    show=shown.append,                                   # print(prompt.verification_uri, …)
+issued = DeviceAuthorization(
+    shown.append,                                        # print(prompt.verification_uri, …)
+    client_id="sincpro-cli",                             # a PublicClient: no secret
     issuer="https://auth.sincpro.dev",
     http=device_server,
     sleep=lambda seconds: device_server.approve(shown[0].user_code),   # the person approves
 ).authorize()
 
-cli = RefreshingToken(PublicClient("sincpro-cli"), InMemoryHeldGrants(), key="sincpro-cli",
-                      issuer="https://auth.sincpro.dev", http=device_server,
-                      store=InMemoryKeyValue())
-cli.seed(issued)
+cli = RefreshTokenSource("sincpro-cli", InMemoryOAuthGrants(), client_id="sincpro-cli",
+                         issuer="https://auth.sincpro.dev", http=device_server,
+                         store=InMemoryKeyValue())
+cli.store_grant(issued)
 assert cli.headers_for(request)["authorization"].startswith("Bearer at-")
 ```

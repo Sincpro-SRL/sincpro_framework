@@ -15,14 +15,15 @@ import time
 from collections.abc import Callable, Iterable
 from datetime import timedelta
 
+from sincpro_framework.auth.access_control.domain.access import Access
 from sincpro_framework.auth.access_control.domain.added_requirements import (
     AddedRequirement,
     AddedRequirementStore,
 )
-from sincpro_framework.auth.access_control.services.guard import Access
 from sincpro_framework.auth.access_control.services.requirement_administration import (
     RequirementAdministration,
 )
+from sincpro_framework.auth.common.adapters.locks import AdministrationLocks
 from sincpro_framework.auth.common.domain.administration import AdministrationPolicy
 from sincpro_framework.auth.common.domain.events import EventPublisher
 from sincpro_framework.auth.common.domain.permissions import (
@@ -30,11 +31,10 @@ from sincpro_framework.auth.common.domain.permissions import (
     Permission,
     RoleRequirement,
 )
-from sincpro_framework.auth.common.infrastructure.locks import AdministrationLocks
 
 
 class RuntimeRequirements:
-    """The requirements `store` keeps, judged by `access` on every call."""
+    """The requirements `store` holds, judged by `access` on every call."""
 
     def __init__(
         self,
@@ -43,7 +43,7 @@ class RuntimeRequirements:
         permissions: Iterable[Permission] | None = None,
         policy: AdministrationPolicy | None = None,
         locks: AdministrationLocks | None = None,
-        check_every: timedelta = timedelta(seconds=1),
+        check_interval: timedelta = timedelta(seconds=1),
         clock: Callable[[], float] = time.monotonic,
         publisher: EventPublisher | None = None,
     ) -> None:
@@ -51,12 +51,12 @@ class RuntimeRequirements:
         given, read when asked: a permission no code declares protects nothing. `policy` bounds
         who may change them (`BoundedAdministration()` when not given)."""
         self._administration = RequirementAdministration(
-            access, store, permissions, policy, locks, check_every, clock, publisher
+            access, store, permissions, policy, locks, check_interval, clock, publisher
         )
 
     @property
     def store(self) -> AddedRequirementStore:
-        """Where the requirements are kept — shared by every replica reading it."""
+        """Where the requirements are stored — shared by every replica reading it."""
         return self._administration.store
 
     @property
@@ -64,12 +64,12 @@ class RuntimeRequirements:
         """What may be required, by value."""
         return self._administration.permissions
 
-    def judged_by(self, access: Access) -> "RuntimeRequirements":
+    def with_access(self, access: Access) -> "RuntimeRequirements":
         """These requirements — the same store, bound, leases and what was read — judged by
         `access`: what `AccessControl.using` gives the copy it makes."""
-        judged = copy.copy(self)
-        judged._administration = self._administration.judged_by(access)
-        return judged
+        copied = copy.copy(self)
+        copied._administration = self._administration.with_access(access)
+        return copied
 
     def check(self, call: AccessCall) -> bool:
         """The `every_call` check: what is required of `call.command` for the caller's tenant,

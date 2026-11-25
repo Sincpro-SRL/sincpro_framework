@@ -2,12 +2,12 @@
 revocation and device endpoints — read once from its discovery document and cached.
 
     discovery = OidcDiscovery()
-    discovery.of("https://auth.sincpro.com.bo/realms/sincpro").jwks_uri
+    discovery.fetch("https://auth.sincpro.com.bo/realms/sincpro").jwks_uri
         ->  "https://auth.sincpro.com.bo/realms/sincpro/protocol/openid-connect/certs"
 
 Context: one component both halves share — `JwtProvider.from_issuer` finds the keys here,
 `ClientCredentials(issuer=…)` the token endpoint. Every component built without `http=` nor
-`discovery=` asks the process's own (`discovery_for`), so an issuer is discovered once per
+`discovery=` asks the process's own (`resolve_discovery`), so an issuer is discovered once per
 process, not once per component.
 OpenID Connect Discovery is tried first, RFC 8414 next. A document that names another issuer is
 refused (a mix-up attack: a server answering for another), never trusted. The document is cached
@@ -25,7 +25,7 @@ from pydantic import ConfigDict, Field
 
 from sincpro_framework.auth.common.adapters.urllib_http import UrllibHttp
 from sincpro_framework.auth.common.domain import exceptions
-from sincpro_framework.auth.common.domain.http import HttpClient, HttpRequest, safe_url
+from sincpro_framework.auth.common.domain.http import HttpClient, HttpRequest, redact_url
 from sincpro_framework.data_layer.caching import (
     Cache,
     CachePolicy,
@@ -55,7 +55,7 @@ class ServerMetadata(DataTransferObject):
     """Everything the server published, for what auth does not read itself."""
 
     @classmethod
-    def of(cls, document: dict[str, Any]) -> "ServerMetadata":
+    def from_document(cls, document: dict[str, Any]) -> "ServerMetadata":
         """The metadata out of a discovery document — the fields it names, and the document."""
         named = {name: document.get(name) for name in cls.model_fields if name != "document"}
         return cls(
@@ -116,7 +116,7 @@ class OidcDiscovery:
         )
         self._codec = JsonCodec(ServerMetadata)
 
-    def _fetched(self, issuer: str) -> ServerMetadata:
+    def _fetch(self, issuer: str) -> ServerMetadata:
         """`issuer`'s metadata as its server answers it now.
 
         1. Each discovery URL in turn; a 404 tries the next.
@@ -135,41 +135,44 @@ class OidcDiscovery:
                 continue
             if not answer.ok:
                 raise exceptions.EndpointUnavailable(
-                    safe_url(url),
+                    redact_url(url),
                     f"answered {answer.status}",
                     answer.status,
                     answer.retry_after(),
                 )
             document = answer.json_object()
             if not document:
-                raise exceptions.EndpointUnavailable(safe_url(url), "answered no JSON object")
+                raise exceptions.EndpointUnavailable(
+                    redact_url(url), "answered no JSON object"
+                )
             if document.get("issuer") != issuer:
                 logger.error(
                     "a discovery document names another issuer — refused",
-                    url=safe_url(url),
+                    url=redact_url(url),
                     expected=issuer,
                     named=str(document.get("issuer")),
                 )
                 raise exceptions.EndpointUnavailable(
-                    safe_url(url), f"names issuer {document.get('issuer')!r}, not {issuer!r}"
+                    redact_url(url),
+                    f"names issuer {document.get('issuer')!r}, not {issuer!r}",
                 )
-            return ServerMetadata.of(document)
+            return ServerMetadata.from_document(document)
         raise exceptions.EndpointUnavailable(issuer, "publishes no discovery document")
 
-    def of(self, issuer: str) -> ServerMetadata:
+    def fetch(self, issuer: str) -> ServerMetadata:
         """`issuer`'s metadata — cached; fetched on the first call, never at construction.
 
-        discovery.of("https://auth.sincpro.com.bo/realms/sincpro").token_endpoint
+        discovery.fetch("https://auth.sincpro.com.bo/realms/sincpro").token_endpoint
             ->  "https://auth.sincpro.com.bo/realms/sincpro/protocol/openid-connect/token"
         """
         return self.cache.get_or_compute(
             ("oidc-discovery", issuer),
-            lambda: self._fetched(issuer),
+            lambda: self._fetch(issuer),
             self._policy,
             self._codec,
         )
 
-    def forget(self, issuer: str) -> None:
+    def invalidate(self, issuer: str) -> None:
         """Drop `issuer`'s cached document — the next call fetches it again."""
         self.cache.forget(("oidc-discovery", issuer), self._codec)
 
@@ -178,13 +181,15 @@ _PROCESS_DISCOVERY: list[OidcDiscovery] = []
 _PROCESS_DISCOVERY_LOCK = threading.Lock()
 
 
-def discovery_for(http: HttpClient | None, discovery: OidcDiscovery | None) -> OidcDiscovery:
+def resolve_discovery(
+    http: HttpClient | None, discovery: OidcDiscovery | None
+) -> OidcDiscovery:
     """The discovery a component asks: `discovery` when given; one through `http` when only that
     was — a test's `ScriptedHttp`, a project's own client; else the process's, made on first use
     and shared by every component built on the defaults.
 
-        discovery_for(None, None) is discovery_for(None, None)          ->  True
-        discovery_for(ScriptedHttp(...), None).http                     ->  that ScriptedHttp
+        resolve_discovery(None, None) is resolve_discovery(None, None)          ->  True
+        resolve_discovery(ScriptedHttp(...), None).http                     ->  that ScriptedHttp
     """
     if discovery is not None:
         return discovery
@@ -196,17 +201,17 @@ def discovery_for(http: HttpClient | None, discovery: OidcDiscovery | None) -> O
         return _PROCESS_DISCOVERY[0]
 
 
-def located(
+def resolve_endpoint(
     endpoint: str | None, issuer: str | None, discovery: OidcDiscovery, name: str
 ) -> str | Callable[[], str]:
     """The endpoint given; else a function discovering `name` from `issuer` on its first call —
     never at construction; `ProgrammingError` with neither.
 
-        located(None, KEYCLOAK, discovery, "token_endpoint")()
+        resolve_endpoint(None, KEYCLOAK, discovery, "token_endpoint")()
             ->  "https://auth.sincpro.com.bo/realms/sincpro/protocol/openid-connect/token"
     """
     if endpoint is not None:
         return endpoint
     if issuer is None:
         raise exceptions.ProgrammingError(f"no {name} given, and no issuer= to discover it")
-    return lambda: discovery.of(issuer).endpoint(name)
+    return lambda: discovery.fetch(issuer).endpoint(name)

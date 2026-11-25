@@ -5,17 +5,21 @@ and a verifier checks with. The `[jwt]` extra."""
 from collections.abc import Iterable, Mapping, Sequence
 from typing import Any
 
-from sincpro_framework.auth.common.adapters.jose_keys import ASYMMETRIC, PublicKey
+from sincpro_framework.auth.common.adapters.jose_keys import PublicKey
 from sincpro_framework.auth.common.domain import exceptions
-from sincpro_framework.auth.common.domain.keys import KeySource, VerificationKey
+from sincpro_framework.auth.common.domain.keys import (
+    ASYMMETRIC_ALGORITHMS,
+    KeySource,
+    VerificationKey,
+)
 
 
 def asymmetric_algorithms(algorithms: Iterable[str]) -> frozenset[str]:
     """`algorithms` as a set — `ProgrammingError` for one that is not asymmetric."""
     chosen = frozenset(algorithms)
-    if not chosen or not chosen <= ASYMMETRIC:
+    if not chosen or not chosen <= ASYMMETRIC_ALGORITHMS:
         raise exceptions.ProgrammingError(
-            f"public keys verify asymmetric algorithms only: {sorted(chosen - ASYMMETRIC)}"
+            f"public keys verify asymmetric algorithms only: {sorted(chosen - ASYMMETRIC_ALGORITHMS)}"
         )
     return chosen
 

@@ -1,9 +1,14 @@
 """Asking whether someone may run a use case, without running it — the same decision the bus's
 guard takes, so a catalog lists exactly what its caller may call."""
 
+import pytest
+
 from sincpro_framework import DataTransferObject, Feature, UseFramework
-from sincpro_framework.auth import AccessControl, Identity, Permission, security
+from sincpro_framework.auth import AccessCall, AccessControl, Identity, Permission, security
 from sincpro_framework.auth.common.domain import exceptions
+from sincpro_framework.context import EntrypointKind
+from sincpro_framework.data_layer.store import StoreUnavailable
+from sincpro_framework.entrypoints.infrastructure.http import merge_http_context
 
 
 class SalesPermission(Permission):
@@ -93,3 +98,53 @@ def test_a_bus_another_access_control_guards_is_answered_by_that_one():
     assert str(asking.refusal_of(bus, CommandCreateQuote, GUEST)) == str(
         guarding.refusal_of(bus, CommandCreateQuote, GUEST)
     )
+
+
+def test_a_rule_whose_store_is_down_is_never_read_as_a_refusal():
+    """The incident: a catalog asked `may_run` while the rule's store was down, and the use case
+    vanished from it as if refused — a 503 to retry became "you may not"."""
+    auth = AccessControl[SalesPermission]()
+    bus = UseFramework("sales-rule-store-down", log_after_execution=False)
+
+    def store_down(call: AccessCall) -> bool:
+        raise StoreUnavailable("the rule's store did not answer")
+
+    @bus.feature(CommandCreateQuote)
+    @auth.requires(auth.rule("quota left", store_down))
+    class CreateQuote(Feature):
+        def execute(self, dto: CommandCreateQuote) -> None:
+            return None
+
+    auth.on(bus)
+    with pytest.raises(StoreUnavailable):
+        auth.may_run(bus, CommandCreateQuote, SELLER)
+
+
+def test_a_rule_that_reads_the_command_is_refused_without_one():
+    auth = AccessControl[SalesPermission]()
+    bus = UseFramework("sales-rule-reads-command", log_after_execution=False)
+
+    @bus.feature(CommandCreateQuote)
+    @auth.requires(auth.rule("small quote", lambda call: call.dto.total < 100))
+    class CreateQuote(Feature):
+        def execute(self, dto: CommandCreateQuote) -> None:
+            return None
+
+    auth.on(bus)
+    refused = auth.refusal_of(bus, CommandCreateQuote, SELLER)
+    assert isinstance(refused, exceptions.PermissionDenied)
+    assert "cannot be judged without the Command" in refused.reason
+
+
+def test_may_run_refuses_a_tenant_the_caller_named_that_is_not_its_own():
+    """The incident: a catalog listed a tool for ana of `bo` whose call named tenant `pe` — the
+    run refused it, the listing did not."""
+    bus, auth = sales()
+    ana_bo = Identity.user("ana", tenant="bo", permissions=[SalesPermission.QUOTE])
+    carried = merge_http_context({"Baggage": "tenant_id=pe"})
+    with bus.context(carried, kind=EntrypointKind.REST):
+        assert not auth.may_run(bus, CommandCreateQuote, ana_bo)
+        assert isinstance(
+            auth.refusal_of(bus, CommandCreateQuote, ana_bo), exceptions.PermissionDenied
+        )
+    assert auth.may_run(bus, CommandCreateQuote, ana_bo)

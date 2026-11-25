@@ -6,8 +6,8 @@ account, an integration, a small project with no identity provider — checked b
                                     hasher),
                   attempts=LoginAttempts())
 
-Context: a password hash is slow on purpose, so a pair verified is remembered in this process for
-`remember_for` (a minute) — by an HMAC of the pair under a random key of this process, never the
+Context: a password hash is slow on purpose, so a pair verified is cached in this process for
+`cache_ttl` (a minute) — by an HMAC of the pair under a random key of this process, never the
 pair — and a client sending it on every request does not pay a hash each time. A locked username
 is refused before its password is hashed; a wrong pair is one answer whichever part was wrong.
 """
@@ -36,7 +36,7 @@ from sincpro_framework.rate_limiter import RateLimited
 
 class HashedCredentials(CredentialVerifier):
     """Usernames with their password hash and the identity they stand for — a few service
-    accounts kept in settings."""
+    accounts stored in settings."""
 
     def __init__(
         self, entries: Mapping[str, tuple[str, Identity]], hasher: PasswordHasher
@@ -53,14 +53,14 @@ class HashedCredentials(CredentialVerifier):
 
 
 class BasicProvider(AuthProvider):
-    """HTTP Basic credentials, verified, remembered for a minute, locked when guessed at."""
+    """HTTP Basic credentials, verified, cached for a minute, locked when guessed at."""
 
     def __init__(
         self,
         verifier: CredentialVerifier,
         attempts: LoginAttempts | None = None,
         realm: str = "sincpro",
-        remember_for: timedelta = timedelta(seconds=60),
+        cache_ttl: timedelta = timedelta(seconds=60),
         resolvers: Sequence[IdentityResolver] = (),
         name: str = "basic",
         clock: Callable[[], float] = time.monotonic,
@@ -68,12 +68,12 @@ class BasicProvider(AuthProvider):
         self.verifier = verifier
         self.attempts = attempts
         self.realm = realm
-        self.remember_for = remember_for
+        self.cache_ttl = cache_ttl
         self.resolvers = tuple(resolvers)
         self.name = name
         self.clock = clock
         self._key = secrets.token_bytes(32)
-        self._remembered: dict[str, tuple[Identity, float]] = {}
+        self._cache: dict[str, tuple[Identity, float]] = {}
         self._lock = threading.Lock()
 
     def security_scheme(self) -> dict[str, Any] | None:
@@ -85,7 +85,7 @@ class BasicProvider(AuthProvider):
         7617 §2.1)."""
         return f'Basic realm="{self.realm}", charset="UTF-8"'
 
-    def _pair(self, credentials: Credentials) -> tuple[str, str] | None:
+    def _parse_credentials(self, credentials: Credentials) -> tuple[str, str] | None:
         """The username and password of `Authorization: Basic` — `None` for another scheme,
         `Unauthenticated` for one that does not decode."""
         scheme, _, encoded = credentials.headers.get("authorization", "").partition(" ")
@@ -101,12 +101,12 @@ class BasicProvider(AuthProvider):
             raise exceptions.Unauthenticated("malformed basic credentials")
         return username, password
 
-    def _memo(self, username: str, password: str) -> str:
+    def _cache_key(self, username: str, password: str) -> str:
         return hmac.new(
             self._key, f"{username}\x00{password}".encode(), hashlib.sha256
         ).hexdigest()
 
-    def _verified(self, username: str, password: str) -> Identity:
+    def _verify(self, username: str, password: str) -> Identity:
         """The identity the verifier answers for the pair — `Unauthenticated` when it answers
         none, or the username is locked: an attempt counted before the hash, so pairs sent at
         once never pass the limit together."""
@@ -122,35 +122,33 @@ class BasicProvider(AuthProvider):
             raise exceptions.Unauthenticated("too many failed attempts") from locked
         return found
 
-    def _remember(self, memo: str, identity: Identity) -> None:
-        """`identity` remembered under `memo` for `remember_for` — the pairs past theirs
-        forgotten, so the memory holds a minute of pairs, never every pair ever sent."""
+    def _cache_identity(self, key: str, identity: Identity) -> None:
+        """`identity` cached under `key` for `cache_ttl` — the pairs past theirs evicted, so
+        the cache holds a minute of pairs, never every pair ever sent."""
         now = self.clock()
         with self._lock:
-            self._remembered = {
-                one: held for one, held in self._remembered.items() if held[1] > now
-            }
-            self._remembered[memo] = (identity, now + self.remember_for.total_seconds())
+            self._cache = {one: entry for one, entry in self._cache.items() if entry[1] > now}
+            self._cache[key] = (identity, now + self.cache_ttl.total_seconds())
 
     def authenticate(self, credentials: Credentials) -> Identity | None:
         """Who the Basic pair belongs to.
 
         1. Another scheme: `None`.
-        2. Remembered and not past `remember_for`: that identity.
+        2. Cached and not past `cache_ttl`: that identity.
         3. Verified, the attempt counted first: a locked username is refused before any hash,
            a wrong pair counted and refused — 401 both, with the Basic challenge.
-        Final: the identity, resolved and remembered.
+        Final: the identity, resolved and cached.
         """
-        pair = self._pair(credentials)
+        pair = self._parse_credentials(credentials)
         if pair is None:
             return None
         username, password = pair
-        memo = self._memo(username, password)
+        key = self._cache_key(username, password)
         with self._lock:
-            known = self._remembered.get(memo)
-        if known is not None and self.clock() < known[1]:
-            return known[0]
-        found = self._verified(username, password)
+            cached = self._cache.get(key)
+        if cached is not None and self.clock() < cached[1]:
+            return cached[0]
+        found = self._verify(username, password)
         identity = resolved(found.model_copy(update={"provider": self.name}), self.resolvers)
-        self._remember(memo, identity)
+        self._cache_identity(key, identity)
         return identity

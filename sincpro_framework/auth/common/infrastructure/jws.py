@@ -2,9 +2,9 @@
 the registered claims of a JWT checked.
 
     token = encode({"alg": "HS256", "kid": "k1"}, {"sub": "user:42", "exp": 1_900_000_000},
-                   HmacKey.of("k1", "secret").sign)
+                   HmacKey.from_secret("k1", "secret").sign)
     jws = parse(token)                         ->  Jws(header={...}, claims={...}, ...)
-    HmacKey.of("k1", "secret").verifies(jws)   ->  True
+    HmacKey.from_secret("k1", "secret").verify_jws(jws)   ->  True
     ClaimRules(issuer="https://…", audiences={"billing"}).check(jws.claims, now=time.time())
 
 Context: every reader of a JWT in the framework — the service token, `JwtProvider`, the token
@@ -25,28 +25,29 @@ from datetime import UTC, datetime
 from typing import Any
 
 from sincpro_framework.auth.common.domain import exceptions
-from sincpro_framework.auth.common.domain.keys import VerificationKey
-from sincpro_framework.auth.common.infrastructure.digests import revealed
+from sincpro_framework.auth.common.domain.keys import JwsAlgorithm, VerificationKey
+from sincpro_framework.auth.common.infrastructure.digests import reveal_secret
 
 MAX_TOKEN_LENGTH = 16_384
 """Longer than any token an identity provider issues: a bigger one is refused before it is
 decoded, so nobody makes the process parse megabytes of JSON."""
 
 HMAC_DIGESTS: Mapping[str, Callable[..., Any]] = {
-    "HS256": hashlib.sha256,
-    "HS384": hashlib.sha384,
-    "HS512": hashlib.sha512,
+    JwsAlgorithm.HS256: hashlib.sha256,
+    JwsAlgorithm.HS384: hashlib.sha384,
+    JwsAlgorithm.HS512: hashlib.sha512,
 }
+"""The hash each HMAC algorithm signs with."""
 
 _SEGMENT = re.compile(r"^[A-Za-z0-9_-]+$")
 
 
-def encoded(raw: bytes) -> str:
+def base64url_encode(raw: bytes) -> str:
     """`raw` as base64url without padding — the JOSE alphabet (RFC 7515 §2)."""
     return base64.urlsafe_b64encode(raw).rstrip(b"=").decode()
 
 
-def decoded(text: str) -> bytes:
+def base64url_decode(text: str) -> bytes:
     """The bytes of an unpadded base64url `text`; `ValueError` for anything else.
 
     Context: strict, so two spellings of one signature never both verify — a `+`, a `/` or
@@ -59,7 +60,7 @@ def decoded(text: str) -> bytes:
         raw = base64.urlsafe_b64decode(text + "=" * (-len(text) % 4))
     except binascii.Error as error:
         raise ValueError("not base64url") from error
-    if encoded(raw) != text:
+    if base64url_encode(raw) != text:
         raise ValueError("not canonical base64url")
     return raw
 
@@ -104,7 +105,7 @@ class Jws:
 
 def _object(segment: str) -> dict[str, Any]:
     """A JSON object out of a base64url segment; `ValueError` when it is not one."""
-    value = json.loads(decoded(segment))
+    value = json.loads(base64url_decode(segment))
     if not isinstance(value, dict):
         raise ValueError("not a JSON object")
     return value
@@ -129,7 +130,7 @@ def parse(token: str, what: str = "token") -> Jws:
             header=_object(header_part),
             claims=_object(payload_part),
             signing_input=f"{header_part}.{payload_part}".encode(),
-            signature=decoded(signature_part),
+            signature=base64url_decode(signature_part),
         )
     except (ValueError, RecursionError) as error:
         raise exceptions.Unauthenticated(f"malformed {what}") from error
@@ -143,21 +144,22 @@ def encode(
     Context: compact JSON (no spaces), so the same claims always give the same token.
     """
     signing_input = ".".join(
-        encoded(json.dumps(part, separators=(",", ":")).encode()) for part in (header, claims)
+        base64url_encode(json.dumps(part, separators=(",", ":")).encode())
+        for part in (header, claims)
     )
-    return f"{signing_input}.{encoded(sign(signing_input.encode()))}"
+    return f"{signing_input}.{base64url_encode(sign(signing_input.encode()))}"
 
 
 @dataclass(frozen=True)
 class HmacKey(VerificationKey):
     """A shared secret that signs and verifies one HMAC algorithm — HS256 by default.
 
-    HmacKey.of("2026-09", Secret("…"), "HS256")
+    HmacKey.from_secret("2026-09", Secret("…"), "HS256")
     """
 
     key_id: str | None
     secret: bytes = field(repr=False)
-    algorithm: str = "HS256"
+    algorithm: str = JwsAlgorithm.HS256
 
     def __post_init__(self) -> None:
         """An algorithm that is not HMAC is a `ProgrammingError` at construction."""
@@ -167,9 +169,11 @@ class HmacKey(VerificationKey):
             )
 
     @classmethod
-    def of(cls, key_id: str | None, secret: Any, algorithm: str = "HS256") -> "HmacKey":
+    def from_secret(
+        cls, key_id: str | None, secret: Any, algorithm: str = JwsAlgorithm.HS256
+    ) -> "HmacKey":
         """A key out of a secret given as text or as a pydantic `Secret`."""
-        return cls(key_id, revealed(secret).encode(), algorithm)
+        return cls(key_id, reveal_secret(secret).encode(), algorithm)
 
     def sign(self, signing_input: bytes) -> bytes:
         """The HMAC of `signing_input`."""
@@ -179,7 +183,7 @@ class HmacKey(VerificationKey):
         """Whether `signature` is this key's HMAC of `signing_input` — in constant time."""
         return hmac.compare_digest(self.sign(signing_input), signature)
 
-    def verifies(self, jws: Jws) -> bool:
+    def verify_jws(self, jws: Jws) -> bool:
         """Whether `jws` names this key's algorithm and its signature is this key's."""
         return jws.algorithm == self.algorithm and self.verify(
             jws.signing_input, jws.signature
@@ -200,7 +204,7 @@ def numeric_date(claims: Mapping[str, Any], name: str, what: str = "token") -> f
     return float(value)
 
 
-def moment(claims: Mapping[str, Any], name: str) -> datetime | None:
+def claim_datetime(claims: Mapping[str, Any], name: str) -> datetime | None:
     """The NumericDate `claims[name]` as a UTC `datetime`, or `None` when absent."""
     seconds = numeric_date(claims, name)
     return None if seconds is None else datetime.fromtimestamp(seconds, UTC)
@@ -273,12 +277,12 @@ class ClaimRules:
             raise exceptions.Unauthenticated(f"{self.what} was issued in the future")
 
 
-def text_set(value: Any) -> frozenset[str]:
+def claim_names(value: Any) -> frozenset[str]:
     """A claim that holds names as a set: a space-separated string (`scope`) or a list of
     strings (`scp`, `roles`); anything else is no names.
 
-        text_set("openid billing:read")       ->  {"openid", "billing:read"}
-        text_set(["admin", "accountant"])     ->  {"admin", "accountant"}
+        claim_names("openid billing:read")       ->  {"openid", "billing:read"}
+        claim_names(["admin", "accountant"])     ->  {"admin", "accountant"}
     """
     if isinstance(value, str):
         return frozenset(value.split())
@@ -307,10 +311,10 @@ def thumbprint(jwk: Mapping[str, Any]) -> str:
     canonical = json.dumps(
         {name: jwk[name] for name in members}, separators=(",", ":"), sort_keys=True
     )
-    return encoded(hashlib.sha256(canonical.encode()).digest())
+    return base64url_encode(hashlib.sha256(canonical.encode()).digest())
 
 
-def der_of(certificate: bytes) -> bytes:
+def to_der(certificate: bytes) -> bytes:
     """A certificate as DER — given as DER, or as PEM (what an ASGI server hands)."""
     text = certificate.strip()
     if not text.startswith(b"-----BEGIN"):
@@ -321,4 +325,4 @@ def der_of(certificate: bytes) -> bytes:
 
 def certificate_thumbprint(certificate: bytes) -> str:
     """The certificate's SHA-256 thumbprint, base64url — RFC 8705's `x5t#S256`."""
-    return encoded(hashlib.sha256(der_of(certificate)).digest())
+    return base64url_encode(hashlib.sha256(to_der(certificate)).digest())

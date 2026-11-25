@@ -39,7 +39,7 @@ a library, an authorization server, a store), `infrastructure` (the low-level me
 | `AccessControl` | the declarations (`requires`, `authenticated`), what `requires` takes besides a permission (`role`, `rule`, `any_of`, `by_field`, `assurance`), the checks asked on every call (`every_call`) and by hand (`check`, `allows`, `has_role`, `scope_of`); `AccessControl.of(bus)` is the one guarding a bus |
 | `security` | who the execution acts as (`identity`, `as_identity`, `as_system`), and what every entrypoint hands auth (`authenticated_as`, `challenges`, `identity_headers`) |
 | `IdentityMiddleware` | an ASGI app of the project's — FastAPI, Starlette — acting as its requests |
-| `AuthError` and its kinds | the caller's: `Unauthenticated` (401), `PermissionDenied` (403, `NoCredentialsFor` among them) — caught from one place. The doors' other failures keep the framework base of their layer, which every wire already answers: `ClientError` (`InvalidGrant`, `ConcurrentChange` 409, `PasswordRejected`), `ExternalServiceError` (`CredentialsRejected`, `GrantRejected`), `ServiceUnavailableError` (`EndpointUnavailable`, 503) |
+| `AuthError` and its kinds | the caller's: `Unauthenticated` (401), `PermissionDenied` (403, `NoCredentialsFor` among them) — caught from one place. The doors' other failures retain the framework base of their layer, which every wire already answers: `ClientError` (`InvalidGrant`, `ConcurrentChange` 409, `PasswordRejected`), `ExternalServiceError` (`CredentialsRejected`, `GrantRejected`), `ServiceUnavailableError` (`EndpointUnavailable`, 503) |
 | shared by the doors | `Revocations` (`InMemoryRevocations`, `KeyValueRevocations`), `HttpClient` / `UrllibHttp`, `OidcDiscovery`, `ClientAuthentication`, `PublicKey` / `PrivateKey` (`[jwt]`), `HexDigest` / `TimestampedSignature` |
 
 Nothing is forced: a use case or hook that declares nothing is not checked, and a bus with no
@@ -47,13 +47,17 @@ Nothing is forced: a use case or hook that declares nothing is not checked, and 
 Lambda fed by SQS included), an ASGI app of the project's and a context hosted for another
 service — authenticates by itself when the bus is guarded — see [Entrypoints](#entrypoints-authenticate-by-themselves).
 
-**Where auth keeps what it keeps.** Revocations, refresh tokens, login attempts, one-time links
+**Where auth stores its state.** Revocations, refresh tokens, login attempts, one-time links
 and role assignments live where the context is stored — the bus's own store when it has one
 (`bus.store_context_in`), else the process's (`store_context_in`) — unless a piece is handed a
-store of its own. An entrypoint authenticates a call with the store of the bus it calls, so what
-a sign-out writes inside a use case is what the next request reads. One store for the process is
-one login for every bounded context; a bounded context with a store of its own has a login of
-its own, and signing out there leaves the others signed in.
+store of its own. Every door — the framework's entrypoints and `IdentityMiddleware` alike —
+authenticates a call with the store of the bus it calls (the first bus the `AccessControl`
+guards, for the middleware), so what a sign-out writes inside a use case is what the next request
+reads. One store for the process is one login for every bounded context; a bounded context with
+a store of its own has a login of its own, and signing out there leaves the others signed in.
+The permission versions `Revocations` counts must never be evicted: on Redis, run
+`maxmemory-policy noeviction` or a `volatile-*` policy — a counter lost goes back to 0, and a
+token carrying a newer version is refused and logged as an eviction.
 
 Every block on this page runs, in order, in `tests/docs/test_persistence_guide.py`.
 
@@ -234,7 +238,7 @@ auth.on(billing)
   any dependency. The decorators only mark classes, in any order around `@billing.feature`.
 - `@auth.requires(A, B)` and stacked `requires` are *and*; `auth.any_of(A, B)` is *or*;
   `@auth.authenticated` is anybody authenticated. A use case that declares nothing is open —
-  anybody, anonymous included; `@entrypoints.internal` keeps one off every entrypoint.
+  anybody, anonymous included; `@entrypoints.internal` takes one off every entrypoint.
 - `self.auth.allows(...)` asks before an optional step; `self.auth.check(permission, resource)`
   decides on the loaded resource, which no interceptor can see — the provider gets it.
 - `auth.by_field("direction", {Direction.INBOUND: P.RECEIVE, Direction.OUTBOUND: P.PAY})` in
@@ -560,7 +564,7 @@ assert auth.verify() == []
 
 Every change auth makes and every security incident it sees is a `DomainEvent` with a versioned
 name, handed to the publisher a piece was given — the framework's `Publisher`, so the project
-chooses the queue. Its own audit context can keep the events in its event table, or a broker can
+chooses the queue. Its own audit context can store the events in its event table, or a broker can
 carry them to the platform's audit service. Nothing is published without a publisher.
 
 ```python
@@ -572,7 +576,7 @@ audit = UseFramework("audit", log_after_execution=False)
 
 
 @audit.feature([AccessRefused])
-class KeepInTrail(Feature):
+class StoreInTrail(Feature):
     def execute(self, dto: AccessRefused) -> None:
         audit_trail.append(dto)  # a project's audit context saves it in its event table
 
@@ -673,9 +677,9 @@ assert [one.permissions for one in payments_auth.runtime.required("bo")] == [
 | It only adds: what the code declares still holds | a mistake on the screen never opens what the code closed |
 | A use case is named by its Command's dotted name — `describe()`'s key, `guarded_use_cases()` | two bounded contexts with a Command of one name never share what is added to either |
 | Every tenant's (`tenant=None`) is the platform's; a tenant's administrator changes only its tenant's, under its tenant's administration lease, and only with what it holds — never requiring, replacing or releasing a permission or a role it lacks. A requirement still refuses every administrator who lacks it: one who holds it, or the platform, releases it | nobody requires what it could not meet itself, nor reaches another tenant; the platform always recovers a tenant |
-| Read at most once a `check_every` per tenant, one caller each; a store that does not answer leaves the last read in effect, and a tenant never read is refused (503) until it answers. A permission a replica does not know — a newer replica's — is never met | a change holds within a second everywhere; an outage never lets through what was restricted |
+| Read at most once a `check_interval` per tenant, one caller each; a store that does not answer leaves the last read in effect, and a tenant never read is refused (503) until it answers. A permission a replica does not know — a newer replica's — is never met | a change holds within a second everywhere; an outage never lets through what was restricted |
 | A role a tenant's requirement names, removed, leaves the requirement unmet by anyone — release it first; the platform releases it otherwise | a requirement never loosens by a role disappearing |
-| `runtime=True` keeps them on the context's store (`KeyValueAddedRequirements()`), or on the `AddedRequirementStore` given — `KeyValueAddedRequirements(DatabaseKeyValue(...))` for the project's database; published as `RequirementAdded`, `RequirementRemoved` to the `publisher` | shared by every replica, audited |
+| `runtime=True` stores them on the context's store (`KeyValueAddedRequirements()`), or on the `AddedRequirementStore` given — `KeyValueAddedRequirements(DatabaseKeyValue(...))` for the project's database; published as `RequirementAdded`, `RequirementRemoved` to the `publisher` | shared by every replica, audited |
 
 ## Entrypoints authenticate by themselves
 

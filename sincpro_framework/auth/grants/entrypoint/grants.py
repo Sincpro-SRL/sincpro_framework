@@ -16,10 +16,11 @@ administration screen calls, and the roles defined at runtime, every tenant's or
 Context: every change is bounded by who acts (`administration`, `BoundedAdministration()` when
 not given: the system and a superadmin may do anything; anyone else only in its own tenant, never
 on itself, and only gives or takes away what it holds — `TrustedAdministration()` is Odoo's
-rule), asked of the project's own rules (`allow`), checked under the tenant's lease against what
-is stored now, written by compare-and-swap, and published. A tenant's own role is named `<key>@<tenant>` in the catalog,
-so it never meets a role of the code or of every tenant; here it is named by its key — a role
-named exactly is that one, else the tenant's own of that name. One store holds everything —
+rule), checked against the project's own rules (`allow`), checked under the tenant's lease
+against what is stored now, written by compare-and-swap, and published. A tenant's own role is
+named `<key>@<tenant>` in the catalog, so it never meets a role of the code or of every tenant;
+here it is named by its key — a role named exactly is that one, else the tenant's own of that
+name. One store holds everything —
 assignments, roles defined, revocations, leases: the running context's (Redis), or the one given
 (`DatabaseKeyValue` for the project's own database); `assignments=` and `revocations=` replace
 one part. Permissions granted at runtime are those the code declares.
@@ -29,6 +30,7 @@ from collections.abc import Callable, Iterable
 from datetime import datetime, timedelta
 from typing import Any
 
+from sincpro_framework.auth.common.adapters.locks import AdministrationLocks
 from sincpro_framework.auth.common.adapters.revocations import KeyValueRevocations
 from sincpro_framework.auth.common.domain.administration import (
     AdministrationPolicy,
@@ -38,31 +40,24 @@ from sincpro_framework.auth.common.domain.events import EventPublisher
 from sincpro_framework.auth.common.domain.identity import Identity
 from sincpro_framework.auth.common.domain.permissions import declared_permissions
 from sincpro_framework.auth.common.domain.revocations import Revocations
-from sincpro_framework.auth.common.infrastructure.locks import AdministrationLocks
-from sincpro_framework.auth.common.infrastructure.security_context import current_identity
 from sincpro_framework.auth.grants.adapters.definitions import KeyValueRoleDefinitions
 from sincpro_framework.auth.grants.adapters.stores import KeyValueGrants
 from sincpro_framework.auth.grants.domain.assignments import Assignment, GrantStore
 from sincpro_framework.auth.grants.domain.catalog import GrantCatalog
-from sincpro_framework.auth.grants.domain.changes import (
-    Allow,
-    GrantAction,
+from sincpro_framework.auth.grants.domain.change_rules import (
+    ChangeRule,
+    ChangeRules,
     GrantChange,
-    allowed,
 )
-from sincpro_framework.auth.grants.domain.definitions import (
-    RoleDefinition,
-    RoleDefinitions,
-    catalog_key,
-)
+from sincpro_framework.auth.grants.domain.definitions import RoleDefinition, RoleDefinitions
 from sincpro_framework.auth.grants.services.administration import GrantAdministration
-from sincpro_framework.auth.grants.services.live_catalog import LiveCatalog
-from sincpro_framework.auth.grants.services.resolution import (
+from sincpro_framework.auth.grants.services.grant_resolver import (
     GrantResolver,
     RoleMapping,
     ScopeCeiling,
 )
 from sincpro_framework.auth.grants.services.role_administration import RoleAdministration
+from sincpro_framework.auth.grants.services.tenant_catalogs import TenantCatalogs
 from sincpro_framework.data_layer.store import KeyValueStore
 
 
@@ -82,7 +77,7 @@ class Grants:
         scope_ceiling: ScopeCeiling | None = None,
         entitlements: bool = False,
         permissions: Iterable[str] | None = None,
-        check_every: timedelta = timedelta(seconds=1),
+        check_interval: timedelta = timedelta(seconds=1),
     ) -> None:
         """`catalog` — the roles the code declares. Everything else has a default:
 
@@ -93,15 +88,16 @@ class Grants:
         names the permission of the platform's own administrators. `role_mapping`,
         `scope_ceiling`, `entitlements` shape what an identity resolves to. `permissions` —
         what may be granted at runtime — defaults to every `Permission` the code declares, read
-        when a role is defined.
+        when a role is defined. `check_interval` — how often a replica reads the roles defined
+        at runtime again.
         """
         self.assignments = assignments or KeyValueGrants(store)
         self.revocations = revocations or KeyValueRevocations(store)
         self.administration = administration or BoundedAdministration()
-        self.rules: list[Allow] = []
-        """What `allow` registered — asked of every change."""
+        self.rules = ChangeRules()
+        """What `allow` registered — checked against every change."""
         locks = AdministrationLocks(store)
-        self._live = LiveCatalog(
+        self._catalogs = TenantCatalogs(
             catalog,
             definitions or KeyValueRoleDefinitions(store),
             permissions=(
@@ -109,39 +105,41 @@ class Grants:
                 if permissions is not None
                 else lambda: declared_permissions().keys()
             ),
-            check_every=check_every,
+            check_interval=check_interval,
         )
         self._resolver = GrantResolver(
-            self._live,
+            self._catalogs,
             self.assignments,
             role_mapping=role_mapping,
             scope_ceiling=scope_ceiling,
             entitlements=entitlements,
             revocations=self.revocations,
         )
-        self._granting = GrantAdministration(
-            self._live,
+        self._grant_administration = GrantAdministration(
+            self._catalogs,
             self.assignments,
             self.revocations,
             publisher,
             self.administration,
             locks,
+            self.rules,
         )
-        self._defining = RoleAdministration(
-            self._live,
+        self._role_administration = RoleAdministration(
+            self._catalogs,
             self.assignments,
             self.revocations,
             publisher,
             self.administration,
             locks,
+            rules=self.rules,
         )
 
     def allow[F: Callable[[GrantChange], bool]](
         self, check: F | None = None, name: str | None = None
     ) -> Any:
-        """Ask `check` of every change an administrator makes — beside the bound, both must let
-        it through; `False` refuses it (`PermissionDenied` naming the rule). The system passes.
-        A decorator, bare or named:
+        """Check `check` against every change an administrator makes — beside the bound, both
+        must let it through; `False` refuses it (`PermissionDenied` naming the rule). The system
+        passes. A decorator, bare or named:
 
             @grants.allow
             def owners_give_admin(change: GrantChange) -> bool: ...
@@ -150,7 +148,7 @@ class Grants:
         """
 
         def registered(given: F) -> F:
-            self.rules.append(Allow(name or getattr(given, "__name__", repr(given)), given))
+            self.rules.add(ChangeRule(name or getattr(given, "__name__", repr(given)), given))
             return given
 
         return registered if check is None else registered(check)
@@ -160,19 +158,6 @@ class Grants:
         grant: what a provider asks (`resolvers=[grants]`)."""
         return self._resolver.resolve(identity)
 
-    def _named(self, role: str, tenant: str | None) -> str:
-        """The catalog key `role` names in `tenant`: itself when the catalog declares it, else
-        the tenant's own role of that name."""
-        catalog = self._live.latest(tenant).catalog
-        if role in catalog.roles or tenant is None:
-            return role
-        own = catalog_key(role, tenant)
-        return own if own in catalog.roles else role
-
-    def _asked(self, action: GrantAction, tenant: str | None, **said: Any) -> None:
-        """The project's own rules about this change, asked of who acts."""
-        allowed(self.rules, GrantChange(current_identity(), action, tenant, **said))
-
     def assign(
         self,
         subject: str,
@@ -180,36 +165,26 @@ class Grants:
         tenant: str | None = None,
         until: datetime | None = None,
     ) -> None:
-        """Give `subject` the role `role` in `tenant` — until `until`, when temporary."""
-        key = self._named(role, tenant)
-        self._asked(GrantAction.ASSIGN, tenant, subject=subject, role=key)
-        self._granting.assign(subject, tenant, key, valid_until=until)
+        """Assign `subject` the role `role` in `tenant` — until `until`, when temporary."""
+        self._grant_administration.assign(subject, tenant, role, valid_until=until)
 
     def unassign(self, subject: str, role: str, tenant: str | None = None) -> None:
         """Take `role` back from `subject` in `tenant`."""
-        key = self._named(role, tenant)
-        self._asked(GrantAction.UNASSIGN, tenant, subject=subject, role=key)
-        self._granting.unassign(subject, tenant, key)
+        self._grant_administration.unassign(subject, tenant, role)
 
     def set_level(
         self, subject: str, privilege: str, role: str | None, tenant: str | None = None
     ) -> None:
         """Hold `role` as the one level of `privilege` — `None` for no access."""
-        key = None if role is None else self._named(role, tenant)
-        self._asked(
-            GrantAction.SET_LEVEL, tenant, subject=subject, role=key, privilege=privilege
-        )
-        self._granting.set_level(subject, tenant, privilege, key)
+        self._grant_administration.set_level(subject, tenant, privilege, role)
 
     def entitle(self, tenant: str, entitlement: str) -> None:
         """The tenant has `entitlement` — the platform's to say."""
-        self._asked(GrantAction.ENTITLE, tenant, entitlement=entitlement)
-        self._granting.entitle(tenant, entitlement)
+        self._grant_administration.entitle(tenant, entitlement)
 
     def withdraw(self, tenant: str, entitlement: str) -> None:
         """The tenant no longer has `entitlement` — the platform's to say."""
-        self._asked(GrantAction.WITHDRAW, tenant, entitlement=entitlement)
-        self._granting.withdraw(tenant, entitlement)
+        self._grant_administration.withdraw(tenant, entitlement)
 
     def define(
         self,
@@ -231,35 +206,30 @@ class Grants:
             tenant=tenant,
             name=name,
             grants=frozenset(str(one) for one in grants),
-            implies=frozenset(self._named(one, tenant) for one in implies),
+            implies=frozenset(implies),
             privilege=privilege,
             sequence=sequence,
-            disjoint=frozenset(self._named(one, tenant) for one in disjoint),
+            disjoint=frozenset(disjoint),
             description=description,
         )
-        self._asked(
-            GrantAction.DEFINE, tenant, role=definition.catalog_key, definition=definition
-        )
-        self._defining.define(definition)
-        return definition
+        return self._role_administration.define(definition)
 
     def remove(self, key: str, tenant: str | None = None) -> None:
         """Remove the role `key` defined at runtime — every tenant's, or `tenant`'s own."""
-        self._asked(GrantAction.REMOVE, tenant, role=catalog_key(key, tenant))
-        self._defining.remove(key, tenant)
+        self._role_administration.remove(key, tenant)
 
     def catalog(self, tenant: str | None = None) -> GrantCatalog:
         """The catalog in effect for `tenant` — `describe()` is its administration screen."""
-        return self._live.current(tenant)
+        return self._catalogs.catalog(tenant)
 
     def defined(self, tenant: str | None = None) -> tuple[RoleDefinition, ...]:
         """The roles defined at runtime for exactly this scope — what a screen may edit."""
-        return self._live.defined(tenant)
+        return self._catalogs.defined(tenant)
 
     def problems(self, tenant: str | None = None) -> dict[str, str]:
         """The roles defined for `tenant` that grant nothing, and why — to be fixed."""
-        return self._live.problems(tenant)
+        return self._catalogs.problems(tenant)
 
-    def assigned(self, subject: str, tenant: str | None = None) -> list[Assignment]:
-        """What `subject` was given in `tenant`, in force or not."""
+    def assignments_of(self, subject: str, tenant: str | None = None) -> list[Assignment]:
+        """What `subject` was assigned in `tenant`, in force or not."""
         return self.assignments.assignments_of(subject, tenant)

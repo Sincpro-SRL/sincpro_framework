@@ -19,7 +19,7 @@ from urllib.parse import quote
 
 from sincpro_framework.auth.common.domain.http import ClientAuthentication
 from sincpro_framework.auth.common.infrastructure import jws
-from sincpro_framework.auth.common.infrastructure.digests import random_token, revealed
+from sincpro_framework.auth.common.infrastructure.digests import random_token, reveal_secret
 
 CLIENT_ASSERTION_TYPE = "urn:ietf:params:oauth:client-assertion-type:jwt-bearer"
 
@@ -34,11 +34,13 @@ class ClientSecretBasic(ClientAuthentication):
         self.client_id = client_id
         self._secret = client_secret
 
-    def applied(
+    def apply(
         self, fields: Sequence[tuple[str, str]], endpoint: str
     ) -> tuple[list[tuple[str, str]], dict[str, str]]:
         """The fields as they are, and the `Authorization` header."""
-        pair = f"{quote(self.client_id, safe='')}:{quote(revealed(self._secret), safe='')}"
+        pair = (
+            f"{quote(self.client_id, safe='')}:{quote(reveal_secret(self._secret), safe='')}"
+        )
         encoded = base64.b64encode(pair.encode()).decode()
         return list(fields), {"authorization": f"Basic {encoded}"}
 
@@ -54,14 +56,14 @@ class ClientSecretPost(ClientAuthentication):
         self.client_id = client_id
         self._secret = client_secret
 
-    def applied(
+    def apply(
         self, fields: Sequence[tuple[str, str]], endpoint: str
     ) -> tuple[list[tuple[str, str]], dict[str, str]]:
         """The fields with the id and the secret appended; no header."""
         return [
             *fields,
             ("client_id", self.client_id),
-            ("client_secret", revealed(self._secret)),
+            ("client_secret", reveal_secret(self._secret)),
         ], {}
 
     def __repr__(self) -> str:
@@ -81,14 +83,14 @@ class ClientSecretJwt(ClientAuthentication):
     ) -> None:
         """A client, its secret, the HMAC algorithm and the clock its assertions are dated by."""
         self.client_id = client_id
-        self._key = jws.HmacKey.of(None, client_secret, algorithm)
+        self._key = jws.HmacKey.from_secret(None, client_secret, algorithm)
         self.clock = clock
 
     def _sign(self, claims: dict[str, Any]) -> str:
         """`claims` signed as a compact JWS with the secret."""
         return jws.encode({"alg": self._key.algorithm, "typ": "JWT"}, claims, self._key.sign)
 
-    def applied(
+    def apply(
         self, fields: Sequence[tuple[str, str]], endpoint: str
     ) -> tuple[list[tuple[str, str]], dict[str, str]]:
         """The fields with `client_assertion_type`, a fresh assertion for `endpoint` and the
@@ -108,7 +110,7 @@ class PublicClient(ClientAuthentication):
     def __init__(self, client_id: str) -> None:
         self.client_id = client_id
 
-    def applied(
+    def apply(
         self, fields: Sequence[tuple[str, str]], endpoint: str
     ) -> tuple[list[tuple[str, str]], dict[str, str]]:
         """The fields with `client_id` appended."""

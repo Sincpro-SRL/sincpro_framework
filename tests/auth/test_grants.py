@@ -1,6 +1,6 @@
 """Grants the Odoo 20 way: a catalog of roles grouped in categories and privileges, each level
 implying the one below, disjoint roles never held together, entitlements a tenant bought; stores
-that keep only what was assigned; a resolver that turns token roles and assignments into
+that store only what was assigned; a resolver that turns token roles and assignments into
 permissions, narrowed by scopes — and a role taken away holding on the very next call."""
 
 from collections.abc import Iterator
@@ -44,7 +44,7 @@ from sincpro_framework.auth.grants import (
 from sincpro_framework.auth.grants.services.administration import GrantAdministration
 from sincpro_framework.auth.server import JwtProvider
 from sincpro_framework.data_layer.caching import Cache
-from sincpro_framework.data_layer.store import InMemoryKeyValue
+from sincpro_framework.data_layer.store import InMemoryKeyValue, StoreUnavailable
 from sincpro_framework.data_layer.store.adapters.redis import RedisKeyValue
 from sincpro_framework.runtime.testing import GrantStoreContract, ManualClock
 
@@ -157,6 +157,46 @@ class TestGrantsOnRedis(GrantStoreContract):
         return KeyValueGrants(RedisKeyValue(fakeredis.FakeRedis()))
 
 
+class HoldersDown(InMemoryKeyValue):
+    """A store whose writes to the holders index fail while `down`."""
+
+    down = True
+
+    def add(self, key: str, value: bytes, ttl: timedelta | None = None) -> bool:
+        if self.down and ":holders:" in key:
+            raise StoreUnavailable("the holders index is down")
+        return super().add(key, value, ttl)
+
+
+def test_a_partial_assign_leaves_the_holders_index_behind_until_written_again() -> None:
+    store = HoldersDown()
+    grants = KeyValueGrants(store)
+    ana = Assignment(subject="user:ana", tenant="bo", role="billing.manager")
+    with pytest.raises(StoreUnavailable):
+        grants.assign(ana)
+    assert grants.grants_of("user:ana", "bo").roles == {"billing.manager"}
+    assert grants.holders("billing.manager", "bo") == []
+    store.down = False
+    grants.assign(ana)
+    assert [one.subject for one in grants.holders("billing.manager", "bo")] == ["user:ana"]
+
+
+def test_the_holders_index_drops_the_temporary_assignments_that_ended() -> None:
+    clock = ManualClock(datetime(2026, 11, 25, tzinfo=UTC))
+    grants = InMemoryGrants(now=clock.now)
+    grants.assign(
+        Assignment(
+            subject="user:ana",
+            tenant="bo",
+            role="billing.manager",
+            valid_until=clock.now() + timedelta(hours=1),
+        )
+    )
+    clock.advance(hours=2)
+    grants.assign(Assignment(subject="user:bea", tenant="bo", role="billing.manager"))
+    assert [one.subject for one in grants.holders("billing.manager", "bo")] == ["user:bea"]
+
+
 def test_token_roles_and_assigned_roles_both_grant() -> None:
     grants = InMemoryGrants()
     grants.assign(Assignment(subject="user:ana", tenant="bo", role="billing.approver"))
@@ -205,7 +245,7 @@ def test_administration_refuses_what_the_catalog_does_not_allow() -> None:
         admin.assign("user:ana", "bo", "billing.manager")
     with pytest.raises(InvalidGrant, match="not an entitlement"):
         admin.entitle("bo", "payroll")
-    assert grants.held("user:ana", "bo").roles == {"portal"}
+    assert grants.grants_of("user:ana", "bo").roles == {"portal"}
 
 
 def test_one_level_per_privilege() -> None:
@@ -213,9 +253,9 @@ def test_one_level_per_privilege() -> None:
     admin = GrantAdministration(catalog, grants)
     admin.set_level("user:ana", "bo", "invoicing", "billing.clerk")
     admin.set_level("user:ana", "bo", "invoicing", "billing.manager")
-    assert grants.held("user:ana", "bo").roles == {"billing.manager"}
+    assert grants.grants_of("user:ana", "bo").roles == {"billing.manager"}
     admin.set_level("user:ana", "bo", "invoicing", None)
-    assert grants.held("user:ana", "bo").roles == frozenset()
+    assert grants.grants_of("user:ana", "bo").roles == frozenset()
     with pytest.raises(InvalidGrant, match="not a level"):
         admin.set_level("user:ana", "bo", "invoicing", "portal")
 
@@ -224,7 +264,7 @@ def test_without_revocations_an_assignment_holds_once_the_cache_lapses() -> None
     clock = ManualClock(datetime(2026, 11, 20, tzinfo=UTC))
     grants = InMemoryGrants()
     resolver = GrantResolver(
-        catalog, grants, cache=Cache(now=clock.now), cache_for=timedelta(minutes=5)
+        catalog, grants, cache=Cache(now=clock.now), cache_ttl=timedelta(minutes=5)
     )
     ana = Identity.user("user:ana", tenant="bo")
     assert resolver.resolve(ana).permissions == frozenset()
@@ -278,7 +318,7 @@ def test_a_role_taken_away_holds_on_the_very_next_call() -> None:
             "tenant": "bo",
             "exp": datetime.now(UTC).timestamp() + 600,
         },
-        jws.HmacKey.of("k", SECRET).sign,
+        jws.HmacKey.from_secret("k", SECRET).sign,
     )
     credentials = Credentials(transport="http", headers={"authorization": f"Bearer {token}"})
 
@@ -333,7 +373,7 @@ def test_the_revocation_check_and_the_resolver_share_one_read() -> None:
             "jti": "t-1",
             "exp": datetime.now(UTC).timestamp() + 600,
         },
-        jws.HmacKey.of("k", SECRET).sign,
+        jws.HmacKey.from_secret("k", SECRET).sign,
     )
     credentials = Credentials(transport="http", headers={"authorization": f"Bearer {token}"})
     store.reads = 0

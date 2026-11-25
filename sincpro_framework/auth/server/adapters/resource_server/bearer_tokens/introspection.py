@@ -10,7 +10,7 @@ it — RFC 7662 — and the answer turned into an `Identity` the way `JwtProvide
 
 Context: what an opaque token is can only be asked, so every answer is cached — by the token's
 SHA-256, never the token — for `cache_for` and never past the token's own `exp`; an inactive
-token's answer for `inactive_for`, so a stream of bad tokens does not become a stream of
+token's answer for `inactive_cache_ttl`, so a stream of bad tokens does not become a stream of
 requests. A JWT is left to `JwtProvider` unless `skip_jwts=False`. The endpoint refusing this
 service's client (401, 403) is its misconfiguration, never the caller's: `EndpointUnavailable`
 (503), logged as an error.
@@ -23,8 +23,8 @@ from typing import Any
 
 from sincpro_framework.auth.common.adapters.server_metadata import (
     OidcDiscovery,
-    discovery_for,
-    located,
+    resolve_discovery,
+    resolve_endpoint,
 )
 from sincpro_framework.auth.common.adapters.urllib_http import UrllibHttp
 from sincpro_framework.auth.common.domain import exceptions
@@ -38,12 +38,14 @@ from sincpro_framework.auth.common.domain.provider import AuthProvider
 from sincpro_framework.auth.common.domain.resolver import IdentityResolver, resolved
 from sincpro_framework.auth.common.domain.revocations import (
     Revocations,
-    related_of,
-    remembering_versions,
+    related_subjects,
 )
 from sincpro_framework.auth.common.infrastructure import jws
 from sincpro_framework.auth.common.infrastructure.claim_mapping import ClaimMapping
 from sincpro_framework.auth.common.infrastructure.digests import digest
+from sincpro_framework.auth.common.infrastructure.permission_versions import (
+    cached_permission_versions,
+)
 from sincpro_framework.data_layer.caching import Cache, CachePolicy, JsonCodec, TimeToLive
 from sincpro_framework.sincpro_logger import logger
 
@@ -64,7 +66,7 @@ class IntrospectionProvider(AuthProvider):
         discovery: OidcDiscovery | None = None,
         cache: Cache | None = None,
         cache_for: timedelta = timedelta(seconds=60),
-        inactive_for: timedelta = timedelta(seconds=10),
+        inactive_cache_ttl: timedelta = timedelta(seconds=10),
         skip_jwts: bool = True,
         name: str = "introspection",
         clock: Callable[[], float] = time.time,
@@ -81,11 +83,13 @@ class IntrospectionProvider(AuthProvider):
         self.mapping = mapping or ClaimMapping()
         self.resolvers = tuple(resolvers)
         self.revocations = revocations
-        self.discovery = discovery_for(http, discovery)
+        self.discovery = resolve_discovery(http, discovery)
         self.http: HttpClient = http or UrllibHttp()
-        self._endpoint = located(endpoint, issuer, self.discovery, "introspection_endpoint")
+        self._endpoint = resolve_endpoint(
+            endpoint, issuer, self.discovery, "introspection_endpoint"
+        )
         self.cache = cache or Cache(namespace="auth-introspection")
-        self.inactive_for = inactive_for
+        self.inactive_cache_ttl = inactive_cache_ttl
         self.skip_jwts = skip_jwts
         self.name = name
         self.clock = clock
@@ -103,7 +107,7 @@ class IntrospectionProvider(AuthProvider):
         """HTTP bearer, an opaque token."""
         return {"type": "http", "scheme": "bearer"}
 
-    def _asked(self, token: str) -> dict[str, Any]:
+    def _introspect(self, token: str) -> dict[str, Any]:
         """The endpoint's answer for `token`, with the moment it was asked.
 
         1. POSTed with the client's authentication and `token_type_hint=access_token`.
@@ -112,7 +116,7 @@ class IntrospectionProvider(AuthProvider):
         Final: the answer and `checked_at`.
         """
         endpoint = self.endpoint
-        fields, headers = self.client.applied(
+        fields, headers = self.client.apply(
             [("token", token), ("token_type_hint", "access_token")], endpoint
         )
         answer = self.http.send(HttpRequest.form(endpoint, fields, headers))
@@ -134,40 +138,41 @@ class IntrospectionProvider(AuthProvider):
                 answer.status,
                 answer.retry_after(),
             )
-        said = answer.json_object()
-        if not isinstance(said.get("active"), bool):
+        response = answer.json_object()
+        if not isinstance(response.get("active"), bool):
             raise exceptions.EndpointUnavailable(
                 HttpRequest(url=endpoint).target, "answered no active"
             )
-        return {**said, "checked_at": self.clock()}
+        return {**response, "checked_at": self.clock()}
 
-    def _answer(self, token: str) -> dict[str, Any]:
+    def _cached_introspection(self, token: str) -> dict[str, Any]:
         """The cached answer for `token` — asked again once an inactive answer is older than
-        `inactive_for`."""
+        `inactive_cache_ttl`."""
         key = ("introspection", digest(token))
-        said = self.cache.get_or_compute(
-            key, lambda: self._asked(token), self._policy, self._codec
+        response = self.cache.get_or_compute(
+            key, lambda: self._introspect(token), self._policy, self._codec
         )
         if (
-            not said["active"]
-            and self.clock() - said["checked_at"] > self.inactive_for.total_seconds()
+            not response["active"]
+            and self.clock() - response["checked_at"]
+            > self.inactive_cache_ttl.total_seconds()
         ):
             self.cache.forget(key, self._codec)
-            said = self.cache.get_or_compute(
-                key, lambda: self._asked(token), self._policy, self._codec
+            response = self.cache.get_or_compute(
+                key, lambda: self._introspect(token), self._policy, self._codec
             )
-        return said
+        return response
 
-    def _checked(self, said: dict[str, Any]) -> None:
+    def _validate_response(self, response: dict[str, Any]) -> None:
         """`Unauthenticated` for an inactive token, or one whose issuer, audience or expiry is
         not what this service accepts — the expiry checked on every call, cached or not."""
-        if not said["active"]:
+        if not response["active"]:
             raise exceptions.Unauthenticated("token is not active")
-        if self.issuer is not None and said.get("iss", self.issuer) != self.issuer:
+        if self.issuer is not None and response.get("iss", self.issuer) != self.issuer:
             raise exceptions.Unauthenticated("token is from another issuer")
-        if self.audiences is not None and not jws.audiences_of(said) & self.audiences:
+        if self.audiences is not None and not jws.audiences_of(response) & self.audiences:
             raise exceptions.Unauthenticated("token is for another audience")
-        expires = jws.numeric_date(said, "exp")
+        expires = jws.numeric_date(response, "exp")
         if expires is not None and self.clock() >= expires:
             raise exceptions.Unauthenticated("token expired")
 
@@ -175,26 +180,26 @@ class IntrospectionProvider(AuthProvider):
         """Who the opaque bearer token says is calling.
 
         1. No bearer — or a JWT, unless `skip_jwts=False`: `None`.
-        2. The answer, cached by digest; checked (`_checked`).
+        2. The answer, cached by digest; checked (`_validate_response`).
         3. Mapped to an identity; refused when revoked.
         Final: through every resolver.
         """
         token = credentials.bearer
         if token is None or (self.skip_jwts and jws.looks_like_jws(token)):
             return None
-        said = self._answer(token)
-        self._checked(said)
-        claims = {name: value for name, value in said.items() if name != "checked_at"}
+        response = self._cached_introspection(token)
+        self._validate_response(response)
+        claims = {name: value for name, value in response.items() if name != "checked_at"}
         identity = self.mapping.identity(claims, provider=self.name)
-        with remembering_versions():
+        with cached_permission_versions():
             if self.revocations is not None:
                 state = self.revocations.state(
                     identity.subject,
                     identity.token_id,
                     identity.session,
-                    related_of(identity),
+                    related_subjects(identity),
                 )
-                refusal = state.refusal(jws.moment(claims, "iat"))
+                refusal = state.revocation_reason(jws.claim_datetime(claims, "iat"))
                 if refusal is not None:
                     raise exceptions.Unauthenticated(refusal)
             return resolved(identity, self.resolvers)

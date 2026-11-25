@@ -1,5 +1,5 @@
 """Who a username and a password belong to — the port a project's own accounts implement: the
-framework never keeps a user table; the project keeps its accounts as entities of its own, and
+framework never stores a user table; the project stores its accounts as entities of its own, and
 `BasicProvider` or a sign-in use case asks them.
 
     class Accounts(CredentialVerifier):            the project's own: its table, its rules

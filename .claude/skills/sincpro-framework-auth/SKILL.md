@@ -55,7 +55,7 @@ names its door: `auth.server` verifies what arrives, `auth.client` presents what
 | `enabled=` | `False` checks nothing | setting | `AccessControl(...)` |
 | `self.auth.allows` / `check` / `has_role` / `identity` / `permitted` / `scope_of` | in-handler decisions — `allows`/`check` take any requirement (permission, role, rule, `any_of`) | function | injected `auth` |
 | `security.identity` / `security.as_identity` / `security.as_system` | who the execution acts as (a `ContextVar`) | facade | `security` |
-| `AuthError` → `Unauthenticated` (401) / `PermissionDenied` (403) | the two refusals, `ClientError`s; `.http_status`, `.refusal_body()` (`anonymous: true` when nothing was presented); `refusal_from(body)` rebuilds one from an answer | DTO (exception) | same |
+| `AuthError` → `Unauthenticated` (401) / `PermissionDenied` (403) | the two refusals, `ClientError`s; `.http_status`, `.refusal_body()` (`anonymous: true` when nothing was presented); `Unauthenticated.from_error_body(body)` rebuilds one from an answer | DTO (exception) | same |
 | `IdentityMiddleware` | ASGI middleware for a project's own app | adapter | same |
 | `Credentials.from_asgi` / `Credentials.from_headers` / `security.authenticated_as` / `security.challenges` / `security.identity_headers` | what an entrypoint does | classmethod / facade | same |
 | `describe()` / `verify()` / `requirements_of()` | introspection, test-time checks | function | `AccessControl` methods |
@@ -69,13 +69,13 @@ names its door: `auth.server` verifies what arrives, `auth.client` presents what
 | `BasicProvider` / `CredentialVerifier` / `HashedCredentials` | HTTP Basic against the service's own accounts | adapter / port | `sincpro_framework.auth.accounts` |
 | `GrantCatalog` / `Category` / `Privilege` / `Role` / `Entitlement` | roles in code, Odoo 20's shape: implies, exclusive levels, disjoint, `describe()` | domain | `sincpro_framework.auth.grants` |
 | `Grants(catalog, store=None, publisher=, administration=, role_mapping=, scope_ceiling=, entitlements=)` — `resolve`, `assign`/`unassign`/`set_level`/`entitle`/`withdraw`, `define`/`remove`, `catalog(tenant)`/`defined`/`problems`/`assigned`, `@grants.allow` (`GrantChange`, its `action` a `GrantAction`) | roles in one object: what a provider resolves with (`resolvers=[grants]`), what the screen calls, roles defined at runtime — every tenant's or a tenant's own, named by key, held as `<key>@<tenant>`; one store for everything, the context's when not given | facade | `sincpro_framework.auth.grants` |
-| `GrantStore` (`InMemoryGrants`, `KeyValueGrants`, `DatabaseGrants`) / `RoleDefinitions` (`InMemoryRoleDefinitions`, `KeyValueRoleDefinitions`) / `GrantResolver` / `RoleMapping` / `ScopeCeiling` | where assignments and runtime roles are kept (`assignments=`, `definitions=` on `Grants`); `GrantResolver(catalog, source)` alone for roles another system keeps. Runtime roles only add; checked under the tenant's lease against what is stored; never break another role; a held role keeps its shape; levels are every tenant's; a removed key is dead; a change that may take away bumps its scope's version (`pv`) | port / adapter | `sincpro_framework.auth.grants` (`DatabaseGrants`: `data_layer.orm`) |
+| `GrantStore` (`InMemoryGrants`, `KeyValueGrants`, `DatabaseGrants`) / `RoleDefinitions` (`InMemoryRoleDefinitions`, `KeyValueRoleDefinitions`) / `GrantResolver` / `RoleMapping` / `ScopeCeiling` | where assignments and runtime roles are stored (`assignments=`, `definitions=` on `Grants`); `GrantResolver(catalog, source)` alone for roles another system records. Runtime roles only add; checked under the tenant's lease against what is stored; never break another role; a held role retains its shape; levels are every tenant's; a removed key is dead; a change that may take away bumps its scope's version (`pv`) | port / adapter | `sincpro_framework.auth.grants` (`DatabaseGrants`: `data_layer.orm`) |
 | `AdministrationPolicy` / `BoundedAdministration(superadmin=None)` / `TrustedAdministration()` | who administers: by default the system and a superadmin anything; anyone else only in their own tenant, never on themselves, and only give or take away a role they hold (or their tenant defined from what they hold); entitlements and every tenant's roles are the platform's; nobody known nothing — a seed runs `security.as_system` | port / policy | same (`administration=` on `Grants` and on `AccessControl`) |
 | `AccessControl(runtime=True)` → `auth.runtime.require(Command, P.X, auth.role(...), tenant=)` / `release` / `required` / `AddedRequirement` / `InMemoryAddedRequirements`, `KeyValueAddedRequirements` | an administrator requires more of a use case without a deploy — for every tenant or one; only adding, named by the Command's dotted name, judged as `requires`, bounded like every administration (only with what the actor holds); `runtime=` takes a store too | property / service / DTO / adapter | `sincpro_framework.auth` |
-| `Revocations` (`KeyValueRevocations`, `on_unavailable=WhenUnavailable.REFUSE` / `.ADMIT`) / `remembering_versions()` | a token, a session, a subject signed out (to the second, as `iat`), a permission version — one read per authentication inside `remembering_versions()` | port / adapter / function | same |
+| `Revocations` (`KeyValueRevocations`, `on_unavailable=WhenUnavailable.REFUSE` / `.ADMIT`) / `cached_permission_versions()` | a token, a session, a subject signed out (to the second, as `iat`), a permission version — one read per authentication inside `cached_permission_versions()` | port / adapter / function | same |
 | `auth.assurance(acr=, methods=, max_age=)` | step-up requirement (RFC 9470) | requirement | `AccessControl` method |
-| `TokenSource` / `StaticToken` / `ApiKeyHeader` / `BasicCredentials` / `ClientCredentials` / `TokenSources` | what an outgoing request presents | port / adapter | `sincpro_framework.auth.client` |
-| `TokenExchange` + `PresentingProvider` / `RefreshingToken` + `HeldGrants` / `DeviceCode` / `DpopProver` | act for the caller (RFC 8693); hold consent; RFC 8628; DPoP client | adapter | `sincpro_framework.auth.client` |
+| `TokenSource` / `StaticToken` / `ApiKeyHeader` / `BasicCredentials` / `ClientCredentials` / `TenantTokenSources` | what an outgoing request presents | port / adapter | `sincpro_framework.auth.client` |
+| `TokenExchange` + `OutboundCredentialsProvider` / `RefreshTokenSource` + `OAuthGrantStore` / `DeviceAuthorization` / `DpopProver` / `CachedTokenSource` | act for the caller (RFC 8693); store consent; RFC 8628; DPoP client; a project's own grant | adapter | `sincpro_framework.auth.client` |
 | `call_with_credentials` / `requests_auth` / `httpx_auth` | send, and once more after a 401 | function | `sincpro_framework.auth.client` |
 | `PasswordHasher` (`scheme=HashScheme.AUTO` / `.SCRYPT` / `.ARGON2ID`) / `LoginAttempts` / `OneTimeTokens` / `Totp` / `TokenIssuer` / `SigningKeys` | accounts the service manages itself | adapter | `sincpro_framework.auth.accounts` |
 | `AuthEvent` / `AccessRefused` / `EventPublisher` | the audit trail: `publisher=` on `AccessControl`, `Grants`, `TokenIssuer`, `LoginAttempts`, `OneTimeTokens` publishes versioned `DomainEvent`s through the framework's `Publisher` — grants' `RoleAssigned`, `RoleDefined`, `RoleChanged`…; `RequirementAdded`…, accounts' `SignedIn`, `RefreshTokenReused`, `AccountLocked`… | DTO (event) / port | events of a door from that door |
@@ -103,12 +103,13 @@ anybody (`open`); `@auth.authenticated` anybody *known*. `security.as_system(rea
   auth/access_control/  the guard on the bus — entrypoint/ (AccessControl, security, asgi,
                         RuntimeRequirements), services/ (authentication, decisions, guard)
   auth/server/          verify what arrives — domain/ (ClaimMapping, PolicyEngine), services/
-                        (Resolving, DecidedBy), adapters/ (JwtProvider, introspection, DPoP proofs,
+                        (ResolvingProvider, PolicyEngineProvider), adapters/ (JwtProvider, introspection, DPoP proofs,
                         api_keys, service_tokens, webhook_signatures, certificates, policy engines)
   auth/client/          present what goes out — domain/ (TokenSource), adapters/ (every source),
                         infrastructure/ (token endpoint, token cache), entrypoint/ (call_with_credentials)
-  auth/grants/          roles — domain/ (catalog, assignments, RolePermissions), services/
-                        (administration, GrantResolver, LiveCatalog), adapters/ (stores), entrypoint/ (Grants)
+  auth/grants/          roles — domain/ (catalog, CatalogBuilder, assignments, ChangeRules,
+                        AssignmentAuthority, RolePermissions), services/ (administration,
+                        GrantResolver, TenantCatalogs), adapters/ (stores), entrypoint/ (Grants)
   auth/accounts/        the service's own accounts — services/ (TokenIssuer, LoginAttempts,
                         OneTimeTokens, Totp, BasicProvider), adapters/ (PasswordHasher, SigningKeys,
                         refresh token stores)
@@ -184,18 +185,18 @@ Silent ones first — the runtime says nothing.
   or wrap the app in `IdentityMiddleware(app, access=auth)`.
 - **A `TrustedIssuer` with no audience, or a mapping that forgets Keycloak's `typ`.** The first is refused
   at construction; use `ClaimMapping.keycloak(...)`, which refuses ID and refresh tokens.
-- **Resolvers on `AccessControl`.** They belong to a provider (`resolvers=` or `Resolving`): a
+- **Resolvers on `AccessControl`.** They belong to a provider (`resolvers=` or `ResolvingProvider`): a
   service token or an API key arrives resolved, a global resolver grants twice.
 - **Permissions frozen in a self-issued token.** `TokenIssuer` resolves them per call by default;
   a role taken away needs `Grants` (it bumps the version) to hold at once. With
   `embed_permissions=True` and refresh tokens, give the issuer `resolvers=`: a refresh resolves
   the permissions again (without them the issuer refuses to be built).
 - **A provider of the project's that checks revocations, then resolves grants.** Two reads of the
-  store per call. Open `remembering_versions()` around both, as `JwtProvider` does: the resolver's
+  store per call. Open `cached_permission_versions()` around both, as `JwtProvider` does: the resolver's
   permission versions come from the revocation check's one read.
 - **A wire of the project's answering a 401 from a JSON body with `security.challenges(buses)`.**
   The refusal is lost: an expired token or a step-up gets a bare `Bearer`. Pass
-  `refusal_from(body)` as the refusal.
+  `Unauthenticated.from_error_body(body)` as the refusal.
 - **A `TokenSource` in a use case, or a token in the context.** The context travels to other
   services; a source belongs to the adapter that calls the API (`dependencies.py`).
 - **An outbound misconfiguration raised as `Unauthenticated`.** The inbound caller would log in
@@ -345,8 +346,8 @@ field masking (`SKIP` leaves out a step, not a field), revocation mid-stream.
 - Entrypoints and declared exposure: `sincpro-framework-entrypoints`
 - Refusals on metrics and GlitchTip: `sincpro-framework-observability`
 
-**Testing on a `fresh()` bus.** `fresh()` keeps the same `AccessControl` — and its providers, which may
-hold production's bus. A test swaps them, keeping production's declarations:
+**Testing on a `fresh()` bus.** `fresh()` reuses the same `AccessControl` — and its providers, which may
+hold production's bus. A test swaps them, retaining production's declarations:
 `auth.using(providers=[StaticProvider({...})]).on(test, replaces=auth)` — `AccessControl.of(test)` is
 the new one, on every bus made of it too. **A provider whose backend does not answer** raises
 `ServiceUnavailableError` (503 + `Retry-After`, never 401 nor 500); `AuthProviderContract` checks it

@@ -22,17 +22,18 @@ from contextlib import AbstractContextManager, contextmanager, nullcontext
 from typing import TYPE_CHECKING
 
 from sincpro_framework.auth.access_control.entrypoint.access_control import AccessControl
+from sincpro_framework.auth.access_control.services.authentication import (
+    find_identity_headers,
+)
 from sincpro_framework.auth.common.domain.exceptions import Unauthenticated
 from sincpro_framework.auth.common.domain.identity import Credentials, Identity
 from sincpro_framework.auth.common.infrastructure.security_context import (
-    access_in_play,
     as_identity,
+    as_presented_token,
     as_system,
     current_identity,
-    presented_credential,
-    presenting,
+    current_presented_token,
 )
-from sincpro_framework.context import ContextStore, use_context
 
 if TYPE_CHECKING:
     from sincpro_framework.use_bus import UseFramework
@@ -79,8 +80,8 @@ class SecurityContext:
                 identity           ->  security.identity, unchanged
 
         Context: the identity is yielded, so the transport can log or answer with it. The
-        providers read what auth keeps — revocations, refresh tokens, grants — on the store
-        `bus` keeps its context in, where its use cases wrote it: a sign-out inside a bounded
+        providers read what auth stores — revocations, refresh tokens, grants — on the store
+        `bus` stores its context in, where its use cases wrote it: a sign-out inside a bounded
         context with a store of its own is what its next request reads; a bus with none reads
         the process's.
         """
@@ -89,9 +90,8 @@ class SecurityContext:
             with nullcontext(current_identity()) as unchanged:
                 yield unchanged
             return
-        with use_context().scoped({ContextStore: bus.current_context().store()}):
-            caller = access.authenticate(credentials)
-        with as_identity(caller) as identity, presenting(credentials.bearer):
+        caller = access.authenticate(credentials, bus)
+        with as_identity(caller) as identity, as_presented_token(credentials.bearer):
             yield identity
 
     def challenges(
@@ -117,7 +117,7 @@ class SecurityContext:
     def presented(self) -> str | None:
         """The bearer token the caller presented, while its call runs — what a token exchange
         acts for; never logged, never on the identity."""
-        return presented_credential()
+        return current_presented_token()
 
     def identity_headers(self, context: str) -> dict[str, str]:
         """The headers a call to the service hosting `context` carries, so it knows who the
@@ -136,17 +136,7 @@ class SecurityContext:
         the identity —, then those guarding a bus of `context`, then the rest; one that does not
         know the identity's provider steps aside; the first to issue wins.
         """
-        identity = current_identity()
-        if identity.is_anonymous:
-            return {}
-        in_play = access_in_play()
-        asked = [in_play] if in_play is not None else []
-        asked += [one for one in AccessControl.guarding(context) if one is not in_play]
-        for access in asked:
-            issued = access.credentials_for(identity, audience=context)
-            if issued is not None:
-                return dict(issued.headers)
-        return {}
+        return find_identity_headers(context)
 
 
 security = SecurityContext()

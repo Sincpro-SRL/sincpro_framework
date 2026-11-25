@@ -5,7 +5,7 @@ code, held per tenant, resolved per call.
 
 A use case requires a `Permission` ([the overview](README.md)). Who holds it comes from roles:
 the ones a token carries, the ones this service assigned. This page is the catalog of roles —
-grouped the way Odoo 20 groups them, for an administration screen — the stores that keep who
+grouped the way Odoo 20 groups them, for an administration screen — the stores that record who
 holds which, and the resolver that turns both into the permissions a call acts with. Every block
 on this page runs, in order, in `tests/docs/test_persistence_guide.py`.
 
@@ -65,7 +65,7 @@ turns a `RolePermissions` table into a catalog.
 ## Who holds which — `Grants`
 
 `Grants` is the one object a project holds for roles: what a provider resolves each identity
-with, what the administration screen calls, and the roles defined at runtime. A store keeps the
+with, what the administration screen calls, and the roles defined at runtime. A store records the
 assignments — only what was given; the closure is the catalog's, so a role that changes what it
 implies changes every holder at once. Every change is checked against the catalog and bumps the
 subject's permission version.
@@ -90,7 +90,7 @@ with security.as_system("the platform opens tenant bo"):
     except InvalidGrant as refused:
         assert "never held together" in str(refused)
 
-assert {one.role for one in grants.assigned("user:ana", "bo")} == {
+assert {one.role for one in grants.assignments_of("user:ana", "bo")} == {
     "billing.manager", "billing.approver"}
 
 bo_admin = Identity.user(
@@ -194,9 +194,9 @@ assert grants.resolve(Identity.user("user:ana", tenant="bo").model_copy(
 
 What a subject holds is cached per subject, tenant and permission version: every change bumps the
 version, so the next call on any replica resolves anew. A resolver belongs to a provider —
-`JwtProvider(..., resolvers=[grants])`, or `Resolving(provider, grants)` for one of the project's
+`JwtProvider(..., resolvers=[grants])`, or `ResolvingProvider(provider, grants)` for one of the project's
 — never to `AccessControl`: a service token or an API key arrives resolved. When another system
-keeps who holds which — nothing to administer here — `GrantResolver(catalog, source)` resolves
+records who holds which — nothing to administer here — `GrantResolver(catalog, source)` resolves
 from that `GrantSource` alone.
 
 
@@ -205,7 +205,7 @@ from that `GrantSource` alone.
 An administrator adds a role from a screen — a reviewer, an external auditor — without a deploy:
 the platform's, for every tenant (`tenant=None`), or a tenant's own, for that tenant alone, held
 in the catalog as `<key>@<tenant>` and named by its key. It sits beside the roles of the code in
-the catalog in effect for each tenant, kept on the same store (`definitions=` puts it elsewhere).
+the catalog in effect for each tenant, stored on the same store (`definitions=` puts it elsewhere).
 
 ```python
 with security.as_system("the platform adds a role every tenant has"):
@@ -237,15 +237,15 @@ assert [one.key for one in grants.defined("bo")] == ["cash.viewer"]   # bo's own
 | A change is checked and written while the tenant's administration lease is held, against the scope stored now — never a replica's cached catalog; assigning, defining and removing in a tenant are one at a time on every replica | nothing is removed, nor changes shape, between a check and its write |
 | A change that would leave another role broken is refused; a scope holds at most 256 roles, a role implies at most 32 | an administrator never takes from another role's holders what it could not take; composing stays cheap for every tenant |
 | Defining is bounded like assigning: in its own tenant only, implying only roles who acts may give, granting only what it holds; changing or removing a role is taking it away, so only who may give it does | whoever may define a role cannot give themselves, nor strip from others, more than they hold |
-| A role held — given, or held through a tenant role implying it — keeps its shape: what it implies, its privilege, level and disjoint roles; a role every tenant shares never changes shape | its holders never hold together what `assign` refuses |
+| A role held — given, or held through a tenant role implying it — retains its shape: what it implies, its privilege, level and disjoint roles; a role every tenant shares never changes shape | its holders never hold together what `assign` refuses |
 | A tenant's role is held by its tenant's own name — `cash.viewer@bo` — never by a key of the code or of every tenant: `auth.role("billing.admin")` and a requirement of the platform are never met by a role a tenant named so; a name the catalog declares is always that role | one customer's administrators never give themselves, nor anyone, a role the code or the platform requires |
 | A removed key is retired in its scope, never defined again nor given; a tenant's role removed takes its assignments with it; an assignment left of any removed role grants nothing and meets no `auth.role`. A key the code declares after it was used at runtime is listed in `problems` and no old assignment grants it — rename it in code | assignments left behind never come back to life, not even through a deploy |
-| A role changed so it may take something away — fewer grants, fewer roles implied — or removed bumps its scope's permission version, the tenant's or every tenant's: a token carrying permissions (`pv`) is refused there, whoever held the role directly or through another. Saved again as it is, it bumps again; a removal asked again finishes what a failure left | a token never keeps what a role no longer grants; a failure after the write is recovered by asking again |
-| Every replica reads a tenant's versions at most once a `check_every` (a second), one caller per tenant, never holding back another, and composes again only when one moved | a role defined holds within a second everywhere, for small reads; a slow tenant slows nobody else |
+| A role changed so it may take something away — fewer grants, fewer roles implied — or removed bumps its scope's permission version, the tenant's or every tenant's: a token carrying permissions (`pv`) is refused there, whoever held the role directly or through another. Saved again as it is, it bumps again; a removal asked again finishes what a failure left | a token never carries what a role no longer grants; a failure after the write is recovered by asking again |
+| Every replica reads a tenant's versions at most once a `check_interval` (a second), one caller per tenant, never holding back another, and composes again only when one moved | a role defined holds within a second everywhere, for small reads; a slow tenant slows nobody else |
 | A defined role that no longer builds grants nothing, the others still do; `grants.problems(tenant)` lists which and why — a tenant role implying one every tenant shares that was removed among them — and whoever administers the scope may fix or remove it | a broken definition never grants more than before, nor takes away what the others give, nor stays stuck |
-| A store that does not answer leaves the last catalog composed in effect, asked again only once a `check_every` passed — a tenant never composed is the code's until it answers | an outage never grants more, keeps what was granted, and never grows into a queue of timeouts |
+| A store that does not answer leaves the last catalog composed in effect, asked again only once a `check_interval` passed — a tenant never composed is the code's until it answers | an outage never grants more, retains what was granted, and never grows into a queue of timeouts |
 
-Keep them on a durable store — Redis with persistence, or `DatabaseKeyValue`: a store that loses
+Store them on a durable store — Redis with persistence, or `DatabaseKeyValue`: a store that loses
 a document loses the roles and the retired keys it held (a replica never answers with what it
 built of the lost one). With more than one replica, the administration leases are on the same
 store — `Grants(store=...)` puts everything on one; a store of this process alone is said once in

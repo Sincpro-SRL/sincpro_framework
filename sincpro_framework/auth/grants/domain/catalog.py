@@ -15,7 +15,7 @@ choose, the shape of Odoo 20's groups, privileges and categories. Who holds whic
     catalog.describe()                             ->  categories → privileges → roles
 
 Context: the catalog is code — like `Permission`, reviewed and versioned with the use cases that
-require what it grants; who holds which role is data, in a `GrantStore`. A store keeps only what
+require what it grants; who holds which role is data, in a `GrantStore`. A store records only what
 was assigned — the closure is computed (Odoo 20's `group_ids` beside `all_group_ids`), so a role
 that changes what it implies changes every holder at once. A privilege's roles are its exclusive
 levels, each implying the one below: a person holds one level of each privilege. Disjoint roles
@@ -24,12 +24,17 @@ too. An entitlement gates permissions behind what a tenant bought: without it, a
 gates is never granted, whoever holds the role.
 """
 
-from collections.abc import Iterable, Mapping, Set
+from collections.abc import Callable, Iterable, Mapping, Set
 from dataclasses import dataclass, field
 from functools import lru_cache
 from typing import Protocol
 
 from sincpro_framework.auth.common.domain import exceptions
+from sincpro_framework.auth.grants.domain.definitions import (
+    DefinedRoles,
+    RoleDefinitions,
+    catalog_key,
+)
 from sincpro_framework.sincpro_abstractions import DataTransferObject
 
 
@@ -142,6 +147,26 @@ class RolePermissionsLike(Protocol):
     implies: dict[str, frozenset[str]]
 
 
+def implied_closure(
+    roots: Iterable[str], implied: Callable[[str], Iterable[str]]
+) -> frozenset[str]:
+    """`roots` and every role they imply, transitively, `implied` answering what one role
+    implies directly — a worklist, not recursion: a cycle ends because a role already reached is
+    not expanded again.
+
+        implied_closure({"admin"}, {"admin": {"accountant"}, "accountant": {"viewer"}}.get)
+            ->  {"admin", "accountant", "viewer"}
+    """
+    reached: set[str] = set()
+    pending = list(roots)
+    while pending:
+        role = pending.pop()
+        if role not in reached:
+            reached.add(role)
+            pending.extend(implied(role) or ())
+    return frozenset(reached)
+
+
 def _every_role(roots: Iterable[Role]) -> dict[str, Role]:
     """Every role reachable from `roots` through `implies`, by key — `ProgrammingError` when
     two different roles share a key."""
@@ -160,7 +185,7 @@ def _every_role(roots: Iterable[Role]) -> dict[str, Role]:
 
 
 @dataclass(frozen=True)
-class Composition:
+class EffectiveCatalog:
     """A tenant's catalog as composed: the catalog in effect, the roles defined at runtime left
     out with why, and the keys the tenant defines itself."""
 
@@ -172,18 +197,65 @@ class Composition:
     """The keys removed at runtime, or defined at runtime and declared by the code since — an
     assignment of one grants nothing, and none is given again."""
 
+    def resolve_key(self, role: str, tenant: str | None) -> str:
+        """The catalog key `role` names in `tenant`: itself when the catalog declares it, else
+        the tenant's own role of that name — itself when there is none either.
+
+            effective.resolve_key("cash.desk", "bo")   ->  "cash.desk@bo"
+        """
+        if role in self.catalog.roles or tenant is None:
+            return role
+        own = catalog_key(role, tenant)
+        return own if own in self.catalog.roles else role
+
+    def check_assignable(self, role: str) -> None:
+        """`InvalidGrant` for a role the catalog does not declare, or a key retired — one
+        removed at runtime is never given again."""
+        self.catalog.role(role)
+        if role in self.retired:
+            raise exceptions.InvalidGrant(
+                f"{role} was removed at runtime: it is never given again"
+            )
+
 
 class CatalogSource(Protocol):
-    """What answers the catalog in effect for a tenant — a `GrantCatalog` itself, or a
-    `LiveCatalog` with the roles defined at runtime beside it."""
+    """What answers the catalog in effect for a tenant — a `GrantCatalog` itself, or
+    `TenantCatalogs` with the roles defined at runtime beside it."""
 
-    def in_effect(self, tenant: str | None = None) -> Composition:
-        """The composition to resolve `tenant`'s identities with — what a replica holds now."""
+    def cached(self, tenant: str | None = None) -> EffectiveCatalog:
+        """The catalog to resolve `tenant`'s identities with — what a replica holds now."""
         ...
 
-    def latest(self, tenant: str | None = None) -> Composition:
+    def load(self, tenant: str | None = None) -> EffectiveCatalog:
         """The tenant's catalog read from the source now — what an administration checks a
         change against."""
+        ...
+
+
+class RuntimeCatalog(CatalogSource, Protocol):
+    """What defining roles at runtime asks of the catalog it changes — `TenantCatalogs`
+    answers."""
+
+    code: "GrantCatalog"
+    definitions: RoleDefinitions
+
+    @property
+    def permissions(self) -> frozenset[str]:
+        """What a defined role may grant."""
+        ...
+
+    def load_scopes(self, tenant: str | None) -> tuple[DefinedRoles, DefinedRoles]:
+        """What every tenant shares and what `tenant` defines, read now."""
+        ...
+
+    def compose(
+        self, tenant: str | None, shared: DefinedRoles, own: DefinedRoles
+    ) -> EffectiveCatalog:
+        """The catalog of those documents, as stored — cached by their versions."""
+        ...
+
+    def invalidate(self, tenant: str | None = None) -> None:
+        """Read `tenant`'s scopes again on the next call — every tenant's for `None`."""
         ...
 
 
@@ -208,7 +280,12 @@ class GrantCatalog:
                 raise exceptions.ProgrammingError(
                     f"{role.key} is disjoint from roles nobody declared: {sorted(unknown)}"
                 )
-        self._closure = {key: self._walk(key) for key in self.roles}
+        self._closure = {
+            key: implied_closure(
+                [key], lambda current: (one.key for one in self.roles[current].implies)
+            )
+            for key in self.roles
+        }
         self.levels: dict[str, list[Role]] = {}
         for role in sorted(self.roles.values(), key=lambda one: (one.sequence, one.key)):
             if role.privilege is not None:
@@ -223,25 +300,14 @@ class GrantCatalog:
         self.entitlements = {one.key: one for one in entitlements}
         self._cached = lru_cache(maxsize=4096)(self._permissions_of)
 
-    def _walk(self, key: str) -> frozenset[str]:
-        """`key` and every role it implies, transitively — a worklist, so a cycle ends."""
-        held: set[str] = set()
-        pending = [key]
-        while pending:
-            current = pending.pop()
-            if current not in held:
-                held.add(current)
-                pending.extend(one.key for one in self.roles[current].implies)
-        return frozenset(held)
+    def cached(self, tenant: str | None = None) -> EffectiveCatalog:
+        """Itself, for every tenant — a catalog of code is in effect as declared;
+        `TenantCatalogs` answers the one with the roles defined at runtime."""
+        return EffectiveCatalog(catalog=self)
 
-    def in_effect(self, tenant: str | None = None) -> Composition:
-        """Itself, for every tenant — a catalog of code is in effect as declared; a
-        `LiveCatalog` answers the one with the roles defined at runtime."""
-        return Composition(catalog=self)
-
-    def latest(self, tenant: str | None = None) -> Composition:
+    def load(self, tenant: str | None = None) -> EffectiveCatalog:
         """Itself, with nothing defined at runtime."""
-        return Composition(catalog=self)
+        return EffectiveCatalog(catalog=self)
 
     def role(self, key: str) -> Role:
         """The role `key` — `InvalidGrant` when the catalog does not declare it."""
@@ -267,7 +333,7 @@ class GrantCatalog:
         """
         return self._cached(frozenset(roles))
 
-    def gated(
+    def filter_by_entitlements(
         self, permissions: frozenset[str], entitlements: Iterable[str]
     ) -> frozenset[str]:
         """`permissions` without those gated by an entitlement the tenant does not have."""

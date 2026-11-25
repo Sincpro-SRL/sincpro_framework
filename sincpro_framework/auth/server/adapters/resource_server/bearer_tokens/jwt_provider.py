@@ -29,11 +29,13 @@ from sincpro_framework.auth.common.domain.provider import AuthProvider
 from sincpro_framework.auth.common.domain.resolver import IdentityResolver, resolved
 from sincpro_framework.auth.common.domain.revocations import (
     Revocations,
-    related_of,
-    remembering_versions,
+    related_subjects,
 )
 from sincpro_framework.auth.common.infrastructure import jws
 from sincpro_framework.auth.common.infrastructure.claim_mapping import ClaimMapping
+from sincpro_framework.auth.common.infrastructure.permission_versions import (
+    cached_permission_versions,
+)
 from sincpro_framework.auth.common.infrastructure.trusted_issuer import TrustedIssuer
 from sincpro_framework.auth.server.domain.resource_server.protected_resource import (
     ProtectedResource,
@@ -46,7 +48,7 @@ if TYPE_CHECKING:
     )
 
 
-def _quoted(text: str) -> str:
+def _escape_quoted(text: str) -> str:
     """`text` safe inside a quoted `WWW-Authenticate` parameter."""
     return text.replace("\\", "\\\\").replace('"', "'")
 
@@ -131,7 +133,9 @@ class JwtProvider(AuthProvider):
             Jwks,
         )
 
-        keys = Jwks.discovered(issuer, algorithms=algorithms, http=http, discovery=discovery)
+        keys = Jwks.from_discovery(
+            issuer, algorithms=algorithms, http=http, discovery=discovery
+        )
         provider_options = {
             name: options.pop(name)
             for name in (
@@ -163,16 +167,16 @@ class JwtProvider(AuthProvider):
             Bearer realm="sincpro", error="invalid_token", error_description="token expired"
             Bearer realm="sincpro"                                    nothing was presented
         """
-        parts = [f'Bearer realm="{_quoted(self.realm)}"']
+        parts = [f'Bearer realm="{_escape_quoted(self.realm)}"']
         if refusal is not None and refusal.step_up is not None:
             parts.append('error="insufficient_user_authentication"')
-            parts.append(f'error_description="{_quoted(refusal.reason)}"')
-            parts.append(f'acr_values="{_quoted(refusal.step_up)}"')
+            parts.append(f'error_description="{_escape_quoted(refusal.reason)}"')
+            parts.append(f'acr_values="{_escape_quoted(refusal.step_up)}"')
             if refusal.max_age is not None:
                 parts.append(f"max_age={refusal.max_age}")
         elif refusal is not None and refusal.reason and not refusal.anonymous:
             parts.append('error="invalid_token"')
-            parts.append(f'error_description="{_quoted(refusal.reason)}"')
+            parts.append(f'error_description="{_escape_quoted(refusal.reason)}"')
         if self.resource is not None:
             parts.append(f'resource_metadata="{self.resource.metadata_url}"')
         if self.dpop is not None:
@@ -188,7 +192,7 @@ class JwtProvider(AuthProvider):
         named = parsed.claims.get("iss")
         return self.issuers.get(named) if isinstance(named, str) else None
 
-    def _verified(self, parsed: jws.Jws, issuer: TrustedIssuer) -> None:
+    def _verify_signature(self, parsed: jws.Jws, issuer: TrustedIssuer) -> None:
         """The token's header, signature and claims checked against `issuer`.
 
         1. A critical header it does not understand, or an algorithm the issuer does not use:
@@ -216,7 +220,7 @@ class JwtProvider(AuthProvider):
         if issuer.authorized_parties is not None and party not in issuer.authorized_parties:
             raise exceptions.Unauthenticated("token issued to a client not accepted")
 
-    def _not_revoked(self, identity: Identity, parsed: jws.Jws) -> None:
+    def _ensure_not_revoked(self, identity: Identity, parsed: jws.Jws) -> None:
         """`Unauthenticated` when the token, its session or every session of its subject was
         revoked — one read of `revocations`, which also reads the tenant's permission version for
         the resolvers — or when it carries permissions (`pv`) of a version the subject's, its
@@ -225,14 +229,15 @@ class JwtProvider(AuthProvider):
         if self.revocations is None:
             return
         state = self.revocations.state(
-            identity.subject, identity.token_id, identity.session, related_of(identity)
+            identity.subject, identity.token_id, identity.session, related_subjects(identity)
         )
-        refusal = state.refusal(jws.moment(parsed.claims, "iat"))
+        carried = parsed.claims.get("pv")
+        refusal = state.revocation_reason(
+            jws.claim_datetime(parsed.claims, "iat"),
+            carried if isinstance(carried, int) else None,
+        )
         if refusal is not None:
             raise exceptions.Unauthenticated(refusal)
-        carried = parsed.claims.get("pv")
-        if isinstance(carried, int) and carried != state.permission_epoch:
-            raise exceptions.Unauthenticated("permissions changed: refresh the token")
 
     def token_of(self, credentials: Credentials) -> str | None:
         """The token of `Authorization: Bearer …` — or `DPoP …` when proofs are checked."""
@@ -240,7 +245,9 @@ class JwtProvider(AuthProvider):
         accepted = ("bearer", "dpop") if self.dpop is not None else ("bearer",)
         return token.strip() or None if scheme.lower() in accepted else None
 
-    def _bound(self, credentials: Credentials, token: str, claims: Mapping[str, Any]) -> None:
+    def _verify_binding(
+        self, credentials: Credentials, token: str, claims: Mapping[str, Any]
+    ) -> None:
         """A token bound to a client certificate (RFC 8705, `cnf.x5t#S256`) is accepted only
         over that certificate; one bound to a key only with its proof (RFC 9449, `DpopProofs`).
         """
@@ -267,7 +274,7 @@ class JwtProvider(AuthProvider):
         1. No bearer, or one that is not a compact JWS: `None` — an opaque token is
            introspection's.
         2. An `iss` this provider does not trust: `None`.
-        3. Verified against that issuer (`_verified`).
+        3. Verified against that issuer (`_verify_signature`).
         4. Mapped to an identity; refused when revoked.
         Final: the identity through every resolver — which ask no permission version the
         revocation check already read.
@@ -279,9 +286,9 @@ class JwtProvider(AuthProvider):
         issuer = self._issuer_of(parsed)
         if issuer is None:
             return None
-        self._verified(parsed, issuer)
-        self._bound(credentials, token, parsed.claims)
+        self._verify_signature(parsed, issuer)
+        self._verify_binding(credentials, token, parsed.claims)
         identity = issuer.mapping.identity(parsed.claims, provider=self.name)
-        with remembering_versions():
-            self._not_revoked(identity, parsed)
+        with cached_permission_versions():
+            self._ensure_not_revoked(identity, parsed)
             return resolved(identity, self.resolvers)

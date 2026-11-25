@@ -23,7 +23,7 @@ from sincpro_framework.auth.common.domain import exceptions
 from sincpro_framework.auth.common.domain.identity import Credentials
 from sincpro_framework.auth.common.infrastructure.security_context import (
     as_identity,
-    presenting,
+    as_presented_token,
 )
 from sincpro_framework.common.failures import retry_after
 from sincpro_framework.exceptions import ExternalServiceError, FailureKind
@@ -51,8 +51,27 @@ class IdentityMiddleware:
         self.access = access
         self.max_body_bytes = max_body_bytes
 
+    async def _send_json(
+        self,
+        send: Send,
+        status: int,
+        error: dict[str, Any],
+        headers: list[tuple[bytes, bytes]] | None = None,
+    ) -> None:
+        """Answer the request with `status` and `{"error": error}` as JSON — the body every
+        transport answers a refusal with."""
+        await send(
+            {
+                "type": "http.response.start",
+                "status": status,
+                "headers": [(b"content-type", b"application/json"), *(headers or [])],
+            }
+        )
+        body = json.dumps({"error": error}).encode()
+        await send({"type": "http.response.body", "body": body})
+
     async def _refused(self, send: Send, error: exceptions.AuthError) -> None:
-        """Answer the request with the refusal, as JSON — the body every transport answers.
+        """Answer the request with the refusal.
 
         Unauthenticated("unknown token")  ->  401, www-authenticate: <each challenge>,
             {"error": {"kind": "unauthenticated", "reason": "unknown token"}}
@@ -60,19 +79,17 @@ class IdentityMiddleware:
             "reason": "lacks billing.invoice.issue", "requirement": "billing.invoice.issue"}}
         """
         status = error.http_status
-        headers = [(b"content-type", b"application/json")]
-        if status == 401:
-            headers += [
-                (b"www-authenticate", challenge.encode())
-                for challenge in self.access.challenges(
-                    error if isinstance(error, exceptions.Unauthenticated) else None
-                )
-            ]
-        await send({"type": "http.response.start", "status": status, "headers": headers})
-        body = json.dumps({"error": error.refusal_body()}).encode()
-        await send({"type": "http.response.body", "body": body})
+        challenges = (
+            self.access.challenges(
+                error if isinstance(error, exceptions.Unauthenticated) else None
+            )
+            if status == 401
+            else []
+        )
+        headers = [(b"www-authenticate", challenge.encode()) for challenge in challenges]
+        await self._send_json(send, status, error.refusal_body(), headers)
 
-    async def _buffered(self, receive: Receive) -> tuple[bytes | None, Receive]:
+    async def _buffer_body(self, receive: Receive) -> tuple[bytes | None, Receive]:
         """The request's body read whole — `None` past `max_body_bytes` — and a `receive` that
         hands the app the same body again, so the app reads what the provider verified.
 
@@ -93,28 +110,20 @@ class IdentityMiddleware:
             if not message.get("more_body", False):
                 break
         body = b"".join(chunks)
-        handed = False
+        delivered = False
 
-        async def replayed() -> MutableMapping[str, Any]:
-            nonlocal handed
-            if not handed:
-                handed = True
+        async def replay() -> MutableMapping[str, Any]:
+            nonlocal delivered
+            if not delivered:
+                delivered = True
                 return {"type": "http.request", "body": body, "more_body": False}
             return await receive()
 
-        return body, replayed
+        return body, replay
 
     async def _too_large(self, send: Send) -> None:
         """Answer 413: a body past `max_body_bytes` is never buffered."""
-        await send(
-            {
-                "type": "http.response.start",
-                "status": 413,
-                "headers": [(b"content-type", b"application/json")],
-            }
-        )
-        body = json.dumps({"error": {"kind": "invalid", "reason": "body too large"}})
-        await send({"type": "http.response.body", "body": body.encode()})
+        await self._send_json(send, 413, {"kind": "invalid", "reason": "body too large"})
 
     async def _unavailable(self, send: Send, error: ExternalServiceError) -> None:
         """Answer that who calls could not be checked now — 503, to retry after what the error
@@ -124,27 +133,23 @@ class IdentityMiddleware:
                 {"error": {"kind": "unavailable", "reason": "who calls could not be checked…"}}
         """
         wait = retry_after(error, FailureKind.UNAVAILABLE) or timedelta(seconds=1)
-        headers = [
-            (b"content-type", b"application/json"),
-            (b"retry-after", str(max(1, math.ceil(wait.total_seconds()))).encode()),
-        ]
-        await send({"type": "http.response.start", "status": 503, "headers": headers})
-        body = json.dumps(
+        await self._send_json(
+            send,
+            503,
             {
-                "error": {
-                    "kind": FailureKind.UNAVAILABLE.value,
-                    "reason": "who calls could not be checked now: retry",
-                }
-            }
-        ).encode()
-        await send({"type": "http.response.body", "body": body})
+                "kind": FailureKind.UNAVAILABLE.value,
+                "reason": "who calls could not be checked now: retry",
+            },
+            [(b"retry-after", str(max(1, math.ceil(wait.total_seconds()))).encode())],
+        )
 
     async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
         """Run the app for one connection as the identity its credentials stand for.
 
         1. A scope that is neither HTTP nor WebSocket (lifespan) passes through untouched.
         2. `send` is wrapped to note whether the response has started.
-        3. Credentials are read from the scope and authenticated on a worker thread — a
+        3. Credentials are read from the scope and authenticated on a worker thread, on the
+           store of the bus the `AccessControl` guards, as every door authenticates — a
            provider whose backend did not answer (`ExternalServiceError`) is a 503 to retry,
            never a 401 nor a 500; a WebSocket lets it propagate.
         4. The app runs inside `as_identity(identity)`.
@@ -165,7 +170,7 @@ class IdentityMiddleware:
 
         try:
             if self.access.needs_body and scope["type"] == "http":
-                body, receive = await self._buffered(receive)
+                body, receive = await self._buffer_body(receive)
                 if body is None:
                     await self._too_large(send)
                     return
@@ -179,7 +184,7 @@ class IdentityMiddleware:
                     raise
                 await self._unavailable(send, error)
                 return
-            with as_identity(identity), presenting(credentials.bearer):
+            with as_identity(identity), as_presented_token(credentials.bearer):
                 await self.app(scope, receive, sending)
         except exceptions.AuthError as error:
             if started or scope["type"] != "http":

@@ -1,4 +1,4 @@
-"""What auth keeps, on a table of the project's database — the same contracts the stores in memory
+"""What auth stores, on a table of the project's database — the same contracts the stores in memory
 and on Redis honour, racing on a file as replicas would on a server — and the token issuer whole
 on them."""
 
@@ -95,7 +95,7 @@ def test_the_token_issuer_on_a_database_signs_in_refreshes_and_logs_out() -> Non
     tokens = sessions.issue(Identity.user("user:MFAQ0123", tenant="cauor"))
     assert tokens.refresh_token is not None
     renewed = sessions.refresh(tokens.refresh_token.get_secret_value())
-    assert [one.family for one in sessions.sessions_of("user:MFAQ0123")] == [tokens.session]
+    assert [one.session for one in sessions.sessions_of("user:MFAQ0123")] == [tokens.session]
     sessions.revoke(renewed.access_token.get_secret_value())
     caller = Credentials(
         transport="http",

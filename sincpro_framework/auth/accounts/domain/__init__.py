@@ -1,1 +1,1 @@
-"""The ports a project's accounts implement, and what is kept of a refresh token."""
+"""The ports a project's accounts implement, and what is stored of a refresh token."""

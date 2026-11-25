@@ -42,16 +42,16 @@ class AddedRequirements(DataTransferObject):
     version: int = 0
     requirements: tuple[AddedRequirement, ...] = ()
 
-    def of(self, command: str) -> AddedRequirement | None:
+    def find(self, command: str) -> AddedRequirement | None:
         """What is added to `command` here — `None` when nothing is."""
         return next((one for one in self.requirements if one.command == command), None)
 
-    def replacing(self, added: AddedRequirement) -> "AddedRequirements":
+    def replace(self, added: AddedRequirement) -> "AddedRequirements":
         """The next version, with `added` new or in place of what its Command had."""
-        kept = tuple(one for one in self.requirements if one.command != added.command)
-        return AddedRequirements(version=self.version + 1, requirements=(*kept, added))
+        others = tuple(one for one in self.requirements if one.command != added.command)
+        return AddedRequirements(version=self.version + 1, requirements=(*others, added))
 
-    def without(self, command: str) -> "AddedRequirements":
+    def remove(self, command: str) -> "AddedRequirements":
         """The next version, with nothing added to `command`."""
         return AddedRequirements(
             version=self.version + 1,

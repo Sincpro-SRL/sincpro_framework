@@ -20,9 +20,9 @@ from sincpro_framework.auth import (
 )
 from sincpro_framework.auth.server import (
     AuthZenEngine,
-    DecidedBy,
     OpaEngine,
     OpenFgaEngine,
+    PolicyEngineProvider,
     StaticProvider,
 )
 from sincpro_framework.ddd.criteria import Condition
@@ -169,7 +169,7 @@ def test_an_engine_decides_beside_the_provider_whose_identities_it_judges() -> N
             )
         }
     )
-    provider = DecidedBy(
+    provider = PolicyEngineProvider(
         StaticProvider({"ana": ANA, "bea": Identity.user("user:bea")}, name="sessions"),
         AuthZenEngine(PDP, http=http),
     )

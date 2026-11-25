@@ -142,11 +142,11 @@ except Unauthenticated as refused:
 | a subject's permissions | `bump_permissions(subject)` | nothing — the resolved permissions are resolved anew |
 
 `until` is when the last token it covers expires: an entry lives no longer. `KeyValueRevocations`
-keeps them on the running context's store — Redis in production — under digested keys; a store
+stores them on the running context's store — Redis in production — under digested keys; a store
 that does not answer is refused (503) by default, or admitted with a warning
 (`on_unavailable=WhenUnavailable.ADMIT`). One authentication reads the store once: the token, its session, its
 subject's and its tenant's permission versions in one `get_many`, and a `GrantResolver` on the
-same `Revocations` is answered from that read (`remembering_versions()`).
+same `Revocations` is answered from that read (`cached_permission_versions()`).
 
 ## Where to get a token
 
@@ -168,31 +168,31 @@ assert provider.challenge_for(Unauthenticated("token expired")) == (
 ```
 
 The body of a 401 says `"anonymous": true` when the caller presented nothing. A wire of the
-project's own that turned the refusal into JSON before answering rebuilds it with `refusal_from`
+project's own that turned the refusal into JSON before answering rebuilds it with `Unauthenticated.from_error_body`
 — from a REST problem body, a JSON-RPC error's `data` or a `refusal_body()` — so the challenge is
 still the refusal's own:
 
 ```python
-from sincpro_framework.auth import refusal_from
+from sincpro_framework.auth import Unauthenticated
 
 nobody = Unauthenticated("authenticate to run IssueInvoice", anonymous=True)
 assert nobody.refusal_body() == {
     "kind": "unauthenticated", "reason": "authenticate to run IssueInvoice", "anonymous": True,
 }
-assert "error=" not in provider.challenge_for(refusal_from(nobody.refusal_body()))
-expired = refusal_from({"kind": "unauthenticated", "reason": "UNAUTHENTICATED",
+assert "error=" not in provider.challenge_for(Unauthenticated.from_error_body(nobody.refusal_body()))
+expired = Unauthenticated.from_error_body({"kind": "unauthenticated", "reason": "UNAUTHENTICATED",
                         "detail": "token expired"})                 # a REST problem body
 assert 'error="invalid_token", error_description="token expired"' in provider.challenge_for(expired)
-assert refusal_from({"kind": "permission_denied", "detail": "lacks billing.invoice.issue"}) is None
+assert Unauthenticated.from_error_body({"kind": "permission_denied", "detail": "lacks billing.invoice.issue"}) is None
 ```
 
 ## Public keys: an identity provider's, by discovery — `[jwt]`
 
 Keycloak, Entra and Google sign with private keys and publish the public ones as a JWKS.
 `JwtProvider.from_issuer` finds the JWKS by OIDC discovery — on the first token, never when the
-service starts — and `Jwks` keeps it cached. Every component built without `http=` nor
+service starts — and `Jwks` caches it. Every component built without `http=` nor
 `discovery=` — this one, `IntrospectionProvider`, `ClientCredentials`, `TokenExchange`,
-`RefreshingToken`, `DeviceCode` — asks the process's one `OidcDiscovery`: an issuer's document is
+`RefreshTokenSource`, `DeviceAuthorization` — asks the process's one `OidcDiscovery`: an issuer's document is
 fetched once per process, not once per component.
 
 ```python
@@ -286,7 +286,7 @@ step out, as for a permission.
 An opaque token is asked of the server that issued it. `IntrospectionProvider` authenticates as a
 client (`ClientSecretBasic`, `ClientSecretPost`, `ClientSecretJwt`, `PrivateKeyJwt` — `[jwt]`),
 caches every answer by the token's SHA-256 — never the token — and never past the token's own
-`exp`; an inactive answer is remembered for `inactive_for`, so a stream of bad tokens is not a
+`exp`; an inactive answer is remembered for `inactive_cache_ttl`, so a stream of bad tokens is not a
 stream of requests. A JWT is left to `JwtProvider`.
 
 ```python
@@ -361,7 +361,7 @@ api = JwtProvider(own, dpop=DpopProofs("https://billing.sincpro.com.bo"))
 with_proof = Credentials(
     transport="http", method="GET", uri="/invoices",
     headers={"authorization": f"DPoP {bound}",
-             "dpop": client_key.proof("GET", "https://billing.sincpro.com.bo/invoices", bound)},
+             "dpop": client_key.create_proof("GET", "https://billing.sincpro.com.bo/invoices", bound)},
 )
 assert api.authenticate(with_proof).subject == "user:ana"
 try:
@@ -383,14 +383,14 @@ a certificate naming a common name alone is refused; without one, the common nam
 ## Decisions taken outside: policy engines
 
 A policy engine or a relationship store decides beside the provider whose identities it judges —
-in OpenID AuthZEN's terms: a subject, an action, a resource, a context. `DecidedBy` keeps the
+in OpenID AuthZEN's terms: a subject, an action, a resource, a context. `PolicyEngineProvider` preserves the
 provider's name and answers `has_permission`, `permitted` and `scope` from the engine.
 
 ```python
-from sincpro_framework.auth.server import AuthZenEngine, DecidedBy, OpaEngine, OpenFgaEngine
+from sincpro_framework.auth.server import AuthZenEngine, PolicyEngineProvider, OpaEngine, OpenFgaEngine
 
 pdp = ScriptedHttp({"POST https://pdp.internal/access/v1/evaluation": {"decision": True}})
-decided = DecidedBy(provider, AuthZenEngine("https://pdp.internal", http=pdp))
+decided = PolicyEngineProvider(provider, AuthZenEngine("https://pdp.internal", http=pdp))
 assert decided.has_permission(ana, BillingPermission.ISSUE_INVOICE)
 assert decided.name == provider.name
 ```
@@ -423,7 +423,7 @@ from sincpro_framework.auth.accounts import InMemoryRefreshTokens, SigningKeys, 
 from sincpro_framework.auth.server import (
     AuthorizationRequest,
     AuthorizationServer,
-    InMemoryClients,
+    InMemoryOAuthClients,
 )
 
 issuer = TokenIssuer(
@@ -433,11 +433,17 @@ issuer = TokenIssuer(
     refresh_tokens=InMemoryRefreshTokens(),
     revocations=InMemoryRevocations(),
 )
-oauth = AuthorizationServer("https://auth.colegio.bo", tokens=issuer, clients=InMemoryClients())
+oauth = AuthorizationServer(
+    "https://auth.colegio.bo", token_issuer=issuer, client_registry=InMemoryOAuthClients()
+)
 
-client = oauth.register(["https://claude.ai/api/mcp/auth_callback"], name="Claude").client  # RFC 7591
+registered = oauth.register_from_metadata({                                      # /register
+    "redirect_uris": ["https://claude.ai/api/mcp/auth_callback"],               # RFC 7591
+    "client_name": "Claude",
+})
+client = registered.client
 
-verifier = "the-client-keeps-this-secret-verifier-0123456789"                   # PKCE, RFC 7636
+verifier = "the-client-stores-this-secret-verifier-0123456789"                  # PKCE, RFC 7636
 challenge = base64.urlsafe_b64encode(hashlib.sha256(verifier.encode()).digest()).rstrip(b"=").decode()
 pending = oauth.authorize(AuthorizationRequest(                                  # /authorize
     client_id=client.client_id,
@@ -445,40 +451,64 @@ pending = oauth.authorize(AuthorizationRequest(                                 
     code_challenge=challenge,
     state="xyz",
 ))
-# … the project's login page shows pending.client_name, the person signs in …
+# … the project's login and consent page shows pending.client_name, the person signs in …
 redirect = oauth.complete(pending.id, Identity.user("user:MFAQ0123", tenant="cauor"))
 code = parse_qs(urlsplit(redirect).query)["code"][0]
 
-tokens = oauth.exchange_code(code, verifier, client.client_id,                   # /token
-                             "https://claude.ai/api/mcp/auth_callback")
-renewed = oauth.refresh(tokens.answer()["refresh_token"], client.client_id)      # its client only
+tokens = oauth.token({                                                           # /token
+    "grant_type": "authorization_code",
+    "code": code,
+    "code_verifier": verifier,
+    "redirect_uri": "https://claude.ai/api/mcp/auth_callback",
+    "client_id": client.client_id,
+})
+renewed = oauth.token({                                                          # its client only
+    "grant_type": "refresh_token",
+    "refresh_token": tokens.answer()["refresh_token"],
+    "client_id": client.client_id,
+})
 oauth.revoke(renewed.answer()["refresh_token"], client.client_id)                # RFC 7009
 ```
 
 | Step | Method | What it guarantees |
 |---|---|---|
-| `/authorize` | `authorize(request)` → `PendingAuthorization` | an unknown client or a redirect it did not register is refused, never redirected — no open redirector |
-| sign-in | `complete(id, identity)` / `deny(id)` | the project's page says who signed in; the browser goes back with `code`, `state` and `iss` (RFC 9207) |
-| `/token` | `exchange_code(code, verifier, client_id, redirect_uri)` | a code works once, for its client, its redirect and its PKCE verifier; it lasts a minute |
+| `/authorize` | `authorize(request)` → `PendingAuthorization` | an unknown client or a redirect it did not register is refused, never redirected — no open redirector; past that check, a refusal carries `redirect_uri` with the error for the client (RFC 6749 §4.1.2.1) |
+| sign-in | `find_pending(id)`, then `complete(id, identity)` / `deny(id)` | the project's page says who asks and who signed in; the browser goes back with `code`, `state` and `iss` (RFC 9207) |
+| `/token` | `token(form, authorization_header)` | dispatches by `grant_type` to the grants composed — `unsupported_grant_type` otherwise; reads `client_secret_basic` or `client_secret_post` |
+| code | `exchange_code(code, verifier, client_id, redirect_uri)` | a code works once, for its client, its redirect and its PKCE verifier; it lasts a minute; presented again, the session it opened is revoked |
 | refresh | `refresh(token, client_id)` | rotated, a replay revokes the session — and another client's refresh token is refused |
-| `/revoke` | `revoke(token, client_id)` | the session ends, its access tokens refused at once |
-| `/register` | `register(redirect_uris, …)` | https, loopback http or a private-use scheme, never a fragment; a confidential client's secret shown once |
-| `/.well-known/oauth-authorization-server` | `metadata(endpoints)` | RFC 8414, listing only the capabilities the server composes |
+| `/revoke` | `revoke(token, client_id)` | the session ends, its access tokens refused at once — only the client's own tokens (RFC 7009 §2.1) |
+| `/register` | `register_from_metadata(body, initial_access_token)` / `register(redirect_uris, …)` | https, loopback http (any port at `/authorize`, RFC 8252) or a private-use scheme, never a fragment nor user information; a confidential client's secret shown once; `answer()` is the RFC 7591 response |
+| `/.well-known/oauth-authorization-server` | `metadata(endpoint_urls)` | RFC 8414, listing only the endpoints, grants and methods the server serves |
+
+`AuthorizationRequest.resource` (RFC 8707) becomes the `aud` of every token of the session; the
+API that verifies them then expects its own URI as the audience.
 
 **Compose what you serve.** Each capability is a mixin over `AuthorizationServerCore` —
 `AuthorizationCodeGrant`, `RefreshTokenGrant`, `TokenRevocation`, `ClientRegistration`,
-`AuthorizationServerMetadata` — and `AuthorizationServer` composes them all. A server without
-dynamic registration is `class Server(AuthorizationCodeGrant, RefreshTokenGrant,
-AuthorizationServerMetadata)`, and its metadata never names a registration endpoint.
+`AuthorizationServerMetadata` — and `AuthorizationServer` composes them all. Each adds its grant
+to `token_grants()`, its endpoints to `served_endpoints()` and its fields to `capabilities()`: a
+server without dynamic registration is `class Server(AuthorizationCodeGrant, RefreshTokenGrant,
+AuthorizationServerMetadata)`, and its metadata never names a registration endpoint. Refresh and
+revocation are served only when the `TokenIssuer` stores refresh tokens and revocations, and the
+JWKS only when its keys are asymmetric.
 
-**Policy is an argument, never a fork.** `pkce=PkcePolicy.REQUIRED` (OAuth 2.1, the default),
-`PkcePolicy.PUBLIC_CLIENTS` for confidential clients that predate PKCE (RFC 6749 + 7636), or
-`PkcePolicy.OPTIONAL`; `challenge_methods` adds `CodeChallengeMethod.PLAIN` for a client that
-cannot hash. Every decision is a public method to override: `tokens_for` (what a code grants),
-`accepts_redirect` (which redirects may be registered), `authenticate_client`, and
-`OAuthClient.redirects_to` (how a redirect matches). Clients live in a `ClientRegistry` —
-`InMemoryClients`, `KeyValueClients` (the context's store), or the project's own. A refusal is an
-`OAuthError` whose `answer()` is the body RFC 6749 §5.2 defines, `status` 400 — 401 for
-`invalid_client`.
+**Policy is an argument, never a fork.** `pkce_policy=PkcePolicy.REQUIRED` (OAuth 2.1, the
+default), `PkcePolicy.PUBLIC_CLIENTS` for confidential clients that predate PKCE (RFC 6749 +
+7636), or `PkcePolicy.OPTIONAL`; `challenge_methods` adds `CodeChallengeMethod.PLAIN` for a
+client that cannot hash; `authorization_ttl` and `code_ttl` how long a sign-in and a code wait;
+`registration_token` closes registration behind an initial access token (RFC 7591 §3). Every
+decision is a public method to override: `issue_tokens` (what a code grants),
+`is_registrable_redirect_uri` (which redirects may be registered), `authenticate_client`, and
+`OAuthClient.allows_redirect_uri` (how a redirect matches). Clients live in a `ClientRegistry` —
+`InMemoryOAuthClients`, `KeyValueOAuthClients` (the context's store), or the project's own. A
+refusal is an `OAuthError` whose `answer()` is the body RFC 6749 §5.2 defines, `status` 400 — 401
+for `invalid_client` and `invalid_token`.
+
+**Consent is the project's.** Registration is open by default, so anyone may register a client
+and send a person to `/authorize`. When the login page completes at once for someone already
+signed in, show `pending.client_name` and let the person accept or `deny` — otherwise a
+registered impostor gets a code for a person who never saw it. Or close registration with
+`registration_token`.
 
 The transport is the project's: an HTTP route, FastMCP's provider or a test call these methods.

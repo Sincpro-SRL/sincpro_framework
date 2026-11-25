@@ -70,7 +70,7 @@ class HttpRequest(DataTransferObject):
 
         HttpRequest(url="https://u:p@h/token?x=1#f").target   ->  "https://h/token"
         """
-        return safe_url(self.url)
+        return redact_url(self.url)
 
     def __repr__(self) -> str:
         """The method, the target and the header names — never a header's value, never the body.
@@ -82,10 +82,10 @@ class HttpRequest(DataTransferObject):
     __str__ = __repr__
 
 
-def safe_url(url: str) -> str:
+def redact_url(url: str) -> str:
     """`url` without userinfo, query or fragment.
 
-    safe_url("https://client:secret@auth.acme.bo/token?code=x#y")  ->  "https://auth.acme.bo/token"
+    redact_url("https://client:secret@auth.acme.bo/token?code=x#y")  ->  "https://auth.acme.bo/token"
     """
     parts = urlsplit(url)
     host = parts.hostname or ""
@@ -106,7 +106,7 @@ class HttpAnswer(DataTransferObject):
     @field_validator("headers")
     @classmethod
     def _lower_case(cls, headers: Mapping[str, str]) -> Mapping[str, str]:
-        """Header names lower-cased, as `Credentials` keeps them."""
+        """Header names lower-cased, as `Credentials` stores them."""
         return {name.lower(): value for name, value in headers.items()}
 
     @property
@@ -114,7 +114,7 @@ class HttpAnswer(DataTransferObject):
         """Whether the status is a success (2xx)."""
         return 200 <= self.status < 300
 
-    def parsed(self) -> Any:
+    def json_value(self) -> Any:
         """The body parsed as JSON — `ValueError` when it is not."""
         return json.loads(self.body or b"null")
 
@@ -122,7 +122,7 @@ class HttpAnswer(DataTransferObject):
         """The body as a JSON object; an empty dict when it is anything else — an error body
         a server wrote as text says nothing an OAuth client reads."""
         try:
-            value = self.parsed()
+            value = self.json_value()
         except ValueError:
             return {}
         return value if isinstance(value, dict) else {}
@@ -170,7 +170,7 @@ class ClientAuthentication(ABC):
     client_id: str
 
     @abstractmethod
-    def applied(
+    def apply(
         self, fields: Sequence[tuple[str, str]], endpoint: str
     ) -> tuple[list[tuple[str, str]], dict[str, str]]:
         """The form fields and headers a request to `endpoint` carries once this client is

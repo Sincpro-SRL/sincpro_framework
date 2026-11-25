@@ -121,7 +121,7 @@ auth.runtime.release(CommandRefund, tenant="bo")
 |---|---|---|
 | `AdministrationPolicy`, `BoundedAdministration`, `TrustedAdministration` | `auth/domain` | who may administer what |
 | `ScopedDocuments`, `rewritten` / `InMemoryDocuments`, `KeyValueDocuments` | `auth/domain`, `auth/adapters` | one versioned document per scope, compare-and-swap |
-| `Refreshed` | `auth/infrastructure` | what a scope builds to, per scope, failing as its user says |
+| `ScopedCache` | `auth/infrastructure` | what a scope builds to, per scope, failing as its user says |
 | `AdministrationLocks` | `auth/infrastructure` | one administration of a tenant at a time — said once in the log when its store is this process's alone |
 | `RoleDefinition`, `DefinedRoles`, `compose`, `built`, `givable`, `definable`, `GrantChange`, `allowed` | `auth/grants/domain` | the rules, pure |
 | `LiveCatalog` | `auth/grants/adapters` | reads the catalog in effect per tenant |

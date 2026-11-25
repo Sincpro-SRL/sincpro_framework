@@ -9,7 +9,7 @@ these early changes nothing; it only sees less.
 from collections.abc import Iterable
 from typing import TYPE_CHECKING
 
-from sincpro_framework.auth.access_control.services.guard import Declarations
+from sincpro_framework.auth.access_control.domain.access import Declarations
 from sincpro_framework.auth.common.domain.permissions import (
     OPEN,
     AccessDeclaration,
@@ -24,7 +24,7 @@ if TYPE_CHECKING:
     from sincpro_framework.use_bus import UseFramework
 
 
-def declared_use_cases(
+def find_declared_use_cases(
     declarations: Declarations, buses: Iterable["UseFramework"]
 ) -> dict[str, AccessDeclaration | None]:
     """What each use case of `buses` declared, by its Command's dotted name — `None` for one
@@ -32,13 +32,13 @@ def declared_use_cases(
     declared: dict[str, AccessDeclaration | None] = {}
     for bus in buses:
         for command, handler in bus.handlers().items():
-            declared[command_name(command)] = declarations.of(
+            declared[command_name(command)] = declarations.find(
                 handler, bus.replaced_for(command)
             )
     return declared
 
 
-def requirements_of(
+def find_requirements(
     declarations: Declarations,
     buses: Iterable["UseFramework"],
     cls: type,
@@ -46,8 +46,8 @@ def requirements_of(
 ) -> AccessDeclaration | None:
     """What a Command's use case, a handler or a hook declared — `None` for nothing.
 
-        requirements_of(declarations, buses, CommandIssueInvoice)  ->  AccessDeclaration(...)
-        requirements_of(declarations, buses, QueryHealth)          ->  None
+        find_requirements(declarations, buses, CommandIssueInvoice)  ->  AccessDeclaration(...)
+        find_requirements(declarations, buses, QueryHealth)          ->  None
 
     1. With `bus`: the handler that bus answers `cls` with.
     2. A Command a guarded bus runs: its handler's declaration — its replacement's when
@@ -56,15 +56,15 @@ def requirements_of(
     """
     if bus is not None:
         handler = bus.handlers().get(cls)
-        return None if handler is None else declarations.of(handler, bus.replaced_for(cls))
+        return None if handler is None else declarations.find(handler, bus.replaced_for(cls))
     for guarded in buses:
         handler = guarded.handlers().get(cls)
         if handler is not None:
-            return declarations.of(handler, guarded.replaced_for(cls))
-    return declarations.of(cls)
+            return declarations.find(handler, guarded.replaced_for(cls))
+    return declarations.find(cls)
 
 
-def problems(
+def find_problems(
     declarations: Declarations,
     buses: Iterable["UseFramework"],
     hooks: Iterable["Hooks"],
@@ -72,7 +72,7 @@ def problems(
 ) -> list[str]:
     """What would not work as declared.
 
-        problems(...)   ->  []
+        find_problems(...)   ->  []
         # disabled, and a class declared that no guarded bus runs
             ->  ["access control is disabled",
                  "billing.Orphan declares access but runs on no bus or hooks this ..."]
@@ -90,8 +90,8 @@ def problems(
     for collection in hooks:
         running.update(collection.registered())
     orphans = []
-    for cls in declarations.declared():
-        name = f"{cls.__module__}.{cls.__qualname__}"
+    for cls in declarations.classes():
+        name = command_name(cls)
         if cls not in running and name not in replaced:
             orphans.append(
                 f"{name} declares access but runs on no bus or hooks this AccessControl guards"
@@ -99,7 +99,7 @@ def problems(
     return ([] if enabled else ["access control is disabled"]) + sorted(orphans)
 
 
-def description(
+def describe(
     declarations: Declarations,
     buses: Iterable["UseFramework"],
     hooks: Iterable["Hooks"],
@@ -109,7 +109,7 @@ def description(
 ) -> AccessDescription:
     """Everything an `AccessControl` guards and how.
 
-        description(...)
+        describe(...)
             ->  AccessDescription(enabled=True, providers=["odoo"],
                     use_cases={"billing.CommandIssueInvoice": "billing.invoice.issue",
                                "billing.QueryHealth": "open"},
@@ -124,12 +124,12 @@ def description(
         every_call=[one.name for one in checks],
         use_cases={
             name: str(declaration) if declaration else OPEN
-            for name, declaration in declared_use_cases(declarations, buses).items()
+            for name, declaration in find_declared_use_cases(declarations, buses).items()
         },
         hooks={
-            f"{hook.__module__}.{hook.__qualname__}": str(declaration)
+            command_name(hook): str(declaration)
             for collection in hooks
             for hook in collection.registered()
-            if (declaration := declarations.of(hook)) is not None
+            if (declaration := declarations.find(hook)) is not None
         },
     )

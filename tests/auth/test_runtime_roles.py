@@ -23,8 +23,8 @@ from sincpro_framework.auth import (
     Unauthenticated,
     security,
 )
-from sincpro_framework.auth.common.infrastructure.locks import AdministrationLocks
-from sincpro_framework.auth.common.infrastructure.refreshed import Refreshed
+from sincpro_framework.auth.common.adapters.locks import AdministrationLocks
+from sincpro_framework.auth.common.infrastructure.scoped_cache import ScopedCache
 from sincpro_framework.auth.grants import (
     GrantCatalog,
     GrantResolver,
@@ -39,11 +39,12 @@ from sincpro_framework.auth.grants import (
     RoleRemoved,
     RoleUnassigned,
 )
+from sincpro_framework.auth.grants.domain.assignment_authority import AssignmentAuthority
+from sincpro_framework.auth.grants.domain.catalog_builder import CatalogBuilder
 from sincpro_framework.auth.grants.domain.definitions import DefinedRoles
-from sincpro_framework.auth.grants.domain.giving import givable
 from sincpro_framework.auth.grants.services.administration import GrantAdministration
-from sincpro_framework.auth.grants.services.live_catalog import LiveCatalog
 from sincpro_framework.auth.grants.services.role_administration import RoleAdministration
+from sincpro_framework.auth.grants.services.tenant_catalogs import TenantCatalogs
 from sincpro_framework.data_layer.store import InMemoryKeyValue, LeaseTaken, StoreUnavailable
 
 
@@ -108,8 +109,8 @@ class Recorder:
             raise RuntimeError("the audit's database is down")
 
 
-def live(definitions: Any = None, clock: Clock | None = None) -> LiveCatalog:
-    return LiveCatalog(
+def live(definitions: Any = None, clock: Clock | None = None) -> TenantCatalogs:
+    return TenantCatalogs(
         catalog,
         definitions or InMemoryRoleDefinitions(),
         permissions=P,
@@ -122,7 +123,7 @@ def as_(identity: Identity) -> Any:
 
 
 def resolved(
-    roles: LiveCatalog, grants: InMemoryGrants, subject: str, tenant: str
+    roles: TenantCatalogs, grants: InMemoryGrants, subject: str, tenant: str
 ) -> Identity:
     return GrantResolver(roles, grants).resolve(Identity.user(subject, tenant=tenant))
 
@@ -146,9 +147,9 @@ def test_a_role_defined_for_every_tenant_grants_what_it_says_and_what_it_implies
 def test_a_tenants_role_is_held_by_its_tenants_name_for_that_tenant_alone() -> None:
     roles, grants = live(), InMemoryGrants()
     RoleAdministration(roles, grants).define(DESK)
-    assert "cash.desk@bo" in roles.current("bo").roles
-    assert "cash.desk@bo" not in roles.current("pe").roles
-    assert "cash.desk@bo" not in roles.current().roles
+    assert "cash.desk@bo" in roles.catalog("bo").roles
+    assert "cash.desk@bo" not in roles.catalog("pe").roles
+    assert "cash.desk@bo" not in roles.catalog().roles
     GrantAdministration(roles, grants).assign("user:ana", "bo", "cash.desk@bo")
     assert resolved(roles, grants, "user:ana", "bo").permissions == {P.READ}
     with pytest.raises(InvalidGrant, match="is not a role"):
@@ -294,7 +295,7 @@ def test_a_superadmin_and_a_trusting_policy_are_not_bounded() -> None:
 
 
 @pytest.mark.usefixtures("as_the_platform")
-def test_an_assigned_role_keeps_its_shape_and_every_tenants_never_changes_shape() -> None:
+def test_an_assigned_role_retains_its_shape_and_every_tenants_never_changes_shape() -> None:
     roles, grants = live(), InMemoryGrants()
     defining = RoleAdministration(roles, grants)
     defining.define(DESK)
@@ -303,7 +304,7 @@ def test_an_assigned_role_keeps_its_shape_and_every_tenants_never_changes_shape(
     GrantAdministration(roles, grants).assign("user:ana", "bo", "cash.desk@bo")
     with pytest.raises(InvalidGrant, match="is held"):  # ana: portal and clerk together
         defining.define(DESK.model_copy(update={"implies": frozenset({"billing.clerk"})}))
-    defining.define(DESK.model_copy(update={"name": "Front desk"}))  # its shape kept
+    defining.define(DESK.model_copy(update={"name": "Front desk"}))  # its shape unchanged
     defining.define(AUDITOR)
     with pytest.raises(InvalidGrant, match="is held"):
         defining.define(AUDITOR.model_copy(update={"implies": frozenset()}))
@@ -359,7 +360,7 @@ def test_a_removed_key_never_comes_back_and_a_tenants_role_takes_its_assignments
     defining.define(DESK)
     GrantAdministration(roles, grants).assign("user:ana", "bo", "cash.desk@bo")
     defining.remove("cash.desk", "bo")
-    assert grants.held("user:ana", "bo").roles == frozenset()
+    assert grants.grants_of("user:ana", "bo").roles == frozenset()
     assert [type(one) for one in audit.events] == [
         RoleDefined,
         RoleRemoved,
@@ -375,7 +376,9 @@ def test_an_assignment_left_of_a_removed_role_passes_no_role_check() -> None:
     RoleAdministration(roles, grants).define(AUDITOR)
     GrantAdministration(roles, grants).assign("user:sup", "pe", "billing.auditor")
     RoleAdministration(roles, grants).remove("billing.auditor")
-    assert "billing.auditor" in grants.held("user:sup", "pe").roles  # left, in every tenant
+    assert (
+        "billing.auditor" in grants.grants_of("user:sup", "pe").roles
+    )  # left, in every tenant
     sup = resolved(roles, grants, "user:sup", "pe")
     assert sup.roles == frozenset() and sup.permissions == frozenset()
 
@@ -413,11 +416,11 @@ def test_a_change_never_leaves_another_role_broken() -> None:
                     implies=frozenset({"billing.manager"}),
                 )
             )
-    assert "y@bo" in roles.latest("bo").catalog.roles
+    assert "y@bo" in roles.load("bo").catalog.roles
 
 
 @pytest.mark.usefixtures("as_the_platform")
-def test_a_role_held_through_another_keeps_its_shape() -> None:
+def test_a_role_held_through_another_retains_its_shape() -> None:
     roles, grants = live(), InMemoryGrants()
     defining = RoleAdministration(roles, grants)
     defining.define(RoleDefinition(key="r1", tenant="bo"))
@@ -458,7 +461,7 @@ def test_a_removal_asked_again_finishes_what_a_failure_left() -> None:
     with pytest.raises(StoreUnavailable):
         defining.remove("cash.desk", "bo")
     defining.remove("cash.desk", "bo")  # retired already: what was left is finished
-    assert grants.held("user:ana", "bo").roles == frozenset()
+    assert grants.grants_of("user:ana", "bo").roles == frozenset()
     assert [type(one) for one in audit.events] == [RoleDefined, RoleRemoved, RoleUnassigned]
     assert revocations.permission_version("tenant:bo") == 1
 
@@ -471,7 +474,7 @@ def test_a_key_used_at_runtime_is_never_granted_by_an_old_assignment() -> None:
     GrantAdministration(roles, grants).assign("user:sup", "pe", "billing.auditor")
     RoleAdministration(roles, grants).remove("billing.auditor")
     auditor_in_code = Role("billing.auditor", "Auditor", grants={P.EXPORT})
-    later = LiveCatalog(
+    later = TenantCatalogs(
         GrantCatalog([manager, admin_role, portal, auditor_in_code]),
         definitions,
         permissions=P,
@@ -488,9 +491,9 @@ def test_giving_a_lattice_of_a_tenants_roles_costs_what_its_roles_count() -> Non
     class Counting(BoundedAdministration):
         calls = 0
 
-        def holding(self, *args: Any, **kwargs: Any) -> None:
+        def validate_holds(self, *args: Any, **kwargs: Any) -> None:
             Counting.calls += 1
-            super().holding(*args, **kwargs)
+            super().validate_holds(*args, **kwargs)
 
     roles, layer = live(), ["billing.clerk"]
     with as_(PLATFORM):
@@ -501,7 +504,9 @@ def test_giving_a_lattice_of_a_tenants_roles_costs_what_its_roles_count() -> Non
                     RoleDefinition(key=name, tenant="bo", implies=frozenset(layer))
                 )
             layer = [f"{name}@bo" for name in names]
-    givable(Counting(), BO_ADMIN, roles.latest("bo"), layer[0], "assigning")
+    AssignmentAuthority(Counting()).check_role(
+        BO_ADMIN, roles.load("bo"), layer[0], "assigning"
+    )
     assert Counting.calls <= 2 * 14 + 1  # each role once — never each path (2^14)
 
 
@@ -513,8 +518,8 @@ def test_a_scope_never_built_is_not_asked_again_while_the_store_is_down() -> Non
         raise StoreUnavailable("redis is down")
 
     clock = Clock()
-    held: Refreshed[str] = Refreshed(
-        read=down, build=str, what="roles", unread=lambda: "the code's", clock=clock
+    held: ScopedCache[str] = ScopedCache(
+        read=down, build=str, what="roles", fallback=lambda: "the code's", clock=clock
     )
     assert {held.get("bo") for _ in range(10)} == {"the code's"}
     assert len(reads) == 1
@@ -528,13 +533,13 @@ def test_a_store_that_lost_a_document_never_answers_with_what_was_built_of_it() 
     roles = live(KeyValueRoleDefinitions(store), clock)
     with as_(PLATFORM):
         RoleAdministration(roles, InMemoryGrants()).define(DESK)
-        assert "cash.desk@bo" in roles.current("bo").roles
+        assert "cash.desk@bo" in roles.catalog("bo").roles
         store.delete("sincpro:auth:roles:bo")  # evicted: its versions start again from 1
         RoleAdministration(roles, InMemoryGrants()).define(
             RoleDefinition(key="cash.other", tenant="bo", grants=frozenset({P.READ}))
         )
     clock.now += 1.0
-    in_effect = roles.current("bo").roles
+    in_effect = roles.catalog("bo").roles
     assert "cash.other@bo" in in_effect and "cash.desk@bo" not in in_effect
 
 
@@ -552,7 +557,7 @@ def test_a_role_that_no_longer_builds_can_be_fixed_and_removed() -> None:
         RoleAdministration(roles, grants).define(
             lead.model_copy(update={"implies": frozenset({"billing.clerk"})})
         )
-    assert "cash.lead@bo" in roles.current("bo").roles and not roles.problems("bo")
+    assert "cash.lead@bo" in roles.catalog("bo").roles and not roles.problems("bo")
     with as_(BO_ADMIN):
         RoleAdministration(roles, grants).remove("cash.lead", "bo")
 
@@ -566,7 +571,7 @@ def test_a_change_is_checked_against_what_is_stored_never_a_stale_catalog() -> N
     there = live(KeyValueRoleDefinitions(store), clock)
     with as_(PLATFORM):
         RoleAdministration(here, InMemoryGrants()).define(DESK)
-    assert "cash.desk@bo" in there.current("bo").roles  # there read it, and holds it a second
+    assert "cash.desk@bo" in there.catalog("bo").roles  # there read it, and holds it a second
     with as_(PLATFORM):
         RoleAdministration(here, InMemoryGrants()).define(
             RoleDefinition(key="cash.export", tenant="bo", grants=frozenset({P.EXPORT}))
@@ -580,8 +585,8 @@ def test_a_change_is_checked_against_what_is_stored_never_a_stale_catalog() -> N
 def test_administering_a_tenant_is_one_at_a_time() -> None:
     store = InMemoryKeyValue()
     roles, grants = live(), InMemoryGrants()
-    busy = AdministrationLocks(store, wait=timedelta(0))
-    with as_(PLATFORM), busy.held("bo"):
+    busy = AdministrationLocks(store, wait_timeout=timedelta(0))
+    with as_(PLATFORM), busy.acquire("bo"):
         with pytest.raises(LeaseTaken):
             GrantAdministration(roles, grants, locks=busy).assign("user:ana", "bo", "portal")
         GrantAdministration(roles, grants, locks=busy).assign("user:ana", "pe", "portal")
@@ -592,12 +597,12 @@ def test_another_replica_holds_it_once_it_checks_again() -> None:
     store, clock = InMemoryKeyValue(), Clock()
     here = live(KeyValueRoleDefinitions(store), clock)
     there = live(KeyValueRoleDefinitions(store), clock)
-    assert "billing.auditor" not in there.current("bo").roles
+    assert "billing.auditor" not in there.catalog("bo").roles
     RoleAdministration(here, InMemoryGrants()).define(AUDITOR)
-    assert "billing.auditor" in here.current("bo").roles  # the writer at once
-    assert "billing.auditor" not in there.current("bo").roles  # within check_every
+    assert "billing.auditor" in here.catalog("bo").roles  # the writer at once
+    assert "billing.auditor" not in there.catalog("bo").roles  # within check_interval
     clock.now += 1.0
-    assert "billing.auditor" in there.current("bo").roles
+    assert "billing.auditor" in there.catalog("bo").roles
 
 
 @pytest.mark.usefixtures("as_the_platform")
@@ -620,7 +625,9 @@ def test_a_publisher_that_fails_never_undoes_a_change() -> None:
     for subject in ("user:a", "user:b", "user:c"):
         GrantAdministration(roles, grants).assign(subject, "bo", "cash.desk@bo")
     defining.remove("cash.desk", "bo")
-    assert all(not grants.held(one, "bo").roles for one in ("user:a", "user:b", "user:c"))
+    assert all(
+        not grants.grants_of(one, "bo").roles for one in ("user:a", "user:b", "user:c")
+    )
 
 
 def test_a_role_that_no_longer_builds_grants_nothing_and_the_others_still_do() -> None:
@@ -637,7 +644,7 @@ def test_a_role_that_no_longer_builds_grants_nothing_and_the_others_still_do() -
         ),
     )
     roles = live(definitions)
-    assert "billing.auditor" in roles.current().roles
+    assert "billing.auditor" in roles.catalog().roles
     assert set(roles.problems()) == {"billing.x", "billing.y"}
     assert "billing.gone is not a role" in roles.problems()["billing.x"]
 
@@ -661,15 +668,15 @@ def test_a_store_that_does_not_answer_leaves_the_last_catalog_and_is_not_hammere
     roles = live(definitions, clock)
     defining = RoleAdministration(roles, InMemoryGrants())
     defining.define(DESK)
-    assert "cash.desk@bo" in roles.current("bo").roles
+    assert "cash.desk@bo" in roles.catalog("bo").roles
     defining.define(RoleDefinition(key="cash.lead", tenant="bo", grants=frozenset({P.READ})))
     definitions.down = True  # right after the write, before any read
     clock.now += timedelta(minutes=5).total_seconds()
-    assert "cash.desk@bo" in roles.current("bo").roles
+    assert "cash.desk@bo" in roles.catalog("bo").roles
     reads = definitions.reads
     for _ in range(50):
-        roles.current("bo")
-    assert definitions.reads == reads  # asked again only once check_every passed
+        roles.catalog("bo")
+    assert definitions.reads == reads  # asked again only once check_interval passed
 
 
 class Slow(InMemoryRoleDefinitions):
@@ -688,11 +695,11 @@ class Slow(InMemoryRoleDefinitions):
 def test_a_slow_tenant_never_holds_back_another() -> None:
     definitions = Slow()
     roles = live(definitions)
-    slow = threading.Thread(target=roles.current, args=("bo",))
+    slow = threading.Thread(target=roles.catalog, args=("bo",))
     slow.start()
     try:
         answered = threading.Event()
-        threading.Thread(target=lambda: (roles.current("pe"), answered.set())).start()
+        threading.Thread(target=lambda: (roles.catalog("pe"), answered.set())).start()
         assert answered.wait(1), "tenant pe waited for tenant bo's read"
     finally:
         definitions.released.set()
@@ -709,13 +716,41 @@ def test_stale_marked_during_a_read_is_never_lost() -> None:
         found = next(versions)
         return found, found
 
-    held = Refreshed(read=read, build=lambda content: content, what="a test", clock=Clock())
+    held = ScopedCache(read=read, build=lambda content: content, what="a test", clock=Clock())
     first = threading.Thread(target=held.get, args=("bo",))
     first.start()
     assert reading.wait(5)
-    marking = threading.Thread(target=held.stale, args=("bo",))  # the writer's, mid-read
+    marking = threading.Thread(target=held.invalidate, args=("bo",))  # the writer's, mid-read
     marking.start()
     release.set()
     first.join(5)
     marking.join(5)
-    assert held.get("bo") == (2,)  # read again, not kept for check_every
+    assert held.get("bo") == (2,)  # read again, not cached for check_interval
+
+
+class CountingBuilder(CatalogBuilder):
+    """A builder that counts how many catalogs it builds."""
+
+    builds = 0
+
+    def build(self, defined: Any) -> GrantCatalog:
+        CountingBuilder.builds += 1
+        return super().build(defined)
+
+
+def test_roles_that_do_not_build_cost_a_few_builds_never_one_per_role() -> None:
+    """A chain of 128 roles defined at runtime and one implying a role nobody declares: the
+    others are accepted in a few builds, the broken one told why."""
+    chain = [
+        RoleDefinition(
+            key=f"r{index:03d}",
+            implies=frozenset({f"r{index - 1:03d}"} if index else {"billing.clerk"}),
+        )
+        for index in range(128)
+    ]
+    broken = RoleDefinition(key="broken", implies=frozenset({"nobody.declares"}))
+    CountingBuilder.builds = 0
+    accepted, problems = CountingBuilder(catalog).build_valid([broken, *reversed(chain)])
+    assert len(accepted) == 128
+    assert problems == {"broken": "nobody.declares is not a role"}
+    assert CountingBuilder.builds <= 4

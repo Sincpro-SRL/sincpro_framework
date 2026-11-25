@@ -15,11 +15,12 @@ defined at runtime, and what a caller holds resolved on every call — `Grants`,
 | `Grants` — `assign`, `unassign`, `set_level`, `entitle`, `withdraw` | the users screen |
 | `Grants` — `define`, `remove`, `catalog`, `defined`, `problems` | groups created from the UI |
 | `Grants.resolve`, `GrantResolver` (`RoleMapping`, `ScopeCeiling`) | `all_group_ids`, resolved per call |
-| `Assignment`, `GrantStore` (`InMemoryGrants`, `KeyValueGrants`; `DatabaseGrants` in `data_layer.orm`) | `group_ids` — what was assigned, never the closure |
-| `RoleDefinition`, `RoleDefinitions` (`InMemoryRoleDefinitions`, `KeyValueRoleDefinitions`) | a `res.groups` row |
+| `Assignment`, `SubjectGrants`, `GrantStore` (`KeyValueGrants`, `InMemoryGrants`; `DatabaseGrants` in `data_layer.orm`) | `group_ids` — what was assigned, never the closure |
+| `RoleDefinition`, `RoleDefinitions` (`KeyValueRoleDefinitions`, `InMemoryRoleDefinitions`) | a `res.groups` row |
+| `GrantChange`, `GrantAction` — what `Grants.allow` rules check | record rules on `res.users` |
 | `Entitlement` | what a tenant bought |
 
-`GrantResolver` alone resolves roles another system keeps (`GrantSource`), with nothing to
+`GrantResolver` alone resolves roles another system records (`GrantSource`), with nothing to
 administer. `RolePermissions` is the short form: a table of roles to permissions, no catalog.
 """
 
@@ -32,7 +33,7 @@ from sincpro_framework.auth.grants.domain.assignments import (
     Assignment,
     GrantSource,
     GrantStore,
-    Held,
+    SubjectGrants,
 )
 from sincpro_framework.auth.grants.domain.catalog import (
     CatalogDescription,
@@ -42,7 +43,7 @@ from sincpro_framework.auth.grants.domain.catalog import (
     Privilege,
     Role,
 )
-from sincpro_framework.auth.grants.domain.changes import GrantAction, GrantChange
+from sincpro_framework.auth.grants.domain.change_rules import GrantAction, GrantChange
 from sincpro_framework.auth.grants.domain.definitions import (
     RoleDefinition,
     RoleDefinitions,
@@ -59,7 +60,7 @@ from sincpro_framework.auth.grants.domain.events import (
 )
 from sincpro_framework.auth.grants.domain.role_permissions import RolePermissions
 from sincpro_framework.auth.grants.entrypoint.grants import Grants
-from sincpro_framework.auth.grants.services.resolution import (
+from sincpro_framework.auth.grants.services.grant_resolver import (
     GrantResolver,
     RoleMapping,
     ScopeCeiling,
@@ -78,7 +79,6 @@ __all__ = [
     "GrantSource",
     "GrantStore",
     "Grants",
-    "Held",
     "InMemoryGrants",
     "InMemoryRoleDefinitions",
     "KeyValueGrants",
@@ -96,5 +96,6 @@ __all__ = [
     "RoleRemoved",
     "RoleUnassigned",
     "ScopeCeiling",
+    "SubjectGrants",
     "TenantEntitled",
 ]

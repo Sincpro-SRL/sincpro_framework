@@ -63,7 +63,7 @@ class ServiceTokenProvider(AuthProvider):
             raise ValueError("ServiceTokenProvider needs at least one key")
         self.issuer = issuer
         self.keys = {
-            key_id: jws.HmacKey.of(key_id, secret) for key_id, secret in keys.items()
+            key_id: jws.HmacKey.from_secret(key_id, secret) for key_id, secret in keys.items()
         }
         self.signing_key = list(self.keys)[-1]
         self.audience = audience
@@ -119,7 +119,7 @@ class ServiceTokenProvider(AuthProvider):
         key = self.keys.get(parsed.key_id or "")
         if key is None or parsed.algorithm != key.algorithm:
             raise exceptions.Unauthenticated("service token signed with an unknown key")
-        if not key.verifies(parsed):
+        if not key.verify_jws(parsed):
             raise exceptions.Unauthenticated("service token signature does not match")
         self._rules.check(parsed.claims, now=self.clock())
         return parsed.claims
@@ -152,7 +152,7 @@ class ServiceTokenProvider(AuthProvider):
             provider=self.name,
             actor=Identity.service(claims["iss"]),
             token_id=claims.get("jti"),
-            expires_at=jws.moment(claims, "exp"),
+            expires_at=jws.claim_datetime(claims, "exp"),
         )
 
     def security_scheme(self) -> dict[str, Any] | None:

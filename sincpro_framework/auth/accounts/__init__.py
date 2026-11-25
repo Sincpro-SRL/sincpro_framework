@@ -1,4 +1,4 @@
-"""Accounts the service manages itself — never a user table nor a login screen: the project keeps
+"""Accounts the service manages itself — never a user table nor a login screen: the project stores
 its accounts as entities of its own, and these pieces hash, lock, link and issue.
 
     from sincpro_framework.auth.accounts import LoginAttempts, PasswordHasher, TokenIssuer
@@ -8,9 +8,9 @@ its accounts as entities of its own, and these pieces hash, lock, link and issue
 | passwords | `PasswordHasher` (scrypt, argon2id with `[argon2]`, legacy migration), `ScryptCost` |
 | guessing | `LoginAttempts` — a username locked after too many failures |
 | HTTP Basic | `BasicProvider` over a `CredentialVerifier` — the project's accounts, or `HashedCredentials` |
-| a link sent by email | `OneTimeTokens`, `OneTimeGrant` |
+| a link sent by email | `OneTimeTokens`, `OneTimeTokenRecord` |
 | a second factor | `Totp` (RFC 6238), `TotpAlgorithm` |
-| tokens of its own | `TokenIssuer`, `IssuedTokens`, `SigningKeys`; refresh tokens in `RefreshTokens` (`InMemoryRefreshTokens`, `KeyValueRefreshTokens`; `DatabaseRefreshTokens` in `data_layer.orm`) |
+| tokens of its own | `TokenIssuer`, `IssuedTokens`, `SigningKeys`; refresh tokens in `RefreshTokens` (`KeyValueRefreshTokens`, `InMemoryRefreshTokens`; `DatabaseRefreshTokens` in `data_layer.orm`) |
 
 `auth.server.JwtProvider.for_token_issuer(issuer)` verifies what a `TokenIssuer` issued, by its `trusted_issuer()`.
 """
@@ -42,7 +42,7 @@ from sincpro_framework.auth.accounts.services.http_basic import (
 )
 from sincpro_framework.auth.accounts.services.login_attempts import LoginAttempts
 from sincpro_framework.auth.accounts.services.one_time_tokens import (
-    OneTimeGrant,
+    OneTimeTokenRecord,
     OneTimeTokens,
 )
 from sincpro_framework.auth.accounts.services.token_issuer import (
@@ -61,8 +61,8 @@ __all__ = [
     "IssuedTokens",
     "KeyValueRefreshTokens",
     "LoginAttempts",
-    "OneTimeGrant",
     "OneTimeTokenIssued",
+    "OneTimeTokenRecord",
     "OneTimeTokenRedeemed",
     "OneTimeTokens",
     "PasswordHasher",

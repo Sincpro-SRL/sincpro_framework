@@ -93,7 +93,7 @@ def test_the_cache_holds_the_tokens_digest_never_the_token() -> None:
 def test_an_inactive_token_is_refused_and_asked_again_after_a_while() -> None:
     clock = Clock()
     http = ScriptedHttp({f"POST {ENDPOINT}": {"active": False}})
-    provider = introspection(http, clock=clock, inactive_for=timedelta(seconds=10))
+    provider = introspection(http, clock=clock, inactive_cache_ttl=timedelta(seconds=10))
     for _ in range(3):
         with pytest.raises(exceptions.Unauthenticated, match="not active"):
             provider.authenticate(bearer("revoked"))
@@ -169,7 +169,7 @@ def test_the_endpoint_is_discovered_on_the_first_token() -> None:
 
 def test_a_private_key_assertion_is_signed_for_the_endpoint() -> None:
     key = PrivateKey.generate("RS256", key_id="client-1")
-    fields, headers = PrivateKeyJwt("billing-api", key).applied([("token", "t")], ENDPOINT)
+    fields, headers = PrivateKeyJwt("billing-api", key).apply([("token", "t")], ENDPOINT)
     named = dict(fields)
     assertion = jws.parse(named["client_assertion"])
     public = PublicKey.from_jwk(key.jwk(), "RS256")

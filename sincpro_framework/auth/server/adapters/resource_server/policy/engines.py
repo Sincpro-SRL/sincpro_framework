@@ -19,7 +19,7 @@ from sincpro_framework.auth.common.domain.http import HttpClient
 from sincpro_framework.auth.common.domain.identity import Identity
 from sincpro_framework.auth.server.adapters.resource_server.policy.requests import (
     DescribeResource,
-    posted,
+    post_json,
     resource_of,
     subject_of,
 )
@@ -52,7 +52,7 @@ class AuthZenEngine(PolicyEngine):
         context: Mapping[str, Any] | None = None,
     ) -> bool:
         """One AuthZEN evaluation — allowed only when the PDP's `decision` is `true`."""
-        said = posted(
+        response = post_json(
             self.http,
             f"{self.base_url}/access/v1/evaluation",
             {
@@ -63,7 +63,7 @@ class AuthZenEngine(PolicyEngine):
             },
             self.headers,
         )
-        return said.get("decision") is True
+        return response.get("decision") is True
 
     def decide_many(
         self,
@@ -73,7 +73,7 @@ class AuthZenEngine(PolicyEngine):
         context: Mapping[str, Any] | None = None,
     ) -> list[bool]:
         """One AuthZEN `evaluations` request — a decision per resource, in their order."""
-        said = posted(
+        response = post_json(
             self.http,
             f"{self.base_url}/access/v1/evaluations",
             {
@@ -86,7 +86,7 @@ class AuthZenEngine(PolicyEngine):
             },
             self.headers,
         )
-        decisions = said.get("evaluations", [])
+        decisions = response.get("evaluations", [])
         return [
             isinstance(one, dict) and one.get("decision") is True for one in decisions
         ] + [False] * (len(resources) - len(decisions))
@@ -119,7 +119,7 @@ class OpaEngine(PolicyEngine):
     ) -> bool:
         """OPA's `/v1/data/<path>` asked with the input — allowed only on a `result` that is
         `true`; an undefined one refuses."""
-        said = posted(
+        response = post_json(
             self.http,
             f"{self.base_url}/v1/data/{self.path}",
             {
@@ -132,7 +132,7 @@ class OpaEngine(PolicyEngine):
             },
             self.headers,
         )
-        return said.get("result") is True
+        return response.get("result") is True
 
 
 class OpenFgaEngine(PolicyEngine):
@@ -184,7 +184,7 @@ class OpenFgaEngine(PolicyEngine):
         context: Mapping[str, Any] | None = None,
     ) -> bool:
         """One OpenFGA `check` of the permission's relation on the resource."""
-        said = posted(
+        response = post_json(
             self.http,
             f"{self.base_url}/check",
             {
@@ -194,7 +194,7 @@ class OpenFgaEngine(PolicyEngine):
             },
             self.headers,
         )
-        return said.get("allowed") is True
+        return response.get("allowed") is True
 
     def decide_many(
         self,
@@ -204,7 +204,7 @@ class OpenFgaEngine(PolicyEngine):
         context: Mapping[str, Any] | None = None,
     ) -> list[bool]:
         """One OpenFGA `batch-check`, a correlation id per resource — answered in their order."""
-        said = posted(
+        response = post_json(
             self.http,
             f"{self.base_url}/batch-check",
             {
@@ -220,7 +220,7 @@ class OpenFgaEngine(PolicyEngine):
             },
             self.headers,
         )
-        result = said.get("result", {})
+        result = response.get("result", {})
         return [
             isinstance(result.get(str(index)), dict)
             and result[str(index)].get("allowed") is True
@@ -234,7 +234,7 @@ class OpenFgaEngine(PolicyEngine):
         kind = self.types.get(aggregate)
         if kind is None:
             return None
-        said = posted(
+        response = post_json(
             self.http,
             f"{self.base_url}/list-objects",
             {
@@ -245,7 +245,7 @@ class OpenFgaEngine(PolicyEngine):
             },
             self.headers,
         )
-        objects = [one.split(":", 1)[1] for one in said.get("objects", []) if ":" in one]
+        objects = [one.split(":", 1)[1] for one in response.get("objects", []) if ":" in one]
         if len(objects) > self.max_objects:
             raise exceptions.ProgrammingError(
                 f"OpenFGA lists {len(objects)} {kind}s, more than {self.max_objects}"

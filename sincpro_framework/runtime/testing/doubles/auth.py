@@ -51,7 +51,9 @@ def signed_token(
         return jws.encode({k: v for k, v in header.items() if v}, claims, key.sign)
     if secret is None or kid is None:
         raise ValueError("signed_token signs by a key, or by a secret under a kid")
-    return jws.encode({"alg": "HS256", "kid": kid}, claims, jws.HmacKey.of(kid, secret).sign)
+    return jws.encode(
+        {"alg": "HS256", "kid": kid}, claims, jws.HmacKey.from_secret(kid, secret).sign
+    )
 
 
 class RecordingProvider(AuthProvider):

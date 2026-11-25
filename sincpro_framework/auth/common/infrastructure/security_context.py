@@ -20,14 +20,25 @@ from sincpro_framework.sincpro_logger import logger
 
 _current: ContextVar[Identity] = ContextVar("sincpro_identity", default=ANONYMOUS)
 
-_access_in_play: ContextVar[Any] = ContextVar("sincpro_access_in_play", default=None)
+_access_control: ContextVar[Any] = ContextVar("sincpro_access_control", default=None)
 """The `AccessControl` guarding the use case in progress — what an outgoing call asks first for
 the credentials it carries, before any other of the process."""
 
 
-def access_in_play() -> Any:
+def current_access_control() -> Any:
     """The `AccessControl` guarding the use case in progress — `None` outside a guarded one."""
-    return _access_in_play.get()
+    return _access_control.get()
+
+
+@contextmanager
+def as_access_control(access: Any) -> Generator[None, None, None]:
+    """`access` guards the execution inside the block — what the guard opens around the use case
+    it let run, restored on leaving."""
+    token = _access_control.set(access)
+    try:
+        yield
+    finally:
+        _access_control.reset(token)
 
 
 _presented: ContextVar[str | None] = ContextVar("sincpro_presented_credential", default=None)
@@ -36,21 +47,21 @@ exchange acts for. Never on the `Identity`: it is serialized, logged and carried
 services, and a token must be none of those."""
 
 
-def presented_credential() -> str | None:
+def current_presented_token() -> str | None:
     """The bearer token the caller of the execution in progress presented — `None` outside an
     authenticated call, or when it presented none."""
     return _presented.get()
 
 
 @contextmanager
-def presenting(token: str | None) -> Generator[None, None, None]:
+def as_presented_token(token: str | None) -> Generator[None, None, None]:
     """`token` is the presented credential inside the block — set by the entrypoint that
     authenticated it, and restored on leaving."""
-    held = _presented.set(token)
+    previous = _presented.set(token)
     try:
         yield
     finally:
-        _presented.reset(held)
+        _presented.reset(previous)
 
 
 def current_identity() -> Identity:

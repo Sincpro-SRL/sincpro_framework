@@ -2,10 +2,10 @@
 Cedar, Cerbos, any AuthZEN PDP) or a relationship store (OpenFGA, SpiceDB) — in OpenID AuthZEN's
 terms: a subject, an action, a resource, a context.
 
-    DecidedBy(JwtProvider(keycloak), OpaEngine("https://opa.internal", "billing/allow"))
+    PolicyEngineProvider(JwtProvider(keycloak), OpaEngine("https://opa.internal", "billing/allow"))
 
 Context: an engine authenticates nobody; it decides about the identities a provider vouched for —
-so it is put beside that provider (`DecidedBy`), whose identities it then answers about. An engine
+so it is put beside that provider (`PolicyEngineProvider`), whose identities it then answers about. An engine
 that does not answer is `EndpointUnavailable` (503) — never `False`: a refusal the engine did not
 make would be a lie the caller could act on.
 """

@@ -7,28 +7,30 @@ privilege and level — for every tenant (the platform's) or for one tenant (tha
     RoleDefinition(key="cash.desk", tenant="bo",
                    implies=frozenset({"billing.clerk"}))            tenant bo: "cash.desk@bo"
 
-Context: a tenant's role lives in its tenant's own names — `<key>@<tenant>`, its `catalog_key` —
+Context: a tenant's role lives in its tenant's own namespace — `<key>@<tenant>`, its `catalog_key` —
 so it can never be taken for a role of the code or of every tenant: no tenant meets an
 `auth.role("finance.approver")`, nor a platform's requirement, with a role it named so itself.
 What it implies is named by catalog key: a role of the code, of every tenant, or of its own
-tenant (`cash.clerk@bo`). Each scope is one versioned document; a key removed stays `retired`
+tenant (`cash.clerk@bo`). Each scope is one versioned document; a key removed is listed `retired`
 in it, so assignments left behind never come back to life under a role defined later with that
 name. A role the code declares is never redefined here: it changes in code.
 """
+
+from typing import Any
 
 from pydantic import ConfigDict
 
 from sincpro_framework.auth.common.domain.documents import ScopedDocuments
 from sincpro_framework.sincpro_abstractions import DataTransferObject
 
-TENANT_MARK = "@"
+TENANT_SEPARATOR = "@"
 """What separates a tenant role's own key from its tenant: `cash.desk@bo`."""
 
 
 def catalog_key(key: str, tenant: str | None) -> str:
     """The key a role is held and required by: its own for every tenant's, `<key>@<tenant>` for
     a tenant's."""
-    return key if tenant is None else f"{key}{TENANT_MARK}{tenant}"
+    return key if tenant is None else f"{key}{TENANT_SEPARATOR}{tenant}"
 
 
 class RoleDefinition(DataTransferObject):
@@ -67,6 +69,22 @@ class RoleDefinition(DataTransferObject):
             other.disjoint,
         )
 
+    def is_narrower_than(self, before: "RoleDefinition") -> bool:
+        """Whether this definition may hold less than `before` — fewer grants, or fewer roles
+        implied: what a holder could lose when it replaces `before`."""
+        return not (before.grants <= self.grants and before.implies <= self.implies)
+
+    def event_fields(self) -> dict[str, Any]:
+        """What an event says this role is."""
+        return {
+            "role_name": self.name,
+            "grants": sorted(self.grants),
+            "implies": sorted(self.implies),
+            "privilege": self.privilege,
+            "sequence": self.sequence,
+            "disjoint": sorted(self.disjoint),
+        }
+
 
 class DefinedRoles(DataTransferObject):
     """The roles defined for one scope, the keys it retired, and the version written under."""
@@ -82,14 +100,14 @@ class DefinedRoles(DataTransferObject):
         """The role of own key `key` defined here — `None` when it is not."""
         return next((one for one in self.roles if one.key == key), None)
 
-    def replacing(self, definition: RoleDefinition) -> "DefinedRoles":
+    def with_role(self, definition: RoleDefinition) -> "DefinedRoles":
         """The next version, with `definition` new or in place of the one of its key."""
-        kept = tuple(one for one in self.roles if one.key != definition.key)
+        others = tuple(one for one in self.roles if one.key != definition.key)
         return DefinedRoles(
-            version=self.version + 1, roles=(*kept, definition), retired=self.retired
+            version=self.version + 1, roles=(*others, definition), retired=self.retired
         )
 
-    def without(self, key: str) -> "DefinedRoles":
+    def without_role(self, key: str) -> "DefinedRoles":
         """The next version, without `key` — retired."""
         return DefinedRoles(
             version=self.version + 1,

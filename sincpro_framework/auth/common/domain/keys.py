@@ -10,6 +10,52 @@ the algorithm-confusion attack — and answers the key only when the algorithm i
 """
 
 from abc import ABC, abstractmethod
+from enum import StrEnum
+
+
+class JwsAlgorithm(StrEnum):
+    """The JWS algorithms auth signs and verifies (RFC 7518) — HMAC with the standard library,
+    the asymmetric ones with the `[jwt]` extra."""
+
+    HS256 = "HS256"
+    HS384 = "HS384"
+    HS512 = "HS512"
+    RS256 = "RS256"
+    RS384 = "RS384"
+    RS512 = "RS512"
+    PS256 = "PS256"
+    PS384 = "PS384"
+    PS512 = "PS512"
+    ES256 = "ES256"
+    ES384 = "ES384"
+    ES512 = "ES512"
+    EDDSA = "EdDSA"
+
+
+HMAC_ALGORITHMS = frozenset({JwsAlgorithm.HS256, JwsAlgorithm.HS384, JwsAlgorithm.HS512})
+"""The algorithms a shared secret verifies — never shared with public keys."""
+
+RSA_ALGORITHMS = frozenset(
+    {
+        JwsAlgorithm.RS256,
+        JwsAlgorithm.RS384,
+        JwsAlgorithm.RS512,
+        JwsAlgorithm.PS256,
+        JwsAlgorithm.PS384,
+        JwsAlgorithm.PS512,
+    }
+)
+"""The algorithms an RSA key verifies — PKCS#1 v1.5 and PSS."""
+
+EC_CURVES: dict[str, str] = {
+    JwsAlgorithm.ES256: "P-256",
+    JwsAlgorithm.ES384: "P-384",
+    JwsAlgorithm.ES512: "P-521",
+}
+"""The curve each ECDSA algorithm is on — an EC key verifies only its own curve's."""
+
+ASYMMETRIC_ALGORITHMS = RSA_ALGORITHMS | frozenset(EC_CURVES) | {JwsAlgorithm.EDDSA}
+"""The algorithms a public key verifies — never shared with HMAC secrets."""
 
 
 class VerificationKey(ABC):
