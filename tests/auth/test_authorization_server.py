@@ -16,6 +16,8 @@ from sincpro_framework.auth import (
     InMemoryRevocations,
     OAuthError,
     OAuthErrorCode,
+    ResourcePolicy,
+    Resources,
     Unauthenticated,
 )
 from sincpro_framework.auth.accounts import InMemoryRefreshTokens, SigningKeys, TokenIssuer
@@ -45,13 +47,14 @@ def challenge_of(verifier: str) -> str:
     )
 
 
-def server(**options) -> AuthorizationServer:
+def server(resources: ResourcePolicy | None = None, **options) -> AuthorizationServer:
     tokens = TokenIssuer(
         ISSUER,
         audience="colegio",
         keys=SigningKeys.hmac({"2026-11": "a token secret of thirty-two bytes!"}),
         refresh_tokens=InMemoryRefreshTokens(),
         revocations=InMemoryRevocations(),
+        resources=resources,
     )
     return AuthorizationServer(
         ISSUER, token_issuer=tokens, client_registry=InMemoryOAuthClients(), **options
@@ -385,9 +388,9 @@ def test_a_request_refused_past_its_redirect_check_goes_back_to_the_client():
 
 
 def test_the_resource_asked_for_is_the_audience_of_every_token_of_the_session():
-    oauth = server()
-    client = oauth.register([CALLBACK]).client
     resource = "https://api.colegio.bo/mcp"
+    oauth = server(resources=Resources(resource))
+    client = oauth.register([CALLBACK]).client
 
     tokens = oauth.exchange_code(
         signed_in(oauth, client.client_id, resource=resource),
@@ -402,6 +405,11 @@ def test_the_resource_asked_for_is_the_audience_of_every_token_of_the_session():
         payload = issued.access_token.get_secret_value().split(".")[1]
         claims = json.loads(base64.urlsafe_b64decode(payload + "=" * (-len(payload) % 4)))
         assert claims["aud"] == resource
+        bearer = f"Bearer {issued.access_token.get_secret_value()}"
+        verified = JwtProvider.for_token_issuer(oauth.token_issuer).authenticate(
+            Credentials(transport="http", headers={"authorization": bearer})
+        )
+        assert verified is not None and verified.subject == ANA.subject
 
 
 def test_a_code_presented_again_revokes_the_session_it_opened():

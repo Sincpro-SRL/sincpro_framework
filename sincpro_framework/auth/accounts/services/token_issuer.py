@@ -22,11 +22,22 @@ random, stored by its digest, and rotated: used again within `reuse_grace` (ten 
 tabs refreshing at once) it is answered with a pair of the same session; past it, it is a stolen
 token being replayed, and the whole session is revoked — which is why refresh tokens need
 `revocations=`: without them a replay could revoke nothing (`ProgrammingError`).
-Sessions end `idle_ttl` after the last refresh and `session_ttl` after they began, whatever is done.
+Sessions end `idle_ttl` after the last refresh and `session_ttl` after they began, whatever is done
+— `session_ttl=None`, only when idle; `lifetime_for` decides per session (#337).
+
+Extend — every decision a public method, asked with the identity (and so its tenant):
+
+    lifetime_for(identity, client)    how long this session lives        SessionLifetime
+    kept_claims(identity)             what it keeps on the server        session_attributes=
+    serves_audience(audience)         the resources its tokens are for   resources= (RFC 8707)
+
+What a sign-in knew that no token may carry (`Identity.claims`) is kept by `session_attributes`
+under the session, given back at every refresh, and at every call by
+`JwtProvider.for_token_issuer` (#336).
 """
 
 import time
-from collections.abc import Callable, Iterable, Sequence
+from collections.abc import Callable, Iterable, Mapping, Sequence
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
@@ -40,10 +51,12 @@ from sincpro_framework.auth.accounts.domain.events import (
     SignedOutEverywhere,
 )
 from sincpro_framework.auth.accounts.domain.refresh_tokens import RefreshRecord, RefreshTokens
+from sincpro_framework.auth.accounts.domain.sessions import SessionAttributes, SessionLifetime
 from sincpro_framework.auth.common.domain import exceptions
 from sincpro_framework.auth.common.domain.events import SUBJECT, EventPublisher
 from sincpro_framework.auth.common.domain.identity import Assurance, Identity, IdentityKind
 from sincpro_framework.auth.common.domain.resolver import IdentityResolver, resolved
+from sincpro_framework.auth.common.domain.resources import ResourcePolicy
 from sincpro_framework.auth.common.domain.revocations import Revocations
 from sincpro_framework.auth.common.infrastructure import jws
 from sincpro_framework.auth.common.infrastructure.claim_mapping import ClaimMapping, ClaimTest
@@ -107,15 +120,20 @@ class TokenIssuer:
         revocations: Revocations | None = None,
         access_ttl: timedelta = timedelta(minutes=10),
         idle_ttl: timedelta = timedelta(days=14),
-        session_ttl: timedelta = timedelta(days=30),
+        session_ttl: timedelta | None = timedelta(days=30),
         reuse_grace: timedelta = timedelta(seconds=10),
         embed_permissions: bool = False,
         resolvers: Sequence[IdentityResolver] = (),
         clock: Callable[[], float] = time.time,
         publisher: EventPublisher | None = None,
+        resources: ResourcePolicy | None = None,
+        session_attributes: SessionAttributes | None = None,
     ) -> None:
         """`access_ttl` is how long an access token lives; `idle_ttl` how long a refresh token
-        lives unused; `session_ttl` how long a session lasts however it is refreshed.
+        lives unused; `session_ttl` how long a session lasts however it is refreshed — `None`,
+        while it is used (`lifetime_for` decides per session). `resources` are the RFC 8707
+        resources its tokens may be issued for, besides its `audience`; `session_attributes`
+        keep on the server what a sign-in knew that no token carries.
         `embed_permissions` puts the permissions in the access token with the subject's
         permission version — for a verifier that resolves nothing; a version bumped refuses it.
         `resolvers` resolve what a token carries when it is issued — at sign-in and at every
@@ -148,6 +166,8 @@ class TokenIssuer:
         self.resolvers = tuple(resolvers)
         self.clock = clock
         self.publisher = publisher
+        self.resources = resources
+        self.session_attributes = session_attributes
 
     def _now(self) -> datetime:
         """This moment, by `clock`."""
@@ -206,15 +226,60 @@ class TokenIssuer:
             )
         return self.keys.sign(claims)
 
+    def lifetime_for(self, identity: Identity, client: str | None) -> SessionLifetime:
+        """How long the session `identity` signs in to with `client` lives — the issuer's
+        `idle_ttl` and `session_ttl`. Override to decide per tenant (`identity.tenant`), per
+        client or per assurance; the choice is recorded with the session and every refresh
+        honours it.
+
+            class Issuer(TokenIssuer):
+                def lifetime_for(self, identity, client):
+                    if identity.tenant in LONG_LIVED:
+                        return SessionLifetime(idle=timedelta(days=30))   # while it is used
+                    return super().lifetime_for(identity, client)
+        """
+        return SessionLifetime(idle=self.idle_ttl, at_most=self.session_ttl)
+
+    def kept_claims(self, identity: Identity) -> Mapping[str, Any]:
+        """What the session of `identity` keeps on the server — its `claims`, as the sign-in gave
+        them. Override to keep less, or more. Asked only with `session_attributes`."""
+        return dict(identity.claims)
+
+    def serves_audience(self, audience: str) -> bool:
+        """Whether a token whose `aud` is `audience` is one this issuer's verifier accepts: its
+        own `audience`, or a resource its `resources` serve (RFC 8707)."""
+        return audience == self.audience or (
+            self.resources is not None and self.resources.serves(audience)
+        )
+
+    def verification_resolvers(self) -> tuple[IdentityResolver, ...]:
+        """What a verifier of these tokens runs before any resolver of the project's — the
+        session's kept claims, when `session_attributes` keep them (#336)."""
+        if self.session_attributes is None:
+            return ()
+        return (KeptClaims(self.session_attributes),)
+
+    def _kept_for(self, ends_at: datetime | None) -> timedelta:
+        """How long what a session keeps is stored from now: while a token of it may still be
+        presented — its refresh token's end, then one more access token."""
+        if ends_at is None:
+            return self.access_ttl
+        return ends_at - self._now() + self.access_ttl
+
     def _build_refresh_record(
         self, token: str, base: RefreshRecord, issued_at: datetime
     ) -> RefreshRecord:
-        """A record for `token`, of `base`'s session, alive `idle_ttl` — never past its end."""
+        """A record for `token`, of `base`'s session, alive its idle lifetime — never past its
+        end."""
+        idle = base.idle_ttl or self.idle_ttl
+        expires_at = issued_at + idle
+        if base.session_ends is not None:
+            expires_at = min(expires_at, base.session_ends)
         return base.model_copy(
             update={
                 "digest": digest(token),
                 "issued_at": issued_at,
-                "expires_at": min(issued_at + self.idle_ttl, base.session_ends),
+                "expires_at": expires_at,
                 "rotated_at": None,
             }
         )
@@ -228,18 +293,33 @@ class TokenIssuer:
         audience: str | None = None,
     ) -> IssuedTokens:
         """A new session for `identity` — just authenticated: an access token, and a refresh
-        token when there is a refresh token store, which stores the identity as the sign-in gave it.
+        token when there is a refresh token store, which stores the identity as the sign-in gave
+        it; what it keeps on the server, with `session_attributes`.
 
         Context: what `resolvers` see is what a verifier and every refresh see — the scopes
-        chosen and the client, the identity's own when `client` is not given — so a scope
-        ceiling decides the same at sign-in and after. `audience` is the resource the tokens
-        are for (RFC 8707) — every refresh of the session carries it; the issuer's own when `None`.
+        chosen, the client (the identity's own when `client` is not given) and the session — so
+        a scope ceiling decides the same at sign-in and after. `audience` is the resource the
+        tokens are for (RFC 8707) — every refresh of the session carries it; the issuer's own
+        when `None`.
+
+        1. The session opened: its id, its lifetime (`lifetime_for`).
+        2. The access token signed for the identity resolved.
+        3. With a refresh token store, its first refresh token, recording the lifetime chosen.
+        4. With `session_attributes`, what `kept_claims` answers, until the session ends.
+        Final: `SignedIn` announced, the tokens answered.
         """
         chosen = frozenset(scopes)
         client = identity.client if client is None else client
-        signed_in = identity.model_copy(update={"scopes": chosen, "client": client})
-        now = self._now()
         session = random_token("sid_", 16)
+        signed_in = identity.model_copy(
+            update={"scopes": chosen, "client": client, "session": session}
+        )
+        lifetime = self.lifetime_for(signed_in, client)
+        now = self._now()
+        session_ends = None if lifetime.at_most is None else now + lifetime.at_most
+        expires_at = now + lifetime.idle
+        if session_ends is not None:
+            expires_at = min(expires_at, session_ends)
         how = assurance or identity.assurance
         access = self._sign_access_token(
             self._resolve_claims(signed_in), session, now, how, chosen, client, audience
@@ -260,10 +340,17 @@ class TokenIssuer:
                 assurance=how,
                 authenticated_at=now,
                 issued_at=now,
-                expires_at=min(now + self.idle_ttl, now + self.session_ttl),
-                session_ends=now + self.session_ttl,
+                expires_at=expires_at,
+                session_ends=session_ends,
+                idle_ttl=lifetime.idle,
             )
             self.refresh_tokens.save(first)
+        if self.session_attributes is not None:
+            self.session_attributes.save(
+                session,
+                self.kept_claims(signed_in),
+                self._kept_for(expires_at if self.refresh_tokens is not None else None),
+            )
         publish_event(
             self.publisher,
             SignedIn(
@@ -290,11 +377,32 @@ class TokenIssuer:
             raise exceptions.ProgrammingError("taking tokens back needs revocations=")
         return self.revocations
 
+    def _longest_session(self) -> timedelta:
+        """The longest a session of the issuer's own lifetime may still last from now."""
+        return (self.session_ttl or self.idle_ttl) + self.access_ttl
+
+    def _revoked_until(self, session: str, subject: str) -> datetime:
+        """How long a revocation of `session` must hold: until its live token stops working,
+        then one more access token — read from its subject's sessions; the issuer's longest
+        session when it is not found there."""
+        if self.refresh_tokens is not None and subject:
+            for record in self.refresh_tokens.sessions_of(subject):
+                if record.session == session:
+                    return record.ends_at + self.access_ttl
+        return self._now() + self._longest_session()
+
+    def _end_session(self, session: str, until: datetime) -> None:
+        """`session` refused until `until`, and what it kept forgotten."""
+        self._require_revocations().revoke_session(session, until)
+        if self.session_attributes is not None:
+            self.session_attributes.delete(session)
+
     def revoke_session(self, session: str, subject: str = "") -> None:
         """End `session` now — a logout, "sign out this device" from `sessions_of`, an
-        authorization code replayed: its refresh tokens and access tokens refused at once.
-        `subject` names whose it was in the `SignedOut` announced."""
-        self._require_revocations().revoke_session(session, self._now() + self.session_ttl)
+        authorization code replayed: its refresh tokens and access tokens refused at once, what
+        it kept forgotten. `subject` names whose it was in the `SignedOut` announced, and finds
+        how long the revocation must hold."""
+        self._end_session(session, self._revoked_until(session, subject))
         publish_event(
             self.publisher,
             SignedOut(entity_type=SUBJECT, entity_id=subject, session=session),
@@ -308,7 +416,7 @@ class TokenIssuer:
             subject=record.subject,
             session=record.session[:12],
         )
-        self._require_revocations().revoke_session(record.session, record.session_ends)
+        self._end_session(record.session, record.ends_at + self.access_ttl)
         publish_event(
             self.publisher,
             RefreshTokenReused(
@@ -343,17 +451,28 @@ class TokenIssuer:
             raise self._revoke_replayed_session(rotated)
         refresh_tokens.save(successor)
 
-    def refresh(self, refresh_token: str, client: str | None = None) -> IssuedTokens:
+    def refresh(
+        self,
+        refresh_token: str,
+        client: str | None = None,
+        scopes: Iterable[str] | None = None,
+    ) -> IssuedTokens:
         """A new pair for a refresh token, which is rotated — for `client` alone when it is
-        named: a refresh token issued to one client is never another's (RFC 6749 §6).
+        named: a refresh token issued to one client is never another's (RFC 6749 §6). `scopes`,
+        when given, narrows the access token to a subset of what the session was granted; the
+        refresh token keeps the whole grant.
 
         1. Unknown, past its idle time or its session's end, or issued to another client than
            the one named: `Unauthenticated`, the token left unused.
         2. Its session revoked, or its subject signed out everywhere since: `Unauthenticated`.
-        3. Rotated — or, used again within `reuse_grace`, a token beside the first refresh's —
+        3. `scopes` beyond the grant: `OAuthError(invalid_scope)`, the token left unused.
+        4. With `session_attributes`, what the session kept — gone, the session ended:
+           `Unauthenticated`.
+        5. Rotated — or, used again within `reuse_grace`, a token beside the first refresh's —
            and past it, a replay that revokes the session.
-        Final: a new access token of the same session — the identity of its sign-in, resolved
-        again by `resolvers` — and a new refresh token.
+        Final: a new access token of the same session — the identity of its sign-in, with what
+        it kept, resolved again by `resolvers` — and a new refresh token; what the session keeps
+        lives as long as the new one.
         """
         if self.refresh_tokens is None:
             raise exceptions.ProgrammingError(
@@ -363,7 +482,7 @@ class TokenIssuer:
         record = self.refresh_tokens.find(digest(refresh_token))
         if record is None:
             raise exceptions.Unauthenticated("unknown refresh token")
-        if now >= record.expires_at or now >= record.session_ends:
+        if now >= record.ends_at:
             raise exceptions.Unauthenticated("session expired")
         if client is not None and record.client != client:
             raise exceptions.Unauthenticated("refresh token issued to another client")
@@ -374,23 +493,41 @@ class TokenIssuer:
         )
         if refusal is not None:
             raise exceptions.Unauthenticated(refusal)
+        granted = record.scopes if scopes is None else frozenset(scopes)
+        if not granted <= record.scopes:
+            raise exceptions.OAuthError(
+                exceptions.OAuthErrorCode.INVALID_SCOPE,
+                "a scope the session was not granted",
+            )
+        kept: Mapping[str, Any] = {}
+        if self.session_attributes is not None:
+            found = self.session_attributes.find(record.session)
+            if found is None:
+                raise exceptions.Unauthenticated("the session ended")
+            kept = found
         successor_token = random_token("rt_")
         successor = self._build_refresh_record(successor_token, record, now)
         self._rotate(self.refresh_tokens, record, successor, now)
+        if self.session_attributes is not None:
+            self.session_attributes.save(
+                record.session, kept, self._kept_for(successor.ends_at)
+            )
         signed_in = Identity(
             subject=record.subject,
             kind=IdentityKind(record.kind),
             tenant=record.tenant,
             roles=record.roles,
-            scopes=record.scopes,
+            scopes=granted,
             client=record.client,
+            claims=kept,
+            session=record.session,
         )
         access = self._sign_access_token(
             self._resolve_claims(signed_in),
             record.session,
             record.authenticated_at,
             record.assurance,
-            record.scopes,
+            granted,
             record.client,
             record.audience,
         )
@@ -399,7 +536,7 @@ class TokenIssuer:
             refresh_token=SecretStr(successor_token),
             expires_in=int(self.access_ttl.total_seconds()),
             session=record.session,
-            scope=record.scopes,
+            scope=granted,
         )
 
     def revoke(self, token: str, client: str | None = None) -> None:
@@ -460,19 +597,24 @@ class TokenIssuer:
         Final: each of its sessions revoked too, so one begun earlier in that same second ends.
         """
         revocations = self._require_revocations()
-        revocations.revoke_subject(subject, self._now() + self.session_ttl)
         sessions = (
             [] if self.refresh_tokens is None else self.refresh_tokens.sessions_of(subject)
         )
+        until = max(
+            [self._now() + self._longest_session()]
+            + [record.ends_at + self.access_ttl for record in sessions]
+        )
+        revocations.revoke_subject(subject, until)
         for record in sessions:
-            revocations.revoke_session(record.session, record.session_ends)
+            self._end_session(record.session, record.ends_at + self.access_ttl)
         publish_event(
             self.publisher,
             SignedOutEverywhere(entity_type=SUBJECT, entity_id=subject),
         )
 
     def trusted_issuer(self) -> TrustedIssuer:
-        """What a verifier trusts about this issuer — its name, audience, keys and how its claims
+        """What a verifier trusts about this issuer — its name, audience and the resources it
+        serves, keys and how its claims
         read: `JwtProvider.for_token_issuer(issuer)` verifies by it, and another service of the
         platform by `TrustedIssuer(..., keys=PublicKeys(issuer.jwks()["keys"]), mapping=TokenIssuer.mapping)`.
         """
@@ -482,8 +624,30 @@ class TokenIssuer:
             keys=self.keys.verification(),
             mapping=CLAIM_MAPPING,
             required=frozenset({"exp", "sub", "sid"}),
+            accepts_audience=self.serves_audience if self.resources is not None else None,
         )
 
     def jwks(self) -> dict[str, Any]:
         """The public keys other services verify these tokens with — asymmetric keys only."""
         return self.keys.jwks()
+
+
+class KeptClaims:
+    """The resolver that gives a verified identity of a session what the session keeps on the
+    server — the token's own claims win a clash (#336).
+
+    Context: a token whose session keeps nothing any more was revoked, expired or never kept
+    anything under these attributes: `Unauthenticated`, so the client refreshes — and signs in
+    again when its session is gone.
+    """
+
+    def __init__(self, attributes: SessionAttributes) -> None:
+        self.attributes = attributes
+
+    def resolve(self, identity: Identity) -> Identity:
+        if identity.session is None:
+            return identity
+        kept = self.attributes.find(identity.session)
+        if kept is None:
+            raise exceptions.Unauthenticated("the session ended")
+        return identity.model_copy(update={"claims": {**kept, **identity.claims}})

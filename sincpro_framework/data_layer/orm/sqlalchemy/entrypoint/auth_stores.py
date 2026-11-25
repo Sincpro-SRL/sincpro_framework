@@ -222,7 +222,7 @@ class DatabaseRefreshTokens(RefreshTokens):
             "subject": record.subject,
             "record": record.model_dump_json(),
             "rotated_at": _stored(record.rotated_at),
-            "session_ends": _stored(record.session_ends),
+            "session_ends": _stored(record.session_ends or record.expires_at),
         }
 
     def _record(self, found: Any) -> RefreshRecord:
@@ -267,6 +267,6 @@ class DatabaseRefreshTokens(RefreshTokens):
             ).all()
         records = [self._record(one) for one in found]
         return sorted(
-            (one for one in records if now < min(one.expires_at, one.session_ends)),
+            (one for one in records if now < one.ends_at),
             key=lambda one: one.issued_at,
         )

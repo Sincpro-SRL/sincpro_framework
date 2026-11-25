@@ -512,3 +512,127 @@ registered impostor gets a code for a person who never saw it. Or close registra
 `registration_token`.
 
 The transport is the project's: an HTTP route, FastMCP's provider or a test call these methods.
+Build the request with `AuthorizationRequest.from_query(query, tenant=…)`: it reads the RFCs'
+defaults — an omitted `code_challenge_method` is `plain`, refused at `/authorize` unless the server
+accepts it (RFC 7636 §4.3). `store=` holds pending authorizations, codes and redeemed codes; with
+none, the running context's (`store_context_in(...)`) — share one across replicas.
+
+### Resources: the audience the verifier accepts — RFC 8707
+
+An MCP client names the API it wants a token for in `resource`; the token's `aud` is that API, so
+a token stolen from one API is refused by another. The `TokenIssuer`'s `resources=` is the one
+decision both sides read: the server refuses a `resource` it does not serve (`invalid_target`, at
+the client's redirect), and `JwtProvider.for_token_issuer(issuer)` accepts the issuer's audience
+and every resource it serves.
+
+```python
+from sincpro_framework.auth import OAuthError, OAuthErrorCode, Resources
+
+MCP = "https://mcp.sincpro.com.bo/mcp"
+CALLBACK = "https://claude.ai/api/mcp/auth_callback"
+mcp_issuer = TokenIssuer(
+    "https://mcp.sincpro.com.bo",
+    audience="sincpro-odoo-mcp",
+    keys=SigningKeys.hmac({"2026-11": "a token secret of thirty-two bytes!"}),
+    refresh_tokens=InMemoryRefreshTokens(),
+    revocations=InMemoryRevocations(),
+    resources=Resources(MCP),                              # what its tokens may be for
+)
+mcp = AuthorizationServer(
+    "https://mcp.sincpro.com.bo", token_issuer=mcp_issuer, client_registry=InMemoryOAuthClients()
+)
+claude = mcp.register([CALLBACK], name="Claude").client
+
+asked = mcp.authorize(AuthorizationRequest(
+    client_id=claude.client_id, redirect_uri=CALLBACK, code_challenge=challenge,
+    resource="https://MCP.sincpro.com.bo:443/mcp/",         # another spelling of the same API
+))
+code = parse_qs(urlsplit(mcp.complete(asked.id, Identity.user("user:ana", tenant="acme"))).query)
+issued = mcp.token({"grant_type": "authorization_code", "code": code["code"][0],
+                    "code_verifier": verifier, "redirect_uri": CALLBACK,
+                    "client_id": claude.client_id})
+bearer = Credentials(transport="http",
+                     headers={"authorization": f"Bearer {issued.answer()['access_token']}"})
+assert JwtProvider.for_token_issuer(mcp_issuer).authenticate(bearer).subject == "user:ana"
+
+try:
+    mcp.authorize(AuthorizationRequest(client_id=claude.client_id, redirect_uri=CALLBACK,
+                                       code_challenge=challenge, resource="https://evil.example/api"))
+except OAuthError as refused:
+    assert refused.error is OAuthErrorCode.INVALID_TARGET and refused.redirect_uri is not None
+```
+
+With no `resources=`, only the issuer's own `audience` is served — set it to the API's URL, or
+declare the resources. A `ResourcePolicy` of the project's decides per client and tenant
+(`audience_for(resource, client_id, tenant)`, `serves(audience)`): one MCP URL per tenant, without
+listing them. A platform whose server issues for other APIs lists them too; each of those APIs
+verifies with its own `TrustedIssuer` and audience.
+
+### What a session keeps, and how long it lives
+
+What the sign-in knew that no token may carry — the identity's `claims`: a customer's credential
+to its ERP, the agents it enabled — is kept server-side with `session_attributes=` on the
+`TokenIssuer`, and given back to the identity on every refresh and every verified call. How long a
+session lives is `lifetime_for(identity, client)`; `session_ttl=None` keeps a connector signed in
+while it is used. Both in [accounts](accounts.md#issuing-tokens).
+
+### Tenants
+
+The transport says which tenant an authorization is for — the host, the path — in
+`AuthorizationRequest.tenant`, and registers a client for one (`register_from_metadata(body,
+tenant=…)`, `OAuthClient.tenant`). A client bound to a tenant serves only its tenant's requests (a
+request naming none inherits it); `complete` refuses a sign-in of another tenant than the
+request's with `access_denied` at the client's redirect — `accepts_identity(request, identity)`
+decides, overridable. The tenant reaches every decision: `ResourcePolicy.audience_for`,
+`TokenIssuer.lifetime_for` (by the identity's tenant), `issue_tokens`. A tenant with its own
+issuer, keys or clients is one `AuthorizationServer` per tenant, picked by the transport.
+
+### Clients by their metadata document — CIMD
+
+The MCP authorization spec recommends Client ID Metadata Documents: the `client_id` **is** the
+https URL of a JSON document describing the client, so there is no registration step.
+`MetadataDocumentClients` fetches it through the `HttpClient` port, checks it (its `client_id` is the
+URL, its redirects are ones a client may have, it is a public client), and caches it;
+`ClientRegistries` puts it beside the clients that registered, and the metadata then publishes
+`client_id_metadata_document_supported`.
+
+```python
+from sincpro_framework.auth.server import (
+    ClientRegistries,
+    KeyValueOAuthClients,
+    MetadataDocumentClients,
+)
+from sincpro_framework.data_layer.store import InMemoryKeyValue
+from sincpro_framework.runtime.testing import ScriptedHttp
+
+DOCUMENT = "https://claude.ai/oauth/mcp-client.json"
+documents = ScriptedHttp({DOCUMENT: ScriptedHttp.answer({   # MetadataDocumentClients() alone
+    "client_id": DOCUMENT,                                  # fetches with urllib
+    "client_name": "Claude",
+    "redirect_uris": [CALLBACK],
+    "token_endpoint_auth_method": "none",
+})})
+clients = ClientRegistries(
+    KeyValueOAuthClients(InMemoryKeyValue()),               # the ones that registered
+    MetadataDocumentClients(http=documents, store=InMemoryKeyValue()),
+)
+with_cimd = AuthorizationServer(
+    "https://mcp.sincpro.com.bo", token_issuer=mcp_issuer, client_registry=clients
+)
+
+pending = with_cimd.authorize(AuthorizationRequest(
+    client_id=DOCUMENT, redirect_uri=CALLBACK, code_challenge=challenge))
+assert pending.client_name == "Claude"                      # no registration step
+assert with_cimd.metadata({})["client_id_metadata_document_supported"] is True
+```
+
+Fetching a URL a stranger chose is a server-side request: `https` with a path only, a small body, a
+short timeout, literal IPs and `localhost` refused — `is_fetchable(url)` to allow only the hosts
+you trust.
+
+### Registration
+
+A client is answered the `token_endpoint_auth_method` it registered with; one that names none is
+public (`default_auth_method=ClientAuthMethod.NONE`, what MCP hosts expect — RFC 7591 §2 says
+`client_secret_basic`: pass that to follow it). A refresh may narrow the scope (`scope=`, RFC 6749
+§6); the refresh token keeps the whole grant.

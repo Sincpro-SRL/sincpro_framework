@@ -52,8 +52,9 @@ class KeyValueRefreshTokens(KeyValueStoreMixin, RefreshTokens):
         return f"{self.prefix}:sessions:{digest(subject)}"
 
     def _ttl(self, record: RefreshRecord) -> timedelta:
-        """How long `record` is stored: until its session ends — `MIN_TTL` at least."""
-        return max(record.session_ends - self.now(), MIN_TTL)
+        """How long `record` is stored: until its session ends — or, a session with no absolute
+        end, until it stops working (`expires_at`) — `MIN_TTL` at least."""
+        return max((record.session_ends or record.expires_at) - self.now(), MIN_TTL)
 
     def _index_session(self, record: RefreshRecord) -> None:
         """The subject's index maps each live session to its token and its end — the record's
@@ -69,7 +70,7 @@ class KeyValueRefreshTokens(KeyValueStoreMixin, RefreshTokens):
             }
             sessions[record.session] = {
                 "token": record.digest,
-                "ends": record.session_ends.timestamp(),
+                "ends": record.ends_at.timestamp(),
             }
             lives = timedelta(seconds=max(one["ends"] for one in sessions.values()) - now)
             return json.dumps(sessions, sort_keys=True).encode(), max(lives, MIN_TTL)
@@ -137,9 +138,7 @@ class KeyValueRefreshTokens(KeyValueStoreMixin, RefreshTokens):
             (
                 one
                 for one in found
-                if one is not None
-                and one.rotated_at is None
-                and now < min(one.expires_at, one.session_ends)
+                if one is not None and one.rotated_at is None and now < one.ends_at
             ),
             key=lambda one: one.issued_at,
         )

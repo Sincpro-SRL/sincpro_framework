@@ -241,12 +241,24 @@ class ClaimRules:
     required: frozenset[str] = frozenset({"exp"})
     what: str = "token"
     """How a refusal names the credential: `token`, `service token`, `DPoP proof`."""
+    accepts_audience: Callable[[str], bool] | None = field(default=None, compare=False)
+    """An audience accepted besides `audiences` — the resources an issuer serves when they are
+    not a fixed list: one per tenant, say (#335)."""
 
     def __post_init__(self) -> None:
         """An empty set of audiences is a `ProgrammingError`: it would accept no token, and is
         always a configuration that forgot to say which."""
         if self.audiences is not None and not self.audiences:
             raise exceptions.ProgrammingError("ClaimRules(audiences=…) names no audience")
+
+    def names_an_audience(self, claims: Mapping[str, Any]) -> bool:
+        """Whether `aud` names one of `audiences`, or one `accepts_audience` accepts."""
+        named = audiences_of(claims)
+        if self.audiences is not None and named & self.audiences:
+            return True
+        return self.accepts_audience is not None and any(
+            self.accepts_audience(one) for one in named
+        )
 
     def check(self, claims: Mapping[str, Any], now: float) -> None:
         """Refuse `claims` with `Unauthenticated` saying why, or accept them silently.
@@ -264,7 +276,7 @@ class ClaimRules:
                 raise exceptions.Unauthenticated(f"{self.what} lacks {name}")
         if self.issuer is not None and claims.get("iss") != self.issuer:
             raise exceptions.Unauthenticated(f"{self.what} is from another issuer")
-        if self.audiences is not None and not audiences_of(claims) & self.audiences:
+        if self.audiences is not None and not self.names_an_audience(claims):
             raise exceptions.Unauthenticated(f"{self.what} is for another audience")
         expires = numeric_date(claims, "exp", self.what)
         if expires is not None and now >= expires + self.leeway:

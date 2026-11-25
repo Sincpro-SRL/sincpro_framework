@@ -80,7 +80,7 @@ def refresh_token_table(name: str, metadata: MetaData) -> Table:
     """A refresh token by its digest — never the token — its session and when it was rotated.
 
     out     digest TEXT PRIMARY KEY · session · subject · record (JSON) · rotated_at NULL
-            · session_ends TIMESTAMP (UTC)
+            · session_ends TIMESTAMP (UTC) — its session's end; a session with no absolute end, its token's
     """
     return Table(
         name,

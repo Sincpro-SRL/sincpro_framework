@@ -3,7 +3,7 @@ and the store that rotates them atomically. Every token rotated from a session's
 its `session`."""
 
 from abc import ABC, abstractmethod
-from datetime import datetime
+from datetime import datetime, timedelta
 
 from pydantic import ConfigDict
 
@@ -33,9 +33,21 @@ class RefreshRecord(DataTransferObject):
     issued_at: datetime
     expires_at: datetime
     """When this token stops working unused — `idle_ttl` after it was issued."""
-    session_ends: datetime
-    """When the session ends whatever is done — `session_ttl` after it started."""
+    session_ends: datetime | None = None
+    """When the session ends whatever is done — `at_most` after it started; `None`, it lasts
+    while it is used (#337)."""
     rotated_at: datetime | None = None
+    idle_ttl: timedelta | None = None
+    """How long each of the session's tokens lives unused — chosen at sign-in
+    (`TokenIssuer.lifetime_for`); `None` for a record of 3.41, which takes the issuer's."""
+
+    @property
+    def ends_at(self) -> datetime:
+        """When this token stops working, whatever else happens — its idle expiry, never past
+        its session's end."""
+        if self.session_ends is None:
+            return self.expires_at
+        return min(self.expires_at, self.session_ends)
 
 
 class RefreshTokens(ABC):

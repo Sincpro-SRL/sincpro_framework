@@ -32,6 +32,10 @@ are imported when first asked for.
 import importlib
 from typing import TYPE_CHECKING, Any
 
+from sincpro_framework.auth.server.adapters.authorization_server.metadata_documents import (
+    ClientRegistries,
+    MetadataDocumentClients,
+)
 from sincpro_framework.auth.server.adapters.authorization_server.oauth_clients import (
     InMemoryOAuthClients,
     KeyValueOAuthClients,
@@ -124,6 +128,7 @@ __all__ = [
     "AuthZenEngine",
     "ClientAuthMethod",
     "ClientRegistration",
+    "ClientRegistries",
     "ClientRegistry",
     "CodeChallengeMethod",
     "PolicyEngineProvider",
@@ -133,6 +138,7 @@ __all__ = [
     "IntrospectionProvider",
     "JwtProvider",
     "KeyValueOAuthClients",
+    "MetadataDocumentClients",
     "OAuthClient",
     "OpaEngine",
     "OpenFgaEngine",

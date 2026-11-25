@@ -93,6 +93,7 @@ class AuthorizationServerCore(KeyValueStoreMixin):
         code_ttl: timedelta = timedelta(minutes=1),
         registration_token: str | None = None,
         store: KeyValueStore | None = None,
+        default_auth_method: ClientAuthMethod = ClientAuthMethod.NONE,
     ) -> None:
         """`issuer` is the URL clients know the server by (the `iss` of what it answers);
         `token_issuer` issues what a grant grants; `client_registry` holds the clients — on the
@@ -101,8 +102,11 @@ class AuthorizationServerCore(KeyValueStoreMixin):
         authorization waits for the person, and how long a code exchanged is remembered to
         catch its replay; `code_ttl` how long a code may be exchanged (RFC 6749 §4.1.2: short —
         a minute); `registration_token` the initial access token registration asks for (RFC 7591
-        §3) — open registration when `None`; `store` pins the store of the redeemed codes
-        instead of the running context's."""
+        §3) — open registration when `None`; `store` pins the store of the pending
+        authorizations, the codes and the redeemed codes instead of the running context's;
+        `default_auth_method` is how a client that registers saying nothing proves itself —
+        `none`, a public client, because MCP hosts register so; RFC 7591 §2 says
+        `client_secret_basic`."""
         self._init_key_value_store(store, "sincpro:auth:oauth")
         self.issuer = issuer
         self.token_issuer = token_issuer
@@ -114,10 +118,13 @@ class AuthorizationServerCore(KeyValueStoreMixin):
         self.authorization_ttl = authorization_ttl
         self.code_ttl = code_ttl
         self.registration_token = registration_token
+        self.default_auth_method = default_auth_method
 
     def _single_use_store(self, kind: SingleUseValue) -> Sessions:
         """The values of `kind` on the context's store, each taken once and lasting its TTL."""
         ttl = self.code_ttl if kind is SingleUseValue.CODE else self.authorization_ttl
+        if self._store is not None:
+            return Sessions(self._store, idle_for=ttl, at_most=ttl, namespace=f"oauth:{kind}")
         return use_context().sessions(idle_for=ttl, at_most=ttl, namespace=f"oauth:{kind}")
 
     def authenticate_client(
@@ -225,8 +232,11 @@ class AuthorizationServerCore(KeyValueStoreMixin):
         """What this server publishes about itself — each capability composed adds its part
         (`AuthorizationServerMetadata` writes the document from it)."""
         grants = self.token_grants()
-        return {
+        capabilities: dict[str, Any] = {
             "issuer": self.issuer,
             "grant_types_supported": [grant.value for grant in GrantType if grant in grants],
             "token_endpoint_auth_methods_supported": [one.value for one in ClientAuthMethod],
         }
+        if self.client_registry.supports_metadata_documents:
+            capabilities["client_id_metadata_document_supported"] = True
+        return capabilities

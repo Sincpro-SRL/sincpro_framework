@@ -19,7 +19,6 @@ import hmac
 import time
 from collections.abc import Iterable, Mapping
 from typing import Any
-from urllib.parse import urlsplit
 
 from pydantic import ConfigDict
 
@@ -29,7 +28,7 @@ from sincpro_framework.auth.server.domain.authorization_server.clients import (
     ClientAuthMethod,
     GrantType,
     OAuthClient,
-    is_loopback_host,
+    is_registrable_redirect_uri,
 )
 from sincpro_framework.auth.server.domain.authorization_server.endpoints import (
     AuthorizationServerEndpoint,
@@ -78,14 +77,7 @@ class ClientRegistration(AuthorizationServerCore):
         desktop app, RFC 8252 §7.3); a private-use scheme with a dot (a mobile app, RFC 8252
         §7.1); never a fragment (RFC 6749 §3.1.2) nor user information. Override to accept
         others."""
-        parts = urlsplit(uri)
-        if "#" in uri or not parts.scheme or parts.username is not None:
-            return False
-        if parts.scheme == "https":
-            return bool(parts.hostname)
-        if parts.scheme == "http":
-            return is_loopback_host(parts.hostname or "")
-        return "." in parts.scheme
+        return is_registrable_redirect_uri(uri)
 
     def _validate_initial_access_token(self, initial_access_token: str | None) -> None:
         """The initial access token the server asks for, when it asks — `invalid_token` (401)."""
@@ -108,9 +100,13 @@ class ClientRegistration(AuthorizationServerCore):
         scopes: Iterable[str] = (),
         confidential: bool = False,
         initial_access_token: str | None = None,
+        auth_method: ClientAuthMethod | None = None,
+        tenant: str | None = None,
     ) -> RegisteredClient:
         """A new client — `invalid_redirect_uri` for none or one that may not be a redirect,
-        `invalid_token` without the initial access token the server asks for."""
+        `invalid_token` without the initial access token the server asks for. `auth_method`,
+        how it proves itself, answered back as it asked (a secret unless `none`; `confidential`
+        when not given); `tenant`, the one it belongs to (#339)."""
         self._validate_initial_access_token(initial_access_token)
         uris = tuple(redirect_uris)
         if not uris or not all(self.is_registrable_redirect_uri(one) for one in uris):
@@ -119,6 +115,8 @@ class ClientRegistration(AuthorizationServerCore):
                 "redirect_uris are https, loopback http or a private-use scheme, with no "
                 "fragment and no user information",
             )
+        if auth_method is not None:
+            confidential = auth_method is not ClientAuthMethod.NONE
         secret = random_token("cs_") if confidential else None
         client = OAuthClient(
             client_id=random_token("cl_", 16),
@@ -127,23 +125,31 @@ class ClientRegistration(AuthorizationServerCore):
             grant_types=frozenset(grant_types),
             scopes=frozenset(scopes),
             secret_digest=digest(secret) if secret else None,
+            token_endpoint_auth_method=auth_method,
+            tenant=tenant,
         )
         self.client_registry.save(client)
         return RegisteredClient(client=client, secret=secret, issued_at=int(time.time()))
 
     def register_from_metadata(
-        self, metadata: Mapping[str, Any], initial_access_token: str | None = None
+        self,
+        metadata: Mapping[str, Any],
+        initial_access_token: str | None = None,
+        tenant: str | None = None,
     ) -> RegisteredClient:
         """`register` from the client metadata a registration request posts (RFC 7591 §2) —
-        `redirect_uris`, `client_name`, `grant_types`, `scope`, `token_endpoint_auth_method`.
-        A value of the wrong shape, or a grant or method the server does not serve, is
-        `invalid_client_metadata`."""
+        `redirect_uris`, `client_name`, `grant_types`, `scope`, `token_endpoint_auth_method`
+        (the server's `default_auth_method` when omitted). A value of the wrong shape, or a
+        grant or method the server does not serve, is `invalid_client_metadata`. `tenant` is
+        the one the transport registers it for — the host, the path."""
         redirect_uris = metadata.get("redirect_uris")
         grant_types = metadata.get(
             "grant_types", [GrantType.AUTHORIZATION_CODE.value, GrantType.REFRESH_TOKEN.value]
         )
         scope = metadata.get("scope", "")
-        auth_method = metadata.get("token_endpoint_auth_method", ClientAuthMethod.NONE.value)
+        auth_method = metadata.get(
+            "token_endpoint_auth_method", self.default_auth_method.value
+        )
         name = metadata.get("client_name", "")
         if (
             not isinstance(redirect_uris, list)
@@ -169,8 +175,9 @@ class ClientRegistration(AuthorizationServerCore):
             name,
             [GrantType(one) for one in grant_types],
             scope.split(),
-            auth_method != ClientAuthMethod.NONE.value,
-            initial_access_token,
+            initial_access_token=initial_access_token,
+            auth_method=ClientAuthMethod(auth_method),
+            tenant=tenant,
         )
 
     def served_endpoints(self) -> set[AuthorizationServerEndpoint]:
