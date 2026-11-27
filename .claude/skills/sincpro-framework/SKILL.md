@@ -218,6 +218,7 @@ Anything that fits none of these: stop and ask. Do not invent a fourth kind of s
 | Configuration, secrets, environment | `sincpro-framework-settings` |
 | REST / FastAPI / RPC / gRPC / MCP / queue, context map | `sincpro-framework-entrypoints` |
 | Permissions, identity, providers | `sincpro-framework-auth` |
+| Several customers/companies in one service, data filtered by tenant, work per tenant, a global query filter | `sincpro-framework-tenancy` |
 | Crons, a process and its loops, migrations | `sincpro-framework-operations` |
 | DataFrames, runtime use cases, workflows | `sincpro-framework-analytics` |
 | Add fields to an entity you do not own: a module's extension, `Consolidated`, `CONTRACT`, `ExtensionContract` | `sincpro-framework-extensions` |
