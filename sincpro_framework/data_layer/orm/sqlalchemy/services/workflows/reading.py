@@ -340,10 +340,15 @@ class Reading(RepositoryState):
             return self._page(session, model, holder, statement, criteria, prepared)
 
     def fingerprint(self, target: type, criteria: Criteria | None = None) -> str:
-        """Context: the scope this repository was narrowed by is part of the key, so two tenants
-        never share one."""
+        """Context: the scope this repository was narrowed by and the data filters of its
+        database, with this request's values, are part of the key — so two tenants never share
+        one."""
         model, _ = model_and_collection(target)
-        return fingerprint_of(model, criteria or Criteria(), self._scope)
+        filtered = self.database.filters.criteria_for(model)
+        scope = self._scope
+        if filtered is not None:
+            scope = filtered if scope is None else scope.merged_with(filtered)
+        return fingerprint_of(model, criteria or Criteria(), scope)
 
     @overload
     def search[C: EntityCollection](

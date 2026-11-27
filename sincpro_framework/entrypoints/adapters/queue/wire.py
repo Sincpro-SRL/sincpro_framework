@@ -108,22 +108,19 @@ def queue_context(envelope: Envelope, headers: Mapping[str, str]) -> dict[str, A
     """What a message hands the execution's context — so every signal of the run says it
     (PRD_03 §4.10, PRD_21).
 
-        queue_context(Envelope(correlationid="c-1", causationid="e-7"), {"x-tenant": "acme"})
-        ->  {"correlation_id": "c-1", "causation_id": "e-7", "tenant_id": "acme"}
+        queue_context(Envelope(correlationid="c-1", causationid="e-7"),
+                      {"sincpro-context": '{"tenant_id": "acme"}'})
+        ->  {"tenant_id": "acme", "correlation_id": "c-1", "causation_id": "e-7"}
 
-    1. The context the producer's execution carried (`baggage`, `sincpro-context`, the identity).
-    2. The envelope's chain over it: `correlationid`, `causationid`.
-    3. Final: the tenant a producer put in its own headers, when the context names none — as
-       `tenant_id`, and as `tenant`, what this wire wrote before the key was standard.
+    1. The context the producer's execution carried (`baggage`, `sincpro-context`, the identity)
+       — the tenant among it, as every wire carries it.
+    Final: the envelope's chain over it: `correlationid`, `causationid`.
     """
     carried: dict[str, Any] = context_propagation.extract(headers)
     if envelope.correlationid:
         carried[ContextKey.CORRELATION_ID] = envelope.correlationid
     if envelope.causationid:
         carried[ContextKey.CAUSATION_ID] = envelope.causationid
-    tenant = headers.get("tenant") or headers.get("x-tenant")
-    if tenant and ContextKey.TENANT_ID not in carried:
-        carried[ContextKey.TENANT_ID] = tenant
     return carried
 
 

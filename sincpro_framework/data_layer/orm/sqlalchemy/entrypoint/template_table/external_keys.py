@@ -20,7 +20,8 @@ def external_key_table(name: str, metadata: MetaData) -> Table:
 
         out     the entity's columns (id, created_at, updated_at, version)
                 origin TEXT · entity_type TEXT · entity_id TEXT · key TEXT
-                UNIQUE (origin, entity_type, key)       one name, one record
+                scope TEXT NOT NULL DEFAULT ''          the partition a name lives in
+                UNIQUE (scope, origin, entity_type, key)       one name, one record
                 INDEX (entity_type, entity_id)          the names of one record
 
     Declared by the project, in its metadata and its migrations, like every other table.
@@ -32,6 +33,7 @@ def external_key_table(name: str, metadata: MetaData) -> Table:
         Column("entity_type", Text, nullable=False),
         Column("entity_id", Text, nullable=False),
         Column("key", Text, nullable=False),
-        UniqueConstraint("origin", "entity_type", "key", name=f"{name}_named_once"),
+        Column("scope", Text, nullable=False, default="", server_default=""),
+        UniqueConstraint("scope", "origin", "entity_type", "key", name=f"{name}_named_once"),
         Index(f"{name}_of_record", "entity_type", "entity_id"),
     )

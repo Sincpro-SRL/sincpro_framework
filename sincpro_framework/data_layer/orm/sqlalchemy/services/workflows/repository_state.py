@@ -18,7 +18,6 @@ from sincpro_framework.data_layer.orm.sqlalchemy.services.event_mapping import i
 from sincpro_framework.ddd.criteria import (
     Condition,
     Criteria,
-    Evaluation,
     Node,
     Operator,
 )
@@ -26,6 +25,7 @@ from sincpro_framework.ddd.entity import ArchivableMixin
 from sincpro_framework.ddd.entity.entity_meta import Meta
 from sincpro_framework.ddd.events import DomainEvent
 from sincpro_framework.ddd.repositories.capabilities import StoreCapabilities
+from sincpro_framework.ddd.repositories.data_filters import holds_for
 from sincpro_framework.ddd.repositories.hooks import Hooks
 from sincpro_framework.ddd.repositories.publication import Publishes, PublishOnCommit
 from sincpro_framework.ddd.repositories.repository import IRepository
@@ -153,17 +153,24 @@ class RepositoryState(IRepository):
         return expression
 
     def _in_scope(self, record: Any) -> bool:
-        """Whether a record belongs to what this repository may see and write."""
-        return self._scope is None or Evaluation.matches(record, self._scope.expression)
+        """Whether a record belongs to what this repository may see and write: its scope, with
+        a value of the context (`FromContext`) read as the request's own, and the data filters
+        of its database — a read by identity may answer from the session without a statement.
+        """
+        if self._scope is not None and not holds_for(record, self._scope.expression):
+            return False
+        return self.database.filters.admits(record)
 
     def _refuse_outside(self, record: Any) -> None:
-        """A record outside the scope this repository was narrowed to is refused — a narrowed
-        repository writes and removes only what it can read."""
-        if not self._in_scope(record):
+        """A record outside the scope this repository was narrowed to, or outside a data filter
+        of its database that guards writes, is refused — a repository writes and removes only
+        what it can read."""
+        if self._scope is not None and not holds_for(record, self._scope.expression):
             raise exceptions.ProgrammingError(
                 f"{type(record).__name__} lies outside what this repository was narrowed to; "
                 "it can neither be written nor removed here"
             )
+        self.database.filters.check_write(record, False)
 
     def _refuse_read_only(self) -> None:
         """Any write inside a unit of work opened `read_only=True` is refused, before the

@@ -63,6 +63,7 @@ from sincpro_framework.auth.common.infrastructure.claim_mapping import ClaimMapp
 from sincpro_framework.auth.common.infrastructure.digests import digest, random_token
 from sincpro_framework.auth.common.infrastructure.event_publishing import publish_event
 from sincpro_framework.auth.common.infrastructure.trusted_issuer import TrustedIssuer
+from sincpro_framework.context import ContextKey, use_context
 from sincpro_framework.sincpro_abstractions import DataTransferObject
 from sincpro_framework.sincpro_logger import logger
 
@@ -177,8 +178,14 @@ class TokenIssuer:
         """What a token of `signed_in` carries: resolved by `resolvers` — its roles as the
         sign-in gave them unless permissions are embedded. A role a store assigns is resolved
         again by whoever verifies the token, so one taken away there is gone at once; embedded,
-        the permission version refuses the token instead."""
-        issued = resolved(signed_in, self.resolvers)
+        the permission version refuses the token instead.
+
+        Context: resolved for the tenant the token is issued for, never the one the sign-in
+        request happens to name — a token of no tenant embeds what holds in no tenant."""
+        with use_context().scoped(
+            {ContextKey.TENANT_ID: signed_in.tenant, ContextKey.TENANT_IDS: None}
+        ):
+            issued = resolved(signed_in, self.resolvers)
         if self.embed_permissions:
             return issued
         return issued.model_copy(update={"roles": signed_in.roles})

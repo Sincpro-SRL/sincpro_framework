@@ -47,6 +47,7 @@ from sincpro_framework.data_layer.orm.sqlalchemy.services.workflows.repository_s
 )
 from sincpro_framework.ddd.criteria import (
     Criteria,
+    Node,
 )
 from sincpro_framework.ddd.editing import bulk_rules
 from sincpro_framework.ddd.editing.editing import recompute_row
@@ -207,7 +208,8 @@ class Writing(RepositoryState, Extends):
         """Writes a plan in the one order every write needs, and answers what the before-moments
         worked out about each record.
 
-        1. Every record is checked against the scope, and the before-moments run for all of them.
+        1. Every new record is stamped by the data filters, every record is checked against the
+           scope and the filters, and the before-moments run for all of them.
         2. The detached first: a child's key is NULL before its root can go.
         3. The pairs of a many-to-many unlinked: a pair points at the root it leaves with.
         4. The removals, deepest first: an orphan leaves before the child taking its unique
@@ -219,6 +221,9 @@ class Writing(RepositoryState, Extends):
         is stored.
         """
         stored, removed = plan.stored, plan.removed
+        for one in stored:
+            if sqlalchemy.inspect(one).key is None:
+                self.database.filters.stamp(one)
         for one in [*stored, *removed]:
             self._refuse_outside(one)
         for one in removed:
@@ -563,8 +568,8 @@ class Writing(RepositoryState, Extends):
            refused: the upsert would drop them without a word.
         5. Each record's computations and checks over its row, as a save runs them
            (`recompute_row`), then the `before_save` hooks.
-        6. A narrowed repository bounds the conflict by its scope and never overwrites the
-           scope's own fields.
+        6. A narrowed repository, and the active data filters, bound the conflict and are never
+           overwritten — a key another tenant holds is skipped, never taken.
         Final: the rows written back are the written; the rest of the batch was skipped.
         """
         mapper = sqlalchemy.inspect(model)
@@ -577,7 +582,10 @@ class Writing(RepositoryState, Extends):
         upsert.refuse(
             model, table, mapper.inherits is not None, dialect, names, on, overwrite, fixed
         )
-        scope = self._scope.expression if self._scope is not None else None
+        scope = Node.combined(
+            self._scope.expression if self._scope is not None else None,
+            self.database.filters.expression_for(model),
+        )
         scope_fields = (
             {one.field for one in scope.conditions()} if scope is not None else set()
         )
@@ -593,6 +601,7 @@ class Writing(RepositoryState, Extends):
             bulk_rules.UPSERT_REMEDY,
         )
         for one in records:
+            self.database.filters.stamp(one)
             self._refuse_outside(one)
         latest = upsert.one_per_key(records, on)
         apart = bulk_rules.kept_apart(meta)

@@ -24,6 +24,7 @@ from fnmatch import fnmatchcase
 
 from sincpro_framework.auth.common.domain.identity import Identity
 from sincpro_framework.auth.common.domain.revocations import Revocations, tenant_subject
+from sincpro_framework.auth.common.infrastructure.security_context import acting_tenant
 from sincpro_framework.auth.grants.domain.assignments import GrantSource, SubjectGrants
 from sincpro_framework.auth.grants.domain.catalog import CatalogSource
 from sincpro_framework.data_layer.caching import Cache, CachePolicy, JsonCodec, TimeToLive
@@ -121,24 +122,55 @@ class GrantResolver:
         the provider already read in this authentication, never read twice."""
         if self.revocations is None:
             return 0, 0
-        if not (self.entitlements and identity.tenant):
+        acting = acting_tenant(identity)
+        if not (self.entitlements and acting):
             return self.revocations.permission_version(identity.subject), 0
-        tenant = tenant_subject(identity.tenant)
+        tenant = tenant_subject(acting)
         versions = self.revocations.permission_versions(identity.subject, tenant)
         return versions[identity.subject], versions[tenant]
 
-    def load_grants(self, identity: Identity) -> SubjectGrants:
-        """What the source says `identity` holds — cached per subject, tenant and versions."""
+    def load_grants(self, identity: Identity, tenant: str | None = None) -> SubjectGrants:
+        """What the source says `identity` holds in `tenant` — the one it acts in when not
+        given — cached per subject, tenant and versions."""
         source = self.source
         if source is None:
             return SubjectGrants()
-        key = ("held", identity.subject, identity.tenant, *self._versions(identity))
+        if tenant is None:
+            tenant = acting_tenant(identity)
+        key = ("held", identity.subject, tenant, *self._versions(identity))
         return self.cache.get_or_compute(
             key,
-            lambda: source.grants_of(identity.subject, identity.tenant),
+            lambda: source.grants_of(identity.subject, tenant),
             self._policy,
             self._codec,
         )
+
+    def _platform_grants(
+        self, identity: Identity, tenant: str | None
+    ) -> tuple[frozenset, frozenset]:
+        """Context: an identity of no tenant acting in one keeps what it was assigned in no
+        tenant — a platform's support role holds in every tenant it enters.
+
+        Final: those roles' closure and what they grant, beside the tenant's — never filtered by
+        the tenant's entitlements, which entitle the tenant, not the platform.
+        """
+        if identity.tenant is not None or tenant is None or self.source is None:
+            return frozenset(), frozenset()
+        source = self.source
+        key = ("held", identity.subject, None, *self._versions(identity))
+        held = self.cache.get_or_compute(
+            key, lambda: source.grants_of(identity.subject, None), self._policy, self._codec
+        )
+        effective = self.catalog.cached(None)
+        catalog = effective.catalog
+        roles = catalog.closure(
+            frozenset(
+                one
+                for one in held.roles
+                if one in catalog.roles and one not in effective.retired
+            )
+        )
+        return roles, catalog.permissions_of(roles)
 
     def resolve(self, identity: Identity) -> Identity:
         """`identity` with the roles it holds — their closure — and what they grant.
@@ -147,7 +179,10 @@ class GrantResolver:
         2. The roles the source assigns that the tenant's catalog declares, unioned — an
            assignment of a role removed, or retired, grants nothing, nor passes `auth.role(...)`.
         3. Their closure, and what it grants — beside what the token itself carried.
-        4. Filtered by the tenant's entitlements, when asked and the source records them.
+        4. Filtered by the tenant's entitlements, when asked and the source records them — a
+           platform identity, acting in no tenant, is entitled by no tenant and keeps them.
+        4.1 An identity of no tenant acting in one keeps the roles it holds in no tenant
+            (`_platform_grants`).
         5. Restricted by the scope ceiling, when there is one.
         Final: when 4 or 5 took a permission away, only the roles whose every grant is left —
         `auth.role(...)` never admits a client, or a tenant, the permissions refuse: a reports
@@ -159,7 +194,8 @@ class GrantResolver:
             else identity.roles
         )
         held = self.load_grants(identity)
-        effective = self.catalog.cached(identity.tenant)
+        tenant = acting_tenant(identity)
+        effective = self.catalog.cached(tenant)
         catalog = effective.catalog
         assigned = frozenset(
             one for one in held.roles if one in catalog.roles and one not in effective.retired
@@ -167,8 +203,11 @@ class GrantResolver:
         roles = catalog.closure(from_token | assigned)
         granted = identity.permissions | catalog.permissions_of(roles)
         permissions = granted
-        if self.entitlements and held.entitlements is not None:
+        if self.entitlements and held.entitlements is not None and tenant is not None:
             permissions = catalog.filter_by_entitlements(permissions, held.entitlements)
+        platform_roles, platform_permissions = self._platform_grants(identity, tenant)
+        roles, permissions = roles | platform_roles, permissions | platform_permissions
+        granted = granted | platform_permissions
         if self.scope_ceiling is not None:
             permissions = self.scope_ceiling.restrict(permissions, identity)
         if permissions != granted:

@@ -51,9 +51,9 @@ class Payload:
         class, `value` the DTO itself, and the correlation and causation lifted out of
         `context` to the top.
 
-            Payload.of("billing.CommandPay", dto, {"correlation_id": "c1", "tenant": "a"})
+            Payload.of("billing.CommandPay", dto, {"correlation_id": "c1", "tenant_id": "a"})
                 ->  Payload(type="billing.CommandPay", data=dto, correlation_id="c1",
-                            context={"tenant": "a"})
+                            context={"tenant_id": "a"})
         """
         given = dict(context or {})
         return cls(

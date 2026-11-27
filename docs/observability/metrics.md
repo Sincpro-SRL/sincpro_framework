@@ -298,9 +298,11 @@ known only midway — a stream, several calls — record it by hand with a class
 | the bounded context | every series | `sincpro.context` |
 | what runs each context | one info series per context | `sincpro.context.info{sincpro_context, sincpro_artifact, sincpro_version, sincpro_tenant} 1` |
 
-Version and tenant are not labels on every series: a version there would start every series
-again at each deploy. They travel once, on the info series — the Prometheus `*_build_info`
-pattern — and are joined when a query needs them. Both come from the same identity traces and
+The version of the deployment is told once, on the info series — the Prometheus
+`*_build_info` pattern — and joined when a query needs it: a version on every series would start
+every series again at each deploy. The tenant of the *execution* is a label on every series, as
+the section above says: each tenant is a series of its own, so a service with thousands of
+tenants weighs that cardinality before it ships. Both come from the same identity traces and
 errors use (`ObservabilityIdentity`, `TENANT`); what is not set is not invented.
 
 ```promql

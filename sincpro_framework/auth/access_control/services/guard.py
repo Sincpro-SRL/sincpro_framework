@@ -30,9 +30,8 @@ from sincpro_framework.auth.common.infrastructure.security_context import (
 )
 from sincpro_framework.context import (
     ContextKey,
-    ContextLevel,
-    EntrypointKind,
     context_scopes,
+    said_by_caller,
     use_context,
 )
 from sincpro_framework.sincpro_logger import logger
@@ -45,24 +44,9 @@ GUARD_SEQUENCE = -(10**9)
 """Lower than any a project writes: the guard wraps every other interceptor of a bus, so a
 cached or retried answer is never given without asking."""
 
-CALLER_ENTRYPOINTS = frozenset(EntrypointKind) - {EntrypointKind.DIRECT, EntrypointKind.CRON}
-"""The entrances whose flow opens with what a caller sent — `baggage`, `sincpro-context`, a
-message's envelope —, not with what the code said."""
-
 ACTOR_KEYS = (ContextKey.USER_ID, ContextKey.TENANT_ID, ContextKey.TENANT_IDS)
 """The keys of the context that say who acts and where — what a draft, a cached answer, an
 idempotent write and a fact's `actor` are owned by."""
-
-
-def _is_caller_value(context: Any, key: str) -> bool:
-    """Whether the value of `key` is the caller's own — set by the entrypoint a wire opened,
-    not by code, a provider or a scope (`Context.origin`)."""
-    origin = context.origin(key)
-    return (
-        origin is not None
-        and origin.level == ContextLevel.ENTRYPOINT
-        and context.kind in CALLER_ENTRYPOINTS
-    )
 
 
 def _tenant_refusal(identity: Identity, context: Any) -> exceptions.PermissionDenied | None:
@@ -73,10 +57,10 @@ def _tenant_refusal(identity: Identity, context: Any) -> exceptions.PermissionDe
         return None
     named = (
         [context.get(ContextKey.TENANT_ID)]
-        if _is_caller_value(context, ContextKey.TENANT_ID)
+        if said_by_caller(context, ContextKey.TENANT_ID)
         else []
     )
-    if _is_caller_value(context, ContextKey.TENANT_IDS):
+    if said_by_caller(context, ContextKey.TENANT_IDS):
         named.extend(context.get(ContextKey.TENANT_IDS) or ())
     other = next((one for one in named if one not in (None, identity.tenant)), None)
     if other is None:
@@ -104,14 +88,14 @@ def _bind_identity_to_context(identity: Identity, context: Any) -> None:
     """
     if identity.is_anonymous:
         for key in ACTOR_KEYS:
-            if _is_caller_value(context, key):
+            if said_by_caller(context, key):
                 context.set(key, None)
         return
     said = context.get(ContextKey.USER_ID)
     if said is None or (
         identity.kind == IdentityKind.USER
         and said != identity.subject
-        and _is_caller_value(context, ContextKey.USER_ID)
+        and said_by_caller(context, ContextKey.USER_ID)
     ):
         context.set(ContextKey.USER_ID, identity.subject)
     if identity.tenant is not None and context.get(ContextKey.TENANT_ID) is None:

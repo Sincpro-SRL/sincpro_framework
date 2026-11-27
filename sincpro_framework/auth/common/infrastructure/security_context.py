@@ -16,6 +16,8 @@ from contextvars import ContextVar
 from typing import Any
 
 from sincpro_framework.auth.common.domain.identity import ANONYMOUS, Identity
+from sincpro_framework.context import use_context
+from sincpro_framework.context.domain.keys import ContextKey
 from sincpro_framework.sincpro_logger import logger
 
 _current: ContextVar[Identity] = ContextVar("sincpro_identity", default=ANONYMOUS)
@@ -23,6 +25,25 @@ _current: ContextVar[Identity] = ContextVar("sincpro_identity", default=ANONYMOU
 _access_control: ContextVar[Any] = ContextVar("sincpro_access_control", default=None)
 """The `AccessControl` guarding the use case in progress — what an outgoing call asks first for
 the credentials it carries, before any other of the process."""
+
+
+def acting_tenant(identity: Identity, context: Any = None) -> str | None:
+    """The tenant `identity` acts in: its own — the tenant its credential was issued for —, else
+    the one the call names (`tenant_id` of the execution context). One rule for every decision
+    auth makes per tenant: the requirements added at runtime, the roles assigned, the
+    entitlements, the credentials of an outgoing call.
+
+        acting_tenant(Identity.user("ana", tenant="bo"))           ->  "bo"
+        acting_tenant(Identity.user("ana"))   # call names "pe"   ->  "pe"
+
+    Context: an identity of no tenant — a person of several — acts where the call says; whether
+    the caller may name that tenant is tenancy's to validate (`Tenancy(memberships=...)`), and
+    an identity of a tenant naming another is refused by the guard.
+    """
+    if identity.tenant is not None:
+        return identity.tenant
+    values = context if context is not None else use_context()
+    return values.get(ContextKey.TENANT_ID) or None
 
 
 def current_access_control() -> Any:

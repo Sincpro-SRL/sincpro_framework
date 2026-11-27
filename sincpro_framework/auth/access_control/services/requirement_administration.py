@@ -56,7 +56,10 @@ from sincpro_framework.auth.common.domain.permissions import (
 )
 from sincpro_framework.auth.common.infrastructure.event_publishing import publish_event
 from sincpro_framework.auth.common.infrastructure.scoped_cache import ScopedCache
-from sincpro_framework.auth.common.infrastructure.security_context import current_identity
+from sincpro_framework.auth.common.infrastructure.security_context import (
+    acting_tenant,
+    current_identity,
+)
 from sincpro_framework.sincpro_logger import logger
 
 RequirementsByCommand = dict[str, list[Requirement]]
@@ -177,10 +180,14 @@ class RequirementAdministration:
         return by_command
 
     def check(self, call: AccessCall) -> bool:
-        """The `every_call` check: what is required of `call.command` for the caller's tenant,
+        """The `every_call` check: what is required of `call.command` in the tenant the caller
+        acts in (`acting_tenant`) — its own, else the one the call names, so a token of no
+        tenant never steps around a tenant's requirements —,
         judged as `requires` judges — its refusal raised, so it names what was missing; the
         store's error raised for a tenant never read while it does not answer."""
-        required = self._cache.get(call.identity.tenant).get(call.command, [])
+        required = self._cache.get(acting_tenant(call.identity, call.context)).get(
+            call.command, []
+        )
         if not required:
             return True
         refused = self.decisions.evaluate_declaration(

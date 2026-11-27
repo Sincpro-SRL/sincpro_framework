@@ -2,6 +2,7 @@
 
 from dataclasses import dataclass
 from enum import StrEnum
+from typing import Any
 
 
 class ContextLevel(StrEnum):
@@ -60,3 +61,21 @@ class Origin:
     """The bus, the use case or the hook — what the node is named after."""
     execution_id: str | None
     """The execution it belongs to; `None` above every execution."""
+
+
+CALLER_ENTRYPOINTS = frozenset(EntrypointKind) - {EntrypointKind.DIRECT, EntrypointKind.CRON}
+"""The entrances whose flow opens with what a caller sent — `baggage`, `sincpro-context`, a
+message's envelope —, not with what the code said."""
+
+
+def said_by_caller(context: Any, key: Any) -> bool:
+    """Whether the value of `key` is the caller's own — set by the entrypoint a wire opened, not
+    by code, a provider or a scope.
+
+    Context: what a caller writes is judged; what the code writes is the code's decision."""
+    origin = context.origin(key)
+    return (
+        origin is not None
+        and origin.level == ContextLevel.ENTRYPOINT
+        and context.kind in CALLER_ENTRYPOINTS
+    )

@@ -18,6 +18,7 @@ from typing import Any
 
 from sincpro_framework.auth.client.domain.outbound import OutgoingRequest, TokenSource
 from sincpro_framework.auth.common.domain import exceptions
+from sincpro_framework.auth.common.infrastructure.security_context import acting_tenant
 
 
 class TenantTokenSources(TokenSource):
@@ -34,6 +35,13 @@ class TenantTokenSources(TokenSource):
         self.max_tenants = max_tenants
         self._sources: OrderedDict[str, TokenSource] = OrderedDict()
         self._lock = threading.Lock()
+
+    @staticmethod
+    def _tenant_of(request: OutgoingRequest) -> str | None:
+        """Whose credentials: the request's tenant, else the one its identity acts in."""
+        if request.tenant is not None or request.identity is None:
+            return request.tenant
+        return acting_tenant(request.identity)
 
     def source_for_tenant(self, tenant: str | None) -> TokenSource:
         """The tenant's source — `NoCredentialsFor` when it has none, `ProgrammingError` when no
@@ -73,7 +81,7 @@ class TenantTokenSources(TokenSource):
     def headers_for(self, request: OutgoingRequest) -> dict[str, str]:
         """The headers of the source of the tenant the request acts for — never another
         tenant's."""
-        return self.source_for_tenant(request.tenant).headers_for(request)
+        return self.source_for_tenant(self._tenant_of(request)).headers_for(request)
 
     def invalidate(
         self,
@@ -82,7 +90,9 @@ class TenantTokenSources(TokenSource):
         answer: Mapping[str, str] | None = None,
     ) -> bool:
         """Asked of the source of the request's tenant."""
-        return self.source_for_tenant(request.tenant).invalidate(request, presented, answer)
+        return self.source_for_tenant(self._tenant_of(request)).invalidate(
+            request, presented, answer
+        )
 
     def describe(self) -> dict[str, Any]:
         """How many tenants have a source cached in this process."""

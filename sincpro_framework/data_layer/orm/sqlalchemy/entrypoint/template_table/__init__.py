@@ -10,6 +10,8 @@
     auth.py            key_value_table, api_key_table,      what auth keeps on a database
                        grant_assignment_table, entitlement_table, refresh_token_table
     runtime_use_cases.py  use_case_table                    the use cases a context stores
+    tenancy.py         tenant_columns, unique_per_tenant,   tenancy's recipes
+                       tenant_foreign_key, tenant_table, membership_table
     properties.py      properties_column, slot_field        the slot an extensible entity reserves
 
 Declared by the project, in its own metadata and migrations, like any other table; mapped with
@@ -54,6 +56,13 @@ from sincpro_framework.data_layer.orm.sqlalchemy.entrypoint.template_table.prope
 from sincpro_framework.data_layer.orm.sqlalchemy.entrypoint.template_table.runtime_use_cases import (
     use_case_table,
 )
+from sincpro_framework.data_layer.orm.sqlalchemy.entrypoint.template_table.tenancy import (
+    membership_table,
+    tenant_columns,
+    tenant_foreign_key,
+    tenant_table,
+    unique_per_tenant,
+)
 
 __all__ = [
     "SlotType",
@@ -69,9 +78,14 @@ __all__ = [
     "grant_assignment_table",
     "idempotency_table",
     "key_value_table",
+    "membership_table",
     "numbering_table",
     "properties_column",
     "refresh_token_table",
     "slot_field",
+    "tenant_columns",
+    "tenant_foreign_key",
+    "tenant_table",
+    "unique_per_tenant",
     "use_case_table",
 ]

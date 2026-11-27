@@ -610,7 +610,7 @@ class FieldMeta(DataTransferObject):
     """The aggregate on the other side, by name: `Run` for `Dataset.runs`. What Odoo's
     `fields_get` calls `relation`. On a relational field the field holds its records; on a key
     (`EntityID[Run]`) it holds a text or a number that names one — `type` says which. Another
-    context's is named with its context (`auth.Tenant`)."""
+    context's is named with its context (`tenancy.Tenant`)."""
     identified_by: str | None = None
     """For a relational field, the column that identifies the relation: this aggregate's own
     column for a `many2one` (`Run.dataset` by `Run.dataset_id`), the related aggregate's for a

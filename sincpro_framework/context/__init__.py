@@ -48,7 +48,13 @@ from sincpro_framework.context.domain.drafts import Draft
 from sincpro_framework.context.domain.exceptions import DraftConflict, EntryConflict
 from sincpro_framework.context.domain.execution import Chain, Execution
 from sincpro_framework.context.domain.keys import ContextKey
-from sincpro_framework.context.domain.level import ContextLevel, EntrypointKind, Origin
+from sincpro_framework.context.domain.level import (
+    CALLER_ENTRYPOINTS,
+    ContextLevel,
+    EntrypointKind,
+    Origin,
+    said_by_caller,
+)
 from sincpro_framework.context.domain.node import ContextNode
 from sincpro_framework.context.domain.owner import Owner
 from sincpro_framework.context.domain.providers import ContextProvider
@@ -86,6 +92,8 @@ __all__ = [
     "Entry",
     "EntryConflict",
     "EntrypointKind",
+    "CALLER_ENTRYPOINTS",
+    "said_by_caller",
     "FrameworkContext",
     "Execution",
     "InMemoryContexts",

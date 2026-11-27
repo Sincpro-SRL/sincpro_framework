@@ -11,7 +11,7 @@ by the field's name.
     @dataclass(kw_only=True)
     class Issue(Entity):
         project_id: EntityID[Project] | None = None
-        tenant_id: EntityID[Tenant] | None = None      # Tenant: auth's, named in `shared/`
+        tenant_id: EntityID[Tenant] | None = None      # Tenant: the tenancy context's, named in `shared/`
 
 **`EntityID` is the framework's id — always a UUID v7** (`new_entity_id`): any spelling of one —
 32 hex, 36 with dashes, capitals, a `uuid.UUID` — is read into the one text every table, draft,
@@ -32,7 +32,7 @@ Outside a model a key is read the way pydantic reads any type, one reading — t
     TypeAdapter(EntityID[Issue]).validate_python(value)
 
 What either says is published — `x-sincpro.relation` beside the key: the entity's name in its own
-context, `auth.Tenant` for another's (`Reference`) — and read: an operation's `targets`, the
+context, `tenancy.Tenant` for another's (`Reference`) — and read: an operation's `targets`, the
 entities a use case concerns, the type a field is filtered as (`key_of`).
 
 Context: a type checker reads the value the key holds — a `str`, or the type named second — so
@@ -69,10 +69,10 @@ class Reference:
     """An entity of another bounded context, named once where every context may read it
     (`shared/`), so a key says whose it is without importing that context.
 
-        class Tenant(Reference, bounded_context="auth"):
-            '''auth's tenant.'''
+        class Tenant(Reference, bounded_context="tenancy"):
+            '''the tenancy context's tenant.'''
 
-        tenant_id: EntityID[Tenant]       ->  published as `relation: "auth.Tenant"`
+        tenant_id: EntityID[Tenant]       ->  published as `relation: "tenancy.Tenant"`
 
     It is no entity here — no table, no contract, no model of this bounded context —: a name, and
     the bounded context that owns it — `bounded_context`, never the runtime `context` a use case
@@ -107,10 +107,10 @@ class Key:
     @property
     def relation(self) -> str | None:
         """Whose key it is, as a contract names it: the entity's name in its own context,
-        `auth.Tenant` for another's; `None` when it does not say.
+        `tenancy.Tenant` for another's; `None` when it does not say.
 
             Key(Project, str, False, False).relation   ->  "Project"
-            Key(Tenant, str, False, False).relation    ->  "auth.Tenant"
+            Key(Tenant, str, False, False).relation    ->  "tenancy.Tenant"
         """
         if self.entity is None:
             return None
@@ -214,7 +214,7 @@ def key_json_schema(schema: Any, written: dict[str, Any]) -> dict[str, Any]:
 
         {"type": "string", "x-sincpro": {"relation": "Project"}}
         {"type": "string", "format": "uuid", "x-sincpro": {"relation": "Device"}}
-        {"type": "string", "pattern": "^[0-9a-f]{12}7…$", "x-sincpro": {"relation": "auth.Tenant"}}
+        {"type": "string", "pattern": "^[0-9a-f]{12}7…$", "x-sincpro": {"relation": "tenancy.Tenant"}}
     """
     key = (schema.get("metadata") or {}).get(KEY)
     if key is None:
