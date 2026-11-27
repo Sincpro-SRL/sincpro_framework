@@ -97,9 +97,11 @@ DEFAULT_QUERIES = QueryCachePolicy(
     ttl=timedelta(seconds=60),
     stale_for=timedelta(seconds=10),
     wait_for_others=WAIT_FOR_OTHERS,
+    vary_by=Owner.BY_TENANT,
 )
 """What `bus.cache.queries(Query)` caches an answer by: the same minute as `@cache` — let go of
-sooner, when an aggregate it read is written."""
+sooner, when an aggregate it read is written — and one answer per tenant, as `bus.cache` owns
+an entry by tenant: a service of no tenant keys every answer as before."""
 
 DEFAULT_EXPIRES_AFTER = timedelta(hours=24)
 """How long `@idempotency` replays an answer — a day, what clients that retry by key hold

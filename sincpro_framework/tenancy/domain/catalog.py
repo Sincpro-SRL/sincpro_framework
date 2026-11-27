@@ -45,7 +45,8 @@ class Tenant:
 
 
 class TenantCatalog(ABC):
-    """The tenants a service knows. `get` and `ids` are the whole contract."""
+    """The tenants a service knows. `get` and `ids` are the whole contract to read it; `put` is
+    what a catalog the service itself administers adds."""
 
     @abstractmethod
     def get(self, tenant_id: str) -> Tenant | None:
@@ -54,3 +55,10 @@ class TenantCatalog(ABC):
     @abstractmethod
     def ids(self, status: TenantStatus = TenantStatus.ACTIVE) -> list[str]:
         """The ids of the tenants in `status` — what a job run per tenant iterates."""
+
+    def put(self, tenant: Tenant) -> None:
+        """Adds the tenant, or replaces the one of the same id — a status change included. A
+        catalog another system owns (an identity provider, a control plane) answers it not."""
+        raise NotImplementedError(
+            f"{type(self).__name__} is read here, administered elsewhere"
+        )

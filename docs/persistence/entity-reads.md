@@ -115,16 +115,21 @@ filter (the key for a `Get`, the template for a select). This is `Criteria.repla
 
 "Names" is what pydantic records as set (`model_fields_set`), not what differs from a default:
 `Criteria(order=())` names the order on purpose. A scope merged with `merged_with` carries only
-what either side named, so a list that adds its tenant to the caller's criteria still reads
-the entity's defaults:
+what either side named, so a list that adds a rule of its own to the caller's criteria still
+reads the entity's defaults:
 
 ```python
 @accounting.feature(QueryListAccounts)
 class ListAccounts(EntityReads[Account]):
     def search(self, dto: QueryListAccounts) -> ResponseListAccounts:
-        scope = Criteria(selection=Condition(field="tenant_id", value=dto.tenant_id))
+        scope = Criteria(selection=Condition(field="active", value=True))
         return super().search(dto.model_copy(update={"criteria": scope.merged_with(dto.criteria)}))
 ```
+
+The tenant is never such a rule: a value the caller sends is the caller's to forge. Tenancy
+narrows every read of the store by the tenant the execution resolved and validated —
+`Get`, `Search`, `LiteralSearch`, `Edit`, `Import` and `Export` alike, with nothing written
+here ([tenancy](../tenancy/README.md)).
 
 - **`GetMany` is a list, not a page.** No cursor and no count: every key asked is
   answered, or named in `missing`. A repeated key is answered once. An empty `ids` is an

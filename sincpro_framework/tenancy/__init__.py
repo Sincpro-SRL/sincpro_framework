@@ -17,6 +17,7 @@ The pieces, each usable alone:
 | `TenantCatalog`, `Tenant`, `TenantStatus` | the tenants a service knows and their lifecycle — a port |
 | `Tenancy` | the facade: wiring, the tenant context, scopes and declarations |
 | `TenantOwnedMixin` | a recipe: an aggregate that declares `tenant_id` |
+| `TenantUseCases` and its DTOs | the built-in use cases: the caller's tenant context, the catalog, the memberships |
 
 A project with a multi-tenancy of its own uses none of it: the execution context keeps
 `tenant_id` and `tenant_ids` as before, and data filters take any rule.
@@ -37,10 +38,36 @@ from sincpro_framework.tenancy.domain.memberships import Membership, Memberships
 from sincpro_framework.tenancy.domain.tenant_context import TenantContext
 from sincpro_framework.tenancy.domain.tenant_owned import TenantOwnedMixin
 from sincpro_framework.tenancy.entrypoint.tenancy import AcrossTenants, Tenancy
+from sincpro_framework.tenancy.entrypoint.use_cases import (
+    GetTenantContext,
+    JoinTenant,
+    LeaveTenant,
+    ListTenantMembers,
+    ListTenants,
+    PutTenant,
+    ResponseMembership,
+    ResponseTenant,
+    ResponseTenantContext,
+    ResponseTenantMembers,
+    ResponseTenants,
+    TenantUseCases,
+)
 from sincpro_framework.tenancy.services.discrimination import TENANT_FILTER, TenantFilter
 
 __all__ = [
     "AcrossTenants",
+    "GetTenantContext",
+    "JoinTenant",
+    "LeaveTenant",
+    "ListTenantMembers",
+    "ListTenants",
+    "PutTenant",
+    "ResponseMembership",
+    "ResponseTenant",
+    "ResponseTenantContext",
+    "ResponseTenantMembers",
+    "ResponseTenants",
+    "TenantUseCases",
     "InMemoryMemberships",
     "InMemoryTenantCatalog",
     "Membership",

@@ -10,7 +10,7 @@
 What travels in a payload that comes back later — a payment's metadata, a webhook, a job, a
 notification — so whoever receives it reads the record by its own `Get`
 (`sincpro_framework.references.EntityRefs`) without knowing its bus or its route. The bounded
-context and the entity are named as a `Reference` names a relation (`auth.Tenant`); the key is the
+context and the entity are named as a `Reference` names a relation (`tenancy.Tenant`); the key is the
 one `Get` finds the record by (`DEFAULT_GET_ID`, its identity by default).
 
 Context: a ref is kept outside the code — in a provider, a queue, a log — so it names the entity

@@ -20,8 +20,16 @@ from sincpro_framework.ddd.events import DomainEvent
 from sincpro_framework.entrypoints.adapters.queue.wire import queue_context
 from sincpro_framework.event_driven.domain.envelope import Envelope
 from sincpro_framework.tenancy import (
+    GetTenantContext,
     InMemoryMemberships,
     InMemoryTenantCatalog,
+    JoinTenant,
+    ListTenantMembers,
+    ListTenants,
+    PutTenant,
+    ResponseTenantContext,
+    ResponseTenantMembers,
+    ResponseTenants,
     Shared,
     Tenancy,
     Tenant,
@@ -30,6 +38,7 @@ from sincpro_framework.tenancy import (
     TenantOwnedMixin,
     TenantRequired,
     TenantStatus,
+    TenantUseCases,
 )
 
 
@@ -265,3 +274,71 @@ def test_a_queue_reads_the_tenant_only_as_every_wire_carries_it():
     """The headers this wire read before the key was standard (`tenant`, `x-tenant`) are a value
     the producer wrote by hand — no longer taken as the tenant."""
     assert "tenant_id" not in queue_context(Envelope(), {"x-tenant": "acme"})
+
+
+class QueryTotal(DataTransferObject):
+    pass
+
+
+def test_a_cached_query_answers_each_tenant_its_own(store):
+    """A Query's cached answer is keyed by the tenant, as `bus.cache` owns an entry by it — the
+    answer of one tenant never reaches another."""
+    tenancy = Tenancy()
+    tenancy.isolate(store)
+    bus = _billing(tenancy, store)
+
+    @bus.feature(QueryTotal)
+    class Total(Feature):
+        def execute(self, dto: QueryTotal) -> ResponseCount:
+            return ResponseCount(value=self.store.count(Invoice, Criteria()).value)
+
+    bus.cache.queries(QueryTotal)
+    with bus.context({"tenant_id": "acme"}):
+        bus(CommandIssue(total=Decimal(1)))
+        assert bus(QueryTotal(), ResponseCount).value == 1  # type: ignore[union-attr]
+    with bus.context({"tenant_id": "globex"}):
+        assert bus(QueryTotal(), ResponseCount).value == 0  # type: ignore[union-attr]
+
+
+class QueryMe(GetTenantContext):
+    pass
+
+
+class CommandAddMember(JoinTenant):
+    pass
+
+
+class QueryMembers(ListTenantMembers):
+    pass
+
+
+class CommandSuspend(PutTenant):
+    pass
+
+
+class QueryActive(ListTenants):
+    pass
+
+
+def test_the_built_in_use_cases_answer_the_tenant_context_catalog_and_memberships():
+    memberships = InMemoryMemberships({"ana": ["acme"]})
+    catalog = InMemoryTenantCatalog.of("acme", "globex")
+    tenancy = Tenancy(memberships=memberships, catalog=catalog)
+    bus = UseFramework("tenancy-admin", log_after_execution=False)
+    tenancy.on(bus)
+
+    @bus.feature([QueryMe, CommandAddMember, QueryMembers, CommandSuspend, QueryActive])
+    class Tenants(TenantUseCases):
+        pass
+
+    bus(CommandAddMember(subject="ana", tenant="globex", role="admin"))
+    with bus.context({"user_id": "ana", "tenant_id": "globex"}):
+        me = bus(QueryMe(), ResponseTenantContext)
+    assert me is not None
+    assert (me.active, me.allowed) == ("globex", ["acme", "globex"])
+    assert me.tenant is not None and me.tenant.id == "globex"
+    members = bus(QueryMembers(tenant="globex"), ResponseTenantMembers)
+    assert members is not None and members.members == {"ana": "admin"}
+    bus(CommandSuspend(id="globex", status=TenantStatus.SUSPENDED))
+    active = bus(QueryActive(), ResponseTenants)
+    assert active is not None and [one.id for one in active.tenants] == ["acme"]
