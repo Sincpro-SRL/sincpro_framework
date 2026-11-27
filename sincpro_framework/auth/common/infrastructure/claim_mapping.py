@@ -144,6 +144,14 @@ class ClaimMapping(DataTransferObject):
         service = self.service_match is not None and self.service_match.matches(claims)
         prefix = self.service_prefix if service else self.subject_prefix
         tenant = value_at(claims, self.tenant) if self.tenant else None
+        if tenant is not None and (
+            isinstance(tenant, bool) or not isinstance(tenant, (str, int))
+        ):
+            raise exceptions.Unauthenticated(
+                f"the token names its tenant ({self.tenant}) as {type(tenant).__name__}, not "
+                "one value — the tenant a call acts in is one; the tenants a subject belongs "
+                "to are memberships"
+            )
         level = claims.get("acr")
         return Identity(
             subject=f"{prefix}{named}",
