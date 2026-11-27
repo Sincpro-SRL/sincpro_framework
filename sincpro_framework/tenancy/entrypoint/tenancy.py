@@ -314,12 +314,15 @@ class Tenancy:
         """
         if declared.each:
             once = replace(declared, each=False)
-            answered = self.each(lambda: self._run(once, name, dto, call_next))
-            if any(one is not None for one in answered.values()):
-                raise ProgrammingError(
-                    f"{name} runs once per tenant and answers nothing; collect an answer per "
-                    "tenant with self.tenancy.each(...)"
-                )
+
+            def run_once() -> None:
+                if self._run(once, name, dto, call_next) is not None:
+                    raise ProgrammingError(
+                        f"{name} runs once per tenant and answers nothing; collect an answer "
+                        "per tenant with self.tenancy.each(...)"
+                    )
+
+            self.each(run_once)
             return None
         if declared.across is not None:
             with crossing.across_tenants(declared.across):

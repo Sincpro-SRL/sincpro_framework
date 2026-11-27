@@ -95,6 +95,7 @@ class NightlyDunning(ApplicationService): ...                 # once per tenant,
 | **Hooks and interceptors see it** | they run inside the use case |
 | **What is mine and what is not** | another tenant's record is *not found* — never told apart from one that does not exist; a member of several who names none is told to choose |
 | **Declared, never by convention** | a `tenant_id` nobody declared is a field like any other |
+| **The caller is judged, the code decides** | a tenant a caller sends through a wire (HTTP, a queue, a remote bus) is validated against its memberships — an anonymous caller names none; a tenant the code sets (`with_tenant`, `bus.context` in code) is the code's decision |
 | **Validated once per execution, cached never across** | a nested call in the same tenants is not validated again; a member taken out of a tenant, or a tenant suspended, is refused from the next request on |
 | **Only a new record is stamped** | editing a shared record inside a tenant never moves it into that tenant |
 
@@ -105,7 +106,7 @@ class NightlyDunning(ApplicationService): ...                 # once per tenant,
 | Repository, `EntityReads`, `Edit`, `Import`, `Export`, a nested Feature, a plain session | read through the isolation the use case asked for ([data filters](../persistence/data-filters.md)) — `text()` is not filtered |
 | Tables | `tenant_columns()`, `unique_per_tenant("number")`, `tenant_foreign_key(...)` — Alembic picks them up |
 | Domain events | an event base that declares `tenant_id` is stamped and filtered; `event_table(..., *tenant_columns())`; the envelope carries the event's tenant |
-| External keys | `ExternalKey.scope` is the tenant: two tenants importing the same file never collide |
+| External keys | `ExternalKey.scope` is the tenant: two tenants importing the same file never collide; inside a tenant only its keys are read — the shared ones (`""`) with `WhenMissing.SHARED` |
 | Query cache, drafts, `bus.cache`, idempotency, pipeline runs | owned by tenant |
 | Queues, remote buses, gRPC, HTTP | the tenant travels in the context and is validated at the entrance |
 | Observability | `tenant` on every log, span, error and metric series; a crossing is logged with its reason |

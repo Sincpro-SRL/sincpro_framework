@@ -72,7 +72,7 @@ map_aggregates(
         Plan: entity_table(
             "ten_plan",
             accounts.metadata,
-            Column("name", Text, nullable=False),
+            Column("name", Text, nullable=False, unique=True),
             *tenant_columns(),
         ),
     },
@@ -245,3 +245,48 @@ def test_a_status_change_keeps_when_the_tenant_was_created(engine_url):
     with database.session() as session:
         assert session.scalar(select(tenants_table.c.created_at)) == created
     assert catalog.ids(TenantStatus.SUSPENDED) == ["acme"]
+
+
+def test_an_upsert_never_takes_a_key_another_tenant_holds(repository):
+    """`code` is unique per tenant here, so the key is (tenant, code); on a key unique across
+    tenants the conflict is bounded by the isolation: another tenant's row is skipped."""
+    with tenancy.with_tenant("globex"), tenancy.isolated():
+        repository.save(Plan(name="gold"))
+    with tenancy.with_tenant("acme"), tenancy.isolated():
+        done = repository.upsert([Plan(name="gold")], on=["name"])
+    assert (done.written, done.skipped) == (0, 1)
+    assert [(one.name, one.tenant_id) for one in repository.fetch_all(Plan).items] == [
+        ("gold", "globex")
+    ]
+
+
+def test_the_body_of_a_loop_over_an_isolated_stream_is_not_isolated(repository):
+    with tenancy.with_tenant("acme"), tenancy.isolated():
+        repository.save(Account(code="4001"))
+    with tenancy.with_tenant("globex"), tenancy.isolated():
+        repository.save(Account(code="4002"))
+    view = tenancy.repository(repository)
+    with tenancy.with_tenant("acme"):
+        for page in view.stream(Account):
+            assert [one.code for one in page.items] == ["4001"]
+            assert repository.count(Account, Criteria()).value == 2  # outside the view
+
+
+def test_a_name_is_never_two_records_inside_a_tenant(repository):
+    """A key imported before tenancy (`scope=""`) and the tenant's own of the same name: inside
+    the tenant only its own is read, so an import never finds two identities for one name."""
+    named = Criteria(selection=Condition(field="key", value="res_partner_42"))
+    with tenancy.isolated(when_missing=WhenMissing.SHARED):
+        repository.save(
+            TenancyExternalKey(
+                origin="odoo", entity_type="Partner", entity_id="old", key="res_partner_42"
+            )
+        )
+    with tenancy.with_tenant("acme"), tenancy.isolated():
+        repository.save(
+            TenancyExternalKey(
+                origin="odoo", entity_type="Partner", entity_id="new", key="res_partner_42"
+            )
+        )
+        found = repository.fetch_all(TenancyExternalKey, named).items
+    assert [one.entity_id for one in found] == ["new"]

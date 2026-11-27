@@ -16,6 +16,8 @@ from sincpro_framework.tenancy.domain.tenant_context import TenantContext
 
 type Isolating = Callable[[], AbstractContextManager[TenantContext]]
 
+_END = object()
+
 
 class IsolatedRepository:
     """Any repository — a database's, the one in memory, an aggregate's view, a project's own —
@@ -26,10 +28,14 @@ class IsolatedRepository:
         self._isolating = isolating
 
     def _streamed(self, found: Iterator[Any]) -> Generator[Any]:
-        """Context: a stream is read page by page after the call returned — each page inside the
-        isolation, as late as it is read."""
-        with self._isolating():
-            yield from found
+        """Context: each page is read inside the isolation and handed out of it — the loop's
+        body is the rest of the use case, never isolated."""
+        while True:
+            with self._isolating():
+                page = next(found, _END)
+            if page is _END:
+                return
+            yield page
 
     def _kept_isolated(self, answered: Any) -> Any:
         """Context: what a call answers may be a repository again (`narrowed`, a unit of work)

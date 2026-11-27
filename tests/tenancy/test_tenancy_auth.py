@@ -21,6 +21,7 @@ from sincpro_framework.auth import (
 )
 from sincpro_framework.auth.common.infrastructure.claim_mapping import ClaimMapping
 from sincpro_framework.auth.grants import Assignment, GrantResolver, InMemoryGrants
+from sincpro_framework.context import EntrypointKind
 from sincpro_framework.tenancy import InMemoryMemberships, Tenancy, TenantNotAllowed
 from tests.auth.test_grants import P as GrantP
 from tests.auth.test_grants import catalog
@@ -34,7 +35,7 @@ from tests.auth.test_runtime_requirements import (
 
 
 def _run(bus: UseFramework, dto: Any, identity: Identity, context: dict) -> Answer:
-    with security.as_identity(identity), bus.context(context):
+    with security.as_identity(identity), bus.context(context, kind=EntrypointKind.REST):
         answered = bus(dto, Answer)
     assert answered is not None
     return answered
@@ -114,3 +115,18 @@ def test_a_platform_role_holds_in_every_tenant_the_platform_enters():
         {"tenant_id": "pe"}
     ):
         assert GrantP.ISSUE in resolver.resolve(Identity.user("user:root")).permissions
+
+
+def test_a_token_of_no_tenant_never_embeds_the_tenant_its_sign_in_named():
+    """Signed in while the request named tenant A, a token of no tenant embeds only what holds in
+    no tenant — A's admin role would otherwise travel into every other tenant."""
+    from sincpro_framework.auth.server import JwtProvider
+    from tests.auth.test_token_issuer import bearer, issuer
+
+    grants = InMemoryGrants()
+    grants.assign(Assignment(subject="user:ana", tenant="bo", role="billing.manager"))
+    sessions = issuer(embed_permissions=True, resolvers=[GrantResolver(catalog, grants)])
+    with UseFramework("sign-in", log_after_execution=False).context({"tenant_id": "bo"}):
+        tokens = sessions.issue(Identity.user("user:ana"))
+    verified = JwtProvider.for_token_issuer(sessions).authenticate(bearer(tokens))
+    assert verified is not None and GrantP.ISSUE not in verified.permissions

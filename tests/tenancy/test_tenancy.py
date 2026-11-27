@@ -14,6 +14,7 @@ from decimal import Decimal
 import pytest
 
 from sincpro_framework import ApplicationService, DataTransferObject, Feature, UseFramework
+from sincpro_framework.context import EntrypointKind
 from sincpro_framework.data_layer.repositories import MemoryRepository
 from sincpro_framework.ddd import Entity
 from sincpro_framework.ddd.criteria import Condition, Criteria, Operator
@@ -116,6 +117,9 @@ class CommandRemind(DataTransferObject):
 
 
 reminded: list[str | None] = []
+
+CALLER = EntrypointKind.REST
+"""What a caller sends through a wire is judged; what code writes in `bus.context` is the code's."""
 
 
 def billing(
@@ -351,7 +355,7 @@ def test_14_cross_tenant_lets_the_platform_name_any_tenant():
         memberships=InMemoryMemberships({"ana": ["acme"]}), cross_tenant=lambda: support["on"]
     )
     bus = billing(tenancy, MemoryRepository())
-    with bus.context({"user_id": "ana", "tenant_id": "globex"}):
+    with bus.context({"user_id": "ana", "tenant_id": "globex"}, kind=CALLER):
         with pytest.raises(TenantNotAllowed):
             bus(CommandWhere())
         assert tenancy.allows("globex") is False
@@ -366,15 +370,15 @@ def test_15_memberships_validate_what_the_caller_names(store):
         memberships=InMemoryMemberships({"ana": ["acme"], "bob": ["acme", "globex"]})
     )
     bus = billing(tenancy, store)
-    with bus.context({"user_id": "ana", "tenant_id": "globex"}):
+    with bus.context({"user_id": "ana", "tenant_id": "globex"}, kind=CALLER):
         with pytest.raises(TenantNotAllowed):
             bus(CommandWhere())
-    with bus.context({"user_id": "ana"}):
+    with bus.context({"user_id": "ana"}, kind=CALLER):
         assert bus(CommandWhere(), ResponseTenantContext).active == "acme"
-    with bus.context({"user_id": "bob"}):
+    with bus.context({"user_id": "bob"}, kind=CALLER):
         with pytest.raises(TenantRequired, match="belong to several"):
             bus(CommandWhere())
-    with bus.context({"user_id": "bob", "tenant_ids": ["acme", "globex"]}):
+    with bus.context({"user_id": "bob", "tenant_ids": ["acme", "globex"]}, kind=CALLER):
         assert bus(CommandCount(), ResponseCount).value == 0
 
 
@@ -457,7 +461,7 @@ def test_the_built_in_use_cases_answer_the_tenant_context_catalog_and_membership
         pass
 
     bus(CommandAddMember(subject="ana", tenant="globex", role="admin"))
-    with bus.context({"user_id": "ana", "tenant_id": "globex"}):
+    with bus.context({"user_id": "ana", "tenant_id": "globex"}, kind=CALLER):
         me = bus(QueryMe(), ResponseTenantContext)
     assert me is not None
     assert (me.active, me.allowed) == ("globex", ["acme", "globex"])
@@ -515,11 +519,49 @@ def test_memberships_are_asked_once_per_execution_and_never_cached_across(store)
     memberships = CountingMemberships({"ana": ["acme", "globex"]})
     bus = billing(Tenancy(memberships=memberships), store)
     CountingMemberships.asked = 0
-    with bus.context({"user_id": "ana", "tenant_ids": ["acme", "globex"]}):
+    with bus.context({"user_id": "ana", "tenant_ids": ["acme", "globex"]}, kind=CALLER):
         bus(CommandEveryone(), ResponseCount)  # Everyone → Count, nested
     assert CountingMemberships.asked == 1
 
     memberships.leave("ana", "globex")
-    with bus.context({"user_id": "ana", "tenant_id": "globex"}):
+    with bus.context({"user_id": "ana", "tenant_id": "globex"}, kind=CALLER):
         with pytest.raises(TenantNotAllowed):
             bus(CommandWhere())
+
+
+def test_an_anonymous_caller_names_no_tenant_and_the_code_names_any(store):
+    tenancy = Tenancy(memberships=InMemoryMemberships({"ana": ["acme"]}))
+    bus = billing(tenancy, store)
+    with bus.context({"tenant_id": "acme"}, kind=CALLER):  # nobody: no membership anywhere
+        with pytest.raises(TenantNotAllowed):
+            bus(CommandWhere())
+    with tenancy.with_tenant("globex"):  # the code's decision: an invitation, a link signed
+        assert bus(CommandWhere(), ResponseTenantContext).active == "globex"
+
+
+class CommandAnswersByMistake(DataTransferObject):
+    pass
+
+
+def test_each_tenant_stops_at_the_first_tenant_when_the_use_case_answers(tenancy, store):
+    ran: list[str | None] = []
+    bus = billing(tenancy, store)
+
+    @bus.app_service(CommandAnswersByMistake)
+    @tenancy.each_tenant
+    class AnswersByMistake(ApplicationService):
+        def execute(self, dto: CommandAnswersByMistake) -> ResponseCount:
+            ran.append(self.tenancy.active)
+            return ResponseCount(value=1)
+
+    with pytest.raises(ProgrammingError, match="answers nothing"):
+        bus(CommandAnswersByMistake())
+    assert ran == ["acme"]
+
+
+def test_an_upsert_in_memory_never_takes_a_key_another_tenant_holds(tenancy, store):
+    store.add(Product(name="gold", tenant_id="globex"))
+    with tenancy.with_tenant("acme"), tenancy.isolated():
+        done = store.upsert([Product(name="gold")], on=["name"])
+    assert (done.written, done.skipped) == (0, 1)
+    assert [one.tenant_id for one in store.fetch_all(Product).items] == ["globex"]

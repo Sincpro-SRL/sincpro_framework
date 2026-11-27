@@ -65,7 +65,10 @@ includes the filters with the request's values.
 
 What SQLAlchemy never sees as ORM is not filtered: `text()`, a Core statement on a `Table`,
 `search_sql`. An ORM `insert(Model).values(...)` and the values of an `update(...).values(...)`
-are not checked either — the rows an UPDATE reaches are filtered, what it sets is the code's. A filter naming a field the aggregate cannot answer is refused (`ProgrammingError`)
+are not checked either — the rows an UPDATE reaches are filtered, what it sets is the code's.
+A repository's `save` flushes at once, so it is judged by the filters of the block it ran in; an
+object added to a plain session is judged when that session flushes, by the filters active then.
+An upsert is bounded by the active filters: a key held outside them is skipped, never taken. A filter naming a field the aggregate cannot answer is refused (`ProgrammingError`)
 rather than dropped — a filter silently left out reads wide.
 
 ## Why both

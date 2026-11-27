@@ -47,6 +47,7 @@ from sincpro_framework.data_layer.orm.sqlalchemy.services.workflows.repository_s
 )
 from sincpro_framework.ddd.criteria import (
     Criteria,
+    Node,
 )
 from sincpro_framework.ddd.editing import bulk_rules
 from sincpro_framework.ddd.editing.editing import recompute_row
@@ -567,8 +568,8 @@ class Writing(RepositoryState, Extends):
            refused: the upsert would drop them without a word.
         5. Each record's computations and checks over its row, as a save runs them
            (`recompute_row`), then the `before_save` hooks.
-        6. A narrowed repository bounds the conflict by its scope and never overwrites the
-           scope's own fields.
+        6. A narrowed repository, and the active data filters, bound the conflict and are never
+           overwritten — a key another tenant holds is skipped, never taken.
         Final: the rows written back are the written; the rest of the batch was skipped.
         """
         mapper = sqlalchemy.inspect(model)
@@ -581,7 +582,10 @@ class Writing(RepositoryState, Extends):
         upsert.refuse(
             model, table, mapper.inherits is not None, dialect, names, on, overwrite, fixed
         )
-        scope = self._scope.expression if self._scope is not None else None
+        scope = Node.combined(
+            self._scope.expression if self._scope is not None else None,
+            self.database.filters.expression_for(model),
+        )
         scope_fields = (
             {one.field for one in scope.conditions()} if scope is not None else set()
         )

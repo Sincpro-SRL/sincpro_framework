@@ -1789,6 +1789,8 @@ class MemoryRepository(
                 None,
             )
             twin = self._stored.get(model, {}).get(identity_of(one))
+            if held is not None and not self.filters.admits(held):
+                continue  # a key held outside the filters is skipped, as the engine's WHERE does
             if held is None and twin is not None:
                 raise exceptions.DuplicateAggregate(
                     f"{model.__name__} {identity_of(one)} is already stored under another "
@@ -1805,6 +1807,8 @@ class MemoryRepository(
                 continue
             fixed = {meta.identity, "created_at", "version", "updated_at", *on}
             fixed |= {"archived_at", "created_by"}
+            filtered = self.filters.expression_for(model)
+            fixed |= {one.field for one in filtered.conditions()} if filtered else set()
             overwritten = (
                 list(update)
                 if update is not None

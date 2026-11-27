@@ -9,6 +9,7 @@ A tenant that fails never stops the others; every failure is raised together at 
 from collections.abc import Callable, Iterable
 from typing import Any
 
+from sincpro_framework.exceptions import ProgrammingError
 from sincpro_framework.sincpro_logger import logger
 from sincpro_framework.tenancy.domain.exceptions import TenantRequired
 from sincpro_framework.tenancy.services.resolution import Resolution
@@ -37,6 +38,8 @@ def each(
         try:
             with working_in(resolution, [one], one):
                 answers[one] = run()
+        except ProgrammingError:
+            raise  # the code's mistake is the same in every tenant: stop at the first
         except Exception as failure:
             logger.exception("a tenant's run failed", tenant=one)
             failure.add_note(f"tenant {one!r}")

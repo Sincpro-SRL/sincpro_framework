@@ -33,13 +33,14 @@ TENANT_FILTER = "tenant"
 class Discriminators:
     """How each aggregate is partitioned — declared, inherited from `TenantOwnedMixin`, or not
     at all. The framework's own partitioned record is declared already: an external key lives
-    in the scope of its tenant."""
+    in its tenant's scope — the shared ones (`""`) are read with `WhenMissing.SHARED`, so a name is
+    never two records."""
 
     def __init__(self, shared: Shared = Shared.NEVER) -> None:
         self.shared = shared
         """Whether an empty tenant is everyone's, for what is declared without saying."""
         self._declared: dict[type, TenantDiscriminator | None] = {
-            ExternalKey: TenantDiscriminator("scope", Shared.WHEN_EMPTY, empty="")
+            ExternalKey: TenantDiscriminator("scope", Shared.NEVER, empty="")
         }
 
     def declare(self, aggregate: type, discriminator: TenantDiscriminator | None) -> None:
