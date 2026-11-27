@@ -15,6 +15,7 @@ from weakref import WeakKeyDictionary
 
 from sincpro_framework.context import use_context
 from sincpro_framework.ddd.criteria import Any_, Condition, Criteria, Operator
+from sincpro_framework.ddd.importing import ExternalKey
 from sincpro_framework.ddd.repositories.data_filters import DataFilter
 from sincpro_framework.tenancy.domain.discriminator import Shared, TenantDiscriminator
 from sincpro_framework.tenancy.domain.exceptions import TenantRequired
@@ -22,6 +23,18 @@ from sincpro_framework.tenancy.domain.tenant_context import TenantContext
 
 TENANT_FILTER = "tenant"
 """The name the tenant filter is turned off by — `DataFilters.disabled(TENANT_FILTER)`."""
+
+
+def _scope_or_everyone(tenants: TenantContext) -> Criteria:
+    """An external key of the selected tenants, or of the namespace every tenant shares (`""`)."""
+    return Criteria(
+        selection=Any_(
+            any=[
+                Condition(field="scope", operator=Operator.IN, value=list(tenants.selected)),
+                Condition(field="scope", value=""),
+            ]
+        )
+    )
 
 
 def declares(aggregate: type, field: str) -> bool:
@@ -37,7 +50,11 @@ class TenantFilter(DataFilter):
     def __init__(self, field: str = "tenant_id", shared: Shared = Shared.NEVER) -> None:
         self.convention = TenantDiscriminator(field, shared)
         """What an aggregate with the field gets when nothing was declared for it."""
-        self.declared: dict[type, TenantDiscriminator | None] = {}
+        self.declared: dict[type, TenantDiscriminator | None] = {
+            ExternalKey: TenantDiscriminator("scope", Shared.WHEN_EMPTY, _scope_or_everyone)
+        }
+        """What was declared per aggregate — the framework's own partitioned records among
+        them: an external key lives in the scope of its tenant."""
         self._found: WeakKeyDictionary[type, TenantDiscriminator | None] = WeakKeyDictionary()
 
     def discriminate(

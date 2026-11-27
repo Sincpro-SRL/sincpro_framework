@@ -17,8 +17,8 @@ from sincpro_framework.ddd.entity import Entity
 
 @dataclass
 class ExternalKey(Entity):
-    """One record's name in one origin: unique by `(origin, entity_type, key)`. Two origins naming
-    the same record are two keys of it."""
+    """One record's name in one origin: unique by `(scope, origin, entity_type, key)`. Two origins
+    naming the same record are two keys of it."""
 
     origin: str
     """Who gave the name: `"odoo"`, `"legacy_excel"` — the import's own, `"import"` by default."""
@@ -28,3 +28,7 @@ class ExternalKey(Entity):
     """The identity of the record it names."""
     key: str
     """The name the origin gives the record."""
+    scope: str = ""
+    """The partition the name lives in — a tenant, a company — so two of them importing the same
+    file never collide; `""` is one namespace for everyone. Tenancy fills it with the active
+    tenant."""

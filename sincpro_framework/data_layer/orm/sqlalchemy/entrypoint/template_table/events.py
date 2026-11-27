@@ -7,6 +7,8 @@ A domain event is an entity: its envelope is columns, what each class adds is `p
 `event_columns()` is the envelope alone, for an event mapped to a table of its own.
 """
 
+from typing import Any
+
 from sqlalchemy import (
     JSON,
     Column,
@@ -23,7 +25,7 @@ from sqlalchemy.dialects.postgresql import JSONB
 from sincpro_framework.data_layer.orm.sqlalchemy.domain.custom_fields import JsonText
 
 
-def event_table(name: str, metadata: MetaData) -> Table:
+def event_table(name: str, metadata: MetaData, *columns: Any) -> Table:
     """One row per domain event of the context, in the order they were committed.
 
         out     id TEXT PRIMARY KEY — a UUID v7: ordering by it is ordering by time
@@ -39,6 +41,11 @@ def event_table(name: str, metadata: MetaData) -> Table:
 
     The fact never changes after the insert; only the delivery columns of a deliverable event
     do, stamped by the repository that published it on commit.
+
+    `columns` are the project's own beside the envelope — a field its event base declares and
+    wants as a column rather than inside `payload`, so a read can filter by it:
+
+        event_table("billing_events", metadata, *tenant_columns())
     """
     moment = DateTime(timezone=True)
     return Table(
@@ -63,6 +70,7 @@ def event_table(name: str, metadata: MetaData) -> Table:
         ),
         Index(f"{name}_by_name", "name", "id"),
         Index(f"{name}_by_entity", "entity_type", "entity_id", "id"),
+        *columns,
     )
 
 

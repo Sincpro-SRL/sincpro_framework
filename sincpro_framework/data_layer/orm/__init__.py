@@ -59,6 +59,10 @@ from sincpro_framework.data_layer.orm.sqlalchemy.entrypoint.mapping import (
     register_part_translator,
 )
 from sincpro_framework.data_layer.orm.sqlalchemy.entrypoint.repository import Repository
+from sincpro_framework.data_layer.orm.sqlalchemy.entrypoint.tenancy_stores import (
+    DatabaseMemberships,
+    DatabaseTenantCatalog,
+)
 from sincpro_framework.data_layer.orm.sqlalchemy.infrastructure.database import Database
 from sincpro_framework.data_layer.orm.sqlalchemy.services.cache_invalidation import (
     invalidate_on_commit,
@@ -76,7 +80,9 @@ __all__ = [
     "DatabaseGrants",
     "DatabaseIdempotencyRecords",
     "DatabaseKeyValue",
+    "DatabaseMemberships",
     "DatabaseRefreshTokens",
+    "DatabaseTenantCatalog",
     "DatabaseNumbering",
     "Isolation",
     "JsonText",

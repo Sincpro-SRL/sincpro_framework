@@ -59,3 +59,11 @@ class InMemoryMemberships(Memberships):
 
     def tenants_of(self, subject: str) -> Mapping[str, Membership]:
         return dict(self._by_subject.get(subject, {}))
+
+    def members_of(self, tenant: str) -> dict[str, str | None]:
+        """Every subject of `tenant`, with its role."""
+        return {
+            subject: held[tenant].role
+            for subject, held in self._by_subject.items()
+            if tenant in held
+        }

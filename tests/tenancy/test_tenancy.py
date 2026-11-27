@@ -12,9 +12,13 @@ from decimal import Decimal
 import pytest
 
 from sincpro_framework import ApplicationService, DataTransferObject, Feature, UseFramework
+from sincpro_framework.context import context_propagation
 from sincpro_framework.data_layer.repositories import MemoryRepository
 from sincpro_framework.ddd import Entity
 from sincpro_framework.ddd.criteria import Criteria
+from sincpro_framework.ddd.events import DomainEvent
+from sincpro_framework.entrypoints.adapters.queue.wire import queue_context
+from sincpro_framework.event_driven.domain.envelope import Envelope
 from sincpro_framework.tenancy import (
     InMemoryMemberships,
     InMemoryTenantCatalog,
@@ -241,3 +245,23 @@ def test_the_sub_criteria_of_a_read_of_the_project_s_own(store):
         criteria = tenancy.criteria(Invoice)
     assert criteria is not None and criteria.expression is not None
     assert criteria.expression.model_dump()["value"] == ["acme", "globex"]
+
+
+@dataclass
+class InvoicePaid(DomainEvent):
+    tenant_id: str | None = None
+
+
+def test_an_event_delivered_out_of_any_request_still_says_its_tenant():
+    """Forwarded later from its table, with no request around it, the event's own tenant goes in
+    the headers — a consumer opens its execution in that tenant."""
+    headers = Envelope.headers_for(
+        InvoicePaid(entity_id="F-1", tenant_id="acme"), source="billing"
+    )
+    assert context_propagation.extract(headers)["tenant_id"] == "acme"
+
+
+def test_a_queue_reads_the_tenant_only_as_every_wire_carries_it():
+    """The headers this wire read before the key was standard (`tenant`, `x-tenant`) are a value
+    the producer wrote by hand — no longer taken as the tenant."""
+    assert "tenant_id" not in queue_context(Envelope(), {"x-tenant": "acme"})

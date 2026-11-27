@@ -232,7 +232,13 @@ class Envelope(DataTransferObject):
             }
         )
         headers = envelope.as_headers()
-        headers = {**context_propagation.inject(context_scopes.flow()), **headers}
+        flow = context_scopes.flow()
+        # A fact delivered later, out of any request — forwarded from its table — still says
+        # the tenant it belongs to, when it names one.
+        tenant = getattr(message, ContextKey.TENANT_ID, None)
+        if tenant and not flow.get(ContextKey.TENANT_ID):
+            flow = {**flow, ContextKey.TENANT_ID: tenant}
+        headers = {**context_propagation.inject(flow), **headers}
         if isinstance(message, DomainEvent):
             headers[EVENT_HEADER] = message.name
         return headers
