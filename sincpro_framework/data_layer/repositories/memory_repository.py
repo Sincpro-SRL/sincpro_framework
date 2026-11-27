@@ -1448,7 +1448,8 @@ class MemoryRepository(
         self._refuse_reentrant_write()
         records = self._events_of_sourced(records_of(record))
         for one in records:
-            self.filters.stamp(one)
+            if not any(identity_of(one) in held for held in self._held_as(type(one))):
+                self.filters.stamp(one)
         newness = self._before_writes(records)
         for one in records:
             self._save_one(one)

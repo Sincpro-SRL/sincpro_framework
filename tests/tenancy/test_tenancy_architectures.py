@@ -141,3 +141,13 @@ def test_a_queue_reads_the_tenant_only_as_every_wire_carries_it():
     assert "tenant_id" not in queue_context(Envelope(), {"x-tenant": "acme"})
     carried = context_propagation.inject({"tenant_id": "acme"})
     assert queue_context(Envelope(), carried)["tenant_id"] == "acme"
+
+
+def test_an_event_goes_out_as_its_tenant_s_whatever_flow_publishes_it():
+    """A support session working in A writes B's record: the fact it recorded is B's."""
+    tenancy = Tenancy()
+    with tenancy.with_tenants(["acme", "globex"], "acme"):
+        headers = Envelope.headers_for(InvoicePaid(entity_id="F-1", tenant_id="globex"))
+    carried = context_propagation.extract(headers)
+    assert carried["tenant_id"] == "globex"
+    assert "tenant_ids" not in carried

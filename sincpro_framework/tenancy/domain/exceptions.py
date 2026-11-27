@@ -1,19 +1,13 @@
-"""What tenancy refuses, each told to the caller with the failure every wire already answers."""
+"""What tenancy refuses — two causes, each answered by every wire with its own code."""
 
 from sincpro_framework.exceptions import ClientError, FailureKind
 
 
 class TenantRequired(ClientError):
-    """The execution names no tenant, and what it does needs one — a read or a write of data
-    partitioned by tenant, or a use case declared `@tenancy.required`.
+    """The execution names no tenant and what it does needs one.
 
-    Context: reading every tenant's data because none was named is the leak tenancy exists to
-    prevent; reading across tenants is asked for by name (`without_tenant`)."""
-
-
-class TenantNotChosen(TenantRequired):
-    """The caller belongs to several tenants and named none of them — which one is the caller's
-    to say (a header, a claim, a selector), never the server's to guess."""
+    Context: reading every tenant because none was named is the leak tenancy prevents; reading
+    across them is asked by name (`without_tenant`)."""
 
 
 class TenantNotAllowed(ClientError):

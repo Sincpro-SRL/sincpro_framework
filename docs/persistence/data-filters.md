@@ -64,7 +64,8 @@ includes the filters with the request's values.
 ## Edges
 
 What SQLAlchemy never sees as ORM is not filtered: `text()`, a Core statement on a `Table`,
-`search_sql`. A filter naming a field the aggregate cannot answer is refused (`ProgrammingError`)
+`search_sql`. An ORM `insert(Model).values(...)` and the values of an `update(...).values(...)`
+are not checked either — the rows an UPDATE reaches are filtered, what it sets is the code's. A filter naming a field the aggregate cannot answer is refused (`ProgrammingError`)
 rather than dropped — a filter silently left out reads wide.
 
 ## Why both

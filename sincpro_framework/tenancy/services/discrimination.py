@@ -30,18 +30,6 @@ TENANT_FILTER = "tenant"
 """The name the tenant filter is turned off by — `DataFilters.disabled(TENANT_FILTER)`."""
 
 
-def _scope_or_everyone(tenants: TenantContext) -> Criteria:
-    """An external key of the selected tenants, or of the namespace every tenant shares (`""`)."""
-    return Criteria(
-        selection=Any_(
-            any=[
-                Condition(field="scope", operator=Operator.IN, value=list(tenants.selected)),
-                Condition(field="scope", value=""),
-            ]
-        )
-    )
-
-
 class Discriminators:
     """How each aggregate is partitioned — declared, inherited from `TenantOwnedMixin`, or not
     at all. The framework's own partitioned record is declared already: an external key lives
@@ -51,7 +39,7 @@ class Discriminators:
         self.shared = shared
         """Whether an empty tenant is everyone's, for what is declared without saying."""
         self._declared: dict[type, TenantDiscriminator | None] = {
-            ExternalKey: TenantDiscriminator("scope", Shared.WHEN_EMPTY, _scope_or_everyone)
+            ExternalKey: TenantDiscriminator("scope", Shared.WHEN_EMPTY, empty="")
         }
 
     def declare(self, aggregate: type, discriminator: TenantDiscriminator | None) -> None:
@@ -83,7 +71,11 @@ class Discriminators:
         if discriminator is None:
             return None
         field = discriminator.field
-        empty = Condition(field=field, operator=Operator.IS_NULL, value=True)
+        empty = (
+            Condition(field=field, operator=Operator.IS_NULL, value=True)
+            if discriminator.empty is None
+            else Condition(field=field, value=discriminator.empty)
+        )
         if tenants.is_empty:
             if when_missing is WhenMissing.SHARED:
                 return Criteria(selection=empty)
@@ -118,13 +110,9 @@ class TenantFilter(DataFilter):
         )
 
     def stamp(self, record: Any) -> None:
-        """A new record with no tenant takes the active one.
-
-        1. Not partitioned, or its tenant already set: left as it is.
-        2. An active tenant: it is the record's.
-        Final: tenants selected and none active — `TenantRequired`, unless an empty tenant is
-        shared: then the record is left empty, everyone's.
-        """
+        """Context: a new record with no tenant takes the active one; with several selected and
+        none active it is `TenantRequired` — unless an empty tenant is shared, and it stays
+        everyone's."""
         discriminator = self.discriminators.of(type(record))
         if discriminator is None or getattr(record, discriminator.field, None):
             return
@@ -138,8 +126,8 @@ class TenantFilter(DataFilter):
             )
 
     def refusal(self, record: Any) -> Exception:
-        """Not found: a record of another tenant is, for this caller, no record at all — never
-        told apart from one that does not exist."""
+        """Context: another tenant's record is answered as missing, never told apart from one
+        that does not exist."""
         return AggregateNotFound(
             f"{type(record).__name__} {getattr(record, 'id', '')} not found"
         )

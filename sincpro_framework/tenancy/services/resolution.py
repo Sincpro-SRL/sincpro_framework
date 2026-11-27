@@ -1,34 +1,38 @@
-"""Tenant resolution — the tenant context of an execution, validated against what the caller
-may reach.
+"""Tenant resolution: the tenant context of an execution, validated against what the caller may
+reach.
 
-    caller names "acme", its memberships reach acme      ->  active acme
-    caller names nothing, one membership                 ->  that one, active
-    caller names nothing, several memberships            ->  nothing chosen
-    caller names "globex", no membership there           ->  TenantNotAllowed
-    caller crosses tenants (`cross_tenant`)              ->  any tenant, memberships not asked
-    caller names a tenant the catalog holds suspended    ->  TenantNotAllowed
+    caller names "acme", a member of acme             ->  active acme
+    caller names nothing, member of one tenant        ->  that one, active
+    caller names "globex", no membership there        ->  TenantNotAllowed
+    caller may cross tenants (`cross_tenant`)         ->  any tenant
+    caller names a tenant the catalog holds suspended ->  TenantNotAllowed
 
-Context: what the caller names arrives through the execution context — a header, a claim, a
-selector, a message of a queue — and is checked at the entrance of every bus, a remote one
-included: a value carried from another service is a value the caller wrote.
+Context: validated once per execution and never cached across them — a member taken out of a
+tenant, or a tenant suspended, is refused from the next request on.
 """
 
 from collections.abc import Callable
+from dataclasses import dataclass
 from typing import Any
 
 from sincpro_framework.context.domain.keys import ContextKey
 from sincpro_framework.tenancy.domain.catalog import TenantCatalog
-from sincpro_framework.tenancy.domain.exceptions import (
-    TenantNotAllowed,
-    TenantNotChosen,
-    TenantRequired,
-)
+from sincpro_framework.tenancy.domain.exceptions import TenantNotAllowed, TenantRequired
 from sincpro_framework.tenancy.domain.memberships import Memberships
 from sincpro_framework.tenancy.domain.tenant_context import TenantContext
 
 type CrossTenant = Callable[[], bool]
-"""Whether the caller in play may work in any tenant — a support engineer, the platform: what
-auth answers (`lambda: auth.allows(Platform.SUPPORT)`), tenancy never decides it."""
+"""Whether the caller in play may work in any tenant — auth's to answer
+(`lambda: auth.allows(P.SUPPORT)`), never tenancy's."""
+
+
+@dataclass(frozen=True)
+class Validated:
+    """The tenant context this execution validated — a typed key of the execution context, so a
+    nested call in the same tenants is not validated again, and nothing outlives the execution.
+    """
+
+    tenants: TenantContext
 
 
 class Resolution:
@@ -44,20 +48,16 @@ class Resolution:
         self.catalog = catalog
         self.cross_tenant = cross_tenant
 
-    def crosses(self) -> bool:
-        """Whether the caller in play may work in any tenant."""
-        return self.cross_tenant is not None and bool(self.cross_tenant())
-
     def allowed(self, context: Any) -> frozenset[str] | None:
         """The tenants the caller may select — `None` when nothing limits it: no memberships,
         nobody known (`user_id`), or a caller that crosses tenants."""
         subject = context.get(ContextKey.USER_ID)
-        if self.memberships is None or subject is None or self.crosses():
+        crosses = self.cross_tenant is not None and bool(self.cross_tenant())
+        if self.memberships is None or subject is None or crosses:
             return None
         return frozenset(self.memberships.tenants_of(subject))
 
     def _refuse_inactive(self, tenants: TenantContext) -> None:
-        """A selected tenant the catalog does not hold active is never served."""
         if self.catalog is None:
             return
         for one in tenants.selected:
@@ -67,25 +67,28 @@ class Resolution:
                 raise TenantNotAllowed(f"the tenant {one!r} is {state}")
 
     def allows(self, context: Any, tenant: str) -> bool:
-        """Whether the caller may work in `tenant` — asked without raising, as `auth.allows`."""
+        """Whether the caller may work in `tenant`, asked without raising."""
         allowed = self.allowed(context)
         if allowed is not None and tenant not in allowed:
             return False
-        if self.catalog is not None:
-            found = self.catalog.get(tenant)
-            return found is not None and found.is_active
-        return True
+        if self.catalog is None:
+            return True
+        found = self.catalog.get(tenant)
+        return found is not None and found.is_active
 
     def resolved(self, context: Any) -> TenantContext:
-        """The tenant context `context` holds, validated — written back when resolution chose it.
+        """Context: what the caller named, validated — and chosen for it when it belongs to one
+        tenant only. A context this execution validated already is answered as it is.
 
-        1. What the caller named: `tenant_id` active, `tenant_ids` selected.
+        1. Validated already in this execution, for these tenants: answered.
         2. Named outside what the caller may select: `TenantNotAllowed`.
-        3. Nothing named and exactly one membership: that tenant, written as `tenant_id`.
-        4. Every selected tenant active in the catalog, when there is one.
-        Final: the tenant context.
+        3. Nothing named and one membership: that tenant, written as `tenant_id`.
+        4. Every selected tenant active in the catalog.
+        Final: the tenant context, marked validated for the rest of the execution.
         """
         tenants = TenantContext.of(context)
+        if context.get(Validated) == Validated(tenants):
+            return tenants
         allowed = self.allowed(context)
         if allowed is not None:
             outside = [one for one in tenants.selected if one not in allowed]
@@ -94,22 +97,23 @@ class Resolution:
                     f"{context.get(ContextKey.USER_ID)} is no member of {', '.join(outside)}"
                 )
             if tenants.is_empty and len(allowed) == 1:
-                only = next(iter(allowed))
-                context.set(ContextKey.TENANT_ID, only)
-                tenants = TenantContext(only, (only,))
+                tenants = TenantContext(next(iter(allowed)), tuple(allowed))
+                context.set(ContextKey.TENANT_ID, tenants.active)
         self._refuse_inactive(tenants)
+        context.set(Validated, Validated(tenants))
         return tenants
 
-    def required(self, context: Any, use_case: str) -> TenantContext:
-        """The tenant context, with an active tenant — `TenantNotChosen` for a member of several
-        who named none, `TenantRequired` otherwise."""
-        tenants = self.resolved(context)
-        if tenants.active is None:
-            allowed = self.allowed(context)
-            refusal = (
-                TenantNotChosen
-                if allowed is not None and len(allowed) > 1
-                else TenantRequired
+    def refuse_without_active(
+        self, context: Any, tenants: TenantContext, use_case: str
+    ) -> None:
+        """`TenantRequired` when no tenant is active — saying so to a member of several, who
+        has to choose."""
+        if tenants.active is not None:
+            return
+        allowed = self.allowed(context)
+        if allowed is not None and len(allowed) > 1:
+            raise TenantRequired(
+                f"{use_case} runs in one tenant and you belong to several — choose one "
+                "(tenant_id)"
             )
-            raise refusal(f"{use_case} runs in one tenant and this execution names none")
-        return tenants
+        raise TenantRequired(f"{use_case} runs in one tenant and this execution names none")

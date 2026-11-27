@@ -39,7 +39,6 @@ from sincpro_framework.tenancy.domain.discriminator import (
 )
 from sincpro_framework.tenancy.domain.exceptions import (
     TenantNotAllowed,
-    TenantNotChosen,
     TenantRequired,
 )
 from sincpro_framework.tenancy.domain.memberships import Membership, Memberships
@@ -97,7 +96,6 @@ __all__ = [
     "TenantDiscriminator",
     "TenantFilter",
     "TenantNotAllowed",
-    "TenantNotChosen",
     "TenantOwnedMixin",
     "TenantRequired",
     "TenantStatus",

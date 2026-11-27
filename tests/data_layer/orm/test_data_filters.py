@@ -146,3 +146,24 @@ def test_a_narrowing_by_a_value_of_the_context_writes_what_it_reads(store):
     with use_context().scoped({"owner": "owner-1"}):
         scoped.save(mine)
         assert scoped.get(Things, mine.thing_id) is not None
+
+
+def test_a_plain_session_of_a_database_no_repository_was_built_on_is_filtered(things):
+    """The listeners are the session's, not a repository's: a query service that only opens
+    `database.session()` reads and writes through the filters too."""
+    database = Database("sqlite://", filters=[OwnerFilter()])
+    mapper_registry.metadata.create_all(database.engine)
+    with DataFilters.disabled("owner"), database.session() as session:
+        session.add_all(things)
+    with use_context().scoped({"owner": "owner-1"}), database.session() as session:
+        assert session.scalar(select(func.count()).select_from(Thing)) == len(
+            _owned(things, "owner-1")
+        )
+
+
+def test_a_filter_applied_to_a_block_reaches_a_database_that_knows_nothing_of_it(
+    store, things
+):
+    with use_context().scoped({"owner": "owner-1"}), DataFilters.applied(OwnerFilter()):
+        assert store.count(Things).value == len(_owned(things, "owner-1"))
+    assert store.count(Things).value == ROW_COUNT

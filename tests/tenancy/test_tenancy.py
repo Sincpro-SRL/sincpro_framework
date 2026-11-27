@@ -34,7 +34,6 @@ from sincpro_framework.tenancy import (
     Tenancy,
     Tenant,
     TenantNotAllowed,
-    TenantNotChosen,
     TenantOwnedMixin,
     TenantRequired,
     TenantStatus,
@@ -373,7 +372,7 @@ def test_15_memberships_validate_what_the_caller_names(store):
     with bus.context({"user_id": "ana"}):
         assert bus(CommandWhere(), ResponseTenantContext).active == "acme"
     with bus.context({"user_id": "bob"}):
-        with pytest.raises(TenantNotChosen):
+        with pytest.raises(TenantRequired, match="belong to several"):
             bus(CommandWhere())
     with bus.context({"user_id": "bob", "tenant_ids": ["acme", "globex"]}):
         assert bus(CommandCount(), ResponseCount).value == 0
@@ -488,3 +487,39 @@ def test_a_cached_query_answers_each_tenant_its_own(tenancy, store):
     _issue(bus, "acme")
     assert _count(bus, {"tenant_id": "acme"}, QueryTotal()) == 1
     assert _count(bus, {"tenant_id": "globex"}, QueryTotal()) == 0
+
+
+def test_a_shared_record_edited_inside_a_tenant_stays_everyone_s(tenancy, store):
+    """Only a new record takes the active tenant: an edit of a shared one never moves it."""
+    shared = Product(name="everyone's")
+    store.add(shared)
+    with tenancy.with_tenant("acme"), tenancy.isolated():
+        found = store.get(Product, shared.id)
+        assert found is not None
+        found.name = "renamed"
+        store.save(found)
+    assert store.get(Product, shared.id).tenant_id is None  # type: ignore[union-attr]
+
+
+class CountingMemberships(InMemoryMemberships):
+    asked = 0
+
+    def tenants_of(self, subject):
+        CountingMemberships.asked += 1
+        return super().tenants_of(subject)
+
+
+def test_memberships_are_asked_once_per_execution_and_never_cached_across(store):
+    """A nested use case in the same tenants is not validated again; the next request is —
+    a member taken out of a tenant is refused from then on."""
+    memberships = CountingMemberships({"ana": ["acme", "globex"]})
+    bus = billing(Tenancy(memberships=memberships), store)
+    CountingMemberships.asked = 0
+    with bus.context({"user_id": "ana", "tenant_ids": ["acme", "globex"]}):
+        bus(CommandEveryone(), ResponseCount)  # Everyone → Count, nested
+    assert CountingMemberships.asked == 1
+
+    memberships.leave("ana", "globex")
+    with bus.context({"user_id": "ana", "tenant_id": "globex"}):
+        with pytest.raises(TenantNotAllowed):
+            bus(CommandWhere())

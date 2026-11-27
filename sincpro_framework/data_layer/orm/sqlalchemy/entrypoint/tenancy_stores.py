@@ -13,7 +13,7 @@ import json
 from collections.abc import Mapping
 from datetime import UTC, datetime
 
-from sqlalchemy import Table, delete, select
+from sqlalchemy import Table, delete, select, update
 from sqlalchemy.dialects import postgresql, sqlite
 
 from sincpro_framework.data_layer.orm.sqlalchemy.infrastructure.database import Database
@@ -21,23 +21,44 @@ from sincpro_framework.tenancy.domain.catalog import Tenant, TenantCatalog, Tena
 from sincpro_framework.tenancy.domain.memberships import Membership, Memberships
 
 
-def _upsert(database: Database, table: Table, values: dict, keys: list[str]) -> None:
-    """One row written whole: inserted, or replaced when its key is held."""
+def _upsert(
+    database: Database,
+    table: Table,
+    values: dict,
+    keys: list[str],
+    insert_only: tuple[str, ...] = (),
+) -> None:
+    """One row written whole: inserted, or its other columns replaced when its key is held —
+    `insert_only` kept as the first write left them.
+
+    Context: Postgres and SQLite settle a race in one `ON CONFLICT`; another engine updates and
+    inserts only when nothing was updated.
+    """
+    changed = {
+        name: value
+        for name, value in values.items()
+        if name not in keys and name not in insert_only
+    }
     dialect = database.engine.dialect.name
-    if dialect in ("postgresql", "sqlite"):
-        insert = (postgresql if dialect == "postgresql" else sqlite).insert(table)
-        statement = insert.values(**values).on_conflict_do_update(
-            index_elements=keys,
-            set_={name: value for name, value in values.items() if name not in keys},
-        )
-        with database.session() as session:
-            session.execute(statement)
-        return
     with database.session() as session:
-        session.execute(
-            delete(table).where(*(table.c[name] == values[name] for name in keys))
-        )
-        session.execute(table.insert().values(**values))
+        if dialect in ("postgresql", "sqlite"):
+            insert = (postgresql if dialect == "postgresql" else sqlite).insert(table)
+            statement = insert.values(**values)
+            statement = (
+                statement.on_conflict_do_update(index_elements=keys, set_=changed)
+                if changed
+                else statement.on_conflict_do_nothing(index_elements=keys)
+            )
+            session.execute(statement)
+            return
+        held = [table.c[name] == values[name] for name in keys]
+        found = session.execute(
+            select(*(table.c[name] for name in keys)).where(*held)
+        ).first()
+        if found is None:
+            session.execute(table.insert().values(**values))
+        elif changed:
+            session.execute(update(table).where(*held).values(**changed))
 
 
 class DatabaseTenantCatalog(TenantCatalog):
@@ -79,6 +100,7 @@ class DatabaseTenantCatalog(TenantCatalog):
                 "created_at": datetime.now(UTC).replace(tzinfo=None),
             },
             ["id"],
+            insert_only=("created_at",),
         )
 
 

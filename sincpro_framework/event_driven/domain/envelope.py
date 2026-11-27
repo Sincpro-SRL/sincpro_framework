@@ -233,11 +233,14 @@ class Envelope(DataTransferObject):
         )
         headers = envelope.as_headers()
         flow = context_scopes.flow()
-        # A fact delivered later, out of any request — forwarded from its table — still says
-        # the tenant it belongs to, when it names one.
+        # A fact that names its tenant goes out as that tenant's, whatever flow publishes it —
+        # forwarded later from its table, or written by a support session working in another.
         tenant = getattr(message, ContextKey.TENANT_ID, None)
-        if tenant and not flow.get(ContextKey.TENANT_ID):
-            flow = {**flow, ContextKey.TENANT_ID: tenant}
+        if tenant:
+            flow = {
+                **{key: value for key, value in flow.items() if key != ContextKey.TENANT_IDS},
+                ContextKey.TENANT_ID: tenant,
+            }
         headers = {**context_propagation.inject(flow), **headers}
         if isinstance(message, DomainEvent):
             headers[EVENT_HEADER] = message.name

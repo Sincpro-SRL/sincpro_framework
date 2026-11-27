@@ -102,3 +102,15 @@ def test_tenancy_validates_the_verified_subject_inside_the_guard():
         _run(bus, CommandWhere(), ana, {"tenant_id": "cl"})
     with pytest.raises(TenantNotAllowed):  # a verified subject of no membership there
         _run(bus, CommandWhere(), Identity.user("user:eve"), {"tenant_id": "bo"})
+
+
+def test_a_platform_role_holds_in_every_tenant_the_platform_enters():
+    """root holds billing.manager in no tenant — the platform's —, and keeps it when the call
+    names a tenant, beside what it holds there; a tenant's entitlements never take it away."""
+    grants = InMemoryGrants()
+    grants.assign(Assignment(subject="user:root", tenant=None, role="billing.manager"))
+    resolver = GrantResolver(catalog, grants, entitlements=True)
+    with UseFramework("acting-platform", log_after_execution=False).context(
+        {"tenant_id": "pe"}
+    ):
+        assert GrantP.ISSUE in resolver.resolve(Identity.user("user:root")).permissions

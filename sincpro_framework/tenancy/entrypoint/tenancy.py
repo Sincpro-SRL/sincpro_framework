@@ -22,6 +22,7 @@ the rest of the framework, and nothing of it is required here.
 
 from collections.abc import Callable, Generator, Iterable
 from contextlib import AbstractContextManager, contextmanager
+from contextvars import ContextVar
 from dataclasses import dataclass, replace
 from typing import TYPE_CHECKING, Any, overload
 
@@ -72,7 +73,10 @@ def _declare[H](handler: H, **declared: Any) -> H:
 
 class Door:
     """A use case of tenancy reached two ways: called on a class, it is declared for that whole
-    use case; entered with `with`, it runs for the block."""
+    use case; entered with `with`, it runs for the block.
+
+    Context: what a block entered is held per thread and per task, so one door shared by
+    concurrent requests never exits another's block."""
 
     def __init__(
         self,
@@ -83,7 +87,9 @@ class Door:
         self._run = run
         self._refused_in_a_block = refused_in_a_block
         self._declared = declared
-        self._entered: list[AbstractContextManager[Any]] = []
+        self._entered: ContextVar[tuple[AbstractContextManager[Any], ...]] = ContextVar(
+            f"sincpro_tenancy_door_{id(self)}", default=()
+        )
 
     def __call__[H](self, handler: H) -> H:
         return _declare(handler, **self._declared)
@@ -92,11 +98,14 @@ class Door:
         if self._refused_in_a_block is not None:
             raise ProgrammingError(self._refused_in_a_block)
         entered = self._run()
-        self._entered.append(entered)
-        return entered.__enter__()
+        answered = entered.__enter__()
+        self._entered.set((*self._entered.get(), entered))
+        return answered
 
     def __exit__(self, *raised: Any) -> Any:
-        return self._entered.pop().__exit__(*raised)
+        *outer, entered = self._entered.get()
+        self._entered.set(tuple(outer))
+        return entered.__exit__(*raised)
 
 
 class Tenancy:
@@ -242,7 +251,10 @@ class Tenancy:
     @contextmanager
     def _requiring(self) -> Generator[TenantContext]:
         """The use case of a tenant required, for a block."""
-        yield self.resolution.required(use_context(), "this block")
+        context = use_context()
+        tenants = self.resolution.resolved(context)
+        self.resolution.refuse_without_active(context, tenants, "this block")
+        yield tenants
 
     @overload
     def required[H: type](self, handler: H) -> H: ...
@@ -251,8 +263,8 @@ class Tenancy:
     def required(self, handler: None = None) -> Door: ...
 
     def required(self, handler: Any = None) -> Any:
-        """The use case, or the block, runs only with an active tenant — `TenantRequired` (or
-        `TenantNotChosen` for a member of several) before it starts; nothing is filtered."""
+        """The use case, or the block, runs only with an active tenant — `TenantRequired` before it
+        starts; nothing is filtered."""
         door = Door(self._requiring, required=True)
         return door if handler is None else door(handler)
 
@@ -313,7 +325,7 @@ class Tenancy:
             with crossing.across_tenants(declared.across):
                 return call_next(dto)
         if declared.required:
-            self.resolution.required(use_context(), name)
+            self.resolution.refuse_without_active(use_context(), self.tenants, name)
         if declared.isolated is not None:
             if isolation.skips(declared.isolated):
                 return None

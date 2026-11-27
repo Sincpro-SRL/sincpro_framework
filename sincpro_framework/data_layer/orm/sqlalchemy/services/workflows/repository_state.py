@@ -11,7 +11,6 @@ from sincpro_framework.data_layer import exceptions
 from sincpro_framework.data_layer.orm.sqlalchemy.domain.transaction import Transaction
 from sincpro_framework.data_layer.orm.sqlalchemy.infrastructure.database import Database
 from sincpro_framework.data_layer.orm.sqlalchemy.infrastructure.unit_in_play import in_play
-from sincpro_framework.data_layer.orm.sqlalchemy.services import data_filtering
 from sincpro_framework.data_layer.orm.sqlalchemy.services.aggregation import (
     WITHOUT_PERCENTILES,
 )
@@ -75,7 +74,6 @@ class RepositoryState(IRepository):
         self._held = session
         self._scope = scope
         self._opened_with = transaction or Transaction()
-        data_filtering.watch(database)
 
     def _keeps(self, kind: type) -> bool:
         """An event is held only when its class has an event table; every other kind is."""

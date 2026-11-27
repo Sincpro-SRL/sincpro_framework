@@ -129,14 +129,8 @@ ENGINES: "weakref.WeakSet[Engine]" = weakref.WeakSet()
 """Every engine built here: what has to forget its compiled statements when a mapper changes."""
 
 
-def _within_filters(filters: DataFilters, session: Session) -> None:
-    """Every record this flush adds, changes or deletes, stamped and checked against the data
-    filters of the database — the same door for a repository and a plain session."""
-    if not filters.active():
-        return
-    filters.check_writes(list(session.new), True)
-    filters.check_writes([one for one in session.dirty if session.is_modified(one)], False)
-    filters.check_writes(list(session.deleted), False)
+FILTERS = "sincpro_data_filters"
+"""The key of `Session.info` that holds a database's own data filters."""
 
 
 class Database:
@@ -211,12 +205,15 @@ class Database:
         if self.engine.dialect.name == "sqlite":
             event.listen(self.engine, "connect", _folding_text)
 
-        self.open_session = sessionmaker(
-            bind=self.engine, expire_on_commit=False, autoflush=True, info={IN_PLACE: True}
-        )
-        self.actor = actor
         self.filters = filters if isinstance(filters, DataFilters) else DataFilters(*filters)
         """The data filters of this database: read by every statement, checked on every write."""
+        self.open_session = sessionmaker(
+            bind=self.engine,
+            expire_on_commit=False,
+            autoflush=True,
+            info={IN_PLACE: True, FILTERS: self.filters},
+        )
+        self.actor = actor
         # First of what a write runs: a value changed inside is a change like any other by the
         # time the stamping and the change tracking look.
         watch_in_place(self.open_session)
@@ -225,9 +222,6 @@ class Database:
         # a use case holding a plain session must not be able to step around them.
         self.before_flush(_stamping(actor))
         self.before_flush(_tracking)
-        # A write lands only where its reader could see it: stamped, then checked against the
-        # filters that guard writes — after the stamping, before anything goes out.
-        self.before_flush(lambda session: _within_filters(self.filters, session))
         # A preview stores nothing, whichever door a write takes: a repository call, a unit of
         # work committing what it tracks, a plain session.
         self.before_flush(_refused_in_preview)

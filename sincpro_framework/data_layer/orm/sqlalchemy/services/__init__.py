@@ -9,3 +9,7 @@
 An atomic service never imports a workflow; a workflow imports no other workflow but
 `RepositoryState`.
 """
+
+# Context: imported for its listeners — every session of the process honours the data filters
+# from the first import of the ORM, before any `Database` exists.
+from sincpro_framework.data_layer.orm.sqlalchemy.services import data_filtering  # noqa: F401

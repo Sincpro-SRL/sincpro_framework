@@ -26,14 +26,17 @@ from sincpro_framework.data_layer.orm.sqlalchemy.entrypoint.template_table impor
     unique_per_tenant,
 )
 from sincpro_framework.ddd import Entity, ExternalKey
-from sincpro_framework.ddd.criteria import Condition, Criteria
+from sincpro_framework.ddd.criteria import Condition, Criteria, Operator
+from sincpro_framework.ddd.repositories.data_filters import DataFilters
 from sincpro_framework.tenancy import (
     InMemoryMemberships,
     InMemoryTenantCatalog,
+    Shared,
     Tenancy,
     Tenant,
     TenantRequired,
     TenantStatus,
+    WhenMissing,
 )
 from tests.data_layer.orm.engines import ENGINES, fresh
 
@@ -41,6 +44,12 @@ from tests.data_layer.orm.engines import ENGINES, fresh
 @dataclass
 class Account(Entity):
     code: str = ""
+    tenant_id: str | None = None
+
+
+@dataclass
+class Plan(Entity):
+    name: str = ""
     tenant_id: str | None = None
 
 
@@ -60,6 +69,12 @@ map_aggregates(
             unique_per_tenant("code"),
         ),
         TenancyExternalKey: external_key_table("ten_external_keys", accounts.metadata),
+        Plan: entity_table(
+            "ten_plan",
+            accounts.metadata,
+            Column("name", Text, nullable=False),
+            *tenant_columns(),
+        ),
     },
 )
 tenancy_tables = MetaData()
@@ -77,6 +92,7 @@ class CommandOpenTwice(DataTransferObject):
 
 tenancy = Tenancy()
 tenancy.discriminator(Account)
+tenancy.discriminator(Plan, shared=Shared.WHEN_EMPTY)
 
 
 @pytest.fixture(params=ENGINES, ids=lambda url: url.split(":")[0].split("+")[0])
@@ -175,3 +191,57 @@ def test_the_catalog_and_memberships_on_a_database_behave_as_in_memory(engine_ur
             "acme": "admin"
         }
         assert memberships.members_of("acme") == {"ana": "admin"}
+
+
+def test_a_shared_row_edited_inside_a_tenant_stays_everyone_s(repository):
+    with DataFilters.disabled("tenant"):
+        repository.save(Plan(name="basic"))
+    with tenancy.with_tenant("acme"), tenancy.isolated():
+        plan = repository.fetch_all(Plan).items[0]
+        plan.name = "basic+"
+        repository.save(plan)
+    assert [(one.name, one.tenant_id) for one in repository.fetch_all(Plan).items] == [
+        ("basic+", None)
+    ]
+
+
+def test_shared_external_keys_are_found_without_a_tenant(repository):
+    """`WhenMissing.SHARED` reads what belongs to no tenant as each discriminator spells it — an
+    external key's empty scope is `""`, a column never NULL."""
+    named = Criteria(selection=Condition(field="key", value="res_country_bo"))
+    with tenancy.isolated(when_missing=WhenMissing.SHARED):
+        repository.save(
+            TenancyExternalKey(
+                origin="odoo", entity_type="Country", entity_id="c-1", key="res_country_bo"
+            )
+        )
+        found = repository.fetch_all(TenancyExternalKey, named).items
+    assert [(one.entity_id, one.scope) for one in found] == [("c-1", "")]
+
+
+def test_a_repository_view_keeps_what_its_calls_answer_isolated(repository):
+    with tenancy.with_tenant("acme"), tenancy.isolated():
+        repository.save(Account(code="3001"))
+    with tenancy.with_tenant("globex"), tenancy.isolated():
+        repository.save(Account(code="3002"))
+    view = tenancy.repository(repository)
+    with tenancy.with_tenant("acme"):
+        narrowed = view.narrowed(
+            Criteria(selection=Condition(field="code", operator=Operator.NE, value=""))
+        )
+        assert [one.code for one in narrowed.fetch_all(Account).items] == ["3001"]
+        streamed = [one.code for page in view.stream(Account) for one in page.items]
+        assert streamed == ["3001"]
+
+
+@pytest.mark.parametrize("engine_url", ENGINES)
+def test_a_status_change_keeps_when_the_tenant_was_created(engine_url):
+    database = fresh(engine_url, tenancy_tables)
+    catalog = DatabaseTenantCatalog(database, tenants_table)
+    catalog.put(Tenant("acme"))
+    with database.session() as session:
+        created = session.scalar(select(tenants_table.c.created_at))
+    catalog.put(Tenant("acme", status=TenantStatus.SUSPENDED))
+    with database.session() as session:
+        assert session.scalar(select(tenants_table.c.created_at)) == created
+    assert catalog.ids(TenantStatus.SUSPENDED) == ["acme"]
