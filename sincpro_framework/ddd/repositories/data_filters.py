@@ -228,11 +228,16 @@ class DataFilters:
         ]
         return [*own, *state.applied]
 
-    def expression_for(self, aggregate: type, guarding: bool = False) -> Expression | None:
+    def expression_for(
+        self,
+        aggregate: type,
+        guarding: bool = False,
+        active: list[DataFilter] | None = None,
+    ) -> Expression | None:
         """What every active filter adds to a read of `aggregate`, joined with AND — `None`
         when none applies. `guarding` keeps only the filters that guard writes."""
         expression: Expression | None = None
-        for one in self.active():
+        for one in self.active() if active is None else active:
             if guarding and not one.guards_writes:
                 continue
             added = one.criteria(aggregate)

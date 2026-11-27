@@ -34,10 +34,10 @@ def filters_of(session: Session) -> DataFilters:
     return session.info.get(FILTERS) or NONE
 
 
-def clause_for(filters: DataFilters, model: type) -> Any:
+def clause_for(filters: DataFilters, model: type, active: list | None = None) -> Any:
     """Context: a filter naming a field the model cannot answer is refused, never dropped — a
     filter silently left out reads wide."""
-    expression = filters.expression_for(model)
+    expression = filters.expression_for(model, active=active)
     if expression is None:
         return None
     accepted, dropped = ModelIntrospection.describe(model).accept(expression)
@@ -68,12 +68,13 @@ def _filtered_statement(state: ORMExecuteState) -> None:
     if state.is_column_load or not (state.is_select or state.is_update or state.is_delete):
         return
     filters = filters_of(state.session)
-    if not filters.active():
+    active = filters.active()
+    if not active:
         return
     options = [
         with_loader_criteria(model, clause, include_aliases=True)
         for model in _classes_in(state)
-        if (clause := clause_for(filters, model)) is not None
+        if (clause := clause_for(filters, model, active)) is not None
     ]
     if options:
         state.statement = state.statement.options(*options)
