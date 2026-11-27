@@ -93,8 +93,10 @@ class NightlyDunning(ApplicationService): ...                 # once per tenant,
 | **The tenant travels; the isolation does not** | another service, a queue, a consumer of events receives `tenant_id`, validated at its entrance; whether it isolates is its own use case's declaration |
 | **Threads and tasks inherit it** | `ContextExecutor`, `ContextThread`, `aio` copy the context; a bare `threading.Thread` does not |
 | **Hooks and interceptors see it** | they run inside the use case |
-| **What is mine and what is not** | another tenant's record is *not found* — never told apart from one that does not exist |
+| **What is mine and what is not** | another tenant's record is *not found* — never told apart from one that does not exist; a member of several who names none is told to choose |
 | **Declared, never by convention** | a `tenant_id` nobody declared is a field like any other |
+| **Validated once per execution, cached never across** | a nested call in the same tenants is not validated again; a member taken out of a tenant, or a tenant suspended, is refused from the next request on |
+| **Only a new record is stamped** | editing a shared record inside a tenant never moves it into that tenant |
 
 ## The rest of the framework
 
