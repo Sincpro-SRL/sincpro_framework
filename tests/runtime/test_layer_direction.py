@@ -38,6 +38,7 @@ LAYERED = [
     "pipelines",
     "remote_execution",
     "settings",
+    "tenancy",
 ]
 
 BELOW = {
