@@ -26,18 +26,29 @@ class OnlyPublished(DataFilter):
 | `criteria(aggregate)` | what every read of `aggregate` adds — `None` when it does not apply; read per statement, so a `FromContext` value or `use_context()` is the request's own |
 | `stamp(record)` | fills what a new record leaves empty, before the write is checked |
 | `guards_writes` | `True` (the default): a record saved or removed outside is refused — an isolation; `False`: a default view |
+| `refusal(record)` | what that refusal raises — `ProgrammingError` by default; tenancy answers *not found* |
 
 ## How it is used
 
-```python
-database = Database(url, filters=[OnlyPublished()])
-database.filters.add(another)                 # or later
+Two places, each a decision of its own:
 
+```python
+# for a block of an execution — and everything it calls: what a use case decides
+with DataFilters.applied(OnlyPublished()):
+    repository.search(Articles)
+
+# for every read of a store, whoever reads it: a rule of the data itself
+database = Database(url, filters=[OnlyPublished()])
 memory = MemoryRepository(filters=[OnlyPublished()])   # the same rule in tests
 
-with DataFilters.disabled("published"):       # this execution only
+with DataFilters.disabled("published"):       # off for this block only
     repository.search(Articles)
 ```
+
+What a block applies or turns off lives in the execution context: the nearest block decides,
+a nested Feature, a hook, a thread handed the context and an async call inherit it, and nothing
+of it leaves the process. Tenancy is a filter applied by the use cases that ask for it
+([tenancy](../tenancy/README.md)).
 
 Every door of the store reads through it:
 
@@ -56,8 +67,8 @@ What SQLAlchemy never sees as ORM is not filtered: `text()`, a Core statement on
 `search_sql`. A filter naming a field the aggregate cannot answer is refused (`ProgrammingError`)
 rather than dropped — a filter silently left out reads wide.
 
-## Why on the store
+## Why both
 
-A rule on a repository instance (`narrowed`) holds for whoever goes through that instance; a
-filter on the store holds for whoever touches the database, which is why it sits beside the
-stamping and the change tracking. `narrowed(scope)` remains: a narrowing of one view, by hand.
+A filter applied to a block is the use case's decision, in sight where it is made. A filter on
+the store is the data's own rule, for whoever touches the database — beside the stamping and the
+change tracking. `narrowed(scope)` remains: a narrowing of one repository view, by hand.

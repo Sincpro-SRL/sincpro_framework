@@ -71,7 +71,7 @@ def _filtered(filters: DataFilters, state: ORMExecuteState) -> None:
     2. For every mapped class the statement touches, at any depth, the clause the filters add to it, as a
        loader criteria that also reaches its aliases and the relations loaded from it.
     """
-    if not filters or state.is_column_load:
+    if state.is_column_load or not filters.active():
         return
     if not (state.is_select or state.is_update or state.is_delete):
         return

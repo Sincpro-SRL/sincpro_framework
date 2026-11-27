@@ -80,3 +80,16 @@ def test_the_fingerprint_is_the_request_s_own(filtered):
         one = filtered.fingerprint(Things)
     with use_context().scoped({"owner": "owner-2"}):
         assert filtered.fingerprint(Things) != one
+
+
+def test_a_filter_applied_to_a_block_reaches_a_store_that_knows_nothing_of_it(things):
+    store = MemoryRepository(*things)
+    with use_context().scoped({"owner": "owner-1"}):
+        assert store.count(Things).value == ROW_COUNT
+        with DataFilters.applied(OwnerFilter()):
+            assert store.count(Things).value == len(_owned(things, "owner-1"))
+            with DataFilters.disabled("owner"):  # the nearest block decides
+                assert store.count(Things).value == ROW_COUNT
+                with DataFilters.applied(OwnerFilter()):
+                    assert store.count(Things).value < ROW_COUNT
+        assert store.count(Things).value == ROW_COUNT

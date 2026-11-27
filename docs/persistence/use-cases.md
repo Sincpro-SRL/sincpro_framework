@@ -50,8 +50,8 @@ The columns:
 | A query the language cannot say | — | `statement(model, criteria)` → `run(...)`: a real `Select`, the envelope back | anything | ✅ |
 | Strict input | unknown keys refused; `TOLERANT` for another version | — | — | ✅ |
 | A tenant, a branch, a permission | `narrowed(scope)` | every read AND-ed, every write checked | — | ✅ |
-| A rule every read of the store applies — a tenant, a state, row-level access | `Database(filters=...)`, `DataFilters.disabled(name)` ([data filters](data-filters.md)) | every ORM statement of its sessions, every flush | `with_loader_criteria` in `do_orm_execute` | ✅ |
-| Many customers in one service | `Tenancy().isolate(database)`, `tenancy.on(bus)` ([tenancy](../tenancy/README.md)) | the tenant filter: reads narrowed, new records stamped, writes checked | — | ✅ |
+| A rule applied to a block, or to every read of a store — a tenant, a state, row-level access | `DataFilters.applied(...)`, `Database(filters=...)`, `DataFilters.disabled(name)` ([data filters](data-filters.md)) | every ORM statement of the sessions, every flush | `with_loader_criteria` in `do_orm_execute` | ✅ |
+| Many customers in one service | `@tenancy.isolated`, `with self.tenancy.isolated()`, `self.tenancy.criteria(...)` ([tenancy](../tenancy/README.md)) | reads narrowed, new records stamped, writes outside not found | — | ✅ |
 
 ## 3. Aggregation and analysis
 

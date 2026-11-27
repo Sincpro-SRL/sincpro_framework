@@ -28,10 +28,11 @@ one off is per execution (`DataFilters.disabled`): one request never widens anot
 
 from collections.abc import Generator, Iterable, Iterator
 from contextlib import contextmanager
-from contextvars import ContextVar
+from dataclasses import dataclass
 from functools import partial
 from typing import Any
 
+from sincpro_framework.context import use_context
 from sincpro_framework.ddd import exceptions
 from sincpro_framework.ddd.criteria import (
     Criteria,
@@ -41,12 +42,6 @@ from sincpro_framework.ddd.criteria import (
     Resolution,
 )
 from sincpro_framework.ddd.entity.entity_meta import ambient_resolution
-
-_disabled: ContextVar[frozenset[str]] = ContextVar(
-    "sincpro_disabled_data_filters", default=frozenset()
-)
-"""The filters the execution in play turned off by name — per thread and per task, so a block
-that reads wide never widens another request."""
 
 
 class DataFilter:
@@ -84,6 +79,52 @@ class DataFilter:
     def stamp(self, record: Any) -> None:
         """Fills what a new record leaves empty, before the write is checked. Nothing by default."""
         return None
+
+    def refusal(self, record: Any) -> Exception:
+        """What a write of `record` outside the filter raises — a `ProgrammingError` by default:
+        the code wrote where its reader could not see. An isolation the caller reaches answers
+        what fits the caller instead (tenancy: not found)."""
+        return exceptions.ProgrammingError(
+            f"{type(record).__name__} lies outside the data filter {self.key}; it can neither "
+            "be written nor removed here"
+        )
+
+
+@dataclass(frozen=True)
+class DataFilterState:
+    """The filters an execution applies beyond its stores' own, and the ones it turned off —
+    held in the execution context, so the nearest scope decides, nested calls inherit it, and
+    a thread or a task handed the context carries it.
+
+        use_context().get(DataFilterState)   ->  DataFilterState(applied=(TenantFilter(),),
+                                                                 disabled=frozenset())
+    """
+
+    applied: tuple[DataFilter, ...] = ()
+    disabled: frozenset[str] = frozenset()
+
+    @staticmethod
+    def current() -> "DataFilterState":
+        """The state of the execution in play — nothing applied, nothing off, outside any."""
+        found = use_context().get(DataFilterState)
+        return found if isinstance(found, DataFilterState) else DataFilterState()
+
+    def applying(self, filters: Iterable[DataFilter]) -> "DataFilterState":
+        """This state with `filters` applied — each replacing one of its name, and on again if
+        it was off."""
+        added = list(filters)
+        names = {one.key for one in added}
+        return DataFilterState(
+            (*(one for one in self.applied if one.key not in names), *added),
+            self.disabled - names,
+        )
+
+    def disabling(self, names: Iterable[str]) -> "DataFilterState":
+        """This state with the named filters off — applied or the stores' own alike."""
+        off = frozenset(names)
+        return DataFilterState(
+            tuple(one for one in self.applied if one.key not in off), self.disabled | off
+        )
 
 
 def _resolved(expression: Expression | None) -> Expression | None:
@@ -143,30 +184,49 @@ class DataFilters:
 
     @staticmethod
     @contextmanager
+    def applied(*filters: DataFilter) -> Generator[None]:
+        """Applies the filters to every store the block reads or writes, in this execution only
+        — the block and everything it calls, a nested Feature, a hook, a thread handed the
+        context. No store needs to know them.
+
+            with DataFilters.applied(TenantFilter(...)):
+                repository.search(Invoices)          the tenant's
+
+        The nearest block decides: one applied inside a block that turned it off is on again.
+        """
+        state = DataFilterState.current().applying(filters)
+        with use_context().scoped({DataFilterState: state}):
+            yield
+
+    @staticmethod
+    @contextmanager
     def disabled(*names: str) -> Generator[None]:
-        """Turns the named filters off for the block, in this execution only — what reading
-        across tenants, or the archived, asks for by name.
+        """Turns the named filters off for the block, in this execution only — applied ones and
+        a store's own alike: what reading across tenants, or the archived, asks for by name.
 
             with DataFilters.disabled("tenant"):
                 repository.search(Invoices)          every tenant's
-
-        Nested blocks add to what is off; the block's end puts back what was off before.
         """
-        token = _disabled.set(_disabled.get() | frozenset(names))
-        try:
+        state = DataFilterState.current().disabling(names)
+        with use_context().scoped({DataFilterState: state}):
             yield
-        finally:
-            _disabled.reset(token)
 
     @staticmethod
     def is_disabled(name: str) -> bool:
         """Whether the execution in play turned the filter of that name off."""
-        return name in _disabled.get()
+        return name in DataFilterState.current().disabled
 
     def active(self) -> list[DataFilter]:
-        """The filters this execution applies: every one not turned off by name."""
-        off = _disabled.get()
-        return [one for one in self._filters if one.key not in off]
+        """The filters this execution applies to this store: its own, unless turned off, and
+        the ones the execution applied — one of the same name in place of the store's."""
+        state = DataFilterState.current()
+        applied = {one.key for one in state.applied}
+        own = [
+            one
+            for one in self._filters
+            if one.key not in state.disabled and one.key not in applied
+        ]
+        return [*own, *state.applied]
 
     def expression_for(self, aggregate: type, guarding: bool = False) -> Expression | None:
         """What every active filter adds to a read of `aggregate`, joined with AND — `None`
@@ -200,23 +260,17 @@ class DataFilters:
         """Stamps a new record, then refuses it when a filter that guards writes leaves it out.
 
         1. A new record: each active filter fills what it leaves empty.
-        Final: `ProgrammingError` naming the filters, when the record lies outside one that
-        guards writes — a write is never made where its reader could not see it.
+        Final: the refusal of the first filter that guards writes and leaves the record out —
+        a write is never made where its reader could not see it.
         """
         active = self.active()
         if is_new:
             self.stamp(record)
-        outside = [
-            one.key
-            for one in active
-            if one.guards_writes
-            and not holds_for(record, _criteria_expression(one, type(record)))
-        ]
-        if outside:
-            raise exceptions.ProgrammingError(
-                f"{type(record).__name__} lies outside the data filter "
-                f"{', '.join(outside)}; it can neither be written nor removed here"
-            )
+        for one in active:
+            if one.guards_writes and not holds_for(
+                record, _criteria_expression(one, type(record))
+            ):
+                raise one.refusal(record)
 
     def check_writes(self, records: Iterable[Any], is_new: bool) -> None:
         """`check_write` for each record."""

@@ -75,40 +75,41 @@ class CommandOpenTwice(DataTransferObject):
     code: str
 
 
+tenancy = Tenancy()
+tenancy.discriminator(Account)
+
+
 @pytest.fixture(params=ENGINES, ids=lambda url: url.split(":")[0].split("+")[0])
 def repository(request) -> Repository:
-    tenancy = Tenancy()
-    database = tenancy.isolate(fresh(request.param, accounts.metadata))
-    return Repository(database)
+    return Repository(fresh(request.param, accounts.metadata))  # the database knows no tenant
 
 
 def test_every_door_of_the_database_reads_only_the_selected_tenants(repository):
-    tenancy = Tenancy()
-    with tenancy.with_tenant("acme"):
+    with tenancy.with_tenant("acme"), tenancy.isolated():
         repository.save([Account(code="1001"), Account(code="1002")])
-    with tenancy.with_tenant("globex"):
+    with tenancy.with_tenant("globex"), tenancy.isolated():
         repository.save(Account(code="1001"))  # the same code, another tenant
 
-    with tenancy.with_tenant("acme"):
+    with tenancy.with_tenant("acme"), tenancy.isolated():
         assert repository.count(Account, Criteria()).value == 2
         with repository.context() as unit:
             assert unit.session.scalar(select(func.count()).select_from(Account)) == 2
-    with tenancy.with_tenants(["acme", "globex"]):
+    with tenancy.with_tenants(["acme", "globex"]), tenancy.isolated():
         assert repository.count(Account, Criteria()).value == 3
+    assert repository.count(Account, Criteria()).value == 3  # nothing isolated: as it is
     with pytest.raises(TenantRequired):
-        repository.count(Account, Criteria())
+        with tenancy.isolated():
+            pass
 
 
 def test_a_value_unique_per_tenant_is_refused_twice_in_one(repository):
-    tenancy = Tenancy()
-    with tenancy.with_tenant("acme"):
+    with tenancy.with_tenant("acme"), tenancy.isolated():
         repository.save(Account(code="1001"))
         with pytest.raises(Exception):
             repository.save(Account(code="1001"))
 
 
 def test_a_feature_joined_to_another_s_unit_of_work_reads_through_the_filter(repository):
-    tenancy = Tenancy()
     bus = UseFramework("tenancy-sql", log_after_execution=False)
     bus.add_dependency("accounts", repository)
     tenancy.on(bus)
@@ -119,6 +120,7 @@ def test_a_feature_joined_to_another_s_unit_of_work_reads_through_the_filter(rep
             self.accounts.save(Account(code=dto.code))
 
     @bus.feature(CommandOpenTwice)
+    @tenancy.isolated
     class OpenTwice(Feature):
         def execute(self, dto: CommandOpenTwice) -> None:
             with self.accounts.context():
@@ -126,19 +128,17 @@ def test_a_feature_joined_to_another_s_unit_of_work_reads_through_the_filter(rep
                 bus(CommandOpen(code=dto.code + "-b"))
 
     with bus.context({"tenant_id": "acme"}):
-        bus(CommandOpenTwice(code="2001"))
-    with bus.context({"tenant_id": "globex"}):
+        bus(CommandOpenTwice(code="2001"))  # Open declares nothing: it inherits the isolation
+    with tenancy.with_tenant("globex"), tenancy.isolated():
         assert repository.count(Account, Criteria()).value == 0
-    with bus.context({"tenant_id": "acme"}):
-        found = repository.fetch_all(Account).items
+    found = repository.fetch_all(Account).items
     assert {one.tenant_id for one in found} == {"acme"}
 
 
 def test_external_keys_of_two_tenants_never_collide(repository):
-    tenancy = Tenancy()
     named = Criteria(selection=Condition(field="key", value="res_partner_42"))
     for tenant, entity_id in (("acme", "a-1"), ("globex", "g-1")):
-        with tenancy.with_tenant(tenant):
+        with tenancy.with_tenant(tenant), tenancy.isolated():
             repository.save(
                 TenancyExternalKey(
                     origin="odoo",
@@ -147,7 +147,7 @@ def test_external_keys_of_two_tenants_never_collide(repository):
                     key="res_partner_42",
                 )
             )
-    with tenancy.with_tenant("acme"):
+    with tenancy.with_tenant("acme"), tenancy.isolated():
         found = repository.fetch_all(TenancyExternalKey, named).items
     assert [(one.entity_id, one.scope) for one in found] == [("a-1", "acme")]
 

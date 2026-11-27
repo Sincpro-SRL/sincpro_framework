@@ -39,3 +39,18 @@ class TenantDiscriminator:
     """A rule of the project's own, in place of `field IN selected` — a record shared with
     other tenants through a list, a tenant reached through a relation. Writes are judged by it
     too."""
+
+
+class WhenMissing(StrEnum):
+    """What an isolated use case does when the execution names no tenant — the tenancy side of
+    auth's `WhenDenied`."""
+
+    RAISE = "raise"
+    """`TenantRequired`: reading every tenant because none was named is the leak isolation
+    prevents."""
+    SKIP = "skip"
+    """The use case does not run and answers `None` — an optional step of an orchestration. A
+    use case only: a block cannot skip its own body."""
+    SHARED = "shared"
+    """Only what belongs to no tenant is read, and a new record belongs to none — a public
+    catalog a visitor reads before choosing a tenant."""

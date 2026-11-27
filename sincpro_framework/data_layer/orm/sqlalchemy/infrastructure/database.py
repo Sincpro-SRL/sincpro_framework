@@ -132,7 +132,7 @@ ENGINES: "weakref.WeakSet[Engine]" = weakref.WeakSet()
 def _within_filters(filters: DataFilters, session: Session) -> None:
     """Every record this flush adds, changes or deletes, stamped and checked against the data
     filters of the database — the same door for a repository and a plain session."""
-    if not filters:
+    if not filters.active():
         return
     filters.check_writes(list(session.new), True)
     filters.check_writes([one for one in session.dirty if session.is_modified(one)], False)

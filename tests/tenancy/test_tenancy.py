@@ -1,9 +1,11 @@
-"""Tenancy on a bus, end to end: the tenant named by the context, what a handler reads and
-writes through a store the tenant filter isolates, the memberships that validate the caller,
-and the use cases that work across tenants or once per tenant.
+"""Every case of tenancy, one test each, through the doors a project uses: a decorator on a use
+case, a `with` in a handler, `self.tenancy`. Each door reaches the same use case of
+`tenancy/services`, so the same case answers the same way whichever door it came by.
 
-No base class is required of an aggregate: `Invoice` inherits the recipe, `Order` declares the
-field by hand, and `Branch` is partitioned by a field of another name.
+The store knows nothing of tenants: `MemoryRepository()` with no filter. What is partitioned is
+declared — `Invoice` by the `TenantOwnedMixin` recipe, `Order` and `Branch` by
+`tenancy.discriminator` — and `Note`, with a `tenant_id` nobody declared, is a field like any
+other.
 """
 
 from dataclasses import dataclass
@@ -12,13 +14,11 @@ from decimal import Decimal
 import pytest
 
 from sincpro_framework import ApplicationService, DataTransferObject, Feature, UseFramework
-from sincpro_framework.context import context_propagation
 from sincpro_framework.data_layer.repositories import MemoryRepository
 from sincpro_framework.ddd import Entity
-from sincpro_framework.ddd.criteria import Criteria
-from sincpro_framework.ddd.events import DomainEvent
-from sincpro_framework.entrypoints.adapters.queue.wire import queue_context
-from sincpro_framework.event_driven.domain.envelope import Envelope
+from sincpro_framework.ddd.criteria import Condition, Criteria, Operator
+from sincpro_framework.ddd.exceptions import AggregateNotFound
+from sincpro_framework.exceptions import ProgrammingError
 from sincpro_framework.tenancy import (
     GetTenantContext,
     InMemoryMemberships,
@@ -39,6 +39,7 @@ from sincpro_framework.tenancy import (
     TenantRequired,
     TenantStatus,
     TenantUseCases,
+    WhenMissing,
 )
 
 
@@ -60,12 +61,26 @@ class Branch(Entity):
 
 
 @dataclass
-class Currency(Entity):
+class Product(Entity):
     tenant_id: str | None = None
-    code: str = ""
+    name: str = ""
+
+
+@dataclass
+class Note(Entity):
+    tenant_id: str | None = None
+    text: str = ""
+
+
+class ResponseCount(DataTransferObject):
+    value: int
 
 
 class CommandIssue(DataTransferObject):
+    total: Decimal
+
+
+class CommandIssueAnywhere(DataTransferObject):
     total: Decimal
 
 
@@ -73,41 +88,68 @@ class CommandCount(DataTransferObject):
     pass
 
 
-class ResponseCount(DataTransferObject):
-    value: int
+class CommandCountInBlock(DataTransferObject):
+    pass
 
 
 class CommandEveryone(DataTransferObject):
     pass
 
 
-class CommandClose(DataTransferObject):
+class CommandWhere(DataTransferObject):
     pass
+
+
+class CommandOptionalStep(DataTransferObject):
+    pass
+
+
+class CommandCatalog(DataTransferObject):
+    pass
+
+
+class CommandVoid(DataTransferObject):
+    id: str
 
 
 class CommandRemind(DataTransferObject):
     pass
 
 
-reminded: list[str] = []
+reminded: list[str | None] = []
 
 
-def _billing(tenancy: Tenancy, store: MemoryRepository) -> UseFramework:
+def billing(
+    tenancy: Tenancy, store: MemoryRepository, isolated: bool = False
+) -> UseFramework:
     bus = UseFramework("tenancy-billing", log_after_execution=False)
     bus.add_dependency("store", store)
-    tenancy.on(bus)
+    tenancy.on(bus, isolated=isolated)
 
     @bus.feature(CommandIssue)
+    @tenancy.isolated
     class Issue(Feature):
-        def execute(self, dto: CommandIssue) -> Invoice:
-            invoice = Invoice(total=dto.total)
-            self.store.save(invoice)
-            return invoice
+        def execute(self, dto: CommandIssue) -> ResponseCount:
+            self.store.save(Invoice(total=dto.total))
+            return ResponseCount(value=1)
+
+    @bus.feature(CommandIssueAnywhere)
+    class IssueAnywhere(Feature):
+        def execute(self, dto: CommandIssueAnywhere) -> ResponseCount:
+            self.store.save(Invoice(total=dto.total))
+            return ResponseCount(value=1)
 
     @bus.feature(CommandCount)
+    @tenancy.isolated
     class Count(Feature):
         def execute(self, dto: CommandCount) -> ResponseCount:
             return ResponseCount(value=self.store.count(Invoice, Criteria()).value)
+
+    @bus.feature(CommandCountInBlock)
+    class CountInBlock(Feature):
+        def execute(self, dto: CommandCountInBlock) -> ResponseCount:
+            with self.tenancy.isolated():
+                return ResponseCount(value=self.store.count(Invoice, Criteria()).value)
 
     @bus.app_service(CommandEveryone)
     @tenancy.without_tenant(reason="consolidated report")
@@ -115,14 +157,38 @@ def _billing(tenancy: Tenancy, store: MemoryRepository) -> UseFramework:
         def execute(self, dto: CommandEveryone) -> ResponseCount:
             return self.feature_bus.execute(CommandCount(), ResponseCount)
 
-    @bus.feature(CommandClose)
+    @bus.feature(CommandWhere)
     @tenancy.required
-    class Close(Feature):
-        def execute(self, dto: CommandClose) -> str:
-            return self.tenancy.active
+    class Where(Feature):
+        def execute(self, dto: CommandWhere) -> ResponseTenantContext:
+            return ResponseTenantContext(active=self.tenancy.active)
+
+    @bus.feature(CommandOptionalStep)
+    @tenancy.isolated(when_missing=WhenMissing.SKIP)
+    class OptionalStep(Feature):
+        def execute(self, dto: CommandOptionalStep) -> ResponseCount:
+            return ResponseCount(value=self.store.count(Invoice, Criteria()).value)
+
+    @bus.feature(CommandCatalog)
+    @tenancy.isolated(when_missing=WhenMissing.SHARED)
+    class Catalog(Feature):
+        def execute(self, dto: CommandCatalog) -> ResponseCount:
+            return ResponseCount(value=self.store.count(Product, Criteria()).value)
+
+    @bus.feature(CommandVoid)
+    class Void(Feature):
+        def execute(self, dto: CommandVoid) -> ResponseCount:
+            invoices = self.tenancy.repository(self.store)
+            invoice = invoices.get(Invoice, dto.id)
+            if invoice is None:
+                raise AggregateNotFound(dto.id)
+            invoices.save(invoice)
+            self.store.save(Note(text=f"voided {dto.id}"))  # this repository is not isolated
+            return ResponseCount(value=1)
 
     @bus.app_service(CommandRemind)
     @tenancy.each_tenant
+    @tenancy.isolated
     class Remind(ApplicationService):
         def execute(self, dto: CommandRemind) -> None:
             reminded.append(self.tenancy.active)
@@ -137,169 +203,228 @@ def store() -> MemoryRepository:
 
 @pytest.fixture
 def tenancy() -> Tenancy:
-    return Tenancy(catalog=InMemoryTenantCatalog.of("acme", "globex"))
+    tenancy = Tenancy(catalog=InMemoryTenantCatalog.of("acme", "globex"))
+    tenancy.discriminator(Order)
+    tenancy.discriminator(Branch, field="company_id")
+    tenancy.discriminator(Product, shared=Shared.WHEN_EMPTY)
+    return tenancy
 
 
 @pytest.fixture
-def billing(tenancy, store) -> UseFramework:
-    tenancy.isolate(store)
-    return _billing(tenancy, store)
+def bus(tenancy, store) -> UseFramework:
+    return billing(tenancy, store)
 
 
-def test_a_write_is_stamped_with_the_tenant_and_reads_see_only_it(billing):
-    with billing.context({"tenant_id": "acme"}):
-        issued = billing(CommandIssue(total=Decimal(10)))
-        billing(CommandIssue(total=Decimal(20)))
-    with billing.context({"tenant_id": "globex"}):
-        billing(CommandIssue(total=Decimal(30)))
-        assert billing(CommandCount()).value == 1
-    with billing.context({"tenant_id": "acme"}):
-        assert billing(CommandCount()).value == 2
-    assert issued.tenant_id == "acme"
+def _issue(bus: UseFramework, tenant: str, times: int = 1) -> None:
+    with bus.context({"tenant_id": tenant}):
+        for _ in range(times):
+            bus(CommandIssue(total=Decimal(1)))
 
 
-def test_reading_partitioned_data_with_no_tenant_is_refused(billing):
+def _count(bus: UseFramework, context: dict, dto=None) -> int | None:
+    with bus.context(context):
+        answered = bus(dto or CommandCount(), ResponseCount)
+    return None if answered is None else answered.value
+
+
+# 1 — a use case of one tenant ------------------------------------------------------------
+def test_1_an_isolated_use_case_writes_stamped_and_reads_only_its_tenant(bus, store):
+    _issue(bus, "acme", 2)
+    _issue(bus, "globex")
+    assert _count(bus, {"tenant_id": "acme"}) == 2
+    assert {one.tenant_id for one in store.fetch_all(Invoice).items} == {"acme", "globex"}
     with pytest.raises(TenantRequired):
-        billing(CommandCount())
+        _count(bus, {})
 
 
-def test_a_selection_reads_several_tenants(billing):
-    for tenant in ("acme", "globex"):
-        with billing.context({"tenant_id": tenant}):
-            billing(CommandIssue(total=Decimal(1)))
-    with billing.context({"tenant_ids": ["acme", "globex"]}):
-        assert billing(CommandCount()).value == 2
+# 2 — a public use case, no tenant -----------------------------------------------------------
+def test_2_a_use_case_that_declares_nothing_is_never_touched(bus, store):
+    with bus.context({}):
+        bus(CommandIssueAnywhere(total=Decimal(5)))
+    assert store.fetch_all(Invoice).items[0].tenant_id is None
 
 
-def test_without_tenant_reads_every_tenant_by_name(billing):
-    for tenant in ("acme", "globex"):
-        with billing.context({"tenant_id": tenant}):
-            billing(CommandIssue(total=Decimal(1)))
-    assert billing(CommandEveryone()).value == 2
+# 3 — the code names the tenant, from the data -----------------------------------------------
+def test_3_the_code_works_in_the_tenant_its_data_names(tenancy, store):
+    invitation_tenant = "globex"
+    with tenancy.with_tenant(invitation_tenant), tenancy.isolated():
+        store.save(Invoice(total=Decimal(1)))
+    assert store.fetch_all(Invoice).items[0].tenant_id == "globex"
 
 
-def test_a_use_case_that_requires_a_tenant_refuses_before_it_runs(billing):
+# 4 — an optional step that must not fail -----------------------------------------------------
+def test_4_skip_does_not_run_without_a_tenant_and_answers_none(bus):
+    assert _count(bus, {}, CommandOptionalStep()) is None
+    _issue(bus, "acme")
+    assert _count(bus, {"tenant_id": "acme"}, CommandOptionalStep()) == 1
+
+
+def test_4_a_block_cannot_skip_its_own_body(tenancy):
+    with pytest.raises(ProgrammingError, match="skips a whole use case"):
+        with tenancy.isolated(when_missing=WhenMissing.SKIP):
+            pass
+
+
+# 5 — a catalog of shared and own records ---------------------------------------------------
+def test_5_shared_reads_only_the_shared_without_a_tenant(bus, tenancy, store):
+    store.add(Product(name="everyone's"))
+    with tenancy.with_tenant("acme"), tenancy.isolated():
+        store.save(Product(name="acme's"))
+    assert _count(bus, {}, CommandCatalog()) == 1
+    assert _count(bus, {"tenant_id": "acme"}, CommandCatalog()) == 2
+    assert _count(bus, {"tenant_id": "globex"}, CommandCatalog()) == 1
+
+
+# 6 — what is not mine is not found ---------------------------------------------------------
+def test_6_writing_a_record_of_another_tenant_is_not_found(tenancy, store):
+    theirs = Invoice(total=Decimal(1), tenant_id="globex")
+    store.add(theirs)
+    with tenancy.with_tenant("acme"), tenancy.isolated():
+        with pytest.raises(AggregateNotFound):
+            store.save(theirs)
+        assert store.get(Invoice, theirs.id) is None
+
+
+# 8 — a tenant required, nothing filtered -----------------------------------------------------
+def test_8_required_refuses_without_a_tenant_and_filters_nothing(bus):
     with pytest.raises(TenantRequired):
-        billing(CommandClose())
-    with billing.context({"tenant_id": "acme"}):
-        assert billing(CommandClose()) == "acme"
+        with bus.context({}):
+            bus(CommandWhere())
+    with bus.context({"tenant_id": "acme"}):
+        assert bus(CommandWhere(), ResponseTenantContext).active == "acme"
 
 
-def test_each_tenant_runs_once_per_active_tenant_of_the_catalog(billing, tenancy):
+# 9 — a block ---------------------------------------------------------------------------------
+def test_9_a_block_isolates_what_it_runs(bus):
+    _issue(bus, "acme")
+    _issue(bus, "globex")
+    assert _count(bus, {"tenant_id": "acme"}, CommandCountInBlock()) == 1
+
+
+# 10 — one repository isolated, another not -------------------------------------------------
+def test_10_a_repository_view_isolates_its_calls_only(bus, store):
+    theirs = Invoice(total=Decimal(1), tenant_id="globex")
+    mine = Invoice(total=Decimal(1), tenant_id="acme")
+    store.add(theirs, mine)
+    with bus.context({"tenant_id": "acme"}):
+        bus(CommandVoid(id=mine.id))
+        with pytest.raises(AggregateNotFound):
+            bus(CommandVoid(id=theirs.id))
+    assert [one.tenant_id for one in store.fetch_all(Note).items] == [None]
+
+
+# 11 — the condition written out -------------------------------------------------------------
+def test_11_criteria_is_the_isolation_written_out(tenancy):
+    asked = Criteria(selection=Condition(field="total", operator=Operator.GT, value=1))
+    with tenancy.with_tenants(["acme", "globex"]):
+        written = tenancy.criteria(Invoice, asked)
+    dumped = written.model_dump(mode="json")["selection"]
+    assert {"field": "tenant_id", "operator": "in", "value": ["acme", "globex"]} in dumped[
+        "all"
+    ]
+    assert tenancy.criteria(Note, asked) is asked  # not partitioned: as given
+
+
+# 12 — across tenants, by name ---------------------------------------------------------------
+def test_12_without_tenant_reads_every_tenant_and_the_nearest_declaration_wins(bus):
+    _issue(bus, "acme")
+    _issue(bus, "globex")
+    # Everyone crosses; the Count it calls is isolated and wins inside it: it needs a tenant.
+    with pytest.raises(TenantRequired):
+        _count(bus, {}, CommandEveryone())
+    with bus.context({"tenant_ids": ["acme", "globex"]}):
+        assert bus(CommandEveryone(), ResponseCount).value == 2
+
+
+# 13 — every tenant --------------------------------------------------------------------------
+def test_13_each_tenant_runs_once_per_active_tenant(bus, tenancy):
     reminded.clear()
-    billing(CommandRemind())
+    with bus.context({}):
+        bus(CommandRemind())
     assert reminded == ["acme", "globex"]
     assert tenancy.each(lambda: tenancy.active) == {"acme": "acme", "globex": "globex"}
 
 
-def test_memberships_validate_what_the_caller_names(store):
+# 14 — a platform that works in any tenant --------------------------------------------------
+def test_14_cross_tenant_lets_the_platform_name_any_tenant():
+    support = {"on": False}
+    tenancy = Tenancy(
+        memberships=InMemoryMemberships({"ana": ["acme"]}), cross_tenant=lambda: support["on"]
+    )
+    bus = billing(tenancy, MemoryRepository())
+    with bus.context({"user_id": "ana", "tenant_id": "globex"}):
+        with pytest.raises(TenantNotAllowed):
+            bus(CommandWhere())
+        assert tenancy.allows("globex") is False
+        support["on"] = True
+        assert bus(CommandWhere(), ResponseTenantContext).active == "globex"
+        assert tenancy.allows("globex") is True
+
+
+# 15 — a member of several ------------------------------------------------------------------
+def test_15_memberships_validate_what_the_caller_names(store):
     tenancy = Tenancy(
         memberships=InMemoryMemberships({"ana": ["acme"], "bob": ["acme", "globex"]})
     )
-    tenancy.isolate(store)
-    bus = _billing(tenancy, store)
-
+    bus = billing(tenancy, store)
     with bus.context({"user_id": "ana", "tenant_id": "globex"}):
         with pytest.raises(TenantNotAllowed):
-            bus(CommandCount())
+            bus(CommandWhere())
     with bus.context({"user_id": "ana"}):
-        assert bus(CommandClose()) == "acme"  # her only tenant, chosen for her
+        assert bus(CommandWhere(), ResponseTenantContext).active == "acme"
     with bus.context({"user_id": "bob"}):
         with pytest.raises(TenantNotChosen):
-            bus(CommandClose())
+            bus(CommandWhere())
+    with bus.context({"user_id": "bob", "tenant_ids": ["acme", "globex"]}):
+        assert bus(CommandCount(), ResponseCount).value == 0
 
 
-def test_a_tenant_the_catalog_holds_suspended_is_never_served(store):
+def test_15_a_tenant_the_catalog_holds_suspended_is_never_served(store):
     catalog = InMemoryTenantCatalog(
         Tenant("acme"), Tenant("globex", status=TenantStatus.SUSPENDED)
     )
-    tenancy = Tenancy(catalog=catalog)
-    bus = _billing(tenancy.isolate(store) and tenancy, store)
+    bus = billing(Tenancy(catalog=catalog), store)
     with bus.context({"tenant_id": "globex"}):
         with pytest.raises(TenantNotAllowed, match="suspended"):
-            bus(CommandClose())
+            bus(CommandWhere())
 
 
-def test_no_base_class_is_required_and_another_field_is_declared(store):
-    tenancy = Tenancy()
-    tenancy.isolate(store)
-    tenancy.discriminator(Branch, field="company_id")
-    with tenancy.with_tenant("acme"):
-        store.save(Order(code="O-1"))
-        store.save(Branch(name="centro"))
-    with tenancy.with_tenant("globex"):
-        assert store.count(Order, Criteria()).value == 0
-        assert store.count(Branch, Criteria()).value == 0
-    with tenancy.with_tenant("acme"):
-        assert store.get(Order, store.fetch_all(Order).items[0].id).tenant_id == "acme"
-        assert store.fetch_all(Branch).items[0].company_id == "acme"
-
-
-def test_a_shared_catalog_and_shared_empty_rows(store):
-    tenancy = Tenancy(shared=Shared.WHEN_EMPTY)
-    tenancy.isolate(store)
-    tenancy.shared(Currency)
-    store.add(Order(code="everyone"))  # no tenant: shared
-    with tenancy.with_tenant("acme"):
-        store.save(Order(code="acme only"))
-        store.save(Currency(code="BOB"))
-    with tenancy.with_tenant("globex"):
-        assert [one.code for one in store.fetch_all(Order).items] == ["everyone"]
-        assert store.count(Currency, Criteria()).value == 1
-
-
-def test_the_sub_criteria_of_a_read_of_the_project_s_own(store):
-    tenancy = Tenancy()
-    with tenancy.with_tenants(["acme", "globex"]):
-        criteria = tenancy.criteria(Invoice)
-    assert criteria is not None and criteria.expression is not None
-    assert criteria.expression.model_dump()["value"] == ["acme", "globex"]
-
-
-@dataclass
-class InvoicePaid(DomainEvent):
-    tenant_id: str | None = None
-
-
-def test_an_event_delivered_out_of_any_request_still_says_its_tenant():
-    """Forwarded later from its table, with no request around it, the event's own tenant goes in
-    the headers — a consumer opens its execution in that tenant."""
-    headers = Envelope.headers_for(
-        InvoicePaid(entity_id="F-1", tenant_id="acme"), source="billing"
-    )
-    assert context_propagation.extract(headers)["tenant_id"] == "acme"
-
-
-def test_a_queue_reads_the_tenant_only_as_every_wire_carries_it():
-    """The headers this wire read before the key was standard (`tenant`, `x-tenant`) are a value
-    the producer wrote by hand — no longer taken as the tenant."""
-    assert "tenant_id" not in queue_context(Envelope(), {"x-tenant": "acme"})
-
-
-class QueryTotal(DataTransferObject):
-    pass
-
-
-def test_a_cached_query_answers_each_tenant_its_own(store):
-    """A Query's cached answer is keyed by the tenant, as `bus.cache` owns an entry by it — the
-    answer of one tenant never reaches another."""
-    tenancy = Tenancy()
-    tenancy.isolate(store)
-    bus = _billing(tenancy, store)
-
-    @bus.feature(QueryTotal)
-    class Total(Feature):
-        def execute(self, dto: QueryTotal) -> ResponseCount:
-            return ResponseCount(value=self.store.count(Invoice, Criteria()).value)
-
-    bus.cache.queries(QueryTotal)
+# 16 — a bus isolated by default -------------------------------------------------------------
+def test_16_a_bus_isolated_by_default_isolates_what_nobody_wrapped(tenancy, store):
+    bus = billing(tenancy, store, isolated=True)
+    with pytest.raises(TenantRequired):
+        with bus.context({}):
+            bus(CommandIssueAnywhere(total=Decimal(1)))
     with bus.context({"tenant_id": "acme"}):
-        bus(CommandIssue(total=Decimal(1)))
-        assert bus(QueryTotal(), ResponseCount).value == 1  # type: ignore[union-attr]
-    with bus.context({"tenant_id": "globex"}):
-        assert bus(QueryTotal(), ResponseCount).value == 0  # type: ignore[union-attr]
+        bus(CommandIssueAnywhere(total=Decimal(1)))
+    assert store.fetch_all(Invoice).items[0].tenant_id == "acme"
 
 
+# 17 — what nobody declared is a field like any other ---------------------------------------
+def test_17_a_tenant_id_nobody_declared_is_never_filtered(tenancy, store):
+    store.add(Note(text="x", tenant_id="globex"))
+    with tenancy.with_tenant("acme"), tenancy.isolated():
+        assert store.count(Note, Criteria()).value == 1
+
+
+def test_another_field_and_a_shared_catalog_are_declared(tenancy, store):
+    @dataclass
+    class Currency(Entity):
+        tenant_id: str | None = None
+        code: str = ""
+
+    tenancy.discriminator(Currency)
+    tenancy.shared(Currency)
+    with tenancy.with_tenant("acme"), tenancy.isolated():
+        store.save(Branch(name="centro"))
+        store.save(Currency(code="BOB"))
+    with tenancy.with_tenant("globex"), tenancy.isolated():
+        assert store.count(Branch, Criteria()).value == 0
+        assert store.count(Currency, Criteria()).value == 1
+    assert store.fetch_all(Branch).items[0].company_id == "acme"
+
+
+# the built-in use cases ----------------------------------------------------------------------
 class QueryMe(GetTenantContext):
     pass
 
@@ -321,9 +446,10 @@ class QueryActive(ListTenants):
 
 
 def test_the_built_in_use_cases_answer_the_tenant_context_catalog_and_memberships():
-    memberships = InMemoryMemberships({"ana": ["acme"]})
-    catalog = InMemoryTenantCatalog.of("acme", "globex")
-    tenancy = Tenancy(memberships=memberships, catalog=catalog)
+    tenancy = Tenancy(
+        memberships=InMemoryMemberships({"ana": ["acme"]}),
+        catalog=InMemoryTenantCatalog.of("acme", "globex"),
+    )
     bus = UseFramework("tenancy-admin", log_after_execution=False)
     tenancy.on(bus)
 
@@ -342,3 +468,23 @@ def test_the_built_in_use_cases_answer_the_tenant_context_catalog_and_membership
     bus(CommandSuspend(id="globex", status=TenantStatus.SUSPENDED))
     active = bus(QueryActive(), ResponseTenants)
     assert active is not None and [one.id for one in active.tenants] == ["acme"]
+
+
+# a cached Query answers each tenant its own ---------------------------------------------------
+class QueryTotal(DataTransferObject):
+    pass
+
+
+def test_a_cached_query_answers_each_tenant_its_own(tenancy, store):
+    bus = billing(tenancy, store)
+
+    @bus.feature(QueryTotal)
+    @tenancy.isolated
+    class Total(Feature):
+        def execute(self, dto: QueryTotal) -> ResponseCount:
+            return ResponseCount(value=self.store.count(Invoice, Criteria()).value)
+
+    bus.cache.queries(QueryTotal)
+    _issue(bus, "acme")
+    assert _count(bus, {"tenant_id": "acme"}, QueryTotal()) == 1
+    assert _count(bus, {"tenant_id": "globex"}, QueryTotal()) == 0
