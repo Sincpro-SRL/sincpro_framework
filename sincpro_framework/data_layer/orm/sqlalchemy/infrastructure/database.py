@@ -12,7 +12,7 @@ process is collecting, and every failure to the error tracker; see `observabilit
 
 import re
 import weakref
-from collections.abc import Callable, Generator
+from collections.abc import Callable, Generator, Iterable
 from contextlib import contextmanager
 from typing import Any
 
@@ -44,6 +44,7 @@ from sincpro_framework.data_layer.orm.sqlalchemy.infrastructure.transaction_hook
 from sincpro_framework.ddd.criteria.domain.accents import FOLDING_FUNCTION, fold
 from sincpro_framework.ddd.editing.preview import is_read_only
 from sincpro_framework.ddd.entity import utc_now
+from sincpro_framework.ddd.repositories.data_filters import DataFilter, DataFilters
 from sincpro_framework.ddd.repositories.repository import refuse_writing_in_preview
 
 
@@ -128,6 +129,16 @@ ENGINES: "weakref.WeakSet[Engine]" = weakref.WeakSet()
 """Every engine built here: what has to forget its compiled statements when a mapper changes."""
 
 
+def _within_filters(filters: DataFilters, session: Session) -> None:
+    """Every record this flush adds, changes or deletes, stamped and checked against the data
+    filters of the database — the same door for a repository and a plain session."""
+    if not filters:
+        return
+    filters.check_writes(list(session.new), True)
+    filters.check_writes([one for one in session.dirty if session.is_modified(one)], False)
+    filters.check_writes(list(session.deleted), False)
+
+
 class Database:
     """One engine, its pool and its session factory — and the rules every write through it
     follows, whoever opens the session.
@@ -149,6 +160,7 @@ class Database:
         logger: LoggerProxy | None = None,
         actor: Callable[[], str | None] | None = None,
         enforce_foreign_keys: bool = False,
+        filters: "DataFilters | Iterable[DataFilter]" = (),
         **engine_options: Any,
     ):
         """One engine, one connection pool, one session factory.
@@ -168,6 +180,10 @@ class Database:
         `actor` answers who is writing, for an `AuditedMixin` aggregate:
         `Database(url, actor=lambda: bus.current_context().get("user_id"))`. It is read on
         every flush, so one database serves every request of a process.
+
+        `filters` are its data filters — global query filters every read of its sessions applies
+        and every write is checked against, whoever opens the session
+        (`ddd.repositories.data_filters`); more are added with `database.filters.add(...)`.
 
         `enforce_foreign_keys` makes SQLite refuse an orphan, as Postgres does — off by default
         while one flush can still insert a child before its parent of another aggregate type
@@ -199,6 +215,8 @@ class Database:
             bind=self.engine, expire_on_commit=False, autoflush=True, info={IN_PLACE: True}
         )
         self.actor = actor
+        self.filters = filters if isinstance(filters, DataFilters) else DataFilters(*filters)
+        """The data filters of this database: read by every statement, checked on every write."""
         # First of what a write runs: a value changed inside is a change like any other by the
         # time the stamping and the change tracking look.
         watch_in_place(self.open_session)
@@ -207,6 +225,9 @@ class Database:
         # a use case holding a plain session must not be able to step around them.
         self.before_flush(_stamping(actor))
         self.before_flush(_tracking)
+        # A write lands only where its reader could see it: stamped, then checked against the
+        # filters that guard writes — after the stamping, before anything goes out.
+        self.before_flush(lambda session: _within_filters(self.filters, session))
         # A preview stores nothing, whichever door a write takes: a repository call, a unit of
         # work committing what it tracks, a plain session.
         self.before_flush(_refused_in_preview)

@@ -36,7 +36,7 @@ Two things it does not have: relations and date grains, which is where a databas
 
 import dataclasses
 import threading
-from collections.abc import Callable, Generator, Iterator, Mapping, Sequence
+from collections.abc import Callable, Generator, Iterable, Iterator, Mapping, Sequence
 from contextlib import contextmanager
 from contextvars import ContextVar
 from copy import copy
@@ -106,6 +106,8 @@ from sincpro_framework.ddd.repositories.capabilities import (
     WritesInBulk,
     refuse_increments_of_non_numbers,
 )
+from sincpro_framework.ddd.repositories.data_filters import DataFilter, DataFilters
+from sincpro_framework.ddd.repositories.fingerprint import fingerprint_of
 from sincpro_framework.ddd.repositories.hooks import Hooks
 from sincpro_framework.ddd.repositories.mixins.change_tracking import (
     ChangeTrackingRepositoryMixin,
@@ -426,8 +428,13 @@ class MemoryRepository(
         hooks: Hooks | None = None,
         actor: "Callable[[], str | None] | None" = None,
         publish_on_commit: PublishOnCommit | Publishes | None = None,
+        filters: "DataFilters | Iterable[DataFilter]" = (),
     ) -> None:
-        """`actor` answers who is writing, for an `AuditedMixin` aggregate — the same argument
+        """`filters` are its data filters, as `Database` takes them — every read applies them and
+        every write is checked against them, so a Feature tested here meets the rule it meets in
+        production.
+
+        `actor` answers who is writing, for an `AuditedMixin` aggregate — the same argument
         `Database` takes and read the same way, once per save. Without one those fields stay
         `None`, which is also what the engine does. `publish_on_commit` is the engine's too: what
         a write recorded, handed to a publisher once it committed.
@@ -441,6 +448,8 @@ class MemoryRepository(
         """
         refuse_wiring_as_a_record(records)
         self._actor = actor
+        self.filters = filters if isinstance(filters, DataFilters) else DataFilters(*filters)
+        """The data filters of this store: read by every reading, checked on every write."""
         super().__init__(hooks, publish_on_commit=publish_on_commit)
         self._stored: dict[type, dict[Any, Any]] = {}
         self._units: ContextVar[MemoryUnit | None] = ContextVar(
@@ -734,6 +743,27 @@ class MemoryRepository(
 
         return expression.mapped(lambda one: one, live)
 
+    def fingerprint(self, target: type, criteria: Criteria | None = None) -> str:
+        """Context: the data filters, with this request's values, are part of the key — so two
+        tenants never share one, as on the engine."""
+        model, _ = model_and_collection(target)
+        return fingerprint_of(model, criteria or Criteria(), self.filters.criteria_for(model))
+
+    def _filtered_by(self, aggregate: type) -> Expression | None:
+        """What the data filters add to a reading of `aggregate`, accepted by it — a filter
+        naming a field it cannot answer refused, as the engine refuses it."""
+        added = self.filters.expression_for(aggregate)
+        if added is None:
+            return None
+        accepted, dropped = self._filterable(aggregate).accept(added)
+        if dropped or accepted is None:
+            raise exceptions.ProgrammingError(
+                f"{aggregate.__name__} cannot answer the data filters of its store "
+                f"({', '.join(one.field for one in dropped) or 'nothing survived'}); "
+                "reading it wide is not an option"
+            )
+        return accepted
+
     def _matching(
         self, aggregate: type, criteria: Criteria, handed_back: bool = True
     ) -> tuple[list[Any], list[Dropped]]:
@@ -752,6 +782,7 @@ class MemoryRepository(
             [leaf.field for leaf in where.conditions()] if where is not None else [],
         )
         expression, dropped = self._filterable(aggregate).accept(criteria.expression)
+        expression = Node.combined(self._filtered_by(aggregate), expression)
         expression = self._crossing_live(aggregate, expression)
         _, unanswerable = meta.accept_specification(criteria.specification)
         program = Evaluation.program(expression)
@@ -825,6 +856,8 @@ class MemoryRepository(
         )
         if found is not None and isinstance(found, ArchivableMixin) and found.is_archived:
             return None
+        if found is not None and not self.filters.admits(found):
+            return None
         if found is not None and not self._claimed([found], for_update, skip_locked, nowait):
             return None
         if found is None:
@@ -855,7 +888,11 @@ class MemoryRepository(
         stored = {
             key: record for held in self._held_as(aggregate) for key, record in held.items()
         }
-        found = [self._read(self._with_computed(stored[key])) for key in ids if key in stored]
+        found = [
+            self._read(self._with_computed(stored[key]))
+            for key in ids
+            if key in stored and self.filters.admits(stored[key])
+        ]
         return self._searched(
             target,
             holder(
@@ -1360,6 +1397,7 @@ class MemoryRepository(
            2.4 the version raised by one.
         Final: the record itself held under its id — the caller's object, not a copy.
         """
+        self.filters.check_write(record, False)
         stored = self._stored.setdefault(type(record), {})
         identity = identity_of(record)
         self._touching(type(record), identity)
@@ -1409,6 +1447,8 @@ class MemoryRepository(
         refuse_writing_in_preview("save")
         self._refuse_reentrant_write()
         records = self._events_of_sourced(records_of(record))
+        for one in records:
+            self.filters.stamp(one)
         newness = self._before_writes(records)
         for one in records:
             self._save_one(one)
@@ -1438,6 +1478,7 @@ class MemoryRepository(
         refuse_writing_in_preview("remove")
         self._refuse_reentrant_write()
         records = records_of(record)
+        self.filters.check_writes(records, False)
         for one in records:
             self._before_remove(one)
         for one in records:
@@ -1715,6 +1756,9 @@ class MemoryRepository(
                 f"upsert cannot overwrite {', '.join(set_by_framework)}: the framework sets it"
             )
         latest: dict[Any, Any] = {}
+        for one in records:
+            self.filters.stamp(one)
+            self.filters.check_write(one, False)
         for one in records:
             values = tuple(getattr(one, name) for name in on)
             # A key with a NULL in it never conflicts, as in the database.

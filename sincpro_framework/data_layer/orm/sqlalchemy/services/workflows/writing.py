@@ -207,7 +207,8 @@ class Writing(RepositoryState, Extends):
         """Writes a plan in the one order every write needs, and answers what the before-moments
         worked out about each record.
 
-        1. Every record is checked against the scope, and the before-moments run for all of them.
+        1. Every record stored is stamped by the data filters, every record is checked against
+           the scope and the filters, and the before-moments run for all of them.
         2. The detached first: a child's key is NULL before its root can go.
         3. The pairs of a many-to-many unlinked: a pair points at the root it leaves with.
         4. The removals, deepest first: an orphan leaves before the child taking its unique
@@ -219,6 +220,8 @@ class Writing(RepositoryState, Extends):
         is stored.
         """
         stored, removed = plan.stored, plan.removed
+        for one in stored:
+            self.database.filters.stamp(one)
         for one in [*stored, *removed]:
             self._refuse_outside(one)
         for one in removed:
@@ -593,6 +596,7 @@ class Writing(RepositoryState, Extends):
             bulk_rules.UPSERT_REMEDY,
         )
         for one in records:
+            self.database.filters.stamp(one)
             self._refuse_outside(one)
         latest = upsert.one_per_key(records, on)
         apart = bulk_rules.kept_apart(meta)
